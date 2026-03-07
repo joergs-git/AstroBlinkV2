@@ -95,17 +95,15 @@ After a night of imaging you might have 200-600 sub-exposures. Some have clouds,
 
 ### Download Release
 
-1. Download `AstroBlinkV2.zip` from the [Releases](https://github.com/joergsflow/AstroBlinkV2/releases) page
+1. Download `AstroBlinkV2-v0.9.4.zip` from the [Releases](https://github.com/joergs-git/AstroBlinkV2/releases) page
 2. Unzip and drag `AstroBlinkV2.app` to your **Applications** folder
-3. **First launch:** Right-click the app and select **Open** (or go to System Settings > Privacy & Security > click "Open Anyway")
-
-> **Why the security warning?** AstroBlinkV2 is open-source software and is not signed with an Apple Developer certificate. macOS Gatekeeper will show a warning on first launch. This is normal for community-built apps. After allowing it once, the app will open normally on subsequent launches.
+3. Double-click to launch — the app is signed and notarized by Apple
 
 ### Build from Source
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/joergsflow/AstroBlinkV2.git
+   git clone https://github.com/joergs-git/AstroBlinkV2.git
    cd AstroBlinkV2
    ```
 
