@@ -13,6 +13,7 @@
 		2AC85F5C8AE08A1DB6A74261 /* KeyboardHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 763931350538CED5EA81290D /* KeyboardHandler.swift */; };
 		37DA495A008C7E13F6D23D6C /* HeaderInspectorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D45AA5729C0A57A6C12C9C2 /* HeaderInspectorView.swift */; };
 		390301387CB9257F1DAE9235 /* MetadataExtractor.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAC4AFD3D3784B02004BA98D /* MetadataExtractor.swift */; };
+		399A544B01D518D97920F138 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AE4E059ADDE28F88AF19A8DF /* Assets.xcassets */; };
 		3AE8C59AED6435B5F41CA9AF /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24F8E2016E26D881862A1E76 /* ContentView.swift */; };
 		3D029D52F10611A437BC2B5F /* NINAFilenameParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 958EAAFB0801AA6BF89E7E57 /* NINAFilenameParser.swift */; };
 		5BEA8CB806944696DA8FF49D /* ImageEntry.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5A5655E4FCDB14E3F9CECE3 /* ImageEntry.swift */; };
@@ -34,7 +35,6 @@
 		F47A29B58D39DCB30BDB290A /* ImageViewerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED760805A7C9C85AB7BB391E /* ImageViewerView.swift */; };
 		F94F15A86ED041565AB8DB76 /* STFCalculator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 40D54AA4B026ABD4997C7758 /* STFCalculator.swift */; };
 		FF242D8AC80D34562D5B296A /* DecodedImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C97DD4541DE740AC52CBFEC /* DecodedImage.swift */; };
-		FA3B7E2E1A4C8F9E00D12345 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = FA3B7E2D1A4C8F9E00D12345 /* Assets.xcassets */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -64,6 +64,7 @@
 		9C97DD4541DE740AC52CBFEC /* DecodedImage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DecodedImage.swift; sourceTree = "<group>"; };
 		ABAF1B6D447B16F3447CF29C /* TexturePool.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TexturePool.swift; sourceTree = "<group>"; };
 		ADBD75B471EEBE3262306C84 /* Shaders.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = Shaders.metal; sourceTree = "<group>"; };
+		AE4E059ADDE28F88AF19A8DF /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		B4F0D3CE86492EF1F5EF6BB7 /* TriageViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TriageViewModel.swift; sourceTree = "<group>"; };
 		B6D16C070C8599AC5C5A265B /* FileListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileListView.swift; sourceTree = "<group>"; };
 		B7D54DB9FE9BF17CD5203F2D /* SessionScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionScanner.swift; sourceTree = "<group>"; };
@@ -76,7 +77,6 @@
 		ED760805A7C9C85AB7BB391E /* ImageViewerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageViewerView.swift; sourceTree = "<group>"; };
 		F25FB10B9861BFEE190684C8 /* ColumnDefinition.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ColumnDefinition.swift; sourceTree = "<group>"; };
 		F98D55D2A66E2F51D5244BCF /* IntegrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IntegrationTests.swift; sourceTree = "<group>"; };
-		FA3B7E2D1A4C8F9E00D12345 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		FE4AA1827176F2392E89D989 /* AstroTriage.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AstroTriage.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -158,12 +158,12 @@
 			isa = PBXGroup;
 			children = (
 				663E3E565F372ECFB7CE9527 /* App */,
-				FA3B7E2D1A4C8F9E00D12345 /* Assets.xcassets */,
 				4AB3F99975F4F5A1206B259A /* Bridge */,
 				8B6572146F03A4BF20670F99 /* Engine */,
 				363A9B34E9ED9865E9412A9B /* Metal */,
 				EDBF5FF129EFE56886D3F2A2 /* Model */,
 				D30D71B63D6BDC840F33D230 /* UI */,
+				AE4E059ADDE28F88AF19A8DF /* Assets.xcassets */,
 			);
 			path = AstroTriage;
 			sourceTree = "<group>";
@@ -216,8 +216,8 @@
 			buildConfigurationList = 777D8FD4D1E3C7F66666BDD5 /* Build configuration list for PBXNativeTarget "AstroTriage" */;
 			buildPhases = (
 				A7851859174A232D4B448EBC /* Sources */,
+				F9872F8FFA69147D2EE82C49 /* Resources */,
 				BC786999CCE07E4A537B72CA /* Frameworks */,
-				FA3B7E2F1A4C8F9E00D12345 /* Resources */,
 			);
 			buildRules = (
 			);
@@ -284,11 +284,11 @@
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
-		FA3B7E2F1A4C8F9E00D12345 /* Resources */ = {
+		F9872F8FFA69147D2EE82C49 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				FA3B7E2E1A4C8F9E00D12345 /* Assets.xcassets in Resources */,
+				399A544B01D518D97920F138 /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -356,18 +356,18 @@
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = AstroBlinkV2;
+				INFOPLIST_KEY_CFBundleDisplayName = AstroTriage;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.photography";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 0.9.4;
+				MARKETING_VERSION = 0.1.0;
 				METAL_COMPILER_FLAGS = "";
 				OTHER_LDFLAGS = (
 					"-lz",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.joergsflow.AstroBlinkV2;
+				PRODUCT_BUNDLE_IDENTIFIER = com.joergsflow.AstroTriage;
 				SDKROOT = macosx;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_OBJC_INTEROP_MODE = objcxx;
@@ -482,18 +482,18 @@
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = AstroBlinkV2;
+				INFOPLIST_KEY_CFBundleDisplayName = AstroTriage;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.photography";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 0.9.4;
+				MARKETING_VERSION = 0.1.0;
 				METAL_COMPILER_FLAGS = "";
 				OTHER_LDFLAGS = (
 					"-lz",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.joergsflow.AstroBlinkV2;
+				PRODUCT_BUNDLE_IDENTIFIER = com.joergsflow.AstroTriage;
 				SDKROOT = macosx;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_OBJC_INTEROP_MODE = objcxx;

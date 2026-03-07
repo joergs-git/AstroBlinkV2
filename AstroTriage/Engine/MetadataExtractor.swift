@@ -1,4 +1,4 @@
-// v0.1.0
+// v0.2.0
 import Foundation
 import ImageDecoderBridge
 
@@ -150,7 +150,9 @@ struct MetadataExtractor {
             entry.mount = mount
         }
 
-        // Bayer pattern (store for future debayer use)
-        // Not displayed in table but useful for rendering
+        // Bayer pattern (for debayer rendering of OSC images)
+        if let bayer = headers["BAYERPAT"], !bayer.isEmpty {
+            entry.bayerPattern = bayer.trimmingCharacters(in: .whitespaces).uppercased()
+        }
     }
 }

@@ -1,6 +1,7 @@
-// v0.5.0
-// STF Auto-Stretch: PixInsight-compatible Screen Transfer Function
+// v0.6.0
+// STF Auto-Stretch + Debayer: PixInsight-compatible Screen Transfer Function
 // Applies per-channel Midtones Transfer Function for proper astro visualization
+// Includes bilinear debayer kernel for OSC (one-shot color) cameras
 
 #include <metal_stdlib>
 using namespace metal;
@@ -73,6 +74,75 @@ kernel void normalize_uint16(
     }
 
     output.write(color, gid);
+}
+
+// ==========================================================================
+// Debayer — bilinear interpolation from mono Bayer CFA to RGB planar
+// Bayer patterns: 0=RGGB, 1=GRBG, 2=GBRG, 3=BGGR
+// Output: 3-plane uint16 buffer (R, G, B planes in sequence)
+// ==========================================================================
+
+kernel void debayer_bilinear(
+    device const uint16_t* rawData [[buffer(0)]],
+    device uint16_t* rgbOut [[buffer(1)]],
+    constant int& width [[buffer(2)]],
+    constant int& height [[buffer(3)]],
+    constant int& bayerPattern [[buffer(4)]],
+    uint2 gid [[thread_position_in_grid]])
+{
+    if (gid.x >= (uint)width || gid.y >= (uint)height) return;
+
+    int x = (int)gid.x;
+    int y = (int)gid.y;
+    int w = width;
+    int h = height;
+    uint planeSize = (uint)w * (uint)h;
+
+    #define PIX(px, py) rawData[clamp((py), 0, h-1) * w + clamp((px), 0, w-1)]
+
+    int px = x % 2;
+    int py = y % 2;
+    int pos = py * 2 + px;
+
+    // Color at each position in the 2x2 Bayer tile: 0=R, 1=G, 2=B
+    const int colorMap[4][4] = {
+        {0, 1, 1, 2},  // RGGB
+        {1, 0, 2, 1},  // GRBG
+        {1, 2, 0, 1},  // GBRG
+        {2, 1, 1, 0}   // BGGR
+    };
+
+    int myColor = colorMap[clamp(bayerPattern, 0, 3)][pos];
+
+    float r, g, b;
+    float center = float(PIX(x, y));
+
+    if (myColor == 0) {
+        r = center;
+        g = (float(PIX(x-1,y)) + float(PIX(x+1,y)) + float(PIX(x,y-1)) + float(PIX(x,y+1))) * 0.25;
+        b = (float(PIX(x-1,y-1)) + float(PIX(x+1,y-1)) + float(PIX(x-1,y+1)) + float(PIX(x+1,y+1))) * 0.25;
+    } else if (myColor == 2) {
+        b = center;
+        g = (float(PIX(x-1,y)) + float(PIX(x+1,y)) + float(PIX(x,y-1)) + float(PIX(x,y+1))) * 0.25;
+        r = (float(PIX(x-1,y-1)) + float(PIX(x+1,y-1)) + float(PIX(x-1,y+1)) + float(PIX(x+1,y+1))) * 0.25;
+    } else {
+        g = center;
+        int leftColor = colorMap[clamp(bayerPattern, 0, 3)][(py * 2 + ((px + 1) % 2))];
+        if (leftColor == 0) {
+            r = (float(PIX(x-1,y)) + float(PIX(x+1,y))) * 0.5;
+            b = (float(PIX(x,y-1)) + float(PIX(x,y+1))) * 0.5;
+        } else {
+            b = (float(PIX(x-1,y)) + float(PIX(x+1,y))) * 0.5;
+            r = (float(PIX(x,y-1)) + float(PIX(x,y+1))) * 0.5;
+        }
+    }
+
+    #undef PIX
+
+    uint idx = gid.y * (uint)w + gid.x;
+    rgbOut[idx] = (uint16_t)clamp(r, 0.0f, 65535.0f);
+    rgbOut[planeSize + idx] = (uint16_t)clamp(g, 0.0f, 65535.0f);
+    rgbOut[2 * planeSize + idx] = (uint16_t)clamp(b, 0.0f, 65535.0f);
 }
 
 // MARK: - Textured Quad Shaders (for fit-to-view rendering with zoom/pan)

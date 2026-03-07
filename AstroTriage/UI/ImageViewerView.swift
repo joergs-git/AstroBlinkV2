@@ -1,4 +1,4 @@
-// v0.5.0
+// v0.6.0
 import SwiftUI
 import MetalKit
 
@@ -48,7 +48,9 @@ struct ImageViewerView: NSViewRepresentable {
 
         if let decoded = viewModel.currentDecodedImage {
             // Full-res path: set raw image for compute + display
-            renderer.setImage(decoded, in: mtkView)
+            // Pass Bayer pattern for auto-debayer of OSC images
+            let bayerPattern = viewModel.selectedImage?.bayerPattern
+            renderer.setImage(decoded, in: mtkView, bayerPattern: bayerPattern)
         } else if viewModel.images.isEmpty {
             // No session loaded: clear display
             renderer.clearImage(in: mtkView)

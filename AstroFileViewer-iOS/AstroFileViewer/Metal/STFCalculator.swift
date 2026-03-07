@@ -1,4 +1,4 @@
-// v0.5.0
+// v1.3.0
 import Foundation
 import Metal
 
@@ -15,12 +15,15 @@ struct STFCalculator {
 
     // PixInsight AutoSTF constants
     static let shadowsClip: Float = -1.25    // Sigma factor below median
-    static let targetBackground: Float = 0.25 // Target background level [0,1]
+    static let defaultTargetBackground: Float = 0.25 // Default target background level [0,1]
     static let sampleFraction: Float = 0.05   // 5% subsample for statistics
 
     // Calculate STF parameters from a decoded image's raw uint16 buffer
+    // targetBackground: adjustable stretch strength [0.05..0.50]
+    //   lower = darker/more subtle, higher = brighter/more aggressive
+    //   default 0.25 = PixInsight standard
     // Returns array of STFParams: 1 element for mono, 3 for RGB
-    static func calculate(from image: DecodedImage) -> [STFParams] {
+    static func calculate(from image: DecodedImage, targetBackground: Float = defaultTargetBackground) -> [STFParams] {
         let ptr = image.buffer.contents().bindMemory(
             to: UInt16.self,
             capacity: image.pixelCount
@@ -34,7 +37,8 @@ struct STFCalculator {
             let channelOffset = ch * planeSize
             let params = calculateChannel(
                 ptr: ptr.advanced(by: channelOffset),
-                count: planeSize
+                count: planeSize,
+                targetBackground: targetBackground
             )
             results.append(params)
         }
@@ -42,8 +46,8 @@ struct STFCalculator {
         return results
     }
 
-    // Calculate STF for a single channel
-    private static func calculateChannel(ptr: UnsafePointer<UInt16>, count: Int) -> STFParams {
+    // Calculate STF for a single channel with adjustable target background
+    private static func calculateChannel(ptr: UnsafePointer<UInt16>, count: Int, targetBackground: Float) -> STFParams {
         // Subsample: take ~5% of pixels with deterministic stride (reproducible)
         let sampleCount = max(1000, Int(Float(count) * sampleFraction))
         let stride = max(1, count / sampleCount)
@@ -73,7 +77,7 @@ struct STFCalculator {
             median = samples[n / 2]
         }
 
-        // MAD (Median Absolute Deviation) → robust sigma estimate
+        // MAD (Median Absolute Deviation) -> robust sigma estimate
         // MAD = median(|samples - median|)
         // Normalized MAD = 1.4826 * MAD (equals sigma for normal distribution)
         var deviations = samples.map { abs($0 - median) }
@@ -111,20 +115,7 @@ struct STFCalculator {
         if x >= 1.0 { return 1.0 }
         if x == target { return 0.5 }
 
-        // Solve for m: target = (m-1)*x / ((2m-1)*x - m)
-        // Rearranging: m = target * x / (target * (2*x - 1) - x + 1)
-        // But we actually need the midtone balance m such that MTF(x, m) = target
-        // The formula: m = (target * (2*x - 1) + x - target*x) ... let's derive properly
-        //
-        // MTF(x, m) = (m-1)*x / ((2m-1)*x - m) = target
-        // (m-1)*x = target * ((2m-1)*x - m)
-        // mx - x = target*(2mx - x - m)
-        // mx - x = 2tmx - tx - tm
-        // mx - 2tmx + tm = x - tx
-        // m(x - 2tx + t) = x(1 - t)
-        // m = x(1 - t) / (x - 2tx + t)
         // m = x(1 - target) / (x(1 - 2*target) + target)
-
         let denom = x * (1.0 - 2.0 * target) + target
         if abs(denom) < 1e-10 { return 0.5 }
         return x * (1.0 - target) / denom

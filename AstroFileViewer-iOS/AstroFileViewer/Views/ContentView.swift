@@ -1,4 +1,4 @@
-// v1.2.0
+// v1.3.0
 import SwiftUI
 import MetalKit
 import StoreKit
@@ -18,7 +18,7 @@ struct ContentView: View {
                     ZoomableImageContainer(texture: texture)
                         .ignoresSafeArea()
                 } else if viewModel.isLoading {
-                    ProgressView("Decoding...")
+                    ProgressView("Processing...")
                         .foregroundColor(.white)
                         .tint(.white)
                 } else {
@@ -47,7 +47,6 @@ struct ContentView: View {
 
                         Spacer().frame(height: 40)
 
-                        // About link on landing screen
                         Button(action: { showAbout = true }) {
                             Text("About AstroFileViewer")
                                 .font(.caption)
@@ -72,14 +71,27 @@ struct ContentView: View {
 
                 if viewModel.displayTexture != nil {
                     ToolbarItem(placement: .navigationBarTrailing) {
-                        Button(action: { viewModel.saveToPhotos() }) {
-                            if viewModel.isSaving {
-                                ProgressView()
-                            } else {
-                                Image(systemName: "square.and.arrow.down")
+                        HStack(spacing: 12) {
+                            // Image adjustments toggle
+                            Button(action: {
+                                withAnimation(.easeInOut(duration: 0.2)) {
+                                    viewModel.showAdjustments.toggle()
+                                }
+                            }) {
+                                Image(systemName: "slider.horizontal.3")
+                                    .foregroundColor(viewModel.showAdjustments ? .yellow : .white)
                             }
+
+                            // Save to Photos
+                            Button(action: { viewModel.saveToPhotos() }) {
+                                if viewModel.isSaving {
+                                    ProgressView()
+                                } else {
+                                    Image(systemName: "square.and.arrow.down")
+                                }
+                            }
+                            .disabled(viewModel.isSaving)
                         }
-                        .disabled(viewModel.isSaving)
                     }
                 }
 
@@ -92,27 +104,36 @@ struct ContentView: View {
                 }
             }
             .overlay(alignment: .bottom) {
-                VStack(spacing: 4) {
-                    if !viewModel.saveMessage.isEmpty {
-                        Text(viewModel.saveMessage)
-                            .font(.caption.monospaced())
-                            .foregroundColor(viewModel.saveMessage.starts(with: "Saved") ? .green : .orange)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 6)
-                            .background(.black.opacity(0.7))
-                            .cornerRadius(8)
+                VStack(spacing: 0) {
+                    // Adjustments panel
+                    if viewModel.showAdjustments && viewModel.displayTexture != nil {
+                        AdjustmentsPanel(viewModel: viewModel)
+                            .transition(.move(edge: .bottom).combined(with: .opacity))
                     }
-                    if !viewModel.statusMessage.isEmpty && viewModel.displayTexture != nil {
-                        Text(viewModel.statusMessage)
-                            .font(.caption.monospaced())
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 6)
-                            .background(.black.opacity(0.6))
-                            .cornerRadius(8)
+
+                    // Status messages
+                    VStack(spacing: 4) {
+                        if !viewModel.saveMessage.isEmpty {
+                            Text(viewModel.saveMessage)
+                                .font(.caption.monospaced())
+                                .foregroundColor(viewModel.saveMessage.starts(with: "Saved") ? .green : .orange)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                                .background(.black.opacity(0.7))
+                                .cornerRadius(8)
+                        }
+                        if !viewModel.statusMessage.isEmpty && viewModel.displayTexture != nil && !viewModel.showAdjustments {
+                            Text(viewModel.statusMessage)
+                                .font(.caption.monospaced())
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                                .background(.black.opacity(0.6))
+                                .cornerRadius(8)
+                        }
                     }
+                    .padding(.bottom, 8)
                 }
-                .padding(.bottom, 8)
             }
             .sheet(isPresented: $showHeaders) {
                 HeaderListView(headers: viewModel.headers, filename: viewModel.filename)
@@ -135,7 +156,6 @@ struct ContentView: View {
         }
     }
 
-    // Ask for App Store rating after 10 launches
     private func checkForReviewPrompt() {
         let key = "launchCount"
         let count = UserDefaults.standard.integer(forKey: key) + 1
@@ -143,6 +163,109 @@ struct ContentView: View {
         if count == 10 {
             requestReview()
         }
+    }
+}
+
+// MARK: - Image Adjustments Panel
+
+struct AdjustmentsPanel: View {
+    @ObservedObject var viewModel: ViewerViewModel
+
+    var body: some View {
+        VStack(spacing: 12) {
+            // Stretch strength slider
+            HStack(spacing: 8) {
+                Image(systemName: "sun.min")
+                    .font(.caption)
+                    .foregroundColor(.gray)
+                    .frame(width: 20)
+
+                Text("Stretch")
+                    .font(.caption.bold())
+                    .foregroundColor(.white)
+                    .frame(width: 55, alignment: .leading)
+
+                Slider(value: $viewModel.stretchStrength, in: 0.05...0.50, step: 0.01)
+                    .tint(.yellow)
+
+                Text(String(format: "%.0f%%", viewModel.stretchStrength * 200))
+                    .font(.caption.monospaced())
+                    .foregroundColor(.gray)
+                    .frame(width: 40)
+            }
+
+            // Sharpening slider
+            HStack(spacing: 8) {
+                Image(systemName: "diamond")
+                    .font(.caption)
+                    .foregroundColor(.gray)
+                    .frame(width: 20)
+
+                Text("Sharpen")
+                    .font(.caption.bold())
+                    .foregroundColor(.white)
+                    .frame(width: 55, alignment: .leading)
+
+                Slider(value: $viewModel.sharpenAmount, in: 0...2.0, step: 0.05)
+                    .tint(.cyan)
+
+                Text(String(format: "%.0f%%", viewModel.sharpenAmount * 50))
+                    .font(.caption.monospaced())
+                    .foregroundColor(.gray)
+                    .frame(width: 40)
+            }
+
+            // Debayer toggle (only when Bayer pattern detected)
+            if viewModel.bayerPatternDetected != nil {
+                HStack(spacing: 8) {
+                    Image(systemName: "square.grid.3x3")
+                        .font(.caption)
+                        .foregroundColor(.gray)
+                        .frame(width: 20)
+
+                    Text("Debayer")
+                        .font(.caption.bold())
+                        .foregroundColor(.white)
+                        .frame(width: 55, alignment: .leading)
+
+                    Toggle("", isOn: $viewModel.debayerEnabled)
+                        .labelsHidden()
+                        .tint(.green)
+
+                    Text(viewModel.bayerPatternDetected ?? "")
+                        .font(.caption.monospaced())
+                        .foregroundColor(.gray)
+
+                    Spacer()
+                }
+            }
+
+            // Reset button
+            if viewModel.stretchStrength != 0.25 || viewModel.sharpenAmount != 0 {
+                Button(action: {
+                    viewModel.stretchStrength = 0.25
+                    viewModel.sharpenAmount = 0
+                }) {
+                    Text("Reset to Default")
+                        .font(.caption)
+                        .foregroundColor(.orange)
+                }
+            }
+
+            // Image info
+            Text(viewModel.statusMessage)
+                .font(.caption2.monospaced())
+                .foregroundColor(.gray)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(.ultraThinMaterial)
+                .environment(\.colorScheme, .dark)
+        )
+        .padding(.horizontal, 12)
+        .padding(.bottom, 4)
     }
 }
 
@@ -165,11 +288,11 @@ struct AboutView: View {
                         .font(.title2.bold())
                         .foregroundColor(.white)
 
-                    Text("v1.0.0")
+                    Text("v1.3.0")
                         .font(.caption)
                         .foregroundColor(.gray)
 
-                    Text("FITS & XISF viewer for astrophotography.\nPixInsight-compatible STF auto-stretch.")
+                    Text("FITS & XISF viewer for astrophotography.\nPixInsight-compatible STF auto-stretch\nwith adjustable strength, sharpening & debayer.")
                         .font(.subheadline)
                         .foregroundColor(.gray)
                         .multilineTextAlignment(.center)
@@ -193,7 +316,7 @@ struct AboutView: View {
                         }
 
                         Link(destination: URL(string: "https://github.com/joergs-git/AstroBlinkV2")!) {
-                            Label("GitHub – Source Code", systemImage: "chevron.left.forwardslash.chevron.right")
+                            Label("GitHub — Source Code", systemImage: "chevron.left.forwardslash.chevron.right")
                                 .font(.subheadline)
                         }
                     }
@@ -236,7 +359,7 @@ struct HeaderListView: View {
     private let highlighted: Set<String> = [
         "OBJECT", "FILTER", "EXPTIME", "EXPOSURE",
         "CCD-TEMP", "GAIN", "OFFSET",
-        "INSTRUME", "TELESCOP"
+        "INSTRUME", "TELESCOP", "BAYERPAT"
     ]
 
     var body: some View {
@@ -311,7 +434,7 @@ class ZoomableImageView: UIScrollView, UIScrollViewDelegate {
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        // Only reset frame when not zoomed (zoom scale == 1)
+        // Only reset frame when not zoomed
         if zoomScale == 1.0 {
             imageView.frame = bounds
         }
@@ -321,7 +444,9 @@ class ZoomableImageView: UIScrollView, UIScrollViewDelegate {
     func updateTexture(_ texture: MTLTexture) {
         let width = texture.width
         let height = texture.height
-        imageSize = CGSize(width: width, height: height)
+        let newSize = CGSize(width: width, height: height)
+        let isNewImage = newSize != imageSize
+        imageSize = newSize
         let bytesPerRow = width * 4
 
         var pixels = [UInt8](repeating: 0, count: bytesPerRow * height)
@@ -329,7 +454,7 @@ class ZoomableImageView: UIScrollView, UIScrollViewDelegate {
                          from: MTLRegion(origin: .init(), size: .init(width: width, height: height, depth: 1)),
                          mipmapLevel: 0)
 
-        // BGRA → RGBA
+        // BGRA -> RGBA
         for i in stride(from: 0, to: pixels.count, by: 4) {
             let b = pixels[i]
             pixels[i] = pixels[i + 2]
@@ -349,12 +474,14 @@ class ZoomableImageView: UIScrollView, UIScrollViewDelegate {
 
         imageView.image = UIImage(cgImage: cgImage)
 
-        // Reset zoom when new image loads
-        zoomScale = 1.0
-        imageView.frame = bounds
+        // Only reset zoom when a different image is opened (dimensions changed),
+        // not when stretch/sharpen sliders change the same image
+        if isNewImage {
+            zoomScale = 1.0
+            imageView.frame = bounds
+        }
     }
 
-    // Center the image when zoomed out or smaller than scroll view
     private func centerImageView() {
         let boundsSize = bounds.size
         var frameToCenter = imageView.frame

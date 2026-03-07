@@ -781,7 +781,9 @@ class TriageViewModel: ObservableObject {
                         self.images[self.selectedIndex].height = decoded.height
                         self.images[self.selectedIndex].channelCount = decoded.channelCount
                     }
-                    self.statusMessage = "\(decoded.width)x\(decoded.height) \(decoded.channelCount == 1 ? "mono" : "RGB")"
+                    let channels = decoded.channelCount == 1 ? "mono" : "RGB"
+                    let bayerInfo = self.selectedImage?.bayerPattern.map { " (\($0) debayer)" } ?? ""
+                    self.statusMessage = "\(decoded.width)x\(decoded.height) \(channels)\(bayerInfo)"
 
                 case .failure(let error):
                     self.currentDecodedImage = nil

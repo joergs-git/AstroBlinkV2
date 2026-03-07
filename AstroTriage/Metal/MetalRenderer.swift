@@ -1,4 +1,4 @@
-// v0.5.0
+// v0.6.0
 import Metal
 import MetalKit
 import AppKit
@@ -9,6 +9,7 @@ class MetalRenderer: NSObject, MTKViewDelegate {
     let device: MTLDevice
     let commandQueue: MTLCommandQueue
     let computePipeline: MTLComputePipelineState
+    let debayerPipeline: MTLComputePipelineState?
     let renderPipeline: MTLRenderPipelineState
     let sampler: MTLSamplerState
     let texturePool: TexturePool
@@ -61,6 +62,14 @@ class MetalRenderer: NSObject, MTKViewDelegate {
         }
         self.computePipeline = computePipe
 
+        // Load debayer kernel (optional — only needed for OSC cameras)
+        if let debayerFunc = library.makeFunction(name: "debayer_bilinear"),
+           let debayerPipe = try? device.makeComputePipelineState(function: debayerFunc) {
+            self.debayerPipeline = debayerPipe
+        } else {
+            self.debayerPipeline = nil
+        }
+
         // Load render pipeline for textured quad with scaling
         guard let vertexFunc = library.makeFunction(name: "quad_vertex"),
               let fragmentFunc = library.makeFunction(name: "quad_fragment") else {
@@ -101,22 +110,79 @@ class MetalRenderer: NSObject, MTKViewDelegate {
         mtkView.delegate = self
     }
 
-    func setImage(_ image: DecodedImage, in view: MTKView) {
+    // Bayer pattern map for debayer kernel index
+    private static let bayerPatternMap: [String: Int] = [
+        "RGGB": 0, "GRBG": 1, "GBRG": 2, "BGGR": 3
+    ]
+
+    func setImage(_ image: DecodedImage, in view: MTKView, bayerPattern: String? = nil) {
         let isNewImage = currentImage?.buffer !== image.buffer
-        self.currentImage = image
+
+        // Debayer mono CFA images if Bayer pattern is detected
+        let imageForProcessing: DecodedImage
+        if image.channelCount == 1,
+           let pattern = bayerPattern,
+           let patternIndex = Self.bayerPatternMap[pattern.uppercased()],
+           let debayered = runDebayer(raw: image, pattern: patternIndex) {
+            imageForProcessing = debayered
+        } else {
+            imageForProcessing = image
+        }
+
+        self.currentImage = imageForProcessing
         self.cachedPreviewTexture = nil  // Clear preview, use full-res path
 
         if isNewImage {
             if let locked = lockedSTFParams {
                 currentSTFParams = locked
             } else {
-                currentSTFParams = STFCalculator.calculate(from: image)
+                currentSTFParams = STFCalculator.calculate(from: imageForProcessing)
             }
             updateSTFBuffer()
             normalizedTexture = nil
         }
 
         view.needsDisplay = true
+    }
+
+    // Run bilinear debayer on mono CFA image, returns RGB planar DecodedImage
+    private func runDebayer(raw: DecodedImage, pattern: Int) -> DecodedImage? {
+        guard let pipeline = debayerPipeline else { return nil }
+
+        let outputSize = raw.width * raw.height * 3 * MemoryLayout<UInt16>.size
+        guard let outputBuffer = device.makeBuffer(length: outputSize, options: .storageModeShared),
+              let commandBuffer = commandQueue.makeCommandBuffer(),
+              let encoder = commandBuffer.makeComputeCommandEncoder() else {
+            return nil
+        }
+
+        encoder.setComputePipelineState(pipeline)
+        encoder.setBuffer(raw.buffer, offset: 0, index: 0)
+        encoder.setBuffer(outputBuffer, offset: 0, index: 1)
+        var w = Int32(raw.width)
+        var h = Int32(raw.height)
+        var pat = Int32(pattern)
+        encoder.setBytes(&w, length: 4, index: 2)
+        encoder.setBytes(&h, length: 4, index: 3)
+        encoder.setBytes(&pat, length: 4, index: 4)
+
+        let threadGroupSize = MTLSize(width: 32, height: 32, depth: 1)
+        let threadGroups = MTLSize(
+            width: (raw.width + 31) / 32,
+            height: (raw.height + 31) / 32,
+            depth: 1
+        )
+        encoder.dispatchThreadgroups(threadGroups, threadsPerThreadgroup: threadGroupSize)
+        encoder.endEncoding()
+        commandBuffer.commit()
+        commandBuffer.waitUntilCompleted()
+
+        return DecodedImage(
+            buffer: outputBuffer,
+            width: raw.width,
+            height: raw.height,
+            channelCount: 3
+        )
     }
 
     // Set a pre-stretched, binned preview texture for instant display.

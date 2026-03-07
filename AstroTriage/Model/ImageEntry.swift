@@ -1,4 +1,4 @@
-// v0.8.0
+// v0.9.0
 import Foundation
 
 // Core data model representing a single astro image in the session
@@ -28,6 +28,7 @@ struct ImageEntry: Identifiable, Hashable {
     var frameType: String?     // LIGHT, FLAT, DARK, BIAS
     var focuserTemp: Double?
     var mount: String?
+    var bayerPattern: String?  // CFA pattern from BAYERPAT header (RGGB, GRBG, GBRG, BGGR)
     var subfolder: String      // Relative path from session root (empty if root)
     var fileSize: Int64?       // File size in bytes
 
