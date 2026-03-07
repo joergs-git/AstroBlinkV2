@@ -1,0 +1,45 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Xcode
+DerivedData/
+xcuserdata/
+*.xccheckout
+*.moved-aside
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+build/
+
+# SPM
+.build/
+.swiftpm/
+Package.resolved
+
+# Instruments
+*.trace
+
+# User-specific
+*.xcuserstate
+*.xcscmblueprint
+
+# Dev-only
+default.profraw
+.claude/
+
+# Test images (too large for git, even with LFS)
+TestImages/
+
+# Internal dev docs (not needed in public repo)
+CAVEATS.md
+LESSONS_LEARNED.md
+MEMORY.md
+PERFORMANCE.md
+RESOURCES.md
+TODO.md
+tasks/
+project.yml

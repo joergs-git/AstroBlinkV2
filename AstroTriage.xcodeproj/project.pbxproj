@@ -1,0 +1,607 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		1864DE963C0E5E7717212E46 /* FileListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6D16C070C8599AC5C5A265B /* FileListView.swift */; };
+		1D1723961ACDCF8669AA1478 /* IntegrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F98D55D2A66E2F51D5244BCF /* IntegrationTests.swift */; };
+		25F39B9B112136B825F99E0C /* ImageDecoderBridge in Frameworks */ = {isa = PBXBuildFile; productRef = 0823264441FF3A7874FE3975 /* ImageDecoderBridge */; };
+		2AC85F5C8AE08A1DB6A74261 /* KeyboardHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 763931350538CED5EA81290D /* KeyboardHandler.swift */; };
+		37DA495A008C7E13F6D23D6C /* HeaderInspectorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D45AA5729C0A57A6C12C9C2 /* HeaderInspectorView.swift */; };
+		390301387CB9257F1DAE9235 /* MetadataExtractor.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAC4AFD3D3784B02004BA98D /* MetadataExtractor.swift */; };
+		3AE8C59AED6435B5F41CA9AF /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24F8E2016E26D881862A1E76 /* ContentView.swift */; };
+		3D029D52F10611A437BC2B5F /* NINAFilenameParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 958EAAFB0801AA6BF89E7E57 /* NINAFilenameParser.swift */; };
+		5BEA8CB806944696DA8FF49D /* ImageEntry.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5A5655E4FCDB14E3F9CECE3 /* ImageEntry.swift */; };
+		5E675BB37EE91BCC5AA74C71 /* MetadataExtractorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 19E7CEF533FCAE62802CFC77 /* MetadataExtractorTests.swift */; };
+		7A69119E8C46AEEEC3903EDA /* TexturePool.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABAF1B6D447B16F3447CF29C /* TexturePool.swift */; };
+		7E8C4EF0CF4108B17C2096A8 /* ColumnDefinition.swift in Sources */ = {isa = PBXBuildFile; fileRef = F25FB10B9861BFEE190684C8 /* ColumnDefinition.swift */; };
+		8B9102B9DEB924145CD66AAA /* AstroTriageApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = D60FDB5923A652383E3ABEB7 /* AstroTriageApp.swift */; };
+		B54934C587552F12AB659721 /* PrefetchCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B4C4D1E3CA9608F6E41582A /* PrefetchCache.swift */; };
+		B6A89CE09C96403D52C0CAE5 /* MetalRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8840EA9D612D56DC3123EC77 /* MetalRenderer.swift */; };
+		B6FAD33DBA5A722B4EC6F6AA /* Shaders.metal in Sources */ = {isa = PBXBuildFile; fileRef = ADBD75B471EEBE3262306C84 /* Shaders.metal */; };
+		BD7A31D9AF626FB19873EC7E /* SessionOverviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D35D584AE1D7CFEB4B41638 /* SessionOverviewView.swift */; };
+		BFD9D646DC78249F8654CC1D /* PreviewGenerator.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0EFA1508203190F9C1216AE /* PreviewGenerator.swift */; };
+		C26CB03B2AE2C731BC2B72BF /* TriageViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4F0D3CE86492EF1F5EF6BB7 /* TriageViewModel.swift */; };
+		CC6E11E8FA4788135037A3CE /* NINAFilenameParserTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E291DE3DBC147FB649506D61 /* NINAFilenameParserTests.swift */; };
+		D8490084CA833D518635A281 /* ImageDecoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7AE6DE7943D690C501401C4C /* ImageDecoder.swift */; };
+		E85D3B8048F5775EF0C70BB9 /* DecoderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE83C9556D164ED7CC41C0FC /* DecoderTests.swift */; };
+		F13B387686D2B2C88DC14937 /* SessionScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7D54DB9FE9BF17CD5203F2D /* SessionScanner.swift */; };
+		F1ABC93BE5D945B448028500 /* SessionCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72BFE1A73BD5AD652BD34CB8 /* SessionCache.swift */; };
+		F47A29B58D39DCB30BDB290A /* ImageViewerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED760805A7C9C85AB7BB391E /* ImageViewerView.swift */; };
+		F94F15A86ED041565AB8DB76 /* STFCalculator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 40D54AA4B026ABD4997C7758 /* STFCalculator.swift */; };
+		FF242D8AC80D34562D5B296A /* DecodedImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C97DD4541DE740AC52CBFEC /* DecodedImage.swift */; };
+		FA3B7E2E1A4C8F9E00D12345 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = FA3B7E2D1A4C8F9E00D12345 /* Assets.xcassets */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		FE2150CFB31D0B94E4483ACD /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 8FA7FD3B876F5A0346C02F50 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 48734A500EEA092339F9345D;
+			remoteInfo = AstroTriage;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		19E7CEF533FCAE62802CFC77 /* MetadataExtractorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetadataExtractorTests.swift; sourceTree = "<group>"; };
+		1B4C4D1E3CA9608F6E41582A /* PrefetchCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrefetchCache.swift; sourceTree = "<group>"; };
+		1C26D1D4C5DFA7795B28D750 /* AstroTriageTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AstroTriageTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		24F8E2016E26D881862A1E76 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		40D54AA4B026ABD4997C7758 /* STFCalculator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = STFCalculator.swift; sourceTree = "<group>"; };
+		4B576ECA4D0080E5D97856E1 /* ImageDecoder */ = {isa = PBXFileReference; lastKnownFileType = folder; name = ImageDecoder; path = Packages/ImageDecoder; sourceTree = SOURCE_ROOT; };
+		5D45AA5729C0A57A6C12C9C2 /* HeaderInspectorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HeaderInspectorView.swift; sourceTree = "<group>"; };
+		72BFE1A73BD5AD652BD34CB8 /* SessionCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionCache.swift; sourceTree = "<group>"; };
+		763931350538CED5EA81290D /* KeyboardHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardHandler.swift; sourceTree = "<group>"; };
+		7AE6DE7943D690C501401C4C /* ImageDecoder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageDecoder.swift; sourceTree = "<group>"; };
+		8840EA9D612D56DC3123EC77 /* MetalRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetalRenderer.swift; sourceTree = "<group>"; };
+		8D35D584AE1D7CFEB4B41638 /* SessionOverviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionOverviewView.swift; sourceTree = "<group>"; };
+		958EAAFB0801AA6BF89E7E57 /* NINAFilenameParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NINAFilenameParser.swift; sourceTree = "<group>"; };
+		9C97DD4541DE740AC52CBFEC /* DecodedImage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DecodedImage.swift; sourceTree = "<group>"; };
+		ABAF1B6D447B16F3447CF29C /* TexturePool.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TexturePool.swift; sourceTree = "<group>"; };
+		ADBD75B471EEBE3262306C84 /* Shaders.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = Shaders.metal; sourceTree = "<group>"; };
+		B4F0D3CE86492EF1F5EF6BB7 /* TriageViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TriageViewModel.swift; sourceTree = "<group>"; };
+		B6D16C070C8599AC5C5A265B /* FileListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileListView.swift; sourceTree = "<group>"; };
+		B7D54DB9FE9BF17CD5203F2D /* SessionScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionScanner.swift; sourceTree = "<group>"; };
+		C0EFA1508203190F9C1216AE /* PreviewGenerator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreviewGenerator.swift; sourceTree = "<group>"; };
+		C5A5655E4FCDB14E3F9CECE3 /* ImageEntry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageEntry.swift; sourceTree = "<group>"; };
+		D60FDB5923A652383E3ABEB7 /* AstroTriageApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AstroTriageApp.swift; sourceTree = "<group>"; };
+		DE83C9556D164ED7CC41C0FC /* DecoderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DecoderTests.swift; sourceTree = "<group>"; };
+		E291DE3DBC147FB649506D61 /* NINAFilenameParserTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NINAFilenameParserTests.swift; sourceTree = "<group>"; };
+		EAC4AFD3D3784B02004BA98D /* MetadataExtractor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetadataExtractor.swift; sourceTree = "<group>"; };
+		ED760805A7C9C85AB7BB391E /* ImageViewerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageViewerView.swift; sourceTree = "<group>"; };
+		F25FB10B9861BFEE190684C8 /* ColumnDefinition.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ColumnDefinition.swift; sourceTree = "<group>"; };
+		F98D55D2A66E2F51D5244BCF /* IntegrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IntegrationTests.swift; sourceTree = "<group>"; };
+		FA3B7E2D1A4C8F9E00D12345 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		FE4AA1827176F2392E89D989 /* AstroTriage.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AstroTriage.app; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		BC786999CCE07E4A537B72CA /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				25F39B9B112136B825F99E0C /* ImageDecoderBridge in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		1DBE6C83A78086623B08FB68 /* Tests */ = {
+			isa = PBXGroup;
+			children = (
+				DE83C9556D164ED7CC41C0FC /* DecoderTests.swift */,
+				F98D55D2A66E2F51D5244BCF /* IntegrationTests.swift */,
+				19E7CEF533FCAE62802CFC77 /* MetadataExtractorTests.swift */,
+				E291DE3DBC147FB649506D61 /* NINAFilenameParserTests.swift */,
+			);
+			path = Tests;
+			sourceTree = "<group>";
+		};
+		363A9B34E9ED9865E9412A9B /* Metal */ = {
+			isa = PBXGroup;
+			children = (
+				8840EA9D612D56DC3123EC77 /* MetalRenderer.swift */,
+				C0EFA1508203190F9C1216AE /* PreviewGenerator.swift */,
+				ADBD75B471EEBE3262306C84 /* Shaders.metal */,
+				40D54AA4B026ABD4997C7758 /* STFCalculator.swift */,
+				ABAF1B6D447B16F3447CF29C /* TexturePool.swift */,
+			);
+			path = Metal;
+			sourceTree = "<group>";
+		};
+		4AB3F99975F4F5A1206B259A /* Bridge */ = {
+			isa = PBXGroup;
+			children = (
+				7AE6DE7943D690C501401C4C /* ImageDecoder.swift */,
+			);
+			path = Bridge;
+			sourceTree = "<group>";
+		};
+		663E3E565F372ECFB7CE9527 /* App */ = {
+			isa = PBXGroup;
+			children = (
+				D60FDB5923A652383E3ABEB7 /* AstroTriageApp.swift */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		7D10F8610E45AA5474325947 = {
+			isa = PBXGroup;
+			children = (
+				C5744DD07BA58953FC14B6A7 /* AstroTriage */,
+				F6B71EE5C0E01134AF27294B /* Packages */,
+				1DBE6C83A78086623B08FB68 /* Tests */,
+				F7AF623283DC11315A83F1B4 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		8B6572146F03A4BF20670F99 /* Engine */ = {
+			isa = PBXGroup;
+			children = (
+				EAC4AFD3D3784B02004BA98D /* MetadataExtractor.swift */,
+				958EAAFB0801AA6BF89E7E57 /* NINAFilenameParser.swift */,
+				1B4C4D1E3CA9608F6E41582A /* PrefetchCache.swift */,
+				72BFE1A73BD5AD652BD34CB8 /* SessionCache.swift */,
+				B7D54DB9FE9BF17CD5203F2D /* SessionScanner.swift */,
+				B4F0D3CE86492EF1F5EF6BB7 /* TriageViewModel.swift */,
+			);
+			path = Engine;
+			sourceTree = "<group>";
+		};
+		C5744DD07BA58953FC14B6A7 /* AstroTriage */ = {
+			isa = PBXGroup;
+			children = (
+				663E3E565F372ECFB7CE9527 /* App */,
+				FA3B7E2D1A4C8F9E00D12345 /* Assets.xcassets */,
+				4AB3F99975F4F5A1206B259A /* Bridge */,
+				8B6572146F03A4BF20670F99 /* Engine */,
+				363A9B34E9ED9865E9412A9B /* Metal */,
+				EDBF5FF129EFE56886D3F2A2 /* Model */,
+				D30D71B63D6BDC840F33D230 /* UI */,
+			);
+			path = AstroTriage;
+			sourceTree = "<group>";
+		};
+		D30D71B63D6BDC840F33D230 /* UI */ = {
+			isa = PBXGroup;
+			children = (
+				24F8E2016E26D881862A1E76 /* ContentView.swift */,
+				B6D16C070C8599AC5C5A265B /* FileListView.swift */,
+				5D45AA5729C0A57A6C12C9C2 /* HeaderInspectorView.swift */,
+				ED760805A7C9C85AB7BB391E /* ImageViewerView.swift */,
+				763931350538CED5EA81290D /* KeyboardHandler.swift */,
+				8D35D584AE1D7CFEB4B41638 /* SessionOverviewView.swift */,
+			);
+			path = UI;
+			sourceTree = "<group>";
+		};
+		EDBF5FF129EFE56886D3F2A2 /* Model */ = {
+			isa = PBXGroup;
+			children = (
+				F25FB10B9861BFEE190684C8 /* ColumnDefinition.swift */,
+				9C97DD4541DE740AC52CBFEC /* DecodedImage.swift */,
+				C5A5655E4FCDB14E3F9CECE3 /* ImageEntry.swift */,
+			);
+			path = Model;
+			sourceTree = "<group>";
+		};
+		F6B71EE5C0E01134AF27294B /* Packages */ = {
+			isa = PBXGroup;
+			children = (
+				4B576ECA4D0080E5D97856E1 /* ImageDecoder */,
+			);
+			path = Packages;
+			sourceTree = "<group>";
+		};
+		F7AF623283DC11315A83F1B4 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				FE4AA1827176F2392E89D989 /* AstroTriage.app */,
+				1C26D1D4C5DFA7795B28D750 /* AstroTriageTests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		48734A500EEA092339F9345D /* AstroTriage */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 777D8FD4D1E3C7F66666BDD5 /* Build configuration list for PBXNativeTarget "AstroTriage" */;
+			buildPhases = (
+				A7851859174A232D4B448EBC /* Sources */,
+				BC786999CCE07E4A537B72CA /* Frameworks */,
+				FA3B7E2F1A4C8F9E00D12345 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = AstroTriage;
+			packageProductDependencies = (
+				0823264441FF3A7874FE3975 /* ImageDecoderBridge */,
+			);
+			productName = AstroTriage;
+			productReference = FE4AA1827176F2392E89D989 /* AstroTriage.app */;
+			productType = "com.apple.product-type.application";
+		};
+		C9CA1CF89C117CC746881E70 /* AstroTriageTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 2293C42237BDB167245F2A7C /* Build configuration list for PBXNativeTarget "AstroTriageTests" */;
+			buildPhases = (
+				1B25968F7C798A700A0133BE /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				26145C04E0A9F2CC0387181A /* PBXTargetDependency */,
+			);
+			name = AstroTriageTests;
+			packageProductDependencies = (
+			);
+			productName = AstroTriageTests;
+			productReference = 1C26D1D4C5DFA7795B28D750 /* AstroTriageTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		8FA7FD3B876F5A0346C02F50 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1600;
+				TargetAttributes = {
+				};
+			};
+			buildConfigurationList = FEB5FF5E10BB7585AB8A2D44 /* Build configuration list for PBXProject "AstroTriage" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = 7D10F8610E45AA5474325947;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				711A8E73ED2A7AA4A852AE7C /* XCLocalSwiftPackageReference "Packages/ImageDecoder" */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = F7AF623283DC11315A83F1B4 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				48734A500EEA092339F9345D /* AstroTriage */,
+				C9CA1CF89C117CC746881E70 /* AstroTriageTests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		FA3B7E2F1A4C8F9E00D12345 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				FA3B7E2E1A4C8F9E00D12345 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		1B25968F7C798A700A0133BE /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				E85D3B8048F5775EF0C70BB9 /* DecoderTests.swift in Sources */,
+				1D1723961ACDCF8669AA1478 /* IntegrationTests.swift in Sources */,
+				5E675BB37EE91BCC5AA74C71 /* MetadataExtractorTests.swift in Sources */,
+				CC6E11E8FA4788135037A3CE /* NINAFilenameParserTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A7851859174A232D4B448EBC /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				8B9102B9DEB924145CD66AAA /* AstroTriageApp.swift in Sources */,
+				7E8C4EF0CF4108B17C2096A8 /* ColumnDefinition.swift in Sources */,
+				3AE8C59AED6435B5F41CA9AF /* ContentView.swift in Sources */,
+				FF242D8AC80D34562D5B296A /* DecodedImage.swift in Sources */,
+				1864DE963C0E5E7717212E46 /* FileListView.swift in Sources */,
+				37DA495A008C7E13F6D23D6C /* HeaderInspectorView.swift in Sources */,
+				D8490084CA833D518635A281 /* ImageDecoder.swift in Sources */,
+				5BEA8CB806944696DA8FF49D /* ImageEntry.swift in Sources */,
+				F47A29B58D39DCB30BDB290A /* ImageViewerView.swift in Sources */,
+				2AC85F5C8AE08A1DB6A74261 /* KeyboardHandler.swift in Sources */,
+				390301387CB9257F1DAE9235 /* MetadataExtractor.swift in Sources */,
+				B6A89CE09C96403D52C0CAE5 /* MetalRenderer.swift in Sources */,
+				3D029D52F10611A437BC2B5F /* NINAFilenameParser.swift in Sources */,
+				B54934C587552F12AB659721 /* PrefetchCache.swift in Sources */,
+				BFD9D646DC78249F8654CC1D /* PreviewGenerator.swift in Sources */,
+				F94F15A86ED041565AB8DB76 /* STFCalculator.swift in Sources */,
+				F1ABC93BE5D945B448028500 /* SessionCache.swift in Sources */,
+				BD7A31D9AF626FB19873EC7E /* SessionOverviewView.swift in Sources */,
+				F13B387686D2B2C88DC14937 /* SessionScanner.swift in Sources */,
+				B6FAD33DBA5A722B4EC6F6AA /* Shaders.metal in Sources */,
+				7A69119E8C46AEEEC3903EDA /* TexturePool.swift in Sources */,
+				C26CB03B2AE2C731BC2B72BF /* TriageViewModel.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		26145C04E0A9F2CC0387181A /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 48734A500EEA092339F9345D /* AstroTriage */;
+			targetProxy = FE2150CFB31D0B94E4483ACD /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		4BDF4858B30872BE8256352F /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = "";
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_APP_SANDBOX = NO;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = AstroBlinkV2;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.photography";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MARKETING_VERSION = 0.9.4;
+				METAL_COMPILER_FLAGS = "";
+				OTHER_LDFLAGS = (
+					"-lz",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.joergsflow.AstroBlinkV2;
+				SDKROOT = macosx;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OBJC_INTEROP_MODE = objcxx;
+			};
+			name = Release;
+		};
+		4CB377022258544325F5E1F4 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.joergsflow.AstroTriageTests;
+				SDKROOT = macosx;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/AstroTriage.app/Contents/MacOS/AstroTriage";
+			};
+			name = Debug;
+		};
+		71B1F3DE782F8539CE39F9EE /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "c++17";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 13.3;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OBJC_INTEROP_MODE = objcxx;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.9;
+			};
+			name = Debug;
+		};
+		8F7B279353E01CEB0D564C83 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.joergsflow.AstroTriageTests;
+				SDKROOT = macosx;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/AstroTriage.app/Contents/MacOS/AstroTriage";
+			};
+			name = Release;
+		};
+		9349123B886226CEF09E77CA /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = "";
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_APP_SANDBOX = NO;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = AstroBlinkV2;
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.photography";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MARKETING_VERSION = 0.9.4;
+				METAL_COMPILER_FLAGS = "";
+				OTHER_LDFLAGS = (
+					"-lz",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.joergsflow.AstroBlinkV2;
+				SDKROOT = macosx;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OBJC_INTEROP_MODE = objcxx;
+			};
+			name = Debug;
+		};
+		EEFC4036E724F4C5C0FAE09E /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "c++17";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 13.3;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OBJC_INTEROP_MODE = objcxx;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.9;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		2293C42237BDB167245F2A7C /* Build configuration list for PBXNativeTarget "AstroTriageTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				4CB377022258544325F5E1F4 /* Debug */,
+				8F7B279353E01CEB0D564C83 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		777D8FD4D1E3C7F66666BDD5 /* Build configuration list for PBXNativeTarget "AstroTriage" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				9349123B886226CEF09E77CA /* Debug */,
+				4BDF4858B30872BE8256352F /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		FEB5FF5E10BB7585AB8A2D44 /* Build configuration list for PBXProject "AstroTriage" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				71B1F3DE782F8539CE39F9EE /* Debug */,
+				EEFC4036E724F4C5C0FAE09E /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		711A8E73ED2A7AA4A852AE7C /* XCLocalSwiftPackageReference "Packages/ImageDecoder" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/ImageDecoder;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		0823264441FF3A7874FE3975 /* ImageDecoderBridge */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = ImageDecoderBridge;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = 8FA7FD3B876F5A0346C02F50 /* Project object */;
+}

@@ -1,0 +1,324 @@
+// v0.9.4
+import SwiftUI
+
+@main
+struct AstroBlinkV2App: App {
+    // Use NSApplicationDelegateAdaptor so we can customize the About panel
+    @NSApplicationDelegateAdaptor(AstroBlinkV2AppDelegate.self) var appDelegate
+
+    var body: some Scene {
+        WindowGroup {
+            ContentView()
+        }
+        .windowStyle(.titleBar)
+        .defaultSize(width: 1400, height: 900)
+        .commands {
+            // Replace default About menu item
+            CommandGroup(replacing: .appInfo) {
+                Button("About AstroBlinkV2") {
+                    AstroBlinkV2AppDelegate.showAboutPanel()
+                }
+            }
+
+            // File menu
+            CommandGroup(replacing: .newItem) {
+                Button("Open Folder...") {
+                    NotificationCenter.default.post(name: .openFolderRequest, object: nil)
+                }
+                .keyboardShortcut("o", modifiers: .command)
+            }
+
+            // Help menu
+            CommandGroup(replacing: .help) {
+                Button("AstroBlinkV2 Help") {
+                    HelpWindowController.shared.showWindow(nil)
+                }
+                .keyboardShortcut("?", modifiers: .command)
+            }
+        }
+    }
+}
+
+// Custom app delegate for About panel and cleanup
+class AstroBlinkV2AppDelegate: NSObject, NSApplicationDelegate {
+
+    // Clean up all caches when the app quits so nothing piles up on disk
+    func applicationWillTerminate(_ notification: Notification) {
+        SessionCache.cleanupAllCaches()
+    }
+
+    static func showAboutPanel() {
+        let credits = NSMutableAttributedString()
+
+        let normalAttrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 11),
+            .foregroundColor: NSColor.secondaryLabelColor
+        ]
+        let linkAttrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 11),
+            .foregroundColor: NSColor.linkColor,
+            .cursor: NSCursor.pointingHand
+        ]
+
+        credits.append(NSAttributedString(string: "by joergsflow\n", attributes: [
+            .font: NSFont.systemFont(ofSize: 12, weight: .medium),
+            .foregroundColor: NSColor.labelColor
+        ]))
+        credits.append(NSAttributedString(string: "joergsflow@gmail.com\n\n", attributes: normalAttrs))
+
+        let astrobinLink = NSMutableAttributedString(string: "Astrobin", attributes: linkAttrs)
+        astrobinLink.addAttribute(.link, value: URL(string: "https://app.astrobin.com/u/joergsflow#gallery")!, range: NSRange(location: 0, length: astrobinLink.length))
+        credits.append(astrobinLink)
+        credits.append(NSAttributedString(string: "  ·  ", attributes: normalAttrs))
+
+        let instaLink = NSMutableAttributedString(string: "Instagram", attributes: linkAttrs)
+        instaLink.addAttribute(.link, value: URL(string: "https://www.instagram.com/joergsflow/")!, range: NSRange(location: 0, length: instaLink.length))
+        credits.append(instaLink)
+        credits.append(NSAttributedString(string: "  ·  ", attributes: normalAttrs))
+
+        let githubLink = NSMutableAttributedString(string: "GitHub", attributes: linkAttrs)
+        githubLink.addAttribute(.link, value: URL(string: "https://github.com/joergsflow/AstroBlinkV2")!, range: NSRange(location: 0, length: githubLink.length))
+        credits.append(githubLink)
+
+        let italicDescriptor = NSFontDescriptor.preferredFontDescriptor(forTextStyle: .body).withSymbolicTraits(.italic)
+        let italicFont = NSFont(descriptor: italicDescriptor, size: 10) ?? NSFont.systemFont(ofSize: 10)
+        credits.append(NSAttributedString(string: "\n\nEnhanced and Inspired by PixInsight's Blink Tool", attributes: [
+            .font: italicFont,
+            .foregroundColor: NSColor.secondaryLabelColor
+        ]))
+
+        // Center all text
+        let paragraphStyle = NSMutableParagraphStyle()
+        paragraphStyle.alignment = .center
+        credits.addAttribute(.paragraphStyle, value: paragraphStyle, range: NSRange(location: 0, length: credits.length))
+
+        NSApp.orderFrontStandardAboutPanel(options: [
+            .applicationName: "AstroBlinkV2",
+            .applicationVersion: "0.9.3",
+            .version: "Build 1",
+            .credits: credits
+        ])
+    }
+}
+
+// Notification for Cmd+O from menu bar
+extension Notification.Name {
+    static let openFolderRequest = Notification.Name("openFolderRequest")
+}
+
+// AppDelegate extension for help window
+class AppDelegate: NSObject {
+    @objc static func showHelpWindow() {
+        HelpWindowController.shared.showWindow(nil)
+    }
+}
+
+// Dedicated help window with all features and shortcuts
+class HelpWindowController: NSWindowController {
+    static let shared = HelpWindowController()
+
+    init() {
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 520, height: 720),
+            styleMask: [.titled, .closable, .resizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = "AstroBlinkV2 v0.9.4 — Quick Reference"
+        window.center()
+        window.isReleasedWhenClosed = false
+        super.init(window: window)
+
+        let hostingView = NSHostingView(rootView: HelpContentView())
+        window.contentView = hostingView
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) not implemented")
+    }
+}
+
+// SwiftUI content for the help window
+struct HelpContentView: View {
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                // Header
+                VStack(spacing: 4) {
+                    Text("AstroBlinkV2")
+                        .font(.system(size: 28, weight: .bold))
+                    Text("Fast Visual Culling for Astrophotography Sessions")
+                        .font(.system(size: 14))
+                        .foregroundColor(.secondary)
+                    Text("Enhanced and Inspired by PixInsight's Blink Tool")
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
+                        .italic()
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.bottom, 8)
+
+                Divider()
+
+                // How to Work with AstroBlinkV2 — shown first so users see workflow immediately
+                sectionHeader("How to Use AstroBlinkV2")
+
+                Text("Open a folder with your FITS or XISF subs and blink through them using the arrow keys — fast key repeat lets you scan hundreds of frames in seconds. When you spot a bad sub (clouds, tracking errors, planes), hit Space to mark it for deletion. Use K to skip over already-marked frames so you can focus on the remaining candidates. When you're done, press Cmd+⌫ to move all marked files into a PRE-DELETE subfolder — nothing is ever permanently deleted, so you can always recover. Check the Session Overview for a quick integration summary and copy the Fact Sheet for your Astrobin or social media post. Have fun and clear skies!")
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Divider()
+
+                // Keyboard Shortcuts
+                sectionHeader("Keyboard Shortcuts")
+
+                shortcutRow("←  →", "Navigate previous / next image (wraps around)")
+                shortcutRow("Space", "Toggle pre-delete mark (single or multi-selection)")
+                shortcutRow("Cmd + ⌫", "Move marked files to PRE-DELETE folder")
+                shortcutRow("S", "Toggle stretch mode: Auto STF ↔ Locked STF")
+                shortcutRow("K", "Toggle skip-marked: arrow keys skip over marked images")
+                shortcutRow("H", "Toggle hide-marked: hide marked images from the list")
+                shortcutRow("I", "Toggle FITS/XISF header inspector (floating window)")
+                shortcutRow("Double-click", "Reset zoom to fit-to-view")
+                shortcutRow("Cmd + O", "Open folder containing FITS/XISF images")
+
+                Divider()
+
+                // Zoom & Navigation
+                sectionHeader("Zoom & Pan")
+
+                featureRow("Click + drag right", "Zoom in (Photoshop-style)")
+                featureRow("Click + drag left", "Zoom out")
+                featureRow("Double-click image", "Reset to fit-to-view")
+                featureRow("Trackpad pinch", "Zoom in/out")
+                featureRow("Scroll wheel", "Pan when zoomed in")
+
+                Divider()
+
+                // STF Stretch
+                sectionHeader("STF Auto-Stretch")
+
+                Text("PixInsight-compatible Screen Transfer Function makes raw linear data visible.")
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
+
+                featureRow("Auto STF (default)", "Each image gets its own optimal stretch — compare sharpness, focus, stars")
+                featureRow("Locked STF (press S)", "Freeze current stretch params for all images — compare brightness, signal depth, gradients")
+                Text("Status bar shows current mode. Orange = Locked.")
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+                    .italic()
+
+                Divider()
+
+                // File List
+                sectionHeader("File List & Sorting")
+
+                featureRow("Click column header", "Sort by that column (toggle asc/desc)")
+                featureRow("Drag column to reorder", "Column order = sort priority (left to right)")
+                featureRow("Shift/Cmd + click rows", "Multi-select for bulk marking")
+                featureRow("Checkbox / Space", "Mark files for pre-deletion")
+                featureRow("Right-click row", "Copy filename, path, or full path")
+
+                Divider()
+
+                // Triage Workflow
+                sectionHeader("Triage Workflow")
+
+                featureRow("Space — Mark/Unmark", "Toggle pre-delete mark on selected images")
+                featureRow("Cmd+⌫ — Move to PRE-DELETE", "Move all marked files to PRE-DELETE folder")
+                featureRow("K — Skip marked", "Arrow keys skip over marked images during blinking")
+                featureRow("H — Hide marked", "Completely hide marked images from the file list")
+                featureRow("Session Overview", "Floating window with per-filter statistics + forum copy")
+                featureRow("Filter statistics", "Bottom bar shows per-filter count and total exposure")
+
+                Text("Files are never permanently deleted. Marked files are moved to a PRE-DELETE subfolder for manual review.")
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+                    .italic()
+
+                Divider()
+
+                // Supported Formats
+                sectionHeader("Supported Formats")
+
+                featureRow("XISF", "Uncompressed, LZ4, LZ4HC, zlib, ByteShuffle")
+                featureRow("FITS", "Uncompressed, fpack (Rice, GZIP)")
+                Text("Metadata parsed from NINA filenames and FITS/XISF headers.")
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+
+                Divider()
+
+                // Network
+                sectionHeader("Network Volumes")
+
+                Text("Images from network drives (NAS, SMB) are automatically downloaded to a local cache for fast browsing. A progress indicator shows download status.")
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
+
+                Divider()
+
+                // Author / Copyright
+                VStack(spacing: 4) {
+                    Text("by joergsflow")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(.primary)
+
+                    Text("joergsflow@gmail.com")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+
+                    HStack(spacing: 16) {
+                        Link("Astrobin", destination: URL(string: "https://app.astrobin.com/u/joergsflow#gallery")!)
+                            .font(.system(size: 11))
+                        Link("Instagram", destination: URL(string: "https://www.instagram.com/joergsflow/")!)
+                            .font(.system(size: 11))
+                        Link("GitHub", destination: URL(string: "https://github.com/joergsflow/AstroBlinkV2")!)
+                            .font(.system(size: 11))
+                    }
+
+                    Text("© 2026 joergsflow. All rights reserved.")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.top, 4)
+
+                Spacer(minLength: 16)
+            }
+            .padding(24)
+            .textSelection(.enabled)
+        }
+    }
+
+    private func sectionHeader(_ title: String) -> some View {
+        Text(title)
+            .font(.system(size: 15, weight: .semibold))
+    }
+
+    private func shortcutRow(_ key: String, _ description: String) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Text(key)
+                .font(.system(size: 12, weight: .medium, design: .monospaced))
+                .frame(width: 120, alignment: .trailing)
+                .foregroundColor(.accentColor)
+            Text(description)
+                .font(.system(size: 12))
+                .foregroundColor(.primary)
+        }
+    }
+
+    private func featureRow(_ feature: String, _ description: String) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Text(feature)
+                .font(.system(size: 12, weight: .medium))
+                .frame(width: 160, alignment: .trailing)
+                .foregroundColor(.primary)
+            Text(description)
+                .font(.system(size: 12))
+                .foregroundColor(.secondary)
+        }
+    }
+}
