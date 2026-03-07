@@ -13,6 +13,7 @@ Fast visual culling for astrophotography sessions. Blink through hundreds of FIT
 
 **Key Features:**
 - Metal GPU rendering with PixInsight-compatible STF auto-stretch
+- Auto-debayer for OSC (one-shot color) cameras — RGGB, GRBG, GBRG, BGGR patterns
 - Keyboard-first workflow: arrow keys to blink, Space to mark, Cmd+Backspace to pre-delete
 - Full NINA filename parsing and FITS/XISF header extraction
 - Session Overview with per-filter integration times and Fact Sheet generator
@@ -34,7 +35,9 @@ A simple, focused viewer for astronomical image files on iPhone and iPad. Open F
 **Key Features:**
 - Opens FITS and XISF files directly from Files, Safari, AirDrop, or other apps
 - PixInsight-compatible STF auto-stretch for proper visualization of linear data
-- Pinch-to-zoom (up to 10x) with smooth pan
+- Adjustable stretch strength and unsharp mask sharpening sliders
+- Auto-debayer for OSC (one-shot color) cameras — RGGB, GRBG, GBRG, BGGR patterns
+- Pinch-to-zoom (up to 10x) with smooth pan — zoom preserved during adjustments
 - FITS/XISF header inspector showing all keywords with important ones highlighted
 - Save to Photos as bin2 JPEG (stretched, half-resolution for sharing)
 - Supports all common compression: LZ4, LZ4HC, zlib, zstd, fpack (Rice, GZIP)
