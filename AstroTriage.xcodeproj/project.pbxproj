@@ -58,6 +58,7 @@
 		72BFE1A73BD5AD652BD34CB8 /* SessionCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionCache.swift; sourceTree = "<group>"; };
 		763931350538CED5EA81290D /* KeyboardHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardHandler.swift; sourceTree = "<group>"; };
 		7AE6DE7943D690C501401C4C /* ImageDecoder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageDecoder.swift; sourceTree = "<group>"; };
+		7EA258813A0F669A15FDE38A /* AstroTriage.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = AstroTriage.entitlements; sourceTree = "<group>"; };
 		8840EA9D612D56DC3123EC77 /* MetalRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetalRenderer.swift; sourceTree = "<group>"; };
 		8D35D584AE1D7CFEB4B41638 /* SessionOverviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionOverviewView.swift; sourceTree = "<group>"; };
 		958EAAFB0801AA6BF89E7E57 /* NINAFilenameParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NINAFilenameParser.swift; sourceTree = "<group>"; };
@@ -164,6 +165,7 @@
 				EDBF5FF129EFE56886D3F2A2 /* Model */,
 				D30D71B63D6BDC840F33D230 /* UI */,
 				AE4E059ADDE28F88AF19A8DF /* Assets.xcassets */,
+				7EA258813A0F669A15FDE38A /* AstroTriage.entitlements */,
 			);
 			path = AstroTriage;
 			sourceTree = "<group>";
@@ -258,6 +260,10 @@
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1600;
 				TargetAttributes = {
+					48734A500EEA092339F9345D = {
+						DevelopmentTeam = FDSVBU33S8;
+						ProvisioningStyle = Automatic;
+					};
 				};
 			};
 			buildConfigurationList = FEB5FF5E10BB7585AB8A2D44 /* Build configuration list for PBXProject "AstroTriage" */;
@@ -350,13 +356,16 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				CODE_SIGN_ENTITLEMENTS = "";
+				CODE_SIGN_ENTITLEMENTS = AstroTriage/AstroTriage.entitlements;
+				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
-				ENABLE_APP_SANDBOX = NO;
+				DEVELOPMENT_TEAM = FDSVBU33S8;
+				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = AstroTriage;
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.photography";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -367,7 +376,8 @@
 				OTHER_LDFLAGS = (
 					"-lz",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.joergsflow.AstroTriage;
+				PRODUCT_BUNDLE_IDENTIFIER = com.joergsflow.AstroBlinkV2;
+				PRODUCT_NAME = AstroBlinkV2;
 				SDKROOT = macosx;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_OBJC_INTEROP_MODE = objcxx;
@@ -476,13 +486,16 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				CODE_SIGN_ENTITLEMENTS = "";
+				CODE_SIGN_ENTITLEMENTS = AstroTriage/AstroTriage.entitlements;
+				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
 				CURRENT_PROJECT_VERSION = 1;
-				ENABLE_APP_SANDBOX = NO;
+				DEVELOPMENT_TEAM = FDSVBU33S8;
+				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = AstroTriage;
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.photography";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -493,7 +506,8 @@
 				OTHER_LDFLAGS = (
 					"-lz",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = com.joergsflow.AstroTriage;
+				PRODUCT_BUNDLE_IDENTIFIER = com.joergsflow.AstroBlinkV2;
+				PRODUCT_NAME = AstroBlinkV2;
 				SDKROOT = macosx;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_OBJC_INTEROP_MODE = objcxx;

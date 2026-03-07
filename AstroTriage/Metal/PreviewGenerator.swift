@@ -1,4 +1,4 @@
-// v0.7.0
+// v0.8.0
 import Foundation
 import Metal
 
@@ -19,6 +19,12 @@ class PreviewGenerator {
     let device: MTLDevice
     let commandQueue: MTLCommandQueue
     let computePipeline: MTLComputePipelineState
+    let debayerPipeline: MTLComputePipelineState?
+
+    // Bayer pattern string to shader index mapping
+    private static let bayerPatternMap: [String: Int] = [
+        "RGGB": 0, "GRBG": 1, "GBRG": 2, "BGGR": 3
+    ]
 
     init?(device: MTLDevice) {
         self.device = device
@@ -32,6 +38,59 @@ class PreviewGenerator {
 
         self.commandQueue = queue
         self.computePipeline = pipeline
+
+        // Load debayer kernel (optional)
+        if let debayerFunc = library.makeFunction(name: "debayer_bilinear"),
+           let debayerPipe = try? device.makeComputePipelineState(function: debayerFunc) {
+            self.debayerPipeline = debayerPipe
+        } else {
+            self.debayerPipeline = nil
+        }
+    }
+
+    // Debayer a mono CFA image to RGB using Metal compute
+    // Returns a new DecodedImage with channelCount=3, or nil on failure
+    func debayer(image: DecodedImage, pattern: String) -> DecodedImage? {
+        guard let pipeline = debayerPipeline,
+              image.channelCount == 1,
+              let patternIndex = Self.bayerPatternMap[pattern.uppercased()] else {
+            return nil
+        }
+
+        let outputSize = image.width * image.height * 3 * MemoryLayout<UInt16>.size
+        guard let outputBuffer = device.makeBuffer(length: outputSize, options: .storageModeShared),
+              let commandBuffer = commandQueue.makeCommandBuffer(),
+              let encoder = commandBuffer.makeComputeCommandEncoder() else {
+            return nil
+        }
+
+        encoder.setComputePipelineState(pipeline)
+        encoder.setBuffer(image.buffer, offset: 0, index: 0)
+        encoder.setBuffer(outputBuffer, offset: 0, index: 1)
+        var w = Int32(image.width)
+        var h = Int32(image.height)
+        var pat = Int32(patternIndex)
+        encoder.setBytes(&w, length: 4, index: 2)
+        encoder.setBytes(&h, length: 4, index: 3)
+        encoder.setBytes(&pat, length: 4, index: 4)
+
+        let threadGroupSize = MTLSize(width: 32, height: 32, depth: 1)
+        let threadGroups = MTLSize(
+            width: (image.width + 31) / 32,
+            height: (image.height + 31) / 32,
+            depth: 1
+        )
+        encoder.dispatchThreadgroups(threadGroups, threadsPerThreadgroup: threadGroupSize)
+        encoder.endEncoding()
+        commandBuffer.commit()
+        commandBuffer.waitUntilCompleted()
+
+        return DecodedImage(
+            buffer: outputBuffer,
+            width: image.width,
+            height: image.height,
+            channelCount: 3
+        )
     }
 
     // Generate a pre-stretched, bin2x preview texture from raw decoded image data.

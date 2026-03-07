@@ -1,4 +1,4 @@
-// v0.7.0
+// v0.8.0
 import Foundation
 import Metal
 
@@ -34,6 +34,13 @@ class PrefetchCache {
         images: [ImageEntry],
         onProgress: @escaping (Int, Int) -> Void
     ) {
+        // Build lookup for Bayer patterns by URL (needed for debayer in background)
+        let bayerPatterns: [URL: String] = Dictionary(
+            uniqueKeysWithValues: images.compactMap { entry in
+                guard let pat = entry.bayerPattern else { return nil }
+                return (entry.url, pat)
+            }
+        )
         prefetchTask?.cancel()
 
         let device = self.device
@@ -69,14 +76,24 @@ class PrefetchCache {
                                 return (entry.url, nil)
                             }
 
-                            // 2. Compute STF params (from full-res data)
-                            let stfParams = STFCalculator.calculate(from: decoded)
+                            // 2. Debayer if mono CFA image with Bayer pattern detected
+                            let imageForSTF: DecodedImage
+                            if decoded.channelCount == 1,
+                               let pattern = bayerPatterns[entry.url] {
+                                let generator = await self?.previewGenerator
+                                imageForSTF = generator?.debayer(image: decoded, pattern: pattern) ?? decoded
+                            } else {
+                                imageForSTF = decoded
+                            }
 
-                            // 3. Bin2x + STF stretch → BGRA8 texture
+                            // 3. Compute STF params (from debayered data if applicable)
+                            let stfParams = STFCalculator.calculate(from: imageForSTF)
+
+                            // 4. Bin2x + STF stretch → BGRA8 texture
                             let generator = await self?.previewGenerator
-                            let preview = generator?.generatePreview(from: decoded, stfParams: stfParams)
+                            let preview = generator?.generatePreview(from: imageForSTF, stfParams: stfParams)
 
-                            // decoded (raw uint16 buffer) is released here — only the
+                            // decoded + imageForSTF buffers released here — only the
                             // small BGRA8 texture survives in the cache
                             return (entry.url, preview)
                         }
