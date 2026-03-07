@@ -15,6 +15,9 @@ xcuserdata/
 *.dSYM
 build/
 
+# Generated Xcode projects (xcodegen)
+AstroFileViewer-iOS/AstroFileViewer.xcodeproj/
+
 # SPM
 .build/
 .swiftpm/
@@ -42,4 +45,4 @@ PERFORMANCE.md
 RESOURCES.md
 TODO.md
 tasks/
-project.yml
+/project.yml
