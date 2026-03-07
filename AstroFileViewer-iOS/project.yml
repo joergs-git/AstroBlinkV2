@@ -1,0 +1,77 @@
+name: AstroFileViewer
+options:
+  bundleIdPrefix: com.joergsflow
+  deploymentTarget:
+    iOS: "16.4"
+  xcodeVersion: "15.0"
+
+packages:
+  ImageDecoder:
+    path: Packages/ImageDecoder
+
+targets:
+  AstroFileViewer:
+    type: application
+    platform: iOS
+    sources: [AstroFileViewer]
+    dependencies:
+      - package: ImageDecoder
+        product: ImageDecoderBridge
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.joergsflow.AstroFileViewer
+        MARKETING_VERSION: "1.0.0"
+        CURRENT_PROJECT_VERSION: "1"
+        SWIFT_VERSION: "5.9"
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD: "NO"
+    info:
+      path: AstroFileViewer/Info.plist
+      properties:
+        ITSAppUsesNonExemptEncryption: false
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+          - UIInterfaceOrientationPortraitUpsideDown
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+          - UIInterfaceOrientationPortraitUpsideDown
+        NSPhotoLibraryAddUsageDescription: "AstroFileViewer saves stretched FITS/XISF images as JPEG to your Photo Library."
+        LSSupportsOpeningDocumentsInPlace: true
+        UISupportsDocumentBrowser: true
+        CFBundleDocumentTypes:
+          - CFBundleTypeName: XISF Image
+            CFBundleTypeRole: Viewer
+            LSHandlerRank: Owner
+            LSItemContentTypes:
+              - com.pixinsight.xisf
+          - CFBundleTypeName: FITS Image
+            CFBundleTypeRole: Viewer
+            LSHandlerRank: Owner
+            LSItemContentTypes:
+              - org.fits.fits
+        UTImportedTypeDeclarations:
+          - UTTypeIdentifier: com.pixinsight.xisf
+            UTTypeDescription: XISF Image
+            UTTypeConformsTo:
+              - public.data
+              - public.image
+            UTTypeTagSpecification:
+              public.filename-extension:
+                - xisf
+              public.mime-type: application/x-xisf
+          - UTTypeIdentifier: org.fits.fits
+            UTTypeDescription: FITS Image
+            UTTypeConformsTo:
+              - public.data
+              - public.image
+            UTTypeTagSpecification:
+              public.filename-extension:
+                - fits
+                - fit
+                - fts
+              public.mime-type: application/fits
