@@ -31,11 +31,17 @@ kernel void normalize_uint16(
     constant int& height [[buffer(2)]],
     constant int& channelCount [[buffer(3)]],
     constant STFParams* stfParams [[buffer(4)]],
+    constant int& binFactor [[buffer(5)]],
     uint2 gid [[thread_position_in_grid]])
 {
-    if (gid.x >= (uint)width || gid.y >= (uint)height) return;
+    uint outW = output.get_width();
+    uint outH = output.get_height();
+    if (gid.x >= outW || gid.y >= outH) return;
 
-    uint pixelIndex = gid.y * (uint)width + gid.x;
+    // Map output pixel back to source pixel using bin factor
+    uint srcX = gid.x * (uint)binFactor;
+    uint srcY = gid.y * (uint)binFactor;
+    uint pixelIndex = srcY * (uint)width + srcX;
     uint planeSize = (uint)width * (uint)height;
 
     float4 color;

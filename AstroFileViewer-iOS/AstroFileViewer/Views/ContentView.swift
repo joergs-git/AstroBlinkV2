@@ -185,7 +185,7 @@ struct AdjustmentsPanel: View {
                     .foregroundColor(.white)
                     .frame(width: 55, alignment: .leading)
 
-                Slider(value: $viewModel.stretchStrength, in: 0.05...0.50, step: 0.01)
+                Slider(value: $viewModel.stretchStrength, in: 0.0...0.50, step: 0.01)
                     .tint(.yellow)
 
                 Text(String(format: "%.0f%%", viewModel.stretchStrength * 200))

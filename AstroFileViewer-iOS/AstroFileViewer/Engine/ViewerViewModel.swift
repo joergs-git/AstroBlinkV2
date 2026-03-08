@@ -302,10 +302,16 @@ class ViewerViewModel: ObservableObject {
             return nil
         }
 
+        // Determine bin factor: bin2 when image exceeds device max texture size
+        let maxSize = 8192  // Conservative limit (iOS simulator + older devices)
+        let binFactor = (image.width > maxSize || image.height > maxSize) ? 2 : 1
+        let outWidth = image.width / binFactor
+        let outHeight = image.height / binFactor
+
         let texDesc = MTLTextureDescriptor.texture2DDescriptor(
             pixelFormat: .bgra8Unorm,
-            width: image.width,
-            height: image.height,
+            width: outWidth,
+            height: outHeight,
             mipmapped: false
         )
         texDesc.usage = [.shaderWrite, .shaderRead]
@@ -333,10 +339,13 @@ class ViewerViewModel: ObservableObject {
         while params.count < 3 { params.append(STFParams()) }
         encoder.setBytes(&params, length: MemoryLayout<STFParams>.stride * 3, index: 4)
 
+        var bin = Int32(binFactor)
+        encoder.setBytes(&bin, length: 4, index: 5)
+
         let threadGroupSize = MTLSize(width: 16, height: 16, depth: 1)
         let threadGroups = MTLSize(
-            width: (image.width + 15) / 16,
-            height: (image.height + 15) / 16,
+            width: (outWidth + 15) / 16,
+            height: (outHeight + 15) / 16,
             depth: 1
         )
         encoder.dispatchThreadgroups(threadGroups, threadsPerThreadgroup: threadGroupSize)
