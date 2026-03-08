@@ -196,14 +196,19 @@ class TriageViewModel: ObservableObject {
 
         // Use the parent folder of the first file as session root
         let rootURL = imageURLs[0].deletingLastPathComponent()
-        sessionRootURL = rootURL
-        prefetchCache?.clear()
 
         // Release previous security-scoped resource
         if let prev = accessedURL {
             prev.stopAccessingSecurityScopedResource()
             accessedURL = nil
         }
+
+        // Start security-scoped access to the root directory (needed for PRE-DELETE etc.)
+        let accessed = rootURL.startAccessingSecurityScopedResource()
+        if accessed { accessedURL = rootURL }
+
+        sessionRootURL = rootURL
+        prefetchCache?.clear()
 
         statusMessage = "Loading \(imageURLs.count) files..."
 
@@ -791,12 +796,49 @@ class TriageViewModel: ObservableObject {
                 try fm.createDirectory(at: preDeleteDir, withIntermediateDirectories: true)
             }
         } catch {
-            statusMessage = "Error creating PRE-DELETE folder: \(error.localizedDescription)"
-            return
+            // Sandbox may block write if user selected individual files instead of folder.
+            // Request explicit folder access via NSOpenPanel.
+            let folderPanel = NSOpenPanel()
+            folderPanel.canChooseDirectories = true
+            folderPanel.canChooseFiles = false
+            folderPanel.allowsMultipleSelection = false
+            folderPanel.directoryURL = rootURL
+            folderPanel.message = "Grant write access to the session folder for PRE-DELETE"
+            folderPanel.prompt = "Grant Access"
+
+            guard folderPanel.runModal() == .OK, let grantedURL = folderPanel.url else {
+                statusMessage = "PRE-DELETE cancelled — folder access not granted"
+                return
+            }
+
+            // Start security-scoped access to the granted folder
+            let accessed = grantedURL.startAccessingSecurityScopedResource()
+            if accessed {
+                // Release previous if any, store new
+                if let prev = accessedURL {
+                    prev.stopAccessingSecurityScopedResource()
+                }
+                accessedURL = grantedURL
+                sessionRootURL = grantedURL
+            }
+
+            // Retry folder creation with new access
+            do {
+                let retryDir = grantedURL.appendingPathComponent("PRE-DELETE", isDirectory: true)
+                if !fm.fileExists(atPath: retryDir.path) {
+                    try fm.createDirectory(at: retryDir, withIntermediateDirectories: true)
+                }
+            } catch {
+                statusMessage = "Error creating PRE-DELETE folder: \(error.localizedDescription)"
+                return
+            }
         }
 
         // Remember the first marked index for re-selection later
         let firstMarkedIndex = images.firstIndex(where: { $0.isMarkedForDeletion }) ?? selectedIndex
+
+        // Use current sessionRootURL (may have been updated by folder access grant)
+        let activePreDeleteDir = sessionRootURL!.appendingPathComponent("PRE-DELETE", isDirectory: true)
 
         // Move files and build undo entries
         var movedCount = 0
@@ -804,7 +846,7 @@ class TriageViewModel: ObservableObject {
         var undoEntries: [PreDeleteUndoEntry] = []
 
         for entry in markedImages {
-            let destURL = preDeleteDir.appendingPathComponent(entry.filename)
+            let destURL = activePreDeleteDir.appendingPathComponent(entry.filename)
             do {
                 // Handle name collision: add numeric suffix
                 var finalDest = destURL
@@ -812,7 +854,7 @@ class TriageViewModel: ObservableObject {
                 while fm.fileExists(atPath: finalDest.path) {
                     let name = entry.url.deletingPathExtension().lastPathComponent
                     let ext = entry.url.pathExtension
-                    finalDest = preDeleteDir.appendingPathComponent("\(name)_\(suffix).\(ext)")
+                    finalDest = activePreDeleteDir.appendingPathComponent("\(name)_\(suffix).\(ext)")
                     suffix += 1
                 }
                 let originalIndex = images.firstIndex(where: { $0.url == entry.url }) ?? 0
