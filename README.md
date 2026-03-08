@@ -12,6 +12,33 @@ AstroBlinkV2 lets you blink through hundreds of FITS and XISF sub-exposures in s
 
 ---
 
+## Performance — v2.0.0
+
+**Up to 5x faster session loading on local SSD. Up to 8x faster on network volumes (NAS/10GbE).**
+
+AstroBlinkV2 v2.0.0 was rewritten for full hardware utilization on Apple Silicon. On a Mac Studio M3 Ultra with 300 FITS files (~100 MB each), total session load time dropped from minutes to under 45 seconds.
+
+| What changed | Before | After | Gain |
+|---|---|---|---|
+| FITS decode | 1 file at a time | Up to 6 concurrent | **4x throughput** |
+| Memory per decode | 116 MB copy | Zero-copy GPU buffer | **-116 MB/image** |
+| Downsampling (50 MP) | 30–150 ms (CPU) | < 1 ms (GPU) | **100x faster** |
+| Header reading (300 files) | ~9 s | ~1.5 s | **6x faster** |
+| STF statistics | ~50 ms | ~17 ms | **3x faster** |
+| Prefetch pattern | Batch 4, wait all | Sliding window | **50% less stall** |
+| NAS file transfer | Single stream | 4 parallel streams | **3–4x faster** |
+
+**End-to-end (300 files, local SSD):**
+
+| Phase | v0.9.7 | v2.0.0 |
+|---|---|---|
+| Header reading | ~9 s | ~1.5 s |
+| First image display | ~250 ms | ~170 ms |
+| Full session prefetch | Minutes | ~30–45 s |
+| Navigation (warm cache) | < 32 ms | < 32 ms |
+
+---
+
 ## Why AstroBlinkV2?
 
 After a night of imaging you might have 200-600 sub-exposures. Some have clouds, tracking errors, satellite trails, or planes. You need to find and remove them before stacking. AstroBlinkV2 makes this fast:
