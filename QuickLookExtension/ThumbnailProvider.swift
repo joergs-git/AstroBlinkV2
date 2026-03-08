@@ -1,4 +1,4 @@
-// v2.0.1
+// v2.1.0
 import QuickLookThumbnailing
 import CoreGraphics
 import ImageDecoderBridge
