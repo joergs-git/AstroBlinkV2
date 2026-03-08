@@ -8,8 +8,7 @@ AstroBlinkV2 lets you blink through hundreds of FITS and XISF sub-exposures in s
 
 ---
 
-<!-- TODO: Replace with your own screenshot -->
-![AstroBlinkV2 Screenshot](screenshots/AstroBlinkV2_screenshot.png)
+![AstroBlinkV2 — Main View with Header Inspector and Session Overview](screenshots/AstroBlinkV2_main.png)
 
 ---
 
@@ -85,20 +84,21 @@ After a night of imaging you might have 200-600 sub-exposures. Some have clouds,
 
 ### macOS — AstroBlinkV2
 
-<!-- TODO: Add your macOS screenshots here -->
-<!-- ![Main View](screenshots/AstroBlinkV2_main.png) -->
-<!-- ![Session Overview](screenshots/AstroBlinkV2_session.png) -->
-<!-- ![Night Mode](screenshots/AstroBlinkV2_night.png) -->
+**Session Overview with Header Inspector:**
+![AstroBlinkV2 Main View](screenshots/AstroBlinkV2_main.png)
 
-*Screenshots coming soon — add your images to the `screenshots/` folder.*
+**Image Viewer with Session Overview:**
+![AstroBlinkV2 Session View](screenshots/AstroBlinkV2_session.png)
+
+**Night Mode — red-on-black for dark-adapted vision:**
+![AstroBlinkV2 Night Mode](screenshots/AstroBlinkV2_night.png)
 
 ### iOS — AstroFileViewer
 
 <!-- TODO: Add your iOS screenshots here -->
-<!-- ![iPhone](screenshots/AstroFileViewer_iphone.png) -->
-<!-- ![iPad](screenshots/AstroFileViewer_ipad.png) -->
-
-*Screenshots coming soon — add your images to the `screenshots/` folder.*
+| iPhone | iPad |
+|--------|------|
+| ![iPhone](screenshots/AstroFileViewer_iphone.png) | ![iPad](screenshots/AstroFileViewer_ipad.png) |
 
 ---
 
@@ -142,12 +142,9 @@ After a night of imaging you might have 200-600 sub-exposures. Some have clouds,
 
 ### iOS Screenshots
 
-<!-- TODO: Add iOS screenshots -->
 | iPhone | iPad |
 |--------|------|
 | ![iPhone](screenshots/AstroFileViewer_iphone.png) | ![iPad](screenshots/AstroFileViewer_ipad.png) |
-
-*Screenshots coming soon.*
 
 The iOS app source code is included in this repository under [`AstroFileViewer-iOS/`](AstroFileViewer-iOS/).
 
