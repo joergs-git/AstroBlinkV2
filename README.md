@@ -95,10 +95,13 @@ After a night of imaging you might have 200-600 sub-exposures. Some have clouds,
 
 ### iOS — AstroFileViewer
 
-<!-- TODO: Add your iOS screenshots here -->
-| iPhone | iPad |
-|--------|------|
-| ![iPhone](screenshots/AstroFileViewer_iphone.png) | ![iPad](screenshots/AstroFileViewer_ipad.png) |
+| M42 Orion (OSC color, debayered) | NGC 6960 Veil (mono) | FITS/XISF Headers |
+|:---:|:---:|:---:|
+| <img src="screenshots/AstroFileViewer_iphone_m42.png" width="250"> | <img src="screenshots/AstroFileViewer_iphone_veil.png" width="250"> | <img src="screenshots/AstroFileViewer_iphone_headers.png" width="250"> |
+
+**iPad — M42 Orion Nebula with Stretch & Debayer controls:**
+
+<img src="screenshots/AstroFileViewer_ipad_m42.png" width="600">
 
 ---
 
@@ -142,9 +145,9 @@ After a night of imaging you might have 200-600 sub-exposures. Some have clouds,
 
 ### iOS Screenshots
 
-| iPhone | iPad |
-|--------|------|
-| ![iPhone](screenshots/AstroFileViewer_iphone.png) | ![iPad](screenshots/AstroFileViewer_ipad.png) |
+| iPhone — M42 | iPhone — Veil | iPad — M42 |
+|:---:|:---:|:---:|
+| <img src="screenshots/AstroFileViewer_iphone_m42.png" width="200"> | <img src="screenshots/AstroFileViewer_iphone_veil.png" width="200"> | <img src="screenshots/AstroFileViewer_ipad_m42.png" width="350"> |
 
 The iOS app source code is included in this repository under [`AstroFileViewer-iOS/`](AstroFileViewer-iOS/).
 
