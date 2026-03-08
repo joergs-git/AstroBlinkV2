@@ -8,6 +8,11 @@ AstroBlinkV2 lets you blink through hundreds of FITS and XISF sub-exposures in s
 
 ---
 
+<!-- TODO: Replace with your own screenshot -->
+![AstroBlinkV2 Screenshot](screenshots/AstroBlinkV2_screenshot.png)
+
+---
+
 ## Why AstroBlinkV2?
 
 After a night of imaging you might have 200-600 sub-exposures. Some have clouds, tracking errors, satellite trails, or planes. You need to find and remove them before stacking. AstroBlinkV2 makes this fast:
@@ -28,7 +33,17 @@ After a night of imaging you might have 200-600 sub-exposures. Some have clouds,
 - **Metal GPU rendering** — 50-megapixel images display in milliseconds on Apple Silicon
 - **Auto STF stretch** — PixInsight-compatible Screen Transfer Function makes raw linear data visible
 - **Locked STF mode** — freeze stretch parameters to compare brightness across frames
+- **Adjustable stretch strength** — slider from 0% (linear) to 100% (maximum stretch)
 - **Zoom & pan** — click-drag zoom (Photoshop-style), trackpad pinch, scroll to pan
+
+### OSC Debayer
+- **Automatic detection** — Bayer pattern (RGGB, GRBG, GBRG, BGGR) detected from FITS/XISF headers
+- **Toggle on/off** — debayer OFF (default) for fastest caching, ON for color preview
+- **Bilinear interpolation** — GPU-accelerated Metal compute kernel
+
+### Night Mode
+- **Red-on-black UI** — preserves dark-adapted vision at the telescope
+- **Press N** — toggle night mode on/off, affects all UI elements including file list and status bar
 
 ### Blink Workflow
 - **Space** — mark/unmark images for pre-deletion
@@ -66,11 +81,32 @@ After a night of imaging you might have 200-600 sub-exposures. Some have clouds,
 
 ---
 
+## Screenshots
+
+### macOS — AstroBlinkV2
+
+<!-- TODO: Add your macOS screenshots here -->
+<!-- ![Main View](screenshots/AstroBlinkV2_main.png) -->
+<!-- ![Session Overview](screenshots/AstroBlinkV2_session.png) -->
+<!-- ![Night Mode](screenshots/AstroBlinkV2_night.png) -->
+
+*Screenshots coming soon — add your images to the `screenshots/` folder.*
+
+### iOS — AstroFileViewer
+
+<!-- TODO: Add your iOS screenshots here -->
+<!-- ![iPhone](screenshots/AstroFileViewer_iphone.png) -->
+<!-- ![iPad](screenshots/AstroFileViewer_ipad.png) -->
+
+*Screenshots coming soon — add your images to the `screenshots/` folder.*
+
+---
+
 ## Keyboard Shortcuts
 
 | Key | Action |
 |-----|--------|
-| `<-` `->` | Previous / next image |
+| `←` `→` | Previous / next image |
 | `Space` | Toggle pre-delete mark (single or multi-select) |
 | `Cmd+Backspace` | Move marked files to PRE-DELETE folder |
 | `Cmd+Z` | Undo last pre-delete operation |
@@ -78,26 +114,69 @@ After a night of imaging you might have 200-600 sub-exposures. Some have clouds,
 | `K` | Toggle skip-marked during navigation |
 | `H` | Toggle hide-marked from file list |
 | `I` | Toggle FITS/XISF header inspector |
+| `D` | Toggle OSC debayer (when Bayer images detected) |
+| `N` | Toggle night mode (red-on-black) |
 | `Cmd+O` | Open folder or select files |
 | `Double-click` | Reset zoom to fit-to-view |
 
 ---
 
+## AstroFileViewer — iOS Companion App
+
+**AstroFileViewer** is a companion iOS/iPadOS app for viewing FITS and XISF astrophotography files on your iPhone or iPad.
+
+<!-- TODO: Add App Store badge/link when available -->
+<!-- [![Download on the App Store](https://developer.apple.com/assets/elements/badges/download-on-the-app-store.svg)](https://apps.apple.com/app/astrofileviewer/idXXXXXXXXXX) -->
+
+### Features
+
+- **Open FITS and XISF files** directly from the Files app, iCloud Drive, or any document provider
+- **Auto STF stretch** — same PixInsight-compatible algorithm as the macOS app
+- **Adjustable stretch strength** — slider from 0% (fully linear) to 100%
+- **OSC debayer** — automatic Bayer pattern detection with GPU-accelerated bilinear interpolation
+- **Sharpening** — real-time unsharp mask with adjustable strength
+- **FITS/XISF header viewer** — browse all metadata keywords with priority sorting
+- **Save to Photos** — export stretched images as JPEG to your Photo Library
+- **Universal app** — optimized for both iPhone and iPad
+- **Automatic bin2 display** — large sensor images (e.g. ZWO ASI6200MM at 9576×6388) are automatically downscaled for smooth display
+
+### iOS Screenshots
+
+<!-- TODO: Add iOS screenshots -->
+| iPhone | iPad |
+|--------|------|
+| ![iPhone](screenshots/AstroFileViewer_iphone.png) | ![iPad](screenshots/AstroFileViewer_ipad.png) |
+
+*Screenshots coming soon.*
+
+The iOS app source code is included in this repository under [`AstroFileViewer-iOS/`](AstroFileViewer-iOS/).
+
+---
+
 ## Requirements
 
+### macOS (AstroBlinkV2)
 - **macOS 13 Ventura** or later
 - **Apple Silicon** recommended (M1/M2/M3/M4) — runs on Intel but optimized for unified memory architecture
 - Metal-capable GPU (all Macs since 2012)
+
+### iOS (AstroFileViewer)
+- **iOS 16.4** or later
+- iPhone or iPad with Metal support
 
 ---
 
 ## Installation
 
-### Download Release
+### Download Release (macOS)
 
-1. Download `AstroBlinkV2-v0.9.4.zip` from the [Releases](https://github.com/joergs-git/AstroBlinkV2/releases) page
+1. Download the latest release from the [Releases](https://github.com/joergs-git/AstroBlinkV2/releases) page
 2. Unzip and drag `AstroBlinkV2.app` to your **Applications** folder
 3. Double-click to launch — the app is signed and notarized by Apple
+
+### AstroFileViewer (iOS)
+
+Download AstroFileViewer from the Apple App Store (link coming soon).
 
 ### Build from Source
 
@@ -107,9 +186,9 @@ After a night of imaging you might have 200-600 sub-exposures. Some have clouds,
    cd AstroBlinkV2
    ```
 
-2. Open `AstroTriage.xcodeproj` in Xcode 15+
+2. **macOS app:** Open `AstroTriage.xcodeproj` in Xcode 15+ and build (Cmd+R)
 
-3. Build and run (Cmd+R)
+3. **iOS app:** Open `AstroFileViewer-iOS/AstroFileViewer.xcodeproj` in Xcode 15+ and build for your device
 
 The project includes vendored C/C++ libraries (libxisf, cfitsio) as a local Swift Package — no external dependencies to install.
 
@@ -134,12 +213,6 @@ AstroBlinkV2 parses the standard NINA filename pattern:
 ```
 
 Extracted tokens: date, target, time, telescope, camera, frame type, filter, exposure, frame number, binning, gain, offset, sensor temp, FWHM, focuser temp, HFR, star count.
-
----
-
-## Screenshots
-
-*Coming soon*
 
 ---
 
