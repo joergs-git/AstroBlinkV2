@@ -1,4 +1,4 @@
-// v2.0.0
+// v2.0.1
 import SwiftUI
 
 @main
@@ -130,7 +130,7 @@ class AstroBlinkV2AppDelegate: NSObject, NSApplicationDelegate {
 
         NSApp.orderFrontStandardAboutPanel(options: [
             .applicationName: "AstroBlinkV2",
-            .applicationVersion: "2.0.0",
+            .applicationVersion: "2.0.1",
             .version: "Build 6",
             .credits: credits
         ])
@@ -160,7 +160,7 @@ class HelpWindowController: NSWindowController {
             backing: .buffered,
             defer: false
         )
-        window.title = "AstroBlinkV2 v2.0.0 — Quick Reference"
+        window.title = "AstroBlinkV2 v2.0.1 — Quick Reference"
         window.center()
         window.isReleasedWhenClosed = false
         super.init(window: window)

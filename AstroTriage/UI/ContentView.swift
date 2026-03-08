@@ -1,4 +1,4 @@
-// v2.0.0
+// v2.0.1
 import SwiftUI
 
 // Root view: toolbar on top, optional side panels (inspector left, session right),
@@ -364,7 +364,7 @@ struct ContentView: View {
         .onChange(of: viewModel.stretchStrength) { newValue in
             sliderValue = Double(newValue)
         }
-        .navigationTitle("AstroBlinkV2 v2.0.0 — Fast Visual Culling for Astrophotography")
+        .navigationTitle("AstroBlinkV2 v2.0.1 — Fast Visual Culling for Astrophotography")
         .frame(minWidth: 800, minHeight: 500)
     }
 
