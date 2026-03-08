@@ -7,8 +7,11 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		0A8D1ABC0439459F3075F477 /* AstroTriageQuickLookThumbnail.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 837394D162B707B718C708C9 /* AstroTriageQuickLookThumbnail.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		1864DE963C0E5E7717212E46 /* FileListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6D16C070C8599AC5C5A265B /* FileListView.swift */; };
+		1C5494999757C263A4969E6F /* QuickLookRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D9A7A3939A213218612E649 /* QuickLookRenderer.swift */; };
 		1D1723961ACDCF8669AA1478 /* IntegrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F98D55D2A66E2F51D5244BCF /* IntegrationTests.swift */; };
+		25CFB819D42305A82ABD33FA /* ImageDecoderBridge in Frameworks */ = {isa = PBXBuildFile; productRef = A7854A8F318978072FE7EB54 /* ImageDecoderBridge */; };
 		25F39B9B112136B825F99E0C /* ImageDecoderBridge in Frameworks */ = {isa = PBXBuildFile; productRef = 0823264441FF3A7874FE3975 /* ImageDecoderBridge */; };
 		2AC85F5C8AE08A1DB6A74261 /* KeyboardHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 763931350538CED5EA81290D /* KeyboardHandler.swift */; };
 		37DA495A008C7E13F6D23D6C /* HeaderInspectorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D45AA5729C0A57A6C12C9C2 /* HeaderInspectorView.swift */; };
@@ -16,11 +19,19 @@
 		399A544B01D518D97920F138 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AE4E059ADDE28F88AF19A8DF /* Assets.xcassets */; };
 		3AE8C59AED6435B5F41CA9AF /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24F8E2016E26D881862A1E76 /* ContentView.swift */; };
 		3D029D52F10611A437BC2B5F /* NINAFilenameParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 958EAAFB0801AA6BF89E7E57 /* NINAFilenameParser.swift */; };
+		56FFE42C0B6D9DB482139AC0 /* ThumbnailProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E84C4C954C1B6E8C561713D /* ThumbnailProvider.swift */; };
 		5BEA8CB806944696DA8FF49D /* ImageEntry.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5A5655E4FCDB14E3F9CECE3 /* ImageEntry.swift */; };
 		5E675BB37EE91BCC5AA74C71 /* MetadataExtractorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 19E7CEF533FCAE62802CFC77 /* MetadataExtractorTests.swift */; };
+		5EBF03BBD7C5676AA602ECF7 /* QuickLookRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D9A7A3939A213218612E649 /* QuickLookRenderer.swift */; };
 		7A69119E8C46AEEEC3903EDA /* TexturePool.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABAF1B6D447B16F3447CF29C /* TexturePool.swift */; };
 		7E8C4EF0CF4108B17C2096A8 /* ColumnDefinition.swift in Sources */ = {isa = PBXBuildFile; fileRef = F25FB10B9861BFEE190684C8 /* ColumnDefinition.swift */; };
+		838E8483E80592C0D2B096C7 /* PreviewProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = FCF6C6DC0784120E20CE9CF9 /* PreviewProvider.swift */; };
+		8B28123AE5CD7FA6D046CD8A /* AstroTriageQuickLookPreview.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = C17E45E7EC559D0FCD362808 /* AstroTriageQuickLookPreview.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		8B9102B9DEB924145CD66AAA /* AstroTriageApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = D60FDB5923A652383E3ABEB7 /* AstroTriageApp.swift */; };
+		90E172D08A289E6C51298EAE /* QuickLookSTF.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD2457C0829FBD7832C880DF /* QuickLookSTF.swift */; };
+		A5EE486F27D98657DB57A781 /* ImageDecoderBridge in Frameworks */ = {isa = PBXBuildFile; productRef = 8A263D3D8B89B08DB446B5AB /* ImageDecoderBridge */; };
+		A799E8B23AAF9BD60D73D16F /* QuickLookSTF.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD2457C0829FBD7832C880DF /* QuickLookSTF.swift */; };
+		B215D4883BE0323F252D110A /* QuickLookDecoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = CAB86491BE4F5019B5883E46 /* QuickLookDecoder.swift */; };
 		B54934C587552F12AB659721 /* PrefetchCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B4C4D1E3CA9608F6E41582A /* PrefetchCache.swift */; };
 		B6A89CE09C96403D52C0CAE5 /* MetalRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8840EA9D612D56DC3123EC77 /* MetalRenderer.swift */; };
 		B6FAD33DBA5A722B4EC6F6AA /* Shaders.metal in Sources */ = {isa = PBXBuildFile; fileRef = ADBD75B471EEBE3262306C84 /* Shaders.metal */; };
@@ -29,6 +40,7 @@
 		C26CB03B2AE2C731BC2B72BF /* TriageViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4F0D3CE86492EF1F5EF6BB7 /* TriageViewModel.swift */; };
 		CC6E11E8FA4788135037A3CE /* NINAFilenameParserTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E291DE3DBC147FB649506D61 /* NINAFilenameParserTests.swift */; };
 		D8490084CA833D518635A281 /* ImageDecoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7AE6DE7943D690C501401C4C /* ImageDecoder.swift */; };
+		D8CFF1148342DB49FB72D618 /* QuickLookDecoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = CAB86491BE4F5019B5883E46 /* QuickLookDecoder.swift */; };
 		E85D3B8048F5775EF0C70BB9 /* DecoderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE83C9556D164ED7CC41C0FC /* DecoderTests.swift */; };
 		F13B387686D2B2C88DC14937 /* SessionScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7D54DB9FE9BF17CD5203F2D /* SessionScanner.swift */; };
 		F1ABC93BE5D945B448028500 /* SessionCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72BFE1A73BD5AD652BD34CB8 /* SessionCache.swift */; };
@@ -38,6 +50,20 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
+		2C3178893B2B338DD12F350C /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 8FA7FD3B876F5A0346C02F50 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 226543CD95AC41D75968CBAB;
+			remoteInfo = AstroTriageQuickLookPreview;
+		};
+		FDA69F31517F5B1E6EF4B967 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 8FA7FD3B876F5A0346C02F50 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 13825CA60ACE1A81CDE8BCAF;
+			remoteInfo = AstroTriageQuickLookThumbnail;
+		};
 		FE2150CFB31D0B94E4483ACD /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 8FA7FD3B876F5A0346C02F50 /* Project object */;
@@ -47,18 +73,38 @@
 		};
 /* End PBXContainerItemProxy section */
 
+/* Begin PBXCopyFilesBuildPhase section */
+		A594E1D0E625ED953C41896C /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				0A8D1ABC0439459F3075F477 /* AstroTriageQuickLookThumbnail.appex in Embed Foundation Extensions */,
+				8B28123AE5CD7FA6D046CD8A /* AstroTriageQuickLookPreview.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXFileReference section */
+		0F4C747A549511B45DCACC15 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		19E7CEF533FCAE62802CFC77 /* MetadataExtractorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetadataExtractorTests.swift; sourceTree = "<group>"; };
 		1B4C4D1E3CA9608F6E41582A /* PrefetchCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrefetchCache.swift; sourceTree = "<group>"; };
 		1C26D1D4C5DFA7795B28D750 /* AstroTriageTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AstroTriageTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		24F8E2016E26D881862A1E76 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		3E84C4C954C1B6E8C561713D /* ThumbnailProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThumbnailProvider.swift; sourceTree = "<group>"; };
 		40D54AA4B026ABD4997C7758 /* STFCalculator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = STFCalculator.swift; sourceTree = "<group>"; };
 		4B576ECA4D0080E5D97856E1 /* ImageDecoder */ = {isa = PBXFileReference; lastKnownFileType = folder; name = ImageDecoder; path = Packages/ImageDecoder; sourceTree = SOURCE_ROOT; };
 		5D45AA5729C0A57A6C12C9C2 /* HeaderInspectorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HeaderInspectorView.swift; sourceTree = "<group>"; };
+		5D9A7A3939A213218612E649 /* QuickLookRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickLookRenderer.swift; sourceTree = "<group>"; };
 		72BFE1A73BD5AD652BD34CB8 /* SessionCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionCache.swift; sourceTree = "<group>"; };
 		763931350538CED5EA81290D /* KeyboardHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardHandler.swift; sourceTree = "<group>"; };
 		7AE6DE7943D690C501401C4C /* ImageDecoder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageDecoder.swift; sourceTree = "<group>"; };
 		7EA258813A0F669A15FDE38A /* AstroTriage.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = AstroTriage.entitlements; sourceTree = "<group>"; };
+		7F5B0D9797094DF17968EDBC /* QuickLookPreview.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = QuickLookPreview.entitlements; sourceTree = "<group>"; };
+		837394D162B707B718C708C9 /* AstroTriageQuickLookThumbnail.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = AstroTriageQuickLookThumbnail.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		8840EA9D612D56DC3123EC77 /* MetalRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetalRenderer.swift; sourceTree = "<group>"; };
 		8D35D584AE1D7CFEB4B41638 /* SessionOverviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionOverviewView.swift; sourceTree = "<group>"; };
 		958EAAFB0801AA6BF89E7E57 /* NINAFilenameParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NINAFilenameParser.swift; sourceTree = "<group>"; };
@@ -70,23 +116,46 @@
 		B6D16C070C8599AC5C5A265B /* FileListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileListView.swift; sourceTree = "<group>"; };
 		B7D54DB9FE9BF17CD5203F2D /* SessionScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionScanner.swift; sourceTree = "<group>"; };
 		C0EFA1508203190F9C1216AE /* PreviewGenerator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreviewGenerator.swift; sourceTree = "<group>"; };
+		C17E45E7EC559D0FCD362808 /* AstroTriageQuickLookPreview.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = AstroTriageQuickLookPreview.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		C5A5655E4FCDB14E3F9CECE3 /* ImageEntry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageEntry.swift; sourceTree = "<group>"; };
+		CAB86491BE4F5019B5883E46 /* QuickLookDecoder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickLookDecoder.swift; sourceTree = "<group>"; };
+		CBB9979AD11949E2FE6E7511 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		CD2457C0829FBD7832C880DF /* QuickLookSTF.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickLookSTF.swift; sourceTree = "<group>"; };
 		D60FDB5923A652383E3ABEB7 /* AstroTriageApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AstroTriageApp.swift; sourceTree = "<group>"; };
+		DB80D59623FFC14D180C6451 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		DE83C9556D164ED7CC41C0FC /* DecoderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DecoderTests.swift; sourceTree = "<group>"; };
 		E291DE3DBC147FB649506D61 /* NINAFilenameParserTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NINAFilenameParserTests.swift; sourceTree = "<group>"; };
 		EAC4AFD3D3784B02004BA98D /* MetadataExtractor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetadataExtractor.swift; sourceTree = "<group>"; };
 		ED760805A7C9C85AB7BB391E /* ImageViewerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageViewerView.swift; sourceTree = "<group>"; };
+		F0667DF42B4E870F1DA138BF /* QuickLookExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = QuickLookExtension.entitlements; sourceTree = "<group>"; };
 		F25FB10B9861BFEE190684C8 /* ColumnDefinition.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ColumnDefinition.swift; sourceTree = "<group>"; };
 		F98D55D2A66E2F51D5244BCF /* IntegrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IntegrationTests.swift; sourceTree = "<group>"; };
+		FCF6C6DC0784120E20CE9CF9 /* PreviewProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreviewProvider.swift; sourceTree = "<group>"; };
 		FE4AA1827176F2392E89D989 /* AstroTriage.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AstroTriage.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		387EB51422918194C79CB1A1 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				25CFB819D42305A82ABD33FA /* ImageDecoderBridge in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		BC786999CCE07E4A537B72CA /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
 				25F39B9B112136B825F99E0C /* ImageDecoderBridge in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F504D1A15D0807D8D1D53F07 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A5EE486F27D98657DB57A781 /* ImageDecoderBridge in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -116,6 +185,15 @@
 			path = Metal;
 			sourceTree = "<group>";
 		};
+		3EABFBF58AADEBF0913BDDFE /* QuickLookPreview */ = {
+			isa = PBXGroup;
+			children = (
+				CBB9979AD11949E2FE6E7511 /* Info.plist */,
+				7F5B0D9797094DF17968EDBC /* QuickLookPreview.entitlements */,
+			);
+			path = QuickLookPreview;
+			sourceTree = "<group>";
+		};
 		4AB3F99975F4F5A1206B259A /* Bridge */ = {
 			isa = PBXGroup;
 			children = (
@@ -137,6 +215,8 @@
 			children = (
 				C5744DD07BA58953FC14B6A7 /* AstroTriage */,
 				F6B71EE5C0E01134AF27294B /* Packages */,
+				AB0EA48544CFEDFF2A961669 /* QuickLookExtension */,
+				3EABFBF58AADEBF0913BDDFE /* QuickLookPreview */,
 				1DBE6C83A78086623B08FB68 /* Tests */,
 				F7AF623283DC11315A83F1B4 /* Products */,
 			);
@@ -155,6 +235,20 @@
 			path = Engine;
 			sourceTree = "<group>";
 		};
+		AB0EA48544CFEDFF2A961669 /* QuickLookExtension */ = {
+			isa = PBXGroup;
+			children = (
+				DB80D59623FFC14D180C6451 /* Info.plist */,
+				FCF6C6DC0784120E20CE9CF9 /* PreviewProvider.swift */,
+				CAB86491BE4F5019B5883E46 /* QuickLookDecoder.swift */,
+				F0667DF42B4E870F1DA138BF /* QuickLookExtension.entitlements */,
+				5D9A7A3939A213218612E649 /* QuickLookRenderer.swift */,
+				CD2457C0829FBD7832C880DF /* QuickLookSTF.swift */,
+				3E84C4C954C1B6E8C561713D /* ThumbnailProvider.swift */,
+			);
+			path = QuickLookExtension;
+			sourceTree = "<group>";
+		};
 		C5744DD07BA58953FC14B6A7 /* AstroTriage */ = {
 			isa = PBXGroup;
 			children = (
@@ -166,6 +260,7 @@
 				D30D71B63D6BDC840F33D230 /* UI */,
 				AE4E059ADDE28F88AF19A8DF /* Assets.xcassets */,
 				7EA258813A0F669A15FDE38A /* AstroTriage.entitlements */,
+				0F4C747A549511B45DCACC15 /* Info.plist */,
 			);
 			path = AstroTriage;
 			sourceTree = "<group>";
@@ -205,6 +300,8 @@
 			isa = PBXGroup;
 			children = (
 				FE4AA1827176F2392E89D989 /* AstroTriage.app */,
+				C17E45E7EC559D0FCD362808 /* AstroTriageQuickLookPreview.appex */,
+				837394D162B707B718C708C9 /* AstroTriageQuickLookThumbnail.appex */,
 				1C26D1D4C5DFA7795B28D750 /* AstroTriageTests.xctest */,
 			);
 			name = Products;
@@ -213,6 +310,44 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		13825CA60ACE1A81CDE8BCAF /* AstroTriageQuickLookThumbnail */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 1B27394FDB34E79897477E0A /* Build configuration list for PBXNativeTarget "AstroTriageQuickLookThumbnail" */;
+			buildPhases = (
+				CD3B506E5ABC2F28F601F8BC /* Sources */,
+				F504D1A15D0807D8D1D53F07 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = AstroTriageQuickLookThumbnail;
+			packageProductDependencies = (
+				8A263D3D8B89B08DB446B5AB /* ImageDecoderBridge */,
+			);
+			productName = AstroTriageQuickLookThumbnail;
+			productReference = 837394D162B707B718C708C9 /* AstroTriageQuickLookThumbnail.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		226543CD95AC41D75968CBAB /* AstroTriageQuickLookPreview */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 9437FCE92CB68FB314EDE903 /* Build configuration list for PBXNativeTarget "AstroTriageQuickLookPreview" */;
+			buildPhases = (
+				2A24AAC4412E61F1E313486C /* Sources */,
+				387EB51422918194C79CB1A1 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = AstroTriageQuickLookPreview;
+			packageProductDependencies = (
+				A7854A8F318978072FE7EB54 /* ImageDecoderBridge */,
+			);
+			productName = AstroTriageQuickLookPreview;
+			productReference = C17E45E7EC559D0FCD362808 /* AstroTriageQuickLookPreview.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 		48734A500EEA092339F9345D /* AstroTriage */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 777D8FD4D1E3C7F66666BDD5 /* Build configuration list for PBXNativeTarget "AstroTriage" */;
@@ -220,10 +355,13 @@
 				A7851859174A232D4B448EBC /* Sources */,
 				F9872F8FFA69147D2EE82C49 /* Resources */,
 				BC786999CCE07E4A537B72CA /* Frameworks */,
+				A594E1D0E625ED953C41896C /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				BF9E23646F35CC3022D01D03 /* PBXTargetDependency */,
+				5EEBC7FF460CDF83ECE3DADF /* PBXTargetDependency */,
 			);
 			name = AstroTriage;
 			packageProductDependencies = (
@@ -260,6 +398,14 @@
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1600;
 				TargetAttributes = {
+					13825CA60ACE1A81CDE8BCAF = {
+						DevelopmentTeam = FDSVBU33S8;
+						ProvisioningStyle = Automatic;
+					};
+					226543CD95AC41D75968CBAB = {
+						DevelopmentTeam = FDSVBU33S8;
+						ProvisioningStyle = Automatic;
+					};
 					48734A500EEA092339F9345D = {
 						DevelopmentTeam = FDSVBU33S8;
 						ProvisioningStyle = Automatic;
@@ -284,6 +430,8 @@
 			projectRoot = "";
 			targets = (
 				48734A500EEA092339F9345D /* AstroTriage */,
+				226543CD95AC41D75968CBAB /* AstroTriageQuickLookPreview */,
+				13825CA60ACE1A81CDE8BCAF /* AstroTriageQuickLookThumbnail */,
 				C9CA1CF89C117CC746881E70 /* AstroTriageTests */,
 			);
 		};
@@ -309,6 +457,17 @@
 				1D1723961ACDCF8669AA1478 /* IntegrationTests.swift in Sources */,
 				5E675BB37EE91BCC5AA74C71 /* MetadataExtractorTests.swift in Sources */,
 				CC6E11E8FA4788135037A3CE /* NINAFilenameParserTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		2A24AAC4412E61F1E313486C /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				838E8483E80592C0D2B096C7 /* PreviewProvider.swift in Sources */,
+				B215D4883BE0323F252D110A /* QuickLookDecoder.swift in Sources */,
+				5EBF03BBD7C5676AA602ECF7 /* QuickLookRenderer.swift in Sources */,
+				90E172D08A289E6C51298EAE /* QuickLookSTF.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -341,6 +500,17 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		CD3B506E5ABC2F28F601F8BC /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				D8CFF1148342DB49FB72D618 /* QuickLookDecoder.swift in Sources */,
+				1C5494999757C263A4969E6F /* QuickLookRenderer.swift in Sources */,
+				A799E8B23AAF9BD60D73D16F /* QuickLookSTF.swift in Sources */,
+				56FFE42C0B6D9DB482139AC0 /* ThumbnailProvider.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -349,9 +519,112 @@
 			target = 48734A500EEA092339F9345D /* AstroTriage */;
 			targetProxy = FE2150CFB31D0B94E4483ACD /* PBXContainerItemProxy */;
 		};
+		5EEBC7FF460CDF83ECE3DADF /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 226543CD95AC41D75968CBAB /* AstroTriageQuickLookPreview */;
+			targetProxy = 2C3178893B2B338DD12F350C /* PBXContainerItemProxy */;
+		};
+		BF9E23646F35CC3022D01D03 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 13825CA60ACE1A81CDE8BCAF /* AstroTriageQuickLookThumbnail */;
+			targetProxy = FDA69F31517F5B1E6EF4B967 /* PBXContainerItemProxy */;
+		};
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
+		1616642C4C7097E78842548B /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_CXX_LANGUAGE_STANDARD = "c++17";
+				CODE_SIGN_ENTITLEMENTS = QuickLookExtension/QuickLookExtension.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 7;
+				DEVELOPMENT_TEAM = FDSVBU33S8;
+				ENABLE_APP_SANDBOX = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = QuickLookExtension/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 13.3;
+				MARKETING_VERSION = 2.1.0;
+				OTHER_LDFLAGS = (
+					"-lz",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.joergsflow.AstroBlinkV2.QuickLookThumbnail;
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+				SWIFT_OBJC_INTEROP_MODE = objcxx;
+				SWIFT_VERSION = 5.9;
+			};
+			name = Debug;
+		};
+		2A5893E471A41175BD941A58 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_CXX_LANGUAGE_STANDARD = "c++17";
+				CODE_SIGN_ENTITLEMENTS = QuickLookPreview/QuickLookPreview.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 7;
+				DEVELOPMENT_TEAM = FDSVBU33S8;
+				ENABLE_APP_SANDBOX = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = QuickLookPreview/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 13.3;
+				MARKETING_VERSION = 2.1.0;
+				OTHER_LDFLAGS = (
+					"-lz",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.joergsflow.AstroBlinkV2.QuickLookPreview;
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+				SWIFT_OBJC_INTEROP_MODE = objcxx;
+				SWIFT_VERSION = 5.9;
+			};
+			name = Release;
+		};
+		39CBA8E787884D45850F028B /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_CXX_LANGUAGE_STANDARD = "c++17";
+				CODE_SIGN_ENTITLEMENTS = QuickLookExtension/QuickLookExtension.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 7;
+				DEVELOPMENT_TEAM = FDSVBU33S8;
+				ENABLE_APP_SANDBOX = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = QuickLookExtension/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 13.3;
+				MARKETING_VERSION = 2.1.0;
+				OTHER_LDFLAGS = (
+					"-lz",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.joergsflow.AstroBlinkV2.QuickLookThumbnail;
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+				SWIFT_OBJC_INTEROP_MODE = objcxx;
+				SWIFT_VERSION = 5.9;
+			};
+			name = Release;
+		};
 		4BDF4858B30872BE8256352F /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -363,15 +636,13 @@
 				DEVELOPMENT_TEAM = FDSVBU33S8;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = AstroTriage;
-				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
-				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.photography";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = AstroTriage/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 2.0.1;
+				MARKETING_VERSION = 2.1.0;
 				METAL_COMPILER_FLAGS = "";
 				OTHER_LDFLAGS = (
 					"-lz",
@@ -493,15 +764,13 @@
 				DEVELOPMENT_TEAM = FDSVBU33S8;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = AstroTriage;
-				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
-				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.photography";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = AstroTriage/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 2.0.1;
+				MARKETING_VERSION = 2.1.0;
 				METAL_COMPILER_FLAGS = "";
 				OTHER_LDFLAGS = (
 					"-lz",
@@ -571,9 +840,49 @@
 			};
 			name = Release;
 		};
+		FFD8A26D196D2BA013723EBE /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_CXX_LANGUAGE_STANDARD = "c++17";
+				CODE_SIGN_ENTITLEMENTS = QuickLookPreview/QuickLookPreview.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 7;
+				DEVELOPMENT_TEAM = FDSVBU33S8;
+				ENABLE_APP_SANDBOX = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = QuickLookPreview/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 13.3;
+				MARKETING_VERSION = 2.1.0;
+				OTHER_LDFLAGS = (
+					"-lz",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.joergsflow.AstroBlinkV2.QuickLookPreview;
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+				SWIFT_OBJC_INTEROP_MODE = objcxx;
+				SWIFT_VERSION = 5.9;
+			};
+			name = Debug;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		1B27394FDB34E79897477E0A /* Build configuration list for PBXNativeTarget "AstroTriageQuickLookThumbnail" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				1616642C4C7097E78842548B /* Debug */,
+				39CBA8E787884D45850F028B /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
 		2293C42237BDB167245F2A7C /* Build configuration list for PBXNativeTarget "AstroTriageTests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
@@ -588,6 +897,15 @@
 			buildConfigurations = (
 				9349123B886226CEF09E77CA /* Debug */,
 				4BDF4858B30872BE8256352F /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		9437FCE92CB68FB314EDE903 /* Build configuration list for PBXNativeTarget "AstroTriageQuickLookPreview" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				FFD8A26D196D2BA013723EBE /* Debug */,
+				2A5893E471A41175BD941A58 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;
@@ -612,6 +930,14 @@
 
 /* Begin XCSwiftPackageProductDependency section */
 		0823264441FF3A7874FE3975 /* ImageDecoderBridge */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = ImageDecoderBridge;
+		};
+		8A263D3D8B89B08DB446B5AB /* ImageDecoderBridge */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = ImageDecoderBridge;
+		};
+		A7854A8F318978072FE7EB54 /* ImageDecoderBridge */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = ImageDecoderBridge;
 		};

@@ -29,15 +29,15 @@ targets:
     dependencies:
       - package: ImageDecoder
         product: ImageDecoderBridge
+      - target: AstroTriageQuickLookThumbnail
+      - target: AstroTriageQuickLookPreview
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.joergsflow.AstroBlinkV2
-        INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.photography
-        INFOPLIST_KEY_CFBundleDisplayName: AstroTriage
-        GENERATE_INFOPLIST_FILE: YES
-        INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: NO
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: AstroTriage/Info.plist
         CURRENT_PROJECT_VERSION: 7
-        MARKETING_VERSION: "2.0.1"
+        MARKETING_VERSION: "2.1.0"
         SWIFT_EMIT_LOC_STRINGS: YES
         ENABLE_APP_SANDBOX: YES
         ENABLE_HARDENED_RUNTIME: YES
@@ -46,11 +46,75 @@ targets:
         CODE_SIGN_STYLE: Automatic
         PRODUCT_NAME: AstroBlinkV2
         METAL_COMPILER_FLAGS: ""
-        # C++ interop for ImageDecoderBridge
         SWIFT_OBJC_INTEROP_MODE: objcxx
         OTHER_LDFLAGS:
           - "-lz"
-  # QuickLook extension targets + UTI declarations will be added in v2.1.0
+
+  AstroTriageQuickLookThumbnail:
+    type: app-extension
+    platform: macOS
+    sources:
+      - path: QuickLookExtension
+        excludes:
+          - "**/.DS_Store"
+          - PreviewProvider.swift
+    dependencies:
+      - package: ImageDecoder
+        product: ImageDecoderBridge
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.joergsflow.AstroBlinkV2.QuickLookThumbnail
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: QuickLookExtension/Info.plist
+        CURRENT_PROJECT_VERSION: 7
+        MARKETING_VERSION: "2.1.0"
+        MACOSX_DEPLOYMENT_TARGET: "13.3"
+        SWIFT_VERSION: "5.9"
+        CLANG_CXX_LANGUAGE_STANDARD: c++17
+        SWIFT_OBJC_INTEROP_MODE: objcxx
+        ENABLE_APP_SANDBOX: YES
+        ENABLE_HARDENED_RUNTIME: YES
+        CODE_SIGN_ENTITLEMENTS: QuickLookExtension/QuickLookExtension.entitlements
+        DEVELOPMENT_TEAM: FDSVBU33S8
+        CODE_SIGN_STYLE: Automatic
+        SKIP_INSTALL: YES
+        OTHER_LDFLAGS:
+          - "-lz"
+
+  AstroTriageQuickLookPreview:
+    type: app-extension
+    platform: macOS
+    sources:
+      - path: QuickLookExtension
+        excludes:
+          - "**/.DS_Store"
+          - ThumbnailProvider.swift
+          - Info.plist
+      - path: QuickLookPreview
+        excludes:
+          - "**/.DS_Store"
+    dependencies:
+      - package: ImageDecoder
+        product: ImageDecoderBridge
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.joergsflow.AstroBlinkV2.QuickLookPreview
+        GENERATE_INFOPLIST_FILE: NO
+        INFOPLIST_FILE: QuickLookPreview/Info.plist
+        CURRENT_PROJECT_VERSION: 7
+        MARKETING_VERSION: "2.1.0"
+        MACOSX_DEPLOYMENT_TARGET: "13.3"
+        SWIFT_VERSION: "5.9"
+        CLANG_CXX_LANGUAGE_STANDARD: c++17
+        SWIFT_OBJC_INTEROP_MODE: objcxx
+        ENABLE_APP_SANDBOX: YES
+        ENABLE_HARDENED_RUNTIME: YES
+        CODE_SIGN_ENTITLEMENTS: QuickLookPreview/QuickLookPreview.entitlements
+        DEVELOPMENT_TEAM: FDSVBU33S8
+        CODE_SIGN_STYLE: Automatic
+        SKIP_INSTALL: YES
+        OTHER_LDFLAGS:
+          - "-lz"
 
   AstroTriageTests:
     type: bundle.unit-test

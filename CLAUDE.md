@@ -261,18 +261,22 @@ Fallback: Filename-Token-Parsing
 
 ## Keyboard-Shortcuts
 
-| Taste         | Aktion                                              |
-|---------------|-----------------------------------------------------|
-| ← / →         | Prev / Next                                         |
-| Space         | Toggle Pre-Delete → physikalischer Move             |
-| Cmd+Z         | Undo                                                |
-| Cmd+Shift+Z   | Redo                                                |
-| Tab           | Active ↔ Pre-Delete Liste                           |
-| Cmd+F         | Filter fokussieren                                  |
-| Escape        | Filter leeren                                       |
-| S             | Stretch-Modus wechseln (auto/locked/global)         |
-| I             | Header-Info-Overlay                                 |
-| Cmd+Backspace | Final Delete (aus Pre-Delete-Tab) → macOS Trash     |
+| Taste            | Aktion                                              |
+|------------------|-----------------------------------------------------|
+| ← / →            | Prev / Next (stops at boundaries)                   |
+| Page Up / Home   | Jump to first image                                 |
+| Page Down / End  | Jump to last image                                  |
+| Space            | Toggle Pre-Delete mark (single or multi-selection)  |
+| Cmd+Backspace    | Move marked files to PRE-DELETE folder              |
+| Cmd+Z            | Undo last pre-delete                                |
+| S                | Toggle stretch mode (auto/locked)                   |
+| K                | Toggle skip-marked during navigation                |
+| H                | Toggle hide-marked from file list                   |
+| I                | Toggle FITS/XISF header inspector                   |
+| D                | Toggle debayer for OSC images                       |
+| N                | Toggle night mode (red-on-black)                    |
+| Cmd+O            | Open folder                                         |
+| Double-click     | Reset zoom to fit-to-view                           |
 
 ---
 

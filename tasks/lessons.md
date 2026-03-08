@@ -37,6 +37,12 @@
 - **Rule:** Always check image dimensions against max texture size; use bin2 (half resolution) for display when exceeded. Add `binFactor` parameter to Metal shader for correct pixel mapping.
 - **Applies to:** Metal compute shaders, iOS/iPadOS image display, large sensor cameras (ASI6200MM etc.)
 
+## [2026-03-08] — Navigation wrap-around causes visual glitch with fast key repeat
+- **Mistake:** Arrow key navigation wrapped from last→first image, causing the file list to jump unexpectedly during fast key repeat
+- **Root cause:** Modulo wrap-around `(selectedIndex + 1) % images.count` triggers a large scroll jump when hitting the boundary, confusing the user
+- **Rule:** Stop at boundaries instead of wrapping. Provide explicit jump keys (Page Up/Down, Home/End) for intentional first/last navigation.
+- **Applies to:** List navigation with key repeat, NSTableView scroll behavior
+
 ## [2026-03-07] — NSTableView multi-selection destroyed by updateNSView
 - **Mistake:** `updateNSView` was calling `selectRowIndexes(byExtendingSelection: false)` on every SwiftUI update, replacing multi-selection with single selection
 - **Root cause:** `reloadData()` clears selection, then the sync code only restored a single row
