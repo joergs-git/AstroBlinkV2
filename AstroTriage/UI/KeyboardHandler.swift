@@ -1,4 +1,4 @@
-// v0.9.7
+// v2.0.0
 import SwiftUI
 
 // Global keyboard event handler for navigation and triage shortcuts

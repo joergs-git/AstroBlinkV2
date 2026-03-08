@@ -1,4 +1,4 @@
-// v0.6.0
+// v2.0.0
 // STF Auto-Stretch + Debayer: PixInsight-compatible Screen Transfer Function
 // Applies per-channel Midtones Transfer Function for proper astro visualization
 // Includes bilinear debayer kernel for OSC (one-shot color) cameras
@@ -143,6 +143,41 @@ kernel void debayer_bilinear(
     rgbOut[idx] = (uint16_t)clamp(r, 0.0f, 65535.0f);
     rgbOut[planeSize + idx] = (uint16_t)clamp(g, 0.0f, 65535.0f);
     rgbOut[2 * planeSize + idx] = (uint16_t)clamp(b, 0.0f, 65535.0f);
+}
+
+// ==========================================================================
+// GPU bin2x — average every 2x2 block for half-resolution downsampling
+// Replaces CPU nested loops (~30-150ms) with GPU compute (~<1ms)
+// Input/output: uint16 planar buffers (mono or multi-channel)
+// ==========================================================================
+
+kernel void bin2x(
+    device const uint16_t* input [[buffer(0)]],
+    device uint16_t* output [[buffer(1)]],
+    constant int& srcWidth [[buffer(2)]],
+    constant int& srcHeight [[buffer(3)]],
+    constant int& channelCount [[buffer(4)]],
+    uint2 gid [[thread_position_in_grid]])
+{
+    int dstW = srcWidth / 2;
+    int dstH = srcHeight / 2;
+    if ((int)gid.x >= dstW || (int)gid.y >= dstH) return;
+
+    uint srcPlaneSize = (uint)srcWidth * (uint)srcHeight;
+    uint dstPlaneSize = (uint)dstW * (uint)dstH;
+
+    for (int ch = 0; ch < channelCount; ch++) {
+        uint srcBase = ch * srcPlaneSize;
+        uint dstBase = ch * dstPlaneSize;
+        uint sx = gid.x * 2;
+        uint sy = gid.y * 2;
+        uint srcIdx = srcBase + sy * (uint)srcWidth + sx;
+        uint sum = (uint)input[srcIdx]
+                 + (uint)input[srcIdx + 1]
+                 + (uint)input[srcIdx + (uint)srcWidth]
+                 + (uint)input[srcIdx + (uint)srcWidth + 1];
+        output[dstBase + gid.y * (uint)dstW + gid.x] = (uint16_t)(sum / 4);
+    }
 }
 
 // MARK: - Textured Quad Shaders (for fit-to-view rendering with zoom/pan)

@@ -5,14 +5,14 @@
 #include <cstring>
 #include <cstdlib>
 #include <string>
-#include <mutex>
 
-// cfitsio thread safety: single mutex serializes all cfitsio operations.
-// cfitsio auto-initializes (registers I/O drivers) on first fits_open_file() call
-// via its internal need_to_initialize flag. Our mutex ensures this happens exactly
-// once even across threads (no _REENTRANT needed — FFLOCK macros are no-ops,
-// our external mutex does all serialization).
-static std::mutex cfitsio_mutex;
+// cfitsio thread safety: compiled with _REENTRANT, cfitsio uses internal
+// pthread locks (FFLOCK/FFUNLOCK) to protect shared global state (file handle
+// table, one-time initialization, decompression buffers).
+// Different files can be decoded concurrently — no external mutex needed.
+// The one-time init is double-checked inside fits_init_cfitsio() using
+// Fitsio_InitLock (statically initialized) + FFLOCK, so it's safe even
+// when multiple threads call fits_open_file() simultaneously.
 
 // ============================================================================
 // XISF Decode — uses libxisf (C++17)
@@ -41,12 +41,18 @@ extern "C" DecodeResult decode_xisf(const char* path) {
         result.channelCount = static_cast<int32_t>(image.channelCount());
 
         size_t pixelCount = (size_t)result.width * result.height * result.channelCount;
-        result.pixels = (uint16_t*)malloc(pixelCount * sizeof(uint16_t));
-        if (!result.pixels) {
+        size_t byteCount = pixelCount * sizeof(uint16_t);
+        // Round up to page size — MTLBuffer bytesNoCopy requires page-aligned length
+        size_t pageSize = 4096;
+        size_t alignedByteCount = (byteCount + pageSize - 1) & ~(pageSize - 1);
+        // Page-aligned allocation enables MTLBuffer zero-copy via bytesNoCopy
+        void* aligned = nullptr;
+        if (posix_memalign(&aligned, pageSize, alignedByteCount) != 0 || !aligned) {
             result.success = 0;
-            snprintf(result.error, sizeof(result.error), "Failed to allocate %zu bytes", pixelCount * 2);
+            snprintf(result.error, sizeof(result.error), "Failed to allocate %zu bytes", byteCount);
             return result;
         }
+        result.pixels = (uint16_t*)aligned;
 
         // Access raw pixel data via imageData<T>()
         // libxisf stores data in planar format by default
@@ -119,10 +125,6 @@ extern "C" DecodeResult decode_fits(const char* path) {
     DecodeResult result;
     memset(&result, 0, sizeof(result));
 
-    // Serialize all cfitsio operations — cfitsio uses global state that is
-    // not thread-safe. The first call triggers automatic driver registration.
-    std::lock_guard<std::mutex> lock(cfitsio_mutex);
-
     fitsfile* fptr = nullptr;
     int status = 0;
 
@@ -149,13 +151,19 @@ extern "C" DecodeResult decode_fits(const char* path) {
     result.channelCount = (naxis >= 3) ? (int32_t)naxes[2] : 1;
 
     size_t pixelCount = (size_t)result.width * result.height * result.channelCount;
-    result.pixels = (uint16_t*)malloc(pixelCount * sizeof(uint16_t));
-    if (!result.pixels) {
+    size_t byteCount = pixelCount * sizeof(uint16_t);
+    // Round up to page size — MTLBuffer bytesNoCopy requires page-aligned length
+    size_t pageSize = 4096;
+    size_t alignedByteCount = (byteCount + pageSize - 1) & ~(pageSize - 1);
+    // Page-aligned allocation enables MTLBuffer zero-copy via bytesNoCopy
+    void* aligned = nullptr;
+    if (posix_memalign(&aligned, pageSize, alignedByteCount) != 0 || !aligned) {
         result.success = 0;
-        snprintf(result.error, sizeof(result.error), "Failed to allocate %zu bytes", pixelCount * 2);
+        snprintf(result.error, sizeof(result.error), "Failed to allocate %zu bytes", byteCount);
         fits_close_file(fptr, &status);
         return result;
     }
+    result.pixels = (uint16_t*)aligned;
 
     int anynull = 0;
     // CRITICAL (Lesson L1): Use TUSHORT, not TSHORT!
@@ -230,9 +238,6 @@ extern "C" HeaderResult read_xisf_headers(const char* path) {
 extern "C" HeaderResult read_fits_headers(const char* path) {
     HeaderResult result;
     memset(&result, 0, sizeof(result));
-
-    // Serialize all cfitsio operations
-    std::lock_guard<std::mutex> lock(cfitsio_mutex);
 
     fitsfile* fptr = nullptr;
     int status = 0;

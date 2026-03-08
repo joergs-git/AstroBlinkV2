@@ -1,4 +1,4 @@
-// v0.9.7
+// v2.0.0
 import SwiftUI
 
 // Root view: toolbar on top, optional side panels (inspector left, session right),
@@ -230,8 +230,33 @@ struct ContentView: View {
                         .background(nightControlBg)
                     }
 
-                    // Status bar with dividers between elements
+                    // Status bar: LEFT = selection/file info, RIGHT = session/mode indicators
                     HStack(spacing: 0) {
+                        // LEFT SIDE: file index, marked count, dimensions (close to filename column)
+                        if let image = viewModel.selectedImage {
+                            Text("\(viewModel.selectedIndex + 1) / \(viewModel.images.count)")
+                                .font(.system(size: 11, design: .monospaced))
+                                .foregroundColor(nightFg)
+
+                            if let w = image.width, let h = image.height {
+                                statusDivider
+
+                                Text("\(w)x\(h)")
+                                    .font(.system(size: 11, design: .monospaced))
+                                    .foregroundColor(nightFg)
+                            }
+                        }
+
+                        if viewModel.markedCount > 0 {
+                            statusDivider
+
+                            Text("\(viewModel.markedCount) of \(viewModel.images.count) marked")
+                                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                                .foregroundColor(.red)
+                        }
+
+                        statusDivider
+
                         Text(viewModel.statusMessage)
                             .font(.system(size: 11, design: .monospaced))
                             .foregroundColor(nightFg)
@@ -240,16 +265,7 @@ struct ContentView: View {
 
                         Spacer()
 
-                        // Marked count
-                        if viewModel.markedCount > 0 {
-                            Text("\(viewModel.markedCount) of \(viewModel.images.count) marked")
-                                .font(.system(size: 10, weight: .medium, design: .monospaced))
-                                .foregroundColor(.red)
-
-                            statusDivider
-                        }
-
-                        // Skip/Hide marked indicators
+                        // RIGHT SIDE: mode indicators + filter stats (general info)
                         if viewModel.skipMarked {
                             Text("SKIP")
                                 .font(.system(size: 10, weight: .bold, design: .monospaced))
@@ -277,7 +293,6 @@ struct ContentView: View {
                             statusDivider
                         }
 
-                        // Night mode indicator
                         if viewModel.nightMode {
                             Text("NIGHT")
                                 .font(.system(size: 10, weight: .bold, design: .monospaced))
@@ -286,27 +301,10 @@ struct ContentView: View {
                             statusDivider
                         }
 
-                        // Debayer indicator (only when active)
                         if viewModel.debayerEnabled {
                             Text("DEBAYER")
                                 .font(.system(size: 10, weight: .bold, design: .monospaced))
                                 .foregroundColor(viewModel.nightMode ? .red : .green)
-
-                            statusDivider
-                        }
-
-                        if let image = viewModel.selectedImage {
-                            Text("\(viewModel.selectedIndex + 1) / \(viewModel.images.count)")
-                                .font(.system(size: 11, design: .monospaced))
-                                .foregroundColor(nightFg)
-
-                            if let w = image.width, let h = image.height {
-                                statusDivider
-
-                                Text("\(w)x\(h)")
-                                    .font(.system(size: 11, design: .monospaced))
-                                    .foregroundColor(nightFg)
-                            }
                         }
                     }
                     .padding(.horizontal, 8)
@@ -348,7 +346,7 @@ struct ContentView: View {
         .onChange(of: viewModel.stretchStrength) { newValue in
             sliderValue = Double(newValue)
         }
-        .navigationTitle("AstroBlinkV2 v0.9.7 — Fast Visual Culling for Astrophotography")
+        .navigationTitle("AstroBlinkV2 v2.0.0 — Fast Visual Culling for Astrophotography")
         .frame(minWidth: 800, minHeight: 500)
     }
 

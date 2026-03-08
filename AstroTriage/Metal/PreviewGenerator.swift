@@ -1,11 +1,10 @@
-// v0.8.0
+// v2.0.0
 import Foundation
 import Metal
 
 // Generates pre-stretched, downsampled BGRA8 preview textures for instant navigation.
-// Uses its own Metal compute pipeline (same shader as MetalRenderer) to run
-// independently of the draw cycle. Bins uint16 data 2x on CPU, then applies
-// STF stretch on GPU, producing a small (~5MB) ready-to-display texture.
+// Uses Metal compute for bin2x + STF stretch in a single command buffer.
+// All GPU work (debayer → bin2x → STF) is chained to minimize round-trips.
 
 struct CachedPreview {
     let texture: MTLTexture       // BGRA8, pre-stretched, bin2x resolution
@@ -20,6 +19,7 @@ class PreviewGenerator {
     let commandQueue: MTLCommandQueue
     let computePipeline: MTLComputePipelineState
     let debayerPipeline: MTLComputePipelineState?
+    let bin2xPipeline: MTLComputePipelineState?
 
     // Bayer pattern string to shader index mapping
     private static let bayerPatternMap: [String: Int] = [
@@ -45,6 +45,14 @@ class PreviewGenerator {
             self.debayerPipeline = debayerPipe
         } else {
             self.debayerPipeline = nil
+        }
+
+        // Load GPU bin2x kernel
+        if let bin2xFunc = library.makeFunction(name: "bin2x"),
+           let bin2xPipe = try? device.makeComputePipelineState(function: bin2xFunc) {
+            self.bin2xPipeline = bin2xPipe
+        } else {
+            self.bin2xPipeline = nil
         }
     }
 
@@ -94,17 +102,23 @@ class PreviewGenerator {
     }
 
     // Generate a pre-stretched, bin2x preview texture from raw decoded image data.
-    // This runs synchronously on the calling thread (compute is fast, ~5ms).
+    // Chains GPU bin2x → STF stretch in a single command buffer (Phase 3 + 7).
     func generatePreview(from image: DecodedImage, stfParams: [STFParams]) -> CachedPreview? {
-        // Step 1: CPU bin2x — average every 2x2 block of uint16 pixels
-        let binnedResult = bin2x(image: image)
-        guard let binnedBuffer = binnedResult.buffer else { return nil }
-
-        let binnedW = binnedResult.width
-        let binnedH = binnedResult.height
+        let srcW = image.width
+        let srcH = image.height
         let channels = image.channelCount
+        let binnedW = srcW / 2
+        let binnedH = srcH / 2
 
-        // Step 2: Prepare STF buffer (pad mono to 3 channels)
+        guard binnedW > 0, binnedH > 0 else { return nil }
+
+        // Allocate bin2x output buffer on GPU
+        let binnedBytes = binnedW * binnedH * channels * MemoryLayout<UInt16>.size
+        guard let binnedBuffer = device.makeBuffer(length: binnedBytes, options: .storageModeShared) else {
+            return nil
+        }
+
+        // Prepare STF params buffer (pad mono to 3 channels)
         var params = stfParams
         while params.count < 3 {
             params.append(params.first ?? STFParams(c0: 0.0, mb: 0.5))
@@ -122,7 +136,7 @@ class PreviewGenerator {
             options: .storageModeShared
         ) else { return nil }
 
-        // Step 3: Create output BGRA8 texture at binned resolution
+        // Create output BGRA8 texture at binned resolution
         let texDesc = MTLTextureDescriptor.texture2DDescriptor(
             pixelFormat: .bgra8Unorm,
             width: binnedW,
@@ -134,30 +148,56 @@ class PreviewGenerator {
 
         guard let outTexture = device.makeTexture(descriptor: texDesc) else { return nil }
 
-        // Step 4: Run compute shader — STF stretch on binned data
-        guard let commandBuffer = commandQueue.makeCommandBuffer(),
-              let encoder = commandBuffer.makeComputeCommandEncoder() else { return nil }
+        // Single command buffer for both GPU passes (bin2x → STF stretch)
+        guard let commandBuffer = commandQueue.makeCommandBuffer() else { return nil }
 
-        encoder.setComputePipelineState(computePipeline)
-        encoder.setBuffer(binnedBuffer, offset: 0, index: 0)
+        // Pass 1: GPU bin2x — average 2x2 blocks
+        if let bin2xPipeline = bin2xPipeline {
+            guard let encoder = commandBuffer.makeComputeCommandEncoder() else { return nil }
+            encoder.setComputePipelineState(bin2xPipeline)
+            encoder.setBuffer(image.buffer, offset: 0, index: 0)
+            encoder.setBuffer(binnedBuffer, offset: 0, index: 1)
+            var sw = Int32(srcW)
+            var sh = Int32(srcH)
+            var cc = Int32(channels)
+            encoder.setBytes(&sw, length: 4, index: 2)
+            encoder.setBytes(&sh, length: 4, index: 3)
+            encoder.setBytes(&cc, length: 4, index: 4)
 
-        var width = Int32(binnedW)
-        var height = Int32(binnedH)
-        var channelCount = Int32(channels)
-        encoder.setBytes(&width, length: MemoryLayout<Int32>.size, index: 1)
-        encoder.setBytes(&height, length: MemoryLayout<Int32>.size, index: 2)
-        encoder.setBytes(&channelCount, length: MemoryLayout<Int32>.size, index: 3)
-        encoder.setBuffer(stfBuffer, offset: 0, index: 4)
-        encoder.setTexture(outTexture, index: 0)
+            let tg = MTLSize(width: 32, height: 32, depth: 1)
+            let grid = MTLSize(
+                width: (binnedW + 31) / 32,
+                height: (binnedH + 31) / 32,
+                depth: 1
+            )
+            encoder.dispatchThreadgroups(grid, threadsPerThreadgroup: tg)
+            encoder.endEncoding()
+        }
 
-        let threadgroupSize = MTLSize(width: 32, height: 32, depth: 1)
-        let gridSize = MTLSize(
-            width: (binnedW + 31) / 32,
-            height: (binnedH + 31) / 32,
-            depth: 1
-        )
-        encoder.dispatchThreadgroups(gridSize, threadsPerThreadgroup: threadgroupSize)
-        encoder.endEncoding()
+        // Pass 2: STF stretch on binned data → BGRA8 texture
+        do {
+            guard let encoder = commandBuffer.makeComputeCommandEncoder() else { return nil }
+            encoder.setComputePipelineState(computePipeline)
+            encoder.setBuffer(binnedBuffer, offset: 0, index: 0)
+
+            var width = Int32(binnedW)
+            var height = Int32(binnedH)
+            var channelCount = Int32(channels)
+            encoder.setBytes(&width, length: MemoryLayout<Int32>.size, index: 1)
+            encoder.setBytes(&height, length: MemoryLayout<Int32>.size, index: 2)
+            encoder.setBytes(&channelCount, length: MemoryLayout<Int32>.size, index: 3)
+            encoder.setBuffer(stfBuffer, offset: 0, index: 4)
+            encoder.setTexture(outTexture, index: 0)
+
+            let tg = MTLSize(width: 32, height: 32, depth: 1)
+            let grid = MTLSize(
+                width: (binnedW + 31) / 32,
+                height: (binnedH + 31) / 32,
+                depth: 1
+            )
+            encoder.dispatchThreadgroups(grid, threadsPerThreadgroup: tg)
+            encoder.endEncoding()
+        }
 
         commandBuffer.commit()
         commandBuffer.waitUntilCompleted()
@@ -169,53 +209,5 @@ class PreviewGenerator {
             originalHeight: image.height,
             channelCount: image.channelCount
         )
-    }
-
-    // MARK: - CPU bin2x
-
-    // Average every 2x2 block of uint16 pixels → half-resolution MTLBuffer.
-    // For planar data (mono or RGB), each channel plane is binned independently.
-    private func bin2x(image: DecodedImage) -> (buffer: MTLBuffer?, width: Int, height: Int) {
-        let srcW = image.width
-        let srcH = image.height
-        let channels = image.channelCount
-        let newW = srcW / 2
-        let newH = srcH / 2
-
-        guard newW > 0, newH > 0 else {
-            return (nil, 0, 0)
-        }
-
-        let src = image.buffer.contents().bindMemory(to: UInt16.self, capacity: srcW * srcH * channels)
-        let dstCount = newW * newH * channels
-        let dstBytes = dstCount * MemoryLayout<UInt16>.size
-
-        guard let dstBuffer = device.makeBuffer(length: dstBytes, options: .storageModeShared) else {
-            return (nil, 0, 0)
-        }
-
-        let dst = dstBuffer.contents().bindMemory(to: UInt16.self, capacity: dstCount)
-        let planeSize = srcW * srcH
-        let newPlaneSize = newW * newH
-
-        for ch in 0..<channels {
-            let srcPlane = src.advanced(by: ch * planeSize)
-            let dstPlane = dst.advanced(by: ch * newPlaneSize)
-
-            for y in 0..<newH {
-                let sy = y * 2
-                for x in 0..<newW {
-                    let sx = x * 2
-                    // Average 2x2 block
-                    let sum = UInt32(srcPlane[sy * srcW + sx])
-                            + UInt32(srcPlane[sy * srcW + sx + 1])
-                            + UInt32(srcPlane[(sy + 1) * srcW + sx])
-                            + UInt32(srcPlane[(sy + 1) * srcW + sx + 1])
-                    dstPlane[y * newW + x] = UInt16(sum / 4)
-                }
-            }
-        }
-
-        return (dstBuffer, newW, newH)
     }
 }

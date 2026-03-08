@@ -43,9 +43,10 @@ let package = Package(
                 .define("HAVE_LONGLONG"),
                 // HAVE_NET_SERVICES intentionally NOT defined — disables ROOT/XRootD,
                 // HTTP, and FTP drivers which we don't need and whose init() would fail.
-                // NOT using _REENTRANT — our external std::mutex handles all serialization.
-                // _REENTRANT activates cfitsio's internal pthread locks which conflict with
-                // external mutex and can cause double driver registration.
+                // _REENTRANT enables cfitsio's internal pthread locks (FFLOCK/FFUNLOCK)
+                // for thread-safe concurrent access to DIFFERENT file handles.
+                // No external mutex needed — cfitsio handles its own synchronization.
+                .define("_REENTRANT"),
             ],
             linkerSettings: [
                 .linkedLibrary("z")

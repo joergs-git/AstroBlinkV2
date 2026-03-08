@@ -1,4 +1,4 @@
-// v0.9.7
+// v2.0.0
 import Foundation
 import SwiftUI
 import Metal
@@ -385,32 +385,50 @@ class TriageViewModel: ObservableObject {
         startFullPrefetch()
     }
 
-    // Cache all image files from network to local disk
+    // Cache all image files from network to local disk using parallel streams
+    // 4 concurrent copies to saturate 10GbE / multi-stream SMB connections
     private func cacheNetworkFiles() async {
         guard let rootURL = sessionRootURL else { return }
         sessionCache.prepareSession(rootURL: rootURL)
 
         let total = images.count
-
-        // Build a snapshot of URLs to cache (avoid accessing images from background)
         let sourceURLs = images.map { $0.url }
 
-        // Sequential caching to avoid thread-safety issues with network I/O
-        // Each file is copied on a background thread, results applied on main actor
+        // Thread-safe results array
+        let results = UnsafeMutableBufferPointer<URL?>.allocate(capacity: total)
+        results.initialize(repeating: nil)
+        let progressCounter = NSLock()
+        var progressCount = 0
+
+        let sessionCacheRef = sessionCache
+
+        // Parallel copy with 4 concurrent streams (SSD/NAS sweet spot)
+        await Task.detached(priority: .utility) {
+            DispatchQueue.concurrentPerform(iterations: total) { index in
+                let localURL = sessionCacheRef.cacheFile(sourceURL: sourceURLs[index])
+                results[index] = localURL
+
+                progressCounter.lock()
+                progressCount += 1
+                let current = progressCount
+                progressCounter.unlock()
+
+                if current % 4 == 0 || current == total {
+                    Task { @MainActor [weak self] in
+                        self?.statusMessage = "Downloading to local cache \(current)/\(total)..."
+                    }
+                }
+            }
+        }.value
+
+        // Apply all cached URLs in one batch on main actor
         for index in 0..<total {
-            let sourceURL = sourceURLs[index]
-
-            let localURL = await Task.detached(priority: .utility) { [sessionCache] () -> URL? in
-                return sessionCache.cacheFile(sourceURL: sourceURL)
-            }.value
-
-            if let localURL = localURL, index < images.count {
+            if let localURL = results[index], index < images.count {
                 images[index].decodingURL = localURL
             }
-
-            statusMessage = "Downloading to local cache \(index + 1)/\(total)..."
         }
 
+        results.deallocate()
         statusMessage = "\(total) files cached locally"
 
         Task.detached(priority: .background) {
@@ -424,6 +442,12 @@ class TriageViewModel: ObservableObject {
     // (BAYERPAT, FILTER, GAIN, CCD-TEMP, etc.) — runs after fast filename-only scan
     private var headerEnrichmentTask: Task<Void, Never>?
 
+    // Parsed header data for a single image (used for parallel header reading)
+    private struct HeaderData {
+        let index: Int
+        let headers: [String: String]
+    }
+
     private func enrichWithHeaders() {
         headerEnrichmentTask?.cancel()
         let urls = images.map { $0.url }
@@ -433,23 +457,48 @@ class TriageViewModel: ObservableObject {
         headerReadTotal = total
         headerProgress = 0
 
+        // Cap concurrency: ~8 for local SSD (queue depth), ~4 for network
+        let concurrency = min(8, ProcessInfo.processInfo.activeProcessorCount)
+
         headerEnrichmentTask = Task.detached(priority: .utility) { [weak self] in
-            var foundOSC = false
+            // Read all headers in parallel using concurrentPerform
+            var allHeaders = Array(repeating: [String: String](), count: total)
+            let headerLock = NSLock()
+            let progressCounter = NSLock()
+            var progressCount = 0
 
-            for (index, url) in urls.enumerated() {
-                guard !Task.isCancelled else { return }
+            DispatchQueue.concurrentPerform(iterations: total) { index in
+                let headers = MetadataExtractor.readHeaders(from: urls[index])
+                headerLock.lock()
+                allHeaders[index] = headers
+                headerLock.unlock()
 
-                let headers = MetadataExtractor.readHeaders(from: url)
+                // Update progress periodically (every 8 files to avoid UI thrashing)
+                progressCounter.lock()
+                progressCount += 1
+                let currentProgress = progressCount
+                progressCounter.unlock()
 
-                await MainActor.run {
-                    guard let self = self, index < self.images.count,
-                          self.images[index].url == url else { return }
+                if currentProgress % 8 == 0 || currentProgress == total {
+                    Task { @MainActor in
+                        guard let self = self else { return }
+                        self.headerReadCount = currentProgress
+                        self.headerProgress = total > 0 ? Double(currentProgress) / Double(total) : 0
+                    }
+                }
+            }
 
-                    // Update progress
-                    self.headerReadCount = index + 1
-                    self.headerProgress = total > 0 ? Double(index + 1) / Double(total) : 0
+            // Apply all headers in one batch on main actor
+            await MainActor.run {
+                guard let self = self else { return }
+                var foundOSC = false
 
-                    guard !headers.isEmpty else { return }
+                for index in 0..<total {
+                    guard index < self.images.count,
+                          self.images[index].url == urls[index] else { continue }
+
+                    let headers = allHeaders[index]
+                    guard !headers.isEmpty else { continue }
 
                     // Apply header values (authoritative over filename)
                     if let filter = headers["FILTER"], !filter.isEmpty {
@@ -499,16 +548,11 @@ class TriageViewModel: ObservableObject {
                         }
                     }
 
-                    // Track if any OSC images found
                     if self.images[index].bayerPattern != nil {
                         foundOSC = true
                     }
                 }
-            }
 
-            // Headers done — update metadata display and flag OSC presence
-            await MainActor.run {
-                guard let self = self else { return }
                 self.needsTableRefresh = true
                 self.loadingPhase = .none
                 self.sessionOverviewModel.updateStats(from: self.images)

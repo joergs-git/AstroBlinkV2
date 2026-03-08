@@ -342,20 +342,40 @@ struct FileListView: NSViewRepresentable {
             guard let tableView = notification.object as? NSTableView else { return }
             let selectedRows = tableView.selectedRowIndexes
 
+            // Determine which row to display: for multi-select (shift+click/arrow),
+            // show the image at the cursor position (last added row in the selection).
+            // For single select, show the selected row as before.
+            let targetRow: Int
             if selectedRows.count == 1, let row = selectedRows.first {
-                Task { @MainActor in
-                    if viewModel.hideMarked {
-                        let visible = viewModel.visibleImages
-                        guard row < visible.count else { return }
-                        let url = visible[row].url
-                        if let realIdx = viewModel.images.firstIndex(where: { $0.url == url }) {
-                            if realIdx != viewModel.selectedIndex {
-                                viewModel.selectImage(at: realIdx)
-                            }
+                targetRow = row
+            } else if selectedRows.count > 1 {
+                // During shift+arrow, the cursor position is the newest edge of selection.
+                // NSTableView doesn't expose this directly, but we can infer it:
+                // compare the current selection to what the viewModel thinks is selected.
+                // The row furthest from the previous selection is the cursor position.
+                let prevRow = viewModel.selectedIndex
+                if let first = selectedRows.first, let last = selectedRows.last {
+                    // Show whichever end is further from the previous position
+                    targetRow = abs(last - prevRow) >= abs(first - prevRow) ? last : first
+                } else {
+                    return
+                }
+            } else {
+                return
+            }
+
+            Task { @MainActor in
+                if viewModel.hideMarked {
+                    let visible = viewModel.visibleImages
+                    guard targetRow < visible.count else { return }
+                    let url = visible[targetRow].url
+                    if let realIdx = viewModel.images.firstIndex(where: { $0.url == url }) {
+                        if realIdx != viewModel.selectedIndex {
+                            viewModel.selectImage(at: realIdx)
                         }
-                    } else if row != viewModel.selectedIndex {
-                        viewModel.selectImage(at: row)
                     }
+                } else if targetRow != viewModel.selectedIndex {
+                    viewModel.selectImage(at: targetRow)
                 }
             }
         }

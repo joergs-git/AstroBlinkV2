@@ -1,4 +1,4 @@
-// v0.1.0
+// v2.0.0
 import Foundation
 import Metal
 import ImageDecoderBridge
@@ -8,7 +8,8 @@ import ImageDecoderBridge
 struct ImageDecoder {
 
     // Decode an image file and return pixel data in a Metal buffer
-    // Uses MTLStorageModeShared for zero-copy unified memory access
+    // Uses bytesNoCopy for true zero-copy: the C-allocated page-aligned buffer
+    // becomes the MTLBuffer's backing memory directly — no memcpy.
     static func decode(url: URL, device: MTLDevice) -> Result<DecodedImage, DecoderError> {
         let path = url.path
         let ext = url.pathExtension.lowercased()
@@ -27,18 +28,33 @@ struct ImageDecoder {
             return .failure(.decodeFailed(errorMsg))
         }
 
-        // Ensure we free the C-allocated pixels when done (Lesson L4)
-        defer { free_decode_result(&result) }
-
         let width = Int(result.width)
         let height = Int(result.height)
         let channels = Int(result.channelCount)
         let byteCount = width * height * channels * MemoryLayout<UInt16>.size
 
-        // Create Metal buffer with shared storage (zero-copy on Apple Silicon)
-        guard let buffer = device.makeBuffer(bytes: result.pixels, length: byteCount, options: .storageModeShared) else {
+        // Round up to page size for bytesNoCopy requirement
+        let pageSize = Int(getpagesize())
+        let alignedByteCount = (byteCount + pageSize - 1) / pageSize * pageSize
+
+        // Zero-copy: wrap the page-aligned C allocation as MTLBuffer directly.
+        // The deallocator frees the C memory when the MTLBuffer is released.
+        let rawPtr = UnsafeMutableRawPointer(result.pixels)!
+        guard let buffer = device.makeBuffer(
+            bytesNoCopy: rawPtr,
+            length: alignedByteCount,
+            options: .storageModeShared,
+            deallocator: { pointer, _ in
+                free(pointer)
+            }
+        ) else {
+            // Fallback: if bytesNoCopy fails, free C memory and report error
+            free_decode_result(&result)
             return .failure(.metalBufferFailed)
         }
+
+        // Do NOT call free_decode_result — MTLBuffer now owns the memory
+        // and will free it via the deallocator when released
 
         return .success(DecodedImage(
             buffer: buffer,

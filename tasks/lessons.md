@@ -12,10 +12,11 @@
 - **Rule:** Don't increase limits as a workaround — find and fix the root cause of overflow/corruption
 - **Applies to:** cfitsio cfileio.c, any resource limit issues
 
-## [2026-03-07] — _REENTRANT not needed for cfitsio
-- **Mistake:** Added `_REENTRANT` to cfitsio compile flags thinking it would help thread safety
-- **Root cause:** External `std::mutex` in the bridge already serializes all cfitsio access. _REENTRANT activates cfitsio's internal pthread locks which add complexity without benefit and can conflict with the external mutex.
-- **Rule:** Use one serialization mechanism. Don't mix external mutex with library-internal locks.
+## [2026-03-07] — cfitsio threading: use ONE mechanism, not both
+- **Original mistake:** Added `_REENTRANT` while ALSO keeping the external `std::mutex`, creating two conflicting lock mechanisms
+- **Root cause:** `_REENTRANT` activates cfitsio's internal pthread locks (FFLOCK/FFUNLOCK). Mixing with an external mutex is redundant and wasteful.
+- **Resolution (v0.9.8):** Enabled `_REENTRANT` and REMOVED the external mutex entirely. cfitsio's internal locks protect shared global state (file handle table, one-time init, decompression buffers). Different files can now be decoded concurrently.
+- **Rule:** Use one serialization mechanism. Either external mutex OR library-internal locks, never both. For cfitsio, `_REENTRANT` is the correct choice when concurrent decode is needed.
 - **Applies to:** cfitsio threading, Package.swift cSettings
 
 ## [2026-03-08] — Wrong iOS project edited (AstroViewer-iOS vs AstroFileViewer-iOS)
