@@ -132,9 +132,27 @@ struct ContentView: View {
                 // CENTER: Image viewer + file list + status bars
                 VStack(spacing: 0) {
                     VSplitView {
-                        // Top: Image viewer (takes most space)
-                        ImageViewerView(viewModel: viewModel, renderer: $renderer)
-                            .frame(minHeight: 200)
+                        // Top: Image viewer with optional caching overlay
+                        ZStack(alignment: .center) {
+                            ImageViewerView(viewModel: viewModel, renderer: $renderer)
+
+                            // Show "still caching" text when current image has no cached preview
+                            if viewModel.isCaching,
+                               let image = viewModel.selectedImage,
+                               !viewModel.isImageCached(image.url),
+                               viewModel.currentDecodedImage == nil {
+                                Text("Caching this image...")
+                                    .font(.system(size: 16, weight: .medium, design: .monospaced))
+                                    .foregroundColor(viewModel.nightMode ? .red.opacity(0.8) : .white.opacity(0.8))
+                                    .padding(.horizontal, 20)
+                                    .padding(.vertical, 10)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 8)
+                                            .fill(Color.black.opacity(0.6))
+                                    )
+                            }
+                        }
+                        .frame(minHeight: 200)
 
                         // Bottom: File list with loading overlay
                         ZStack {

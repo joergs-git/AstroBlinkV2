@@ -47,18 +47,39 @@ class AstroBlinkV2AppDelegate: NSObject, NSApplicationDelegate {
         SessionCache.cleanupAllCaches()
     }
 
+    // Click monitor for dismissing splash screen
+    private var splashClickMonitor: Any?
+
     // Show splash screen (about panel) briefly on launch
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Small delay so the main window appears first
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
             AstroBlinkV2AppDelegate.showAboutPanel()
-            // Auto-dismiss after 2 seconds
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-                // Close the about panel if it's still showing
-                for window in NSApp.windows where window.title == "About AstroBlinkV2" {
-                    window.close()
-                }
+
+            // Dismiss on any mouse click or key press anywhere
+            self.splashClickMonitor = NSEvent.addLocalMonitorForEvents(
+                matching: [.leftMouseDown, .rightMouseDown, .keyDown]
+            ) { [weak self] event in
+                self?.dismissSplash()
+                return event
             }
+
+            // Auto-dismiss after 4 seconds if no interaction
+            DispatchQueue.main.asyncAfter(deadline: .now() + 4.0) { [weak self] in
+                self?.dismissSplash()
+            }
+        }
+    }
+
+    private func dismissSplash() {
+        // Remove click monitor
+        if let monitor = splashClickMonitor {
+            NSEvent.removeMonitor(monitor)
+            splashClickMonitor = nil
+        }
+        // Close the about panel if it's still showing
+        for window in NSApp.windows where window.title == "About AstroBlinkV2" {
+            window.close()
         }
     }
 
@@ -81,9 +102,9 @@ class AstroBlinkV2AppDelegate: NSObject, NSApplicationDelegate {
         ]))
         credits.append(NSAttributedString(string: "joergsflow@gmail.com\n\n", attributes: normalAttrs))
 
-        let astrobinLink = NSMutableAttributedString(string: "Astrobin", attributes: linkAttrs)
-        astrobinLink.addAttribute(.link, value: URL(string: "https://app.astrobin.com/u/joergsflow#gallery")!, range: NSRange(location: 0, length: astrobinLink.length))
-        credits.append(astrobinLink)
+        let githubLink = NSMutableAttributedString(string: "GitHub", attributes: linkAttrs)
+        githubLink.addAttribute(.link, value: URL(string: "https://github.com/joergs-git/AstroBlinkV2")!, range: NSRange(location: 0, length: githubLink.length))
+        credits.append(githubLink)
         credits.append(NSAttributedString(string: "  ·  ", attributes: normalAttrs))
 
         let instaLink = NSMutableAttributedString(string: "Instagram", attributes: linkAttrs)
@@ -91,9 +112,9 @@ class AstroBlinkV2AppDelegate: NSObject, NSApplicationDelegate {
         credits.append(instaLink)
         credits.append(NSAttributedString(string: "  ·  ", attributes: normalAttrs))
 
-        let githubLink = NSMutableAttributedString(string: "GitHub", attributes: linkAttrs)
-        githubLink.addAttribute(.link, value: URL(string: "https://github.com/joergsflow/AstroBlinkV2")!, range: NSRange(location: 0, length: githubLink.length))
-        credits.append(githubLink)
+        let astrobinLink = NSMutableAttributedString(string: "Astrobin", attributes: linkAttrs)
+        astrobinLink.addAttribute(.link, value: URL(string: "https://app.astrobin.com/u/joergsflow#gallery")!, range: NSRange(location: 0, length: astrobinLink.length))
+        credits.append(astrobinLink)
 
         let italicDescriptor = NSFontDescriptor.preferredFontDescriptor(forTextStyle: .body).withSymbolicTraits(.italic)
         let italicFont = NSFont(descriptor: italicDescriptor, size: 10) ?? NSFont.systemFont(ofSize: 10)
@@ -188,9 +209,12 @@ struct HelpContentView: View {
                 // Keyboard Shortcuts
                 sectionHeader("Keyboard Shortcuts")
 
-                shortcutRow("←  →", "Navigate previous / next image (wraps around)")
+                shortcutRow("←  →", "Navigate previous / next image")
+                shortcutRow("Page Up / Home", "Jump to first image")
+                shortcutRow("Page Down / End", "Jump to last image")
                 shortcutRow("Space", "Toggle pre-delete mark (single or multi-selection)")
                 shortcutRow("Cmd + ⌫", "Move marked files to PRE-DELETE folder")
+                shortcutRow("Cmd + Z", "Undo last pre-delete operation")
                 shortcutRow("S", "Toggle stretch mode: Auto STF ↔ Locked STF")
                 shortcutRow("K", "Toggle skip-marked: arrow keys skip over marked images")
                 shortcutRow("H", "Toggle hide-marked: hide marked images from the list")
@@ -316,11 +340,11 @@ struct HelpContentView: View {
                         .foregroundColor(.secondary)
 
                     HStack(spacing: 16) {
-                        Link("Astrobin", destination: URL(string: "https://app.astrobin.com/u/joergsflow#gallery")!)
+                        Link("GitHub", destination: URL(string: "https://github.com/joergs-git/AstroBlinkV2")!)
                             .font(.system(size: 11))
                         Link("Instagram", destination: URL(string: "https://www.instagram.com/joergsflow/")!)
                             .font(.system(size: 11))
-                        Link("GitHub", destination: URL(string: "https://github.com/joergsflow/AstroBlinkV2")!)
+                        Link("Astrobin", destination: URL(string: "https://app.astrobin.com/u/joergsflow#gallery")!)
                             .font(.system(size: 11))
                     }
 

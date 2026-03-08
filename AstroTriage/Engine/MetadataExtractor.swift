@@ -140,9 +140,14 @@ struct MetadataExtractor {
             entry.offset = val
         }
 
-        // Focuser position/temperature
+        // Focuser temperature
         if let focTemp = headers["FOCTEMP"], let val = Double(focTemp) {
             entry.focuserTemp = val
+        }
+
+        // Ambient/environment temperature
+        if let ambTemp = headers["AMBTEMP"] ?? headers["AMBIENT"], let val = Double(ambTemp) {
+            entry.ambientTemp = val
         }
 
         // Mount (NINA writes various keywords)

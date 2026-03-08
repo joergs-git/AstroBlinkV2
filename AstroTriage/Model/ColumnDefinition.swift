@@ -10,29 +10,31 @@ struct ColumnDefinition {
     let isDefaultVisible: Bool
     let isHideable: Bool
 
-    // All available columns in display order
+    // All available columns in default display order
+    // Order: checkbox, #, filename, object, filter, exp, ambtemp, foctemp, temp, gain, size, fwhm, hfr, stars, subfolder
     static let allColumns: [ColumnDefinition] = [
-        ColumnDefinition(identifier: "marked",      title: "",         defaultWidth: 28,  minWidth: 28,  isDefaultVisible: true,  isHideable: false),
-        ColumnDefinition(identifier: "frameNumber", title: "#",        defaultWidth: 45,  minWidth: 35,  isDefaultVisible: true,  isHideable: true),
-        ColumnDefinition(identifier: "filename",    title: "Filename", defaultWidth: 280, minWidth: 100, isDefaultVisible: true,  isHideable: false),
-        ColumnDefinition(identifier: "target",      title: "Object",   defaultWidth: 120, minWidth: 60,  isDefaultVisible: true,  isHideable: true),
-        ColumnDefinition(identifier: "filter",      title: "Filter",   defaultWidth: 50,  minWidth: 40,  isDefaultVisible: true,  isHideable: true),
-        ColumnDefinition(identifier: "date",        title: "Date",     defaultWidth: 85,  minWidth: 70,  isDefaultVisible: true,  isHideable: true),
-        ColumnDefinition(identifier: "time",        title: "Time",     defaultWidth: 75,  minWidth: 60,  isDefaultVisible: true,  isHideable: true),
-        ColumnDefinition(identifier: "exposure",    title: "Exp",      defaultWidth: 50,  minWidth: 40,  isDefaultVisible: true,  isHideable: true),
-        ColumnDefinition(identifier: "sensorTemp",  title: "Temp",     defaultWidth: 55,  minWidth: 40,  isDefaultVisible: true,  isHideable: true),
-        ColumnDefinition(identifier: "fwhm",        title: "FWHM",     defaultWidth: 55,  minWidth: 40,  isDefaultVisible: true,  isHideable: true),
-        ColumnDefinition(identifier: "hfr",         title: "HFR",      defaultWidth: 50,  minWidth: 40,  isDefaultVisible: true,  isHideable: true),
-        ColumnDefinition(identifier: "starCount",   title: "Stars",    defaultWidth: 50,  minWidth: 40,  isDefaultVisible: true,  isHideable: true),
-        ColumnDefinition(identifier: "gain",        title: "Gain",     defaultWidth: 45,  minWidth: 35,  isDefaultVisible: true,  isHideable: true),
-        ColumnDefinition(identifier: "fileSize",    title: "Size",     defaultWidth: 70,  minWidth: 50,  isDefaultVisible: true,  isHideable: true),
-        ColumnDefinition(identifier: "subfolder",   title: "Subfolder",defaultWidth: 80,  minWidth: 50,  isDefaultVisible: true,  isHideable: true),
+        ColumnDefinition(identifier: "marked",      title: "",          defaultWidth: 28,  minWidth: 28,  isDefaultVisible: true,  isHideable: false),
+        ColumnDefinition(identifier: "frameNumber", title: "#",         defaultWidth: 45,  minWidth: 35,  isDefaultVisible: true,  isHideable: true),
+        ColumnDefinition(identifier: "filename",    title: "Filename",  defaultWidth: 280, minWidth: 100, isDefaultVisible: true,  isHideable: false),
+        ColumnDefinition(identifier: "target",      title: "Object",    defaultWidth: 120, minWidth: 60,  isDefaultVisible: true,  isHideable: true),
+        ColumnDefinition(identifier: "filter",      title: "Filter",    defaultWidth: 50,  minWidth: 40,  isDefaultVisible: true,  isHideable: true),
+        ColumnDefinition(identifier: "exposure",    title: "Exp",       defaultWidth: 50,  minWidth: 40,  isDefaultVisible: true,  isHideable: true),
+        ColumnDefinition(identifier: "ambientTemp", title: "Amb°C",     defaultWidth: 55,  minWidth: 40,  isDefaultVisible: true,  isHideable: true),
+        ColumnDefinition(identifier: "focuserTemp", title: "Foc°C",     defaultWidth: 55,  minWidth: 40,  isDefaultVisible: true,  isHideable: true),
+        ColumnDefinition(identifier: "sensorTemp",  title: "Temp",      defaultWidth: 55,  minWidth: 40,  isDefaultVisible: true,  isHideable: true),
+        ColumnDefinition(identifier: "gain",        title: "Gain",      defaultWidth: 45,  minWidth: 35,  isDefaultVisible: true,  isHideable: true),
+        ColumnDefinition(identifier: "fileSize",    title: "Size",      defaultWidth: 70,  minWidth: 50,  isDefaultVisible: true,  isHideable: true),
+        ColumnDefinition(identifier: "fwhm",        title: "FWHM",      defaultWidth: 55,  minWidth: 40,  isDefaultVisible: true,  isHideable: true),
+        ColumnDefinition(identifier: "hfr",         title: "HFR",       defaultWidth: 50,  minWidth: 40,  isDefaultVisible: true,  isHideable: true),
+        ColumnDefinition(identifier: "starCount",   title: "Stars",     defaultWidth: 50,  minWidth: 40,  isDefaultVisible: true,  isHideable: true),
+        ColumnDefinition(identifier: "subfolder",   title: "Subfolder", defaultWidth: 80,  minWidth: 50,  isDefaultVisible: true,  isHideable: true),
         // Hidden-by-default columns
+        ColumnDefinition(identifier: "date",        title: "Date",        defaultWidth: 85,  minWidth: 70, isDefaultVisible: false, isHideable: true),
+        ColumnDefinition(identifier: "time",        title: "Time",        defaultWidth: 75,  minWidth: 60, isDefaultVisible: false, isHideable: true),
         ColumnDefinition(identifier: "telescope",   title: "Telescope",   defaultWidth: 80,  minWidth: 60, isDefaultVisible: false, isHideable: true),
         ColumnDefinition(identifier: "camera",      title: "Camera",      defaultWidth: 120, minWidth: 80, isDefaultVisible: false, isHideable: true),
         ColumnDefinition(identifier: "binning",     title: "Binning",     defaultWidth: 55,  minWidth: 40, isDefaultVisible: false, isHideable: true),
         ColumnDefinition(identifier: "offset",      title: "Offset",      defaultWidth: 50,  minWidth: 35, isDefaultVisible: false, isHideable: true),
-        ColumnDefinition(identifier: "focuserTemp", title: "Foc Temp",    defaultWidth: 60,  minWidth: 45, isDefaultVisible: false, isHideable: true),
         ColumnDefinition(identifier: "frameType",   title: "Type",        defaultWidth: 50,  minWidth: 40, isDefaultVisible: false, isHideable: true),
     ]
 
@@ -57,7 +59,8 @@ struct ColumnDefinition {
         case "camera":      return entry.camera ?? ""
         case "binning":     return entry.binning ?? ""
         case "offset":      return entry.offset.map { String($0) } ?? ""
-        case "focuserTemp": return entry.focuserTemp.map { String(format: "%.2f", $0) } ?? ""
+        case "focuserTemp": return entry.focuserTemp.map { String(format: "%.1f", $0) } ?? ""
+        case "ambientTemp": return entry.ambientTemp.map { String(format: "%.1f", $0) } ?? ""
         case "frameType":   return entry.frameType ?? ""
         default:            return ""
         }
@@ -75,6 +78,7 @@ struct ColumnDefinition {
         case "gain":        return entry.gain.map { Double($0) }
         case "offset":      return entry.offset.map { Double($0) }
         case "focuserTemp": return entry.focuserTemp
+        case "ambientTemp": return entry.ambientTemp
         case "fileSize":    return entry.fileSize.map { Double($0) }
         default:            return nil
         }
@@ -84,7 +88,7 @@ struct ColumnDefinition {
     static func isNumericColumn(_ columnId: String) -> Bool {
         switch columnId {
         case "frameNumber", "exposure", "hfr", "starCount", "sensorTemp",
-             "fwhm", "gain", "offset", "focuserTemp", "fileSize":
+             "fwhm", "gain", "offset", "focuserTemp", "ambientTemp", "fileSize":
             return true
         default:
             return false

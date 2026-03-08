@@ -631,22 +631,22 @@ class TriageViewModel: ObservableObject {
         guard !images.isEmpty else { return }
 
         if skipMarked {
-            // Find next non-marked, wrapping around
+            // Find next non-marked, stop at end (no wrap)
             var next = selectedIndex + 1
-            if next >= images.count { next = 0 }
-            let start = next
-            repeat {
+            while next < images.count {
                 if !images[next].isMarkedForDeletion {
                     selectImage(at: next)
                     return
                 }
                 next += 1
-                if next >= images.count { next = 0 }
-            } while next != start
+            }
+            // No more unmarked images after current position
         } else {
-            // Wrap around: after last → first
-            let next = (selectedIndex + 1) % images.count
-            selectImage(at: next)
+            // Stop at last image (no wrap)
+            let next = selectedIndex + 1
+            if next < images.count {
+                selectImage(at: next)
+            }
         }
     }
 
@@ -654,22 +654,51 @@ class TriageViewModel: ObservableObject {
         guard !images.isEmpty else { return }
 
         if skipMarked {
-            // Find previous non-marked, wrapping around
+            // Find previous non-marked, stop at beginning (no wrap)
             var prev = selectedIndex - 1
-            if prev < 0 { prev = images.count - 1 }
-            let start = prev
-            repeat {
+            while prev >= 0 {
                 if !images[prev].isMarkedForDeletion {
                     selectImage(at: prev)
                     return
                 }
                 prev -= 1
-                if prev < 0 { prev = images.count - 1 }
-            } while prev != start
+            }
+            // No more unmarked images before current position
         } else {
-            // Wrap around: before first → last
-            let prev = selectedIndex > 0 ? selectedIndex - 1 : images.count - 1
-            selectImage(at: prev)
+            // Stop at first image (no wrap)
+            if selectedIndex > 0 {
+                selectImage(at: selectedIndex - 1)
+            }
+        }
+    }
+
+    // Jump to first image in the list
+    func navigateToFirst() {
+        guard !images.isEmpty else { return }
+        if skipMarked {
+            for i in 0..<images.count {
+                if !images[i].isMarkedForDeletion {
+                    selectImage(at: i)
+                    return
+                }
+            }
+        } else {
+            selectImage(at: 0)
+        }
+    }
+
+    // Jump to last image in the list
+    func navigateToLast() {
+        guard !images.isEmpty else { return }
+        if skipMarked {
+            for i in stride(from: images.count - 1, through: 0, by: -1) {
+                if !images[i].isMarkedForDeletion {
+                    selectImage(at: i)
+                    return
+                }
+            }
+        } else {
+            selectImage(at: images.count - 1)
         }
     }
 

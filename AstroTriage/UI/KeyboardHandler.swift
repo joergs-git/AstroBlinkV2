@@ -64,6 +64,30 @@ struct KeyboardHandler {
                 return true
             }
 
+        case 116: // Page Up — jump to first image
+            if modifiers.isEmpty {
+                Task { @MainActor in viewModel.navigateToFirst() }
+                return true
+            }
+
+        case 121: // Page Down — jump to last image
+            if modifiers.isEmpty {
+                Task { @MainActor in viewModel.navigateToLast() }
+                return true
+            }
+
+        case 115: // Home — jump to first image
+            if modifiers.isEmpty {
+                Task { @MainActor in viewModel.navigateToFirst() }
+                return true
+            }
+
+        case 119: // End — jump to last image
+            if modifiers.isEmpty {
+                Task { @MainActor in viewModel.navigateToLast() }
+                return true
+            }
+
         default:
             break
         }
