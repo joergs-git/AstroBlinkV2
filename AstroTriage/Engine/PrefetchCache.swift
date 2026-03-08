@@ -1,4 +1,4 @@
-// v0.8.0
+// v0.9.7
 import Foundation
 import Metal
 
@@ -27,26 +27,38 @@ class PrefetchCache {
         return cache[url]
     }
 
+    // Check if a URL has been cached (for UI indicators)
+    func isCached(_ url: URL) -> Bool {
+        return cache[url] != nil
+    }
+
     var cachedCount: Int { cache.count }
 
     // Prefetch ALL images: decode → bin2x → STF stretch → cache BGRA8 texture
+    // debayerEnabled: when true, OSC images with BAYERPAT are debayered to RGB
     func prefetchAll(
         images: [ImageEntry],
+        debayerEnabled: Bool,
         onProgress: @escaping (Int, Int) -> Void
     ) {
-        // Build lookup for Bayer patterns by URL (needed for debayer in background)
-        let bayerPatterns: [URL: String] = Dictionary(
-            uniqueKeysWithValues: images.compactMap { entry in
-                guard let pat = entry.bayerPattern else { return nil }
-                return (entry.url, pat)
-            }
-        )
+        // Build lookup for Bayer patterns by URL (only used when debayer is enabled)
+        let bayerPatterns: [URL: String]
+        if debayerEnabled {
+            bayerPatterns = Dictionary(
+                uniqueKeysWithValues: images.compactMap { entry in
+                    guard let pat = entry.bayerPattern else { return nil }
+                    return (entry.url, pat)
+                }
+            )
+        } else {
+            bayerPatterns = [:]
+        }
+
         prefetchTask?.cancel()
 
         let device = self.device
         let total = images.count
         let concurrency = maxConcurrentDecodes
-
         prefetchTask = Task.detached(priority: .userInitiated) { [weak self] in
             var completed = 0
             var index = 0
@@ -76,7 +88,7 @@ class PrefetchCache {
                                 return (entry.url, nil)
                             }
 
-                            // 2. Debayer if mono CFA image with Bayer pattern detected
+                            // 2. Debayer if enabled and mono CFA image with Bayer pattern
                             let imageForSTF: DecodedImage
                             if decoded.channelCount == 1,
                                let pattern = bayerPatterns[entry.url] {
@@ -86,7 +98,7 @@ class PrefetchCache {
                                 imageForSTF = decoded
                             }
 
-                            // 3. Compute STF params (from debayered data if applicable)
+                            // 3. Compute STF params with default stretch
                             let stfParams = STFCalculator.calculate(from: imageForSTF)
 
                             // 4. Bin2x + STF stretch → BGRA8 texture

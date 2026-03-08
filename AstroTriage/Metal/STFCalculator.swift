@@ -1,4 +1,4 @@
-// v0.5.0
+// v0.9.5
 import Foundation
 import Metal
 
@@ -15,12 +15,18 @@ struct STFCalculator {
 
     // PixInsight AutoSTF constants
     static let shadowsClip: Float = -1.25    // Sigma factor below median
-    static let targetBackground: Float = 0.25 // Target background level [0,1]
+    static let defaultTargetBackground: Float = 0.25 // Target background level [0,1]
     static let sampleFraction: Float = 0.05   // 5% subsample for statistics
 
     // Calculate STF parameters from a decoded image's raw uint16 buffer
+    // targetBackground: 0.0 = no stretch (linear), 0.25 = default, 0.50 = max stretch
     // Returns array of STFParams: 1 element for mono, 3 for RGB
-    static func calculate(from image: DecodedImage) -> [STFParams] {
+    static func calculate(from image: DecodedImage, targetBackground: Float = defaultTargetBackground) -> [STFParams] {
+        // No stretch: return identity params (no clipping, no midtone adjustment)
+        if targetBackground <= 0.001 {
+            return Array(repeating: STFParams(c0: 0.0, mb: 0.5), count: image.channelCount)
+        }
+
         let ptr = image.buffer.contents().bindMemory(
             to: UInt16.self,
             capacity: image.pixelCount
@@ -34,7 +40,8 @@ struct STFCalculator {
             let channelOffset = ch * planeSize
             let params = calculateChannel(
                 ptr: ptr.advanced(by: channelOffset),
-                count: planeSize
+                count: planeSize,
+                targetBackground: targetBackground
             )
             results.append(params)
         }
@@ -43,7 +50,7 @@ struct STFCalculator {
     }
 
     // Calculate STF for a single channel
-    private static func calculateChannel(ptr: UnsafePointer<UInt16>, count: Int) -> STFParams {
+    private static func calculateChannel(ptr: UnsafePointer<UInt16>, count: Int, targetBackground: Float = defaultTargetBackground) -> STFParams {
         // Subsample: take ~5% of pixels with deterministic stride (reproducible)
         let sampleCount = max(1000, Int(Float(count) * sampleFraction))
         let stride = max(1, count / sampleCount)
@@ -91,7 +98,7 @@ struct STFCalculator {
         // Shadows clipping point
         let c0 = max(0.0, min(1.0, median + shadowsClip * normalizedMAD))
 
-        // Midtone balance via MTF
+        // Midtone balance via MTF — uses the provided targetBackground
         let mb: Float
         if c0 >= 1.0 {
             mb = 0.5

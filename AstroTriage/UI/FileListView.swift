@@ -1,10 +1,10 @@
-// v0.8.0
+// v0.9.6
 import SwiftUI
 import AppKit
 
 // NSViewRepresentable wrapping NSTableView for high-performance file list
 // Supports multi-selection for bulk marking, column-order-based sorting,
-// and right-click context menu for copy operations
+// right-click context menu, night mode (red-on-black), and cache indicators
 struct FileListView: NSViewRepresentable {
     @ObservedObject var viewModel: TriageViewModel
 
@@ -77,15 +77,33 @@ struct FileListView: NSViewRepresentable {
         let coordinator = context.coordinator
         coordinator.viewModel = viewModel
 
-        // Update the displayed images snapshot (main actor context)
+        // Track night mode for cell coloring
+        let nightModeChanged = coordinator.lastNightMode != viewModel.nightMode
+        coordinator.lastNightMode = viewModel.nightMode
+
+        // Update the displayed images snapshot and cached URLs (main actor context)
         coordinator.displayedImages = viewModel.hideMarked ? viewModel.visibleImages : viewModel.images
+        coordinator.cachedURLs = Set(coordinator.displayedImages.filter { viewModel.isImageCached($0.url) }.map { $0.url })
 
         guard let tableView = coordinator.tableView else { return }
+
+        // Apply night mode to table background
+        if viewModel.nightMode {
+            tableView.backgroundColor = .black
+            tableView.usesAlternatingRowBackgroundColors = false
+            scrollView.backgroundColor = .black
+            scrollView.drawsBackground = true
+        } else {
+            tableView.backgroundColor = .controlBackgroundColor
+            tableView.usesAlternatingRowBackgroundColors = true
+            scrollView.backgroundColor = .controlBackgroundColor
+            scrollView.drawsBackground = true
+        }
 
         let newCount = coordinator.displayedImages.count
         let currentCount = tableView.numberOfRows
 
-        if currentCount != newCount || viewModel.needsTableRefresh {
+        if currentCount != newCount || viewModel.needsTableRefresh || nightModeChanged {
             // Preserve current multi-selection across reload
             let savedSelection = tableView.selectedRowIndexes
             tableView.reloadData()
@@ -126,13 +144,15 @@ struct FileListView: NSViewRepresentable {
     class Coordinator: NSObject, NSTableViewDelegate, NSTableViewDataSource, NSMenuDelegate {
         var viewModel: TriageViewModel
         weak var tableView: NSTableView?
+        var lastNightMode: Bool = false
 
         init(viewModel: TriageViewModel) {
             self.viewModel = viewModel
         }
 
-        // Snapshot of displayed images, updated from main actor in updateNSView
+        // Snapshot of displayed images and cached URLs, updated from main actor in updateNSView
         var displayedImages: [ImageEntry] = []
+        var cachedURLs: Set<URL> = []
 
         func numberOfRows(in tableView: NSTableView) -> Int {
             displayedImages.count
@@ -143,9 +163,15 @@ struct FileListView: NSViewRepresentable {
                   row < displayedImages.count else { return nil }
 
             let entry = displayedImages[row]
+            let isNight = viewModel.nightMode
 
             if colId == "marked" {
                 return makeCheckboxCell(for: row, isMarked: entry.isMarkedForDeletion, in: tableView)
+            }
+
+            // For the filename column, prepend a cache indicator
+            if colId == "filename" {
+                return makeFilenameCellWithCacheIndicator(entry: entry, isNight: isNight, in: tableView)
             }
 
             // Regular text column
@@ -162,7 +188,6 @@ struct FileListView: NSViewRepresentable {
                 textField.translatesAutoresizingMaskIntoConstraints = false
                 textField.lineBreakMode = .byTruncatingTail
                 textField.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
-                // Allow text selection for copy-paste
                 textField.isSelectable = true
                 cellView.addSubview(textField)
                 cellView.textField = textField
@@ -175,9 +200,99 @@ struct FileListView: NSViewRepresentable {
             }
 
             cellView.textField?.stringValue = value
-            cellView.textField?.textColor = entry.isMarkedForDeletion ? .systemRed : .labelColor
+
+            // Night mode: red text; otherwise: red for marked, normal for rest
+            if isNight {
+                cellView.textField?.textColor = entry.isMarkedForDeletion
+                    ? NSColor(red: 0.5, green: 0, blue: 0, alpha: 1)
+                    : NSColor.systemRed
+            } else {
+                cellView.textField?.textColor = entry.isMarkedForDeletion ? .systemRed : .labelColor
+            }
 
             return cellView
+        }
+
+        // Filename cell with tiny cache indicator checkmark
+        private func makeFilenameCellWithCacheIndicator(entry: ImageEntry, isNight: Bool, in tableView: NSTableView) -> NSView {
+            let identifier = NSUserInterfaceItemIdentifier("Cell_filename_cached")
+            let isCached = cachedURLs.contains(entry.url)
+
+            let cellView: NSView
+            let textField: NSTextField
+            let indicator: NSTextField
+
+            if let reused = tableView.makeView(withIdentifier: identifier, owner: self) {
+                cellView = reused
+                textField = reused.viewWithTag(100) as! NSTextField
+                indicator = reused.viewWithTag(101) as! NSTextField
+            } else {
+                let container = NSView()
+                container.identifier = identifier
+
+                let ind = NSTextField(labelWithString: "")
+                ind.translatesAutoresizingMaskIntoConstraints = false
+                ind.font = .systemFont(ofSize: 9)
+                ind.alignment = .center
+                ind.tag = 101
+                container.addSubview(ind)
+
+                let tf = NSTextField(labelWithString: "")
+                tf.translatesAutoresizingMaskIntoConstraints = false
+                tf.lineBreakMode = .byTruncatingTail
+                tf.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
+                tf.isSelectable = true
+                tf.tag = 100
+                container.addSubview(tf)
+
+                NSLayoutConstraint.activate([
+                    ind.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 0),
+                    ind.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+                    ind.widthAnchor.constraint(equalToConstant: 14),
+                    tf.leadingAnchor.constraint(equalTo: ind.trailingAnchor, constant: 2),
+                    tf.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -2),
+                    tf.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+                ])
+
+                cellView = container
+                textField = tf
+                indicator = ind
+            }
+
+            textField.stringValue = entry.filename
+
+            // Cache indicator
+            if isCached {
+                indicator.stringValue = "\u{2713}"  // Checkmark
+                indicator.textColor = isNight ? NSColor(red: 0.4, green: 0, blue: 0, alpha: 1) : .systemGray
+                indicator.toolTip = "Cached for instant display"
+            } else {
+                indicator.stringValue = ""
+                indicator.toolTip = nil
+            }
+
+            // Night mode: red text
+            if isNight {
+                textField.textColor = entry.isMarkedForDeletion
+                    ? NSColor(red: 0.5, green: 0, blue: 0, alpha: 1)
+                    : NSColor.systemRed
+            } else {
+                textField.textColor = entry.isMarkedForDeletion ? .systemRed : .labelColor
+            }
+
+            return cellView
+        }
+
+        // Row background color for night mode
+        func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? {
+            if viewModel.nightMode {
+                let rowView = NSTableRowView()
+                rowView.backgroundColor = row % 2 == 0
+                    ? .black
+                    : NSColor(red: 0.06, green: 0, blue: 0, alpha: 1)
+                return rowView
+            }
+            return nil
         }
 
         private func makeCheckboxCell(for row: Int, isMarked: Bool, in tableView: NSTableView) -> NSView {

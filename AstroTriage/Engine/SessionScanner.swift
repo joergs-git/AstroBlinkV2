@@ -1,4 +1,4 @@
-// v0.9.3
+// v0.9.5
 import Foundation
 
 // Scans a folder for FITS/XISF files with smart subfolder logic:
@@ -69,10 +69,9 @@ struct SessionScanner {
                 // Calculate relative subfolder path
                 let subfolder = relativeSubfolder(fileURL: item, rootURL: rootURL)
 
-                // Parse filename tokens
+                // Parse filename tokens only (fast — no file I/O)
+                // Headers are read in background by TriageViewModel.enrichWithHeaders()
                 let tokens = NINAFilenameParser.parse(item.lastPathComponent)
-
-                // Create entry with parsed metadata
                 var entry = ImageEntry(url: item, subfolder: subfolder)
                 entry.date = tokens.date
                 entry.time = tokens.time

@@ -1,4 +1,4 @@
-// v0.9.4
+// v0.9.7
 import SwiftUI
 
 @main
@@ -45,6 +45,21 @@ class AstroBlinkV2AppDelegate: NSObject, NSApplicationDelegate {
     // Clean up all caches when the app quits so nothing piles up on disk
     func applicationWillTerminate(_ notification: Notification) {
         SessionCache.cleanupAllCaches()
+    }
+
+    // Show splash screen (about panel) briefly on launch
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        // Small delay so the main window appears first
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            AstroBlinkV2AppDelegate.showAboutPanel()
+            // Auto-dismiss after 2 seconds
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                // Close the about panel if it's still showing
+                for window in NSApp.windows where window.title == "About AstroBlinkV2" {
+                    window.close()
+                }
+            }
+        }
     }
 
     static func showAboutPanel() {
@@ -94,7 +109,7 @@ class AstroBlinkV2AppDelegate: NSObject, NSApplicationDelegate {
 
         NSApp.orderFrontStandardAboutPanel(options: [
             .applicationName: "AstroBlinkV2",
-            .applicationVersion: "0.9.3",
+            .applicationVersion: "0.9.7",
             .version: "Build 1",
             .credits: credits
         ])
@@ -124,7 +139,7 @@ class HelpWindowController: NSWindowController {
             backing: .buffered,
             defer: false
         )
-        window.title = "AstroBlinkV2 v0.9.4 — Quick Reference"
+        window.title = "AstroBlinkV2 v0.9.7 — Quick Reference"
         window.center()
         window.isReleasedWhenClosed = false
         super.init(window: window)
@@ -180,6 +195,8 @@ struct HelpContentView: View {
                 shortcutRow("K", "Toggle skip-marked: arrow keys skip over marked images")
                 shortcutRow("H", "Toggle hide-marked: hide marked images from the list")
                 shortcutRow("I", "Toggle FITS/XISF header inspector (floating window)")
+                shortcutRow("D", "Toggle debayer for OSC (one-shot-color) images")
+                shortcutRow("N", "Toggle night mode (red-on-black for dark-adapted vision)")
                 shortcutRow("Double-click", "Reset zoom to fit-to-view")
                 shortcutRow("Cmd + O", "Open folder containing FITS/XISF images")
 
@@ -206,6 +223,34 @@ struct HelpContentView: View {
                 featureRow("Auto STF (default)", "Each image gets its own optimal stretch — compare sharpness, focus, stars")
                 featureRow("Locked STF (press S)", "Freeze current stretch params for all images — compare brightness, signal depth, gradients")
                 Text("Status bar shows current mode. Orange = Locked.")
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+                    .italic()
+
+                Divider()
+
+                // Debayer (OSC)
+                sectionHeader("OSC Debayer")
+
+                Text("One-shot-color (OSC) cameras capture raw Bayer-pattern data. When OSC images are detected (via BAYERPAT header), a debayer toggle appears in the toolbar.")
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                featureRow("Debayer OFF (default)", "Fastest caching — images shown as grayscale")
+                featureRow("Debayer ON (press D)", "Bayer interpolation to RGB — slower caching but color preview")
+                Text("Toggle only appears when session contains OSC images.")
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+                    .italic()
+
+                Divider()
+
+                // Night Mode
+                sectionHeader("Night Mode")
+
+                featureRow("Press N", "Toggle black background + red UI for dark-adapted vision")
+                Text("All UI elements switch to red-on-black to preserve night vision at the telescope.")
                     .font(.system(size: 11))
                     .foregroundColor(.secondary)
                     .italic()

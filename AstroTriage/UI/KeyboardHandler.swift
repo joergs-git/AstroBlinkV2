@@ -1,4 +1,4 @@
-// v0.9.4
+// v0.9.7
 import SwiftUI
 
 // Global keyboard event handler for navigation and triage shortcuts
@@ -91,6 +91,18 @@ struct KeyboardHandler {
         // I: Toggle header inspector side panel
         if modifiers.isEmpty, chars == "i" {
             Task { @MainActor in viewModel.toggleHeaderInspector() }
+            return true
+        }
+
+        // N: Toggle night mode (red-on-black for dark-adapted vision)
+        if modifiers.isEmpty, chars == "n" {
+            Task { @MainActor in viewModel.toggleNightMode() }
+            return true
+        }
+
+        // D: Toggle debayer for OSC images
+        if modifiers.isEmpty, chars == "d" {
+            Task { @MainActor in viewModel.toggleDebayer() }
             return true
         }
 

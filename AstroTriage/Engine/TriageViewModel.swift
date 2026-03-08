@@ -1,4 +1,4 @@
-// v0.9.4
+// v0.9.7
 import Foundation
 import SwiftUI
 import Metal
@@ -15,6 +15,32 @@ class TriageViewModel: ObservableObject {
     @Published var sessionRootURL: URL?
     @Published var statusMessage: String = "No session loaded"
     @Published var isLoading: Bool = false
+
+    // Loading phase for user feedback overlay
+    enum LoadingPhase: String {
+        case none = ""
+        case scanning = "Scanning folder..."
+        case readingHeaders = "Reading file headers..."
+    }
+    @Published var loadingPhase: LoadingPhase = .none
+    @Published var headerProgress: Double = 0
+    @Published var headerReadCount: Int = 0
+    @Published var headerReadTotal: Int = 0
+
+    // Stretch slider: affects ONLY the currently displayed image (not cached previews)
+    // Maps to STF targetBackground [0.0 .. 0.50]
+    // Default 0.25 = PixInsight standard; 0.0 = linear; 0.50 = max stretch
+    @Published var stretchStrength: Float = STFCalculator.defaultTargetBackground
+
+    // Night mode: black background + red UI for dark-adapted vision
+    @Published var nightMode: Bool = false
+
+    // Debayer toggle: when ON, OSC (one-shot-color) images are debayered to RGB
+    // Default OFF for faster caching. Only relevant when session has OSC images.
+    @Published var debayerEnabled: Bool = false
+
+    // True when the current session contains OSC images (detected via BAYERPAT header)
+    @Published var hasOSCImages: Bool = false
 
     // Prefetch progress (0.0 to 1.0)
     @Published var cacheProgress: Double = 0
@@ -66,6 +92,11 @@ class TriageViewModel: ObservableObject {
     // Count of already-cached preview images
     var prefetchCachedCount: Int {
         prefetchCache?.cachedCount ?? 0
+    }
+
+    // Check if a specific image URL has been cached (for table UI indicator)
+    func isImageCached(_ url: URL) -> Bool {
+        prefetchCache?.isCached(url) ?? false
     }
 
     // Count of images marked for deletion
@@ -161,6 +192,7 @@ class TriageViewModel: ObservableObject {
         isCaching = false
         cacheProgress = 0
         cachingStopped = false
+        loadingPhase = .scanning
 
         // Use the parent folder of the first file as session root
         let rootURL = imageURLs[0].deletingLastPathComponent()
@@ -181,7 +213,24 @@ class TriageViewModel: ObservableObject {
 
             for url in imageURLs {
                 let tokens = NINAFilenameParser.parse(url.lastPathComponent)
-                var entry = MetadataExtractor.extractAndMerge(url: url, filenameParsed: tokens)
+                var entry = ImageEntry(url: url)
+                entry.date = tokens.date
+                entry.time = tokens.time
+                entry.target = tokens.target
+                entry.frameNumber = tokens.frameNumber
+                entry.exposure = tokens.exposure
+                entry.filter = tokens.filter
+                entry.frameType = tokens.frameType
+                entry.gain = tokens.gain
+                entry.offset = tokens.offset
+                entry.binning = tokens.binning
+                entry.sensorTemp = tokens.sensorTemp
+                entry.telescope = tokens.telescope
+                entry.camera = tokens.camera
+                entry.fwhm = tokens.fwhm
+                entry.focuserTemp = tokens.focuserTemp
+                entry.hfr = tokens.hfr
+                entry.starCount = tokens.starCount
 
                 // File size
                 if let attrs = try? fm.attributesOfItem(atPath: url.path),
@@ -208,8 +257,10 @@ class TriageViewModel: ObservableObject {
                 self.showSessionOverview = true
                 self.showInspector = true
 
-                self.statusMessage = "\(entries.count) files loaded — pre-caching..."
+                self.statusMessage = "\(entries.count) files loaded"
+                // Start prefetch immediately, read headers in background
                 self.startFullPrefetch()
+                self.enrichWithHeaders()
             }
         }
     }
@@ -218,6 +269,7 @@ class TriageViewModel: ObservableObject {
         isLoading = true
         isCaching = false
         cacheProgress = 0
+        loadingPhase = .scanning
         statusMessage = "Scanning \(url.lastPathComponent)..."
 
         // Release previous security-scoped resource before loading new session
@@ -254,8 +306,10 @@ class TriageViewModel: ObservableObject {
                 if isNetwork {
                     self.statusMessage = "Downloading \(entries.count) images to local cache..."
                 } else {
-                    self.statusMessage = "\(entries.count) images loaded — pre-caching..."
+                    // Start prefetch immediately (fast, no debayer by default)
                     self.startFullPrefetch()
+                    // Read headers in background for metadata enrichment
+                    self.enrichWithHeaders()
                 }
 
                 // Security-scoped access tracked in accessedURL, released on next session or quit
@@ -270,6 +324,9 @@ class TriageViewModel: ObservableObject {
         }
     }
 
+    // Prevent App Nap from throttling caching when app is in background
+    private var appNapAssertion: NSObjectProtocol?
+
     // Start pre-decoding + stretching ALL images (skips already-cached)
     private func startFullPrefetch() {
         guard let prefetchCache = prefetchCache else { return }
@@ -280,17 +337,31 @@ class TriageViewModel: ObservableObject {
         cachingCount = 0
         cacheProgress = 0
 
-        prefetchCache.prefetchAll(images: images) { [weak self] completed, total in
+        // Disable App Nap during caching so background processing continues
+        appNapAssertion = ProcessInfo.processInfo.beginActivity(
+            options: [.userInitiated, .idleSystemSleepDisabled],
+            reason: "Pre-caching astrophotography images"
+        )
+
+        prefetchCache.prefetchAll(images: images, debayerEnabled: debayerEnabled) { [weak self] completed, total in
             guard let self = self else { return }
             self.cachingCount = completed
             self.cachingTotal = total
             self.cacheProgress = total > 0 ? Double(completed) / Double(total) : 0
 
+            // Refresh table periodically so cache checkmarks appear (every 4 images)
+            if completed % 4 == 0 || completed == total {
+                self.needsTableRefresh = true
+            }
+
             if completed < total {
                 self.statusMessage = "Pre-caching \(completed)/\(total)..."
             } else {
                 self.isCaching = false
+                self.needsTableRefresh = true
                 self.statusMessage = "\(total) images cached — instant navigation ready"
+                // Release App Nap assertion when caching completes
+                self.appNapAssertion = nil
             }
         }
     }
@@ -303,6 +374,7 @@ class TriageViewModel: ObservableObject {
         prefetchCache?.stopPrefetch()
         isCaching = false
         cachingStopped = true
+        appNapAssertion = nil  // Release App Nap assertion
         let cached = prefetchCache?.cachedCount ?? 0
         statusMessage = "Caching paused — \(cached) of \(images.count) images cached"
     }
@@ -344,6 +416,163 @@ class TriageViewModel: ObservableObject {
         Task.detached(priority: .background) {
             SessionCache.cleanupOldCaches()
         }
+    }
+
+    // MARK: - Background Header Enrichment
+
+    // Read file headers in background and update entries with authoritative metadata
+    // (BAYERPAT, FILTER, GAIN, CCD-TEMP, etc.) — runs after fast filename-only scan
+    private var headerEnrichmentTask: Task<Void, Never>?
+
+    private func enrichWithHeaders() {
+        headerEnrichmentTask?.cancel()
+        let urls = images.map { $0.url }
+        let total = urls.count
+        loadingPhase = .readingHeaders
+        headerReadCount = 0
+        headerReadTotal = total
+        headerProgress = 0
+
+        headerEnrichmentTask = Task.detached(priority: .utility) { [weak self] in
+            var foundOSC = false
+
+            for (index, url) in urls.enumerated() {
+                guard !Task.isCancelled else { return }
+
+                let headers = MetadataExtractor.readHeaders(from: url)
+
+                await MainActor.run {
+                    guard let self = self, index < self.images.count,
+                          self.images[index].url == url else { return }
+
+                    // Update progress
+                    self.headerReadCount = index + 1
+                    self.headerProgress = total > 0 ? Double(index + 1) / Double(total) : 0
+
+                    guard !headers.isEmpty else { return }
+
+                    // Apply header values (authoritative over filename)
+                    if let filter = headers["FILTER"], !filter.isEmpty {
+                        self.images[index].filter = filter
+                    }
+                    if let exp = headers["EXPTIME"] ?? headers["EXPOSURE"], let val = Double(exp) {
+                        self.images[index].exposure = val
+                    }
+                    if let gain = headers["GAIN"], let val = Int(gain) {
+                        self.images[index].gain = val
+                    }
+                    if let temp = headers["CCD-TEMP"], let val = Double(temp) {
+                        self.images[index].sensorTemp = val
+                    }
+                    if let fwhm = headers["STARFWHM"] ?? headers["FWHM"], let val = Double(fwhm) {
+                        self.images[index].fwhm = val
+                    }
+                    if let obj = headers["OBJECT"], !obj.isEmpty {
+                        self.images[index].target = obj
+                    }
+                    if let cam = headers["INSTRUME"], !cam.isEmpty {
+                        self.images[index].camera = cam
+                    }
+                    if let scope = headers["TELESCOP"], !scope.isEmpty {
+                        self.images[index].telescope = scope
+                    }
+                    if let bayer = headers["BAYERPAT"], !bayer.isEmpty {
+                        self.images[index].bayerPattern = bayer.trimmingCharacters(in: .whitespaces).uppercased()
+                    }
+                    if let off = headers["OFFSET"], let val = Int(off) {
+                        self.images[index].offset = val
+                    }
+                    if let xbin = headers["XBINNING"], let val = Int(xbin) {
+                        self.images[index].binning = self.images[index].binning ?? "\(val)x\(val)"
+                    }
+                    if let focTemp = headers["FOCTEMP"], let val = Double(focTemp) {
+                        self.images[index].focuserTemp = val
+                    }
+                    if let dateStr = headers["DATE-LOC"] ?? headers["DATE-OBS"], !dateStr.isEmpty {
+                        if dateStr.count >= 10 {
+                            self.images[index].date = self.images[index].date ?? String(dateStr.prefix(10))
+                        }
+                        if dateStr.count >= 19, let tIndex = dateStr.firstIndex(of: "T") {
+                            let timeStart = dateStr.index(after: tIndex)
+                            let timeEnd = dateStr.index(timeStart, offsetBy: 8, limitedBy: dateStr.endIndex) ?? dateStr.endIndex
+                            self.images[index].time = self.images[index].time ?? String(dateStr[timeStart..<timeEnd])
+                        }
+                    }
+
+                    // Track if any OSC images found
+                    if self.images[index].bayerPattern != nil {
+                        foundOSC = true
+                    }
+                }
+            }
+
+            // Headers done — update metadata display and flag OSC presence
+            await MainActor.run {
+                guard let self = self else { return }
+                self.needsTableRefresh = true
+                self.loadingPhase = .none
+                self.sessionOverviewModel.updateStats(from: self.images)
+                self.hasOSCImages = foundOSC
+            }
+        }
+    }
+
+    // MARK: - Stretch Strength (current image only)
+
+    // Update stretch for the currently displayed image only.
+    // Does NOT invalidate or re-cache previews — cached images use default stretch.
+    // When navigating to another image, slider resets to default.
+    func updateStretchStrength(_ value: Float) {
+        stretchStrength = value
+
+        // If we have raw decoded data, just re-render with new STF params
+        if let image = currentDecodedImage, let mtkView = findMTKView(), let renderer = renderer {
+            let stfParams = STFCalculator.calculate(from: image, targetBackground: value)
+            renderer.setSTFParams(stfParams)
+            mtkView.needsDisplay = true
+            return
+        }
+
+        // If showing a cached preview, need to decode raw data first
+        guard let entry = selectedImage, let device = device else { return }
+        let targetURL = entry.url
+        let decodeURL = entry.decodingURL
+        let bayerPattern = entry.bayerPattern
+
+        currentDecodeTask?.cancel()
+        currentDecodeTask = Task.detached(priority: .userInitiated) { [weak self] in
+            let result = ImageDecoder.decode(url: decodeURL, device: device)
+            await MainActor.run {
+                guard let self = self, self.selectedImage?.url == targetURL else { return }
+                if case .success(let decoded) = result {
+                    self.currentDecodedImage = decoded
+                    if let mtkView = self.findMTKView(), let renderer = self.renderer {
+                        let stfParams = STFCalculator.calculate(from: decoded, targetBackground: value)
+                        renderer.setSTFParams(stfParams)
+                        renderer.setImage(decoded, in: mtkView, bayerPattern: bayerPattern)
+                    }
+                }
+            }
+        }
+    }
+
+    // Toggle night mode for dark-adapted vision
+    func toggleNightMode() {
+        nightMode.toggle()
+        statusMessage = nightMode ? "Night mode ON" : "Night mode OFF"
+    }
+
+    // Toggle debayer for OSC images — re-caches all previews with/without debayer
+    func toggleDebayer() {
+        debayerEnabled.toggle()
+        statusMessage = debayerEnabled
+            ? "Debayer ON — re-caching with color interpolation..."
+            : "Debayer OFF — re-caching as grayscale..."
+        // Re-cache with new debayer setting
+        prefetchCache?.clear()
+        startFullPrefetch()
+        // Refresh the currently displayed image so debayer takes effect immediately
+        displayCurrentImage()
     }
 
     // MARK: - Navigation
@@ -740,7 +969,9 @@ class TriageViewModel: ObservableObject {
         headerInspectorModel.update(for: image.decodingURL, filename: image.filename)
 
         // Fast path: use pre-stretched cached preview (instant, zero compute)
-        if let preview = prefetchCache?.getPreview(for: image.url) {
+        // Only if slider is at default position — custom stretch needs on-demand decode
+        let isDefaultStretch = abs(stretchStrength - STFCalculator.defaultTargetBackground) < 0.001
+        if isDefaultStretch, let preview = prefetchCache?.getPreview(for: image.url) {
             currentDecodedImage = nil  // No raw data needed for display
             if selectedIndex >= 0 && selectedIndex < images.count {
                 images[selectedIndex].width = preview.originalWidth
@@ -759,10 +990,12 @@ class TriageViewModel: ObservableObject {
             return
         }
 
-        // Slow path: decode on demand (image not yet cached)
+        // Slow path: decode on demand (image not yet cached or custom stretch active)
         statusMessage = "Loading \(image.filename)..."
         let targetURL = image.url
         let decodeURL = image.decodingURL
+        let bayerPattern = image.bayerPattern
+        let currentStretch = stretchStrength
 
         currentDecodeTask = Task.detached(priority: .userInitiated) { [weak self] in
             guard !Task.isCancelled else { return }
@@ -781,6 +1014,16 @@ class TriageViewModel: ObservableObject {
                         self.images[self.selectedIndex].height = decoded.height
                         self.images[self.selectedIndex].channelCount = decoded.channelCount
                     }
+
+                    // Render the decoded image with appropriate stretch
+                    if let mtkView = self.findMTKView(), let renderer = self.renderer {
+                        if !isDefaultStretch {
+                            let stfParams = STFCalculator.calculate(from: decoded, targetBackground: currentStretch)
+                            renderer.setSTFParams(stfParams)
+                        }
+                        renderer.setImage(decoded, in: mtkView, bayerPattern: bayerPattern)
+                    }
+
                     let channels = decoded.channelCount == 1 ? "mono" : "RGB"
                     let bayerInfo = self.selectedImage?.bayerPattern.map { " (\($0) debayer)" } ?? ""
                     self.statusMessage = "\(decoded.width)x\(decoded.height) \(channels)\(bayerInfo)"

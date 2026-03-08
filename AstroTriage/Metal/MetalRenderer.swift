@@ -1,4 +1,4 @@
-// v0.6.0
+// v0.9.5
 import Metal
 import MetalKit
 import AppKit
@@ -216,6 +216,13 @@ class MetalRenderer: NSObject, MTKViewDelegate {
             }
         }
         return stretchMode.rawValue
+    }
+
+    // Set explicit STF params (e.g. from stretch slider) and force re-render
+    func setSTFParams(_ params: [STFParams]) {
+        currentSTFParams = params
+        updateSTFBuffer()
+        normalizedTexture = nil  // Force recompute on next draw
     }
 
     func clearImage(in view: MTKView) {
