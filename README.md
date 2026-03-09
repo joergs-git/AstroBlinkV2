@@ -12,11 +12,26 @@ AstroBlinkV2 lets you blink through hundreds of FITS and XISF sub-exposures in s
 
 ---
 
-## Performance — v2.0.0
+## What's New in v3.0.0
+
+- **Spotlight-style search** — real-time filtering with `column:value` syntax (e.g. `filter:Ha`, `fwhm:>4`, `file:Veil`)
+- **Cmd+M — Move to folder** — move checkmarked files to any destination folder (with "Create New Folder" support)
+- **Full undo for all moves** — Cmd+Z undoes both PRE-DELETE and Cmd+M operations
+- **H cycles 3 view states** — all files → hide marked → show only marked → all
+- **Lock STF + Apply All** — freeze stretch params or bake settings into all cached previews
+- **GPU post-processing** — real-time sharpening, contrast, and dark level sliders (Metal compute)
+- **OSC debayer fix** — proper mono/color toggle with correct stretch for both modes
+- **Persistent settings** — sliders, toggles, column order remembered across sessions
+- **19 default-visible columns** — Date, Time, Type, Camera now shown by default
+- **Mark/Unmark filtered** — batch checkmark all search results for quick triage
+
+---
+
+## Performance
 
 **Up to 5x faster session loading on local SSD. Up to 8x faster on network volumes (NAS/10GbE).**
 
-AstroBlinkV2 v2.0.0 was rewritten for full hardware utilization on Apple Silicon. On a Mac Studio M3 Ultra with 300 FITS files (~100 MB each), total session load time dropped from minutes to under 45 seconds.
+AstroBlinkV2 was rewritten for full hardware utilization on Apple Silicon. On a Mac Studio M3 Ultra with 300 FITS files (~100 MB each), total session load time dropped from minutes to under 45 seconds.
 
 | What changed | Before | After | Gain |
 |---|---|---|---|
@@ -58,9 +73,12 @@ After a night of imaging you might have 200-600 sub-exposures. Some have clouds,
 ### Image Viewing
 - **Metal GPU rendering** — 50-megapixel images display in milliseconds on Apple Silicon
 - **Auto STF stretch** — PixInsight-compatible Screen Transfer Function makes raw linear data visible
-- **Locked STF mode** — freeze stretch parameters to compare brightness across frames
+- **Lock STF** — freeze exact c0/mb stretch params from current image for brightness comparison across frames
+- **Apply All** — bake current stretch + post-processing into all cached previews for instant navigation
 - **Adjustable stretch strength** — slider from 0% (linear) to 100% (maximum stretch)
+- **GPU post-processing** — real-time sharpening (unsharp mask), contrast (S-curve), and dark level sliders
 - **Zoom & pan** — click-drag zoom (Photoshop-style), trackpad pinch, scroll to pan
+- **Persistent settings** — all sliders, toggles, and column layout remembered across sessions
 
 ### OSC Debayer
 - **Automatic detection** — Bayer pattern (RGGB, GRBG, GBRG, BGGR) detected from FITS/XISF headers
@@ -71,12 +89,19 @@ After a night of imaging you might have 200-600 sub-exposures. Some have clouds,
 - **Red-on-black UI** — preserves dark-adapted vision at the telescope
 - **Press N** — toggle night mode on/off, affects all UI elements including file list and status bar
 
+### Search & Filter
+- **Spotlight-style search** — real-time filtering in the toolbar, reduces file list as you type
+- **Plain text search** — searches across all columns (filename, object, filter, camera, etc.)
+- **Column syntax** — `filter:Ha`, `file:Veil`, `type:LIGHT`, `fwhm:>4`, `stars:<500`, `exp:300`
+- **Mark/Unmark filtered** — batch checkmark all search results, then move or delete
+
 ### Blink Workflow
 - **Space** — mark/unmark images for pre-deletion
 - **K** — skip over already-marked images during navigation
-- **H** — hide marked images from the file list entirely
+- **H** — cycle view: all files → hide marked → show only marked → all
 - **Cmd+Backspace** — move all marked files to a `PRE-DELETE` subfolder (never permanent deletion)
-- **Full undo stack** — Cmd+Z restores the last pre-delete batch, unlimited undo depth
+- **Cmd+M** — move checkmarked files to any folder (with "Create New Folder" dialog)
+- **Full undo stack** — Cmd+Z undoes both PRE-DELETE and Cmd+M moves, unlimited depth
 - **Multi-select** — Shift/Cmd+click in the file list, then Space to mark all selected at once
 
 ### Metadata & Session Overview
@@ -137,12 +162,15 @@ After a night of imaging you might have 200-600 sub-exposures. Some have clouds,
 | Key | Action |
 |-----|--------|
 | `←` `→` | Previous / next image |
+| `Page Up/Home` | Jump to first image |
+| `Page Down/End` | Jump to last image |
 | `Space` | Toggle pre-delete mark (single or multi-select) |
 | `Cmd+Backspace` | Move marked files to PRE-DELETE folder |
-| `Cmd+Z` | Undo last pre-delete operation |
-| `S` | Toggle Auto STF / Locked STF |
+| `Cmd+M` | Move marked files to a chosen folder |
+| `Cmd+Z` | Undo last move operation |
+| `S` | Toggle Lock STF (freeze stretch params) |
 | `K` | Toggle skip-marked during navigation |
-| `H` | Toggle hide-marked from file list |
+| `H` | Cycle view: all → hide marked → only marked → all |
 | `I` | Toggle FITS/XISF header inspector |
 | `D` | Toggle OSC debayer (when Bayer images detected) |
 | `N` | Toggle night mode (red-on-black) |

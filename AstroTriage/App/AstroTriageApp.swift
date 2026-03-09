@@ -1,4 +1,4 @@
-// v2.2.0
+// v3.0.0
 import SwiftUI
 
 @main
@@ -315,12 +315,35 @@ struct HelpContentView: View {
                 featureRow("Space — Mark/Unmark", "Toggle pre-delete mark on selected images")
                 featureRow("Cmd+⌫ — Move to PRE-DELETE", "Move all marked files to PRE-DELETE folder")
                 featureRow("Cmd+M — Move to folder", "Move marked files to any folder (create or select)")
+                featureRow("Cmd+Z — Undo", "Undo last move operation (PRE-DELETE or Cmd+M)")
                 featureRow("K — Skip marked", "Arrow keys skip over marked images during blinking")
-                featureRow("H — Hide marked", "Completely hide marked images from the file list")
+                featureRow("H — Cycle view", "All files → hide marked → show only marked → all")
                 featureRow("Session Overview", "Floating window with per-filter statistics + forum copy")
-                featureRow("Filter statistics", "Bottom bar shows per-filter count and total exposure")
 
-                Text("Files are never permanently deleted. Marked files are moved to a PRE-DELETE subfolder for manual review.")
+                Text("Files are never permanently deleted. All move operations support full undo.")
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+                    .italic()
+
+                Divider()
+
+                sectionHeader("Search & Filter")
+
+                Text("The search field in the toolbar filters the file list in real time. Type any text to search across all columns, or use column:value syntax for targeted filtering.")
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                featureRow("Plain text", "Searches filename, object, filter, camera, and all other columns")
+                featureRow("file:xyz", "Search filename only (e.g. file:Veil, file:bias)")
+                featureRow("filter:Ha", "Search by filter name (also: fil:Ha)")
+                featureRow("object:M42", "Search by target/object name (also: obj:M42)")
+                featureRow("type:LIGHT", "Search by frame type (LIGHT, FLAT, DARK, BIAS)")
+                featureRow("fwhm:>4", "Numeric filter with operators: >, <, >=, <=")
+                featureRow("stars:<500", "Find images with fewer than 500 detected stars")
+                featureRow("exp:300", "Find images with specific exposure time")
+                featureRow("Mark / Unmark buttons", "Mark or unmark all filtered images at once")
+                Text("After filtering, use Mark to checkmark all matches, then Cmd+M to move them or Cmd+⌫ for pre-delete.")
                     .font(.system(size: 11))
                     .foregroundColor(.secondary)
                     .italic()

@@ -104,10 +104,9 @@ struct FileListView: NSViewRepresentable {
         let nightModeChanged = coordinator.lastNightMode != viewModel.nightMode
         coordinator.lastNightMode = viewModel.nightMode
 
-        // Update the displayed images snapshot and cached URLs (main actor context)
-        // Use filtered list when hiding marked or showing only marked
-        coordinator.displayedImages = (viewModel.hideMarked || viewModel.showOnlyMarked)
-            ? viewModel.visibleImages : viewModel.images
+        // Update the displayed images snapshot: apply hide/show-only-marked + column filter
+        let isFiltered = viewModel.hideMarked || viewModel.showOnlyMarked || !viewModel.filterText.isEmpty
+        coordinator.displayedImages = isFiltered ? viewModel.visibleImages : viewModel.images
         coordinator.cachedURLs = Set(coordinator.displayedImages.filter { viewModel.isImageCached($0.url) }.map { $0.url })
 
         guard let tableView = coordinator.tableView else { return }
@@ -140,8 +139,8 @@ struct FileListView: NSViewRepresentable {
             }
         }
 
-        // Sync selection from viewModel only for single-select navigation
-        if viewModel.hideMarked || viewModel.showOnlyMarked {
+        // Sync selection from viewModel — map to visible index when filtering
+        if isFiltered {
             if let selectedURL = viewModel.selectedImage?.url,
                let visibleIdx = viewModel.visibleImages.firstIndex(where: { $0.url == selectedURL }) {
                 let currentSelection = tableView.selectedRowIndexes
@@ -360,7 +359,7 @@ struct FileListView: NSViewRepresentable {
         @objc private func checkboxToggled(_ sender: NSButton) {
             let row = sender.tag
             Task { @MainActor in
-                if viewModel.hideMarked || viewModel.showOnlyMarked {
+                if viewModel.hideMarked || viewModel.showOnlyMarked || !viewModel.filterText.isEmpty {
                     let visible = viewModel.visibleImages
                     guard row < visible.count else { return }
                     let url = visible[row].url
@@ -416,7 +415,7 @@ struct FileListView: NSViewRepresentable {
             }
 
             Task { @MainActor in
-                if viewModel.hideMarked || viewModel.showOnlyMarked {
+                if viewModel.hideMarked || viewModel.showOnlyMarked || !viewModel.filterText.isEmpty {
                     let visible = viewModel.visibleImages
                     guard targetRow < visible.count else { return }
                     let url = visible[targetRow].url
@@ -488,7 +487,7 @@ struct FileListView: NSViewRepresentable {
         @objc private func toggleMarkFromMenu(_ sender: NSMenuItem) {
             let row = sender.tag
             Task { @MainActor in
-                if viewModel.hideMarked || viewModel.showOnlyMarked {
+                if viewModel.hideMarked || viewModel.showOnlyMarked || !viewModel.filterText.isEmpty {
                     let visible = viewModel.visibleImages
                     guard row < visible.count else { return }
                     let url = visible[row].url

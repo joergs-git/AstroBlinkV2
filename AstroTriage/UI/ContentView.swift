@@ -1,4 +1,4 @@
-// v2.2.0
+// v3.0.0
 import SwiftUI
 
 // Root view: toolbar on top, optional side panels (inspector left, session right),
@@ -110,6 +110,69 @@ struct ContentView: View {
                         }
                         .frame(width: 90)
                     }
+
+                    toolbarDivider
+
+                    // Spotlight-style search: filters file list in real time
+                    // Supports plain text or "column:value" (e.g. "filter:Ha", "fwhm:>4")
+                    HStack(spacing: 4) {
+                        Image(systemName: "magnifyingglass")
+                            .font(.system(size: 11))
+                            .foregroundColor(nightFgDim)
+
+                        TextField("Search... (e.g. Ha, filter:L, fwhm:>4)", text: $viewModel.filterText)
+                            .textFieldStyle(.plain)
+                            .font(.system(size: 11, design: .monospaced))
+                            .foregroundColor(nightFg)
+                            .onChange(of: viewModel.filterText) { _ in
+                                viewModel.needsTableRefresh = true
+                            }
+
+                        if !viewModel.filterText.isEmpty {
+                            // Match count
+                            Text("\(viewModel.visibleImages.count)/\(viewModel.images.count)")
+                                .font(.system(size: 10, design: .monospaced))
+                                .foregroundColor(nightFgDim)
+
+                            // Mark all filtered
+                            Button(action: { viewModel.markFilteredImages() }) {
+                                Image(systemName: "checkmark.circle")
+                                    .font(.system(size: 11))
+                            }
+                            .buttonStyle(.plain)
+                            .foregroundColor(viewModel.nightMode ? .red : .accentColor)
+                            .help("Mark all filtered images")
+
+                            // Unmark all filtered
+                            Button(action: { viewModel.unmarkFilteredImages() }) {
+                                Image(systemName: "circle")
+                                    .font(.system(size: 11))
+                            }
+                            .buttonStyle(.plain)
+                            .foregroundColor(viewModel.nightMode ? .red : .secondary)
+                            .help("Unmark all filtered images")
+
+                            // Clear search
+                            Button(action: {
+                                viewModel.filterText = ""
+                                viewModel.needsTableRefresh = true
+                            }) {
+                                Image(systemName: "xmark.circle.fill")
+                                    .font(.system(size: 11))
+                            }
+                            .buttonStyle(.plain)
+                            .foregroundColor(nightFgDim)
+                        }
+                    }
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .background(
+                        RoundedRectangle(cornerRadius: 4)
+                            .fill(viewModel.nightMode
+                                  ? Color(red: 0.05, green: 0, blue: 0)
+                                  : Color(NSColor.textBackgroundColor))
+                    )
+                    .frame(minWidth: 150, maxWidth: 300)
 
                     Spacer()
 

@@ -67,6 +67,10 @@ class TriageViewModel: ObservableObject {
     // Skip marked images during arrow-key navigation
     @Published var skipMarked: Bool = false
 
+    // Spotlight-style search: filters file list in real time
+    // Supports plain text (searches all columns) or "column:value" syntax (e.g. "filter:Ha", "fwhm:>4")
+    @Published var filterText: String = ""
+
     // Side panel visibility (integrated into main window)
     @Published var showInspector: Bool = false
     @Published var showSessionOverview: Bool = false
@@ -148,15 +152,113 @@ class TriageViewModel: ObservableObject {
         return parts.joined(separator: "  ") + "  TOTAL: \(totalStr)"
     }
 
-    // Visible images: filtered by hideMarked or showOnlyMarked state
+    // Visible images: filtered by hide/show marked state + column filter
     var visibleImages: [ImageEntry] {
+        var result = images
         if hideMarked {
-            return images.filter { !$0.isMarkedForDeletion }
+            result = result.filter { !$0.isMarkedForDeletion }
+        } else if showOnlyMarked {
+            result = result.filter { $0.isMarkedForDeletion }
         }
-        if showOnlyMarked {
-            return images.filter { $0.isMarkedForDeletion }
+        if !filterText.isEmpty {
+            result = result.filter { matchesFilter($0) }
         }
-        return images
+        return result
+    }
+
+    // Column name aliases for "column:value" syntax (case-insensitive)
+    private static let columnAliases: [String: String] = [
+        "filter": "filter", "fil": "filter",
+        "object": "target", "obj": "target", "target": "target",
+        "type": "frameType", "frametype": "frameType",
+        "camera": "camera", "cam": "camera",
+        "filename": "filename", "file": "filename", "name": "filename",
+        "subfolder": "subfolder", "folder": "subfolder", "sub": "subfolder",
+        "date": "date", "time": "time",
+        "exp": "exposure", "exposure": "exposure",
+        "fwhm": "fwhm", "hfr": "hfr",
+        "stars": "starCount", "starcount": "starCount",
+        "temp": "sensorTemp", "sensortemp": "sensorTemp",
+        "gain": "gain", "offset": "offset",
+        "amb": "ambientTemp", "ambtemp": "ambientTemp", "ambienttemp": "ambientTemp",
+        "foc": "focuserTemp", "foctemp": "focuserTemp", "focusertemp": "focuserTemp",
+        "telescope": "telescope", "tel": "telescope",
+        "binning": "binning", "bin": "binning",
+    ]
+
+    // Check if an image entry matches the current filter criteria.
+    // Supports plain text (all columns) or "column:value" syntax.
+    private func matchesFilter(_ entry: ImageEntry) -> Bool {
+        let query = filterText.trimmingCharacters(in: .whitespaces)
+        guard !query.isEmpty else { return true }
+
+        // Check for "column:value" syntax (e.g. "filter:Ha", "fwhm:>4.0")
+        if let colonIdx = query.firstIndex(of: ":") {
+            let prefix = String(query[query.startIndex..<colonIdx]).lowercased()
+            let value = String(query[query.index(after: colonIdx)...]).trimmingCharacters(in: .whitespaces)
+
+            if let columnId = Self.columnAliases[prefix], !value.isEmpty {
+                if ColumnDefinition.isNumericColumn(columnId) {
+                    return matchesNumericFilter(entry, column: columnId, query: value)
+                } else {
+                    return ColumnDefinition.value(for: columnId, from: entry)
+                        .lowercased().contains(value.lowercased())
+                }
+            }
+        }
+
+        // Plain text: search across all displayable columns
+        let lowerQuery = query.lowercased()
+        let searchColumns = ["filename", "target", "filter", "camera", "frameType",
+                             "subfolder", "telescope", "date", "time", "binning",
+                             "exposure", "fwhm", "hfr", "starCount", "gain",
+                             "sensorTemp", "ambientTemp", "focuserTemp"]
+        return searchColumns.contains { col in
+            ColumnDefinition.value(for: col, from: entry).lowercased().contains(lowerQuery)
+        }
+    }
+
+    // Parse numeric filter: ">4.0", "<2.5", ">=300", "<=0.5", "=120", or plain "4.0"
+    private func matchesNumericFilter(_ entry: ImageEntry, column: String, query: String) -> Bool {
+        guard let entryValue = ColumnDefinition.numericValue(for: column, from: entry) else {
+            return false  // No value for this column → doesn't match
+        }
+
+        var op = "="
+        var numStr = query
+
+        if query.hasPrefix(">=") {
+            op = ">="
+            numStr = String(query.dropFirst(2))
+        } else if query.hasPrefix("<=") {
+            op = "<="
+            numStr = String(query.dropFirst(2))
+        } else if query.hasPrefix(">") {
+            op = ">"
+            numStr = String(query.dropFirst(1))
+        } else if query.hasPrefix("<") {
+            op = "<"
+            numStr = String(query.dropFirst(1))
+        } else if query.hasPrefix("=") {
+            op = "="
+            numStr = String(query.dropFirst(1))
+        }
+
+        guard let threshold = Double(numStr.trimmingCharacters(in: .whitespaces)) else {
+            // Not a valid number — fall back to string contains on formatted value
+            return ColumnDefinition.value(for: column, from: entry)
+                .lowercased().contains(query.lowercased())
+        }
+
+        switch op {
+        case ">":  return entryValue > threshold
+        case "<":  return entryValue < threshold
+        case ">=": return entryValue >= threshold
+        case "<=": return entryValue <= threshold
+        default:
+            // Approximate equality for floating point comparison
+            return Swift.abs(entryValue - threshold) < 0.001
+        }
     }
 
     // Track security-scoped resource for proper cleanup
@@ -879,6 +981,42 @@ class TriageViewModel: ObservableObject {
         } else {
             selectImage(at: images.count - 1)
         }
+    }
+
+    // MARK: - Search Filter
+
+    // Mark all currently filtered/visible images for deletion
+    func markFilteredImages() {
+        let visible = visibleImages
+        guard !visible.isEmpty else {
+            statusMessage = "No filtered images to mark"
+            return
+        }
+        let visibleURLs = Set(visible.map { $0.url })
+        var count = 0
+        for i in images.indices where visibleURLs.contains(images[i].url) {
+            if !images[i].isMarkedForDeletion {
+                images[i].isMarkedForDeletion = true
+                count += 1
+            }
+        }
+        needsTableRefresh = true
+        statusMessage = "Marked \(count) filtered images"
+    }
+
+    // Unmark all currently filtered/visible images
+    func unmarkFilteredImages() {
+        let visible = visibleImages
+        let visibleURLs = Set(visible.map { $0.url })
+        var count = 0
+        for i in images.indices where visibleURLs.contains(images[i].url) {
+            if images[i].isMarkedForDeletion {
+                images[i].isMarkedForDeletion = false
+                count += 1
+            }
+        }
+        needsTableRefresh = true
+        statusMessage = "Unmarked \(count) images"
     }
 
     // MARK: - Skip/Hide Marked
