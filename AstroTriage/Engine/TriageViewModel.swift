@@ -60,6 +60,10 @@ class TriageViewModel: ObservableObject {
     // Hide marked images: when true, marked images are invisible in the list
     @Published var hideMarked: Bool = false
 
+    // Show only marked: inverted view — when true, only marked images are shown
+    // Mutually exclusive with hideMarked (Shift+H toggles this)
+    @Published var showOnlyMarked: Bool = false
+
     // Skip marked images during arrow-key navigation
     @Published var skipMarked: Bool = false
 
@@ -144,10 +148,13 @@ class TriageViewModel: ObservableObject {
         return parts.joined(separator: "  ") + "  TOTAL: \(totalStr)"
     }
 
-    // Visible images: all images or only unmarked, depending on hideMarked
+    // Visible images: filtered by hideMarked or showOnlyMarked state
     var visibleImages: [ImageEntry] {
         if hideMarked {
             return images.filter { !$0.isMarkedForDeletion }
+        }
+        if showOnlyMarked {
+            return images.filter { $0.isMarkedForDeletion }
         }
         return images
     }
@@ -782,6 +789,7 @@ class TriageViewModel: ObservableObject {
         debayerEnabled = false
         skipMarked = false
         hideMarked = false
+        showOnlyMarked = false
         sharpening = 0.0
         contrast = 0.0
         darkLevel = 0.0
@@ -881,11 +889,26 @@ class TriageViewModel: ObservableObject {
         statusMessage = skipMarked ? "Skip marked: ON" : "Skip marked: OFF"
     }
 
-    func toggleHideMarked() {
-        hideMarked.toggle()
-        AppSettings.saveBool(hideMarked, for: .hideMarked)
+    // Cycle view filter: all → hide marked → only marked → all
+    func cycleViewFilter() {
+        if !hideMarked && !showOnlyMarked {
+            // State 1 → 2: hide marked
+            hideMarked = true
+            showOnlyMarked = false
+            statusMessage = "Hide marked: showing only unmarked"
+        } else if hideMarked {
+            // State 2 → 3: show only marked (inverted)
+            hideMarked = false
+            showOnlyMarked = true
+            let markedCount = images.filter { $0.isMarkedForDeletion }.count
+            statusMessage = "Inverted: showing only marked (\(markedCount) files)"
+        } else {
+            // State 3 → 1: show all
+            hideMarked = false
+            showOnlyMarked = false
+            statusMessage = "Showing all files"
+        }
         needsTableRefresh = true
-        statusMessage = hideMarked ? "Hide marked: ON" : "Hide marked: OFF"
     }
 
     // MARK: - Pre-Delete Toggle
@@ -1109,6 +1132,101 @@ class TriageViewModel: ObservableObject {
             statusMessage = "Restored \(restoredCount) files — \(remaining) more undo(s) available"
         } else {
             statusMessage = "Restored \(restoredCount) files — undo stack empty"
+        }
+    }
+
+    // MARK: - Move Marked to Custom Folder (Cmd+M)
+
+    // Move checkmarked images to a user-selected destination folder.
+    // Opens a save panel starting at the session directory where the user can
+    // pick an existing folder or create a new one. Supports undo via Cmd+Z.
+    func moveMarkedToFolder() {
+        let markedImages = images.filter { $0.isMarkedForDeletion }
+        guard !markedImages.isEmpty else {
+            statusMessage = "No images marked — checkmark files first (Space)"
+            return
+        }
+
+        // Open panel for folder selection, starting at session root
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.canCreateDirectories = true
+        panel.message = "Select destination folder for \(markedImages.count) marked file(s)"
+        panel.prompt = "Move Here"
+        if let root = sessionRootURL {
+            panel.directoryURL = root
+        }
+
+        guard panel.runModal() == .OK, let destDir = panel.url else {
+            statusMessage = "Move cancelled"
+            return
+        }
+
+        // Security-scoped access for the destination
+        let accessed = destDir.startAccessingSecurityScopedResource()
+
+        let fm = FileManager.default
+        let firstMarkedIndex = images.firstIndex(where: { $0.isMarkedForDeletion }) ?? selectedIndex
+
+        var movedCount = 0
+        var failedCount = 0
+        var undoEntries: [PreDeleteUndoEntry] = []
+
+        for entry in markedImages {
+            // Handle name collision: add numeric suffix
+            var finalDest = destDir.appendingPathComponent(entry.filename)
+            var suffix = 1
+            while fm.fileExists(atPath: finalDest.path) {
+                let name = entry.url.deletingPathExtension().lastPathComponent
+                let ext = entry.url.pathExtension
+                finalDest = destDir.appendingPathComponent("\(name)_\(suffix).\(ext)")
+                suffix += 1
+            }
+            do {
+                let originalIndex = images.firstIndex(where: { $0.url == entry.url }) ?? 0
+                try fm.moveItem(at: entry.url, to: finalDest)
+                undoEntries.append(PreDeleteUndoEntry(
+                    originalURL: entry.url,
+                    preDeleteURL: finalDest,
+                    entry: entry,
+                    originalIndex: originalIndex
+                ))
+                movedCount += 1
+            } catch {
+                failedCount += 1
+            }
+        }
+
+        if accessed { destDir.stopAccessingSecurityScopedResource() }
+
+        // Push to undo stack (same stack as PRE-DELETE — Cmd+Z undoes both)
+        if !undoEntries.isEmpty {
+            preDeleteUndoStack.append(undoEntries)
+        }
+
+        // Remove moved images from the list
+        let markedURLs = Set(markedImages.map { $0.url })
+        images.removeAll { markedURLs.contains($0.url) }
+
+        // Re-select near where moved files were
+        if !images.isEmpty {
+            let newIndex = min(firstMarkedIndex, images.count - 1)
+            selectImage(at: max(0, newIndex))
+        } else {
+            selectedIndex = -1
+            currentDecodedImage = nil
+        }
+
+        needsTableRefresh = true
+        sessionOverviewModel.updateStats(from: images)
+
+        let destName = destDir.lastPathComponent
+        if failedCount > 0 {
+            statusMessage = "Moved \(movedCount) to \"\(destName)\" (\(failedCount) failed) — Undo available"
+        } else {
+            statusMessage = "Moved \(movedCount) file(s) to \"\(destName)\" — Undo available"
         }
     }
 

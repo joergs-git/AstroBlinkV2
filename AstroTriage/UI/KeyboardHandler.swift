@@ -1,4 +1,4 @@
-// v2.0.0
+// v2.1.0
 import SwiftUI
 
 // Global keyboard event handler for navigation and triage shortcuts
@@ -118,9 +118,9 @@ struct KeyboardHandler {
             return true
         }
 
-        // H: Toggle hide-marked from file list
+        // H: Cycle view filter — all → hide marked → only marked → all
         if modifiers.isEmpty, chars == "h" {
-            Task { @MainActor in viewModel.toggleHideMarked() }
+            Task { @MainActor in viewModel.cycleViewFilter() }
             return true
         }
 
@@ -151,6 +151,12 @@ struct KeyboardHandler {
         // Cmd+O: Open folder
         if modifiers == .command, chars == "o" {
             Task { @MainActor in viewModel.openFolder() }
+            return true
+        }
+
+        // Cmd+M: Move marked files to user-selected folder
+        if modifiers == .command, chars == "m" {
+            Task { @MainActor in viewModel.moveMarkedToFolder() }
             return true
         }
 

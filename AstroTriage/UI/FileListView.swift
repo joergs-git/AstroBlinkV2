@@ -105,7 +105,9 @@ struct FileListView: NSViewRepresentable {
         coordinator.lastNightMode = viewModel.nightMode
 
         // Update the displayed images snapshot and cached URLs (main actor context)
-        coordinator.displayedImages = viewModel.hideMarked ? viewModel.visibleImages : viewModel.images
+        // Use filtered list when hiding marked or showing only marked
+        coordinator.displayedImages = (viewModel.hideMarked || viewModel.showOnlyMarked)
+            ? viewModel.visibleImages : viewModel.images
         coordinator.cachedURLs = Set(coordinator.displayedImages.filter { viewModel.isImageCached($0.url) }.map { $0.url })
 
         guard let tableView = coordinator.tableView else { return }
@@ -139,7 +141,7 @@ struct FileListView: NSViewRepresentable {
         }
 
         // Sync selection from viewModel only for single-select navigation
-        if viewModel.hideMarked {
+        if viewModel.hideMarked || viewModel.showOnlyMarked {
             if let selectedURL = viewModel.selectedImage?.url,
                let visibleIdx = viewModel.visibleImages.firstIndex(where: { $0.url == selectedURL }) {
                 let currentSelection = tableView.selectedRowIndexes
@@ -358,7 +360,7 @@ struct FileListView: NSViewRepresentable {
         @objc private func checkboxToggled(_ sender: NSButton) {
             let row = sender.tag
             Task { @MainActor in
-                if viewModel.hideMarked {
+                if viewModel.hideMarked || viewModel.showOnlyMarked {
                     let visible = viewModel.visibleImages
                     guard row < visible.count else { return }
                     let url = visible[row].url
@@ -371,9 +373,25 @@ struct FileListView: NSViewRepresentable {
             }
         }
 
+        // Track previously selected rows to refresh text colors on deselection
+        private var previousSelectedRows = IndexSet()
+
         func tableViewSelectionDidChange(_ notification: Notification) {
             guard let tableView = notification.object as? NSTableView else { return }
             let selectedRows = tableView.selectedRowIndexes
+
+            // Refresh rows that changed selection state so marked-row text color updates
+            // (white when selected, red when deselected)
+            let deselected = previousSelectedRows.subtracting(selectedRows)
+            let newlySelected = selectedRows.subtracting(previousSelectedRows)
+            let changed = deselected.union(newlySelected)
+            if !changed.isEmpty {
+                let columns = IndexSet(0..<tableView.numberOfColumns)
+                tableView.reloadData(forRowIndexes: changed, columnIndexes: columns)
+                // Re-apply selection since reloadData clears it for those rows
+                tableView.selectRowIndexes(selectedRows, byExtendingSelection: false)
+            }
+            previousSelectedRows = selectedRows
 
             // Determine which row to display: for multi-select (shift+click/arrow),
             // show the image at the cursor position (last added row in the selection).
@@ -398,7 +416,7 @@ struct FileListView: NSViewRepresentable {
             }
 
             Task { @MainActor in
-                if viewModel.hideMarked {
+                if viewModel.hideMarked || viewModel.showOnlyMarked {
                     let visible = viewModel.visibleImages
                     guard targetRow < visible.count else { return }
                     let url = visible[targetRow].url
@@ -470,7 +488,7 @@ struct FileListView: NSViewRepresentable {
         @objc private func toggleMarkFromMenu(_ sender: NSMenuItem) {
             let row = sender.tag
             Task { @MainActor in
-                if viewModel.hideMarked {
+                if viewModel.hideMarked || viewModel.showOnlyMarked {
                     let visible = viewModel.visibleImages
                     guard row < visible.count else { return }
                     let url = visible[row].url

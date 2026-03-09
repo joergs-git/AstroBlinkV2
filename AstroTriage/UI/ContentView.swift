@@ -326,6 +326,13 @@ struct ContentView: View {
                                 : Color(red: 0.15, green: 0.55, blue: 0.55))
                         }
 
+                        // Show only marked pill (inverted view)
+                        if viewModel.showOnlyMarked {
+                            statusPill("Only Marked", bg: viewModel.nightMode
+                                ? Color(red: 0.35, green: 0, blue: 0)
+                                : Color(red: 0.7, green: 0.4, blue: 0.1))
+                        }
+
                         // Lock STF pill
                         if viewModel.isSTFLocked {
                             statusPill("Locked STF", bg: viewModel.nightMode
