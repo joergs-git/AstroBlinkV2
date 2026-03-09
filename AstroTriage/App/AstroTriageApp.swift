@@ -1,4 +1,4 @@
-// v2.1.0
+// v2.2.0
 import SwiftUI
 
 @main
@@ -26,6 +26,15 @@ struct AstroBlinkV2App: App {
                     NotificationCenter.default.post(name: .openFolderRequest, object: nil)
                 }
                 .keyboardShortcut("o", modifiers: .command)
+            }
+
+            // View menu: Columns visibility + Reset Settings
+            CommandGroup(after: .toolbar) {
+                Divider()
+
+                Button("Reset Settings to Defaults") {
+                    NotificationCenter.default.post(name: .resetSettingsRequest, object: nil)
+                }
             }
 
             // Help menu
@@ -137,9 +146,10 @@ class AstroBlinkV2AppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
-// Notification for Cmd+O from menu bar
+// Notifications for menu bar actions
 extension Notification.Name {
     static let openFolderRequest = Notification.Name("openFolderRequest")
+    static let resetSettingsRequest = Notification.Name("resetSettingsRequest")
 }
 
 // AppDelegate extension for help window
@@ -216,10 +226,10 @@ struct HelpContentView: View {
                 shortcutRow("Space", "Toggle pre-delete mark (single or multi-selection)")
                 shortcutRow("Cmd + ⌫", "Move marked files to PRE-DELETE folder")
                 shortcutRow("Cmd + Z", "Undo last pre-delete operation")
-                shortcutRow("S", "Toggle stretch mode: Auto STF ↔ Locked STF")
                 shortcutRow("K", "Toggle skip-marked: arrow keys skip over marked images")
                 shortcutRow("H", "Toggle hide-marked: hide marked images from the list")
                 shortcutRow("I", "Toggle FITS/XISF header inspector (floating window)")
+                shortcutRow("S", "Toggle Lock STF (freeze stretch params from current image)")
                 shortcutRow("D", "Toggle debayer for OSC (one-shot-color) images")
                 shortcutRow("N", "Toggle night mode (red-on-black for dark-adapted vision)")
                 shortcutRow("Double-click", "Reset zoom to fit-to-view")
@@ -245,9 +255,14 @@ struct HelpContentView: View {
                     .font(.system(size: 12))
                     .foregroundColor(.secondary)
 
-                featureRow("Auto STF (default)", "Each image gets its own optimal stretch — compare sharpness, focus, stars")
-                featureRow("Locked STF (press S)", "Freeze current stretch params for all images — compare brightness, signal depth, gradients")
-                Text("Status bar shows current mode. Orange = Locked.")
+                featureRow("Stretch slider", "STF target background (0–50%, default 25%)")
+                featureRow("Sharpening slider", "GPU unsharp mask (-2 blur to +2 sharpen)")
+                featureRow("Contrast slider", "S-curve contrast adjustment (-1 to +1)")
+                featureRow("Dark Level slider", "Shadows clip threshold (0 to 0.5)")
+                featureRow("Lock STF (S)", "Freeze exact stretch from current image for all — compare brightness")
+                featureRow("Apply All", "Toggle: bake current settings into all cached previews for fast navigation")
+                featureRow("Reset ↺", "Reset all sliders and toggles to defaults")
+                Text("Sliders update the current image live. Lock STF freezes the exact c0/mb stretch params for brightness comparison. Apply All re-caches all images with your current slider settings.")
                     .font(.system(size: 11))
                     .foregroundColor(.secondary)
                     .italic()

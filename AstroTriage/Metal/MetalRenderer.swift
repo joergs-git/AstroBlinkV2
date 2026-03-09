@@ -1,4 +1,4 @@
-// v0.9.5
+// v2.2.0
 import Metal
 import MetalKit
 import AppKit
@@ -10,14 +10,25 @@ class MetalRenderer: NSObject, MTKViewDelegate {
     let commandQueue: MTLCommandQueue
     let computePipeline: MTLComputePipelineState
     let debayerPipeline: MTLComputePipelineState?
+    let postProcessPipeline: MTLComputePipelineState?
     let renderPipeline: MTLRenderPipelineState
     let sampler: MTLSamplerState
     let texturePool: TexturePool
 
-    // Stretch mode: auto = per-image, locked = frozen from current image
-    enum StretchMode: String {
-        case auto = "Auto STF"
-        case locked = "Locked STF"
+    // Post-processing params (sharpening, contrast, dark level)
+    private var postProcessParams = PostProcessParamsData()
+    private var postProcessActive: Bool = false
+    private var postProcessOutputTexture: MTLTexture?
+
+    // Mirror of Metal struct PostProcessParams
+    struct PostProcessParamsData {
+        var sharpening: Float = 0.0
+        var contrast: Float = 0.0
+        var darkLevel: Float = 0.0
+
+        var isActive: Bool {
+            abs(sharpening) > 0.001 || abs(contrast) > 0.001 || darkLevel > 0.001
+        }
     }
 
     // Current image to render
@@ -31,9 +42,9 @@ class MetalRenderer: NSObject, MTKViewDelegate {
 
     // STF parameters (computed once per image, reused across redraws)
     private var currentSTFParams: [STFParams] = []
-    private var lockedSTFParams: [STFParams]?  // Non-nil when locked
+    private(set) var lockedSTFParams: [STFParams]?  // Non-nil when locked
+    var isSTFLocked: Bool { lockedSTFParams != nil }
     private var stfBuffer: MTLBuffer?
-    var stretchMode: StretchMode = .auto
 
     // Zoom and pan state (persists across image changes)
     var zoomScale: CGFloat = 1.0       // 1.0 = fit-to-view
@@ -68,6 +79,14 @@ class MetalRenderer: NSObject, MTKViewDelegate {
             self.debayerPipeline = debayerPipe
         } else {
             self.debayerPipeline = nil
+        }
+
+        // Load post-processing kernel (sharpening, contrast, dark level)
+        if let postFunc = library.makeFunction(name: "post_process"),
+           let postPipe = try? device.makeComputePipelineState(function: postFunc) {
+            self.postProcessPipeline = postPipe
+        } else {
+            self.postProcessPipeline = nil
         }
 
         // Load render pipeline for textured quad with scaling
@@ -115,10 +134,11 @@ class MetalRenderer: NSObject, MTKViewDelegate {
         "RGGB": 0, "GRBG": 1, "GBRG": 2, "BGGR": 3
     ]
 
-    func setImage(_ image: DecodedImage, in view: MTKView, bayerPattern: String? = nil) {
+    func setImage(_ image: DecodedImage, in view: MTKView, bayerPattern: String? = nil,
+                   targetBackground: Float = STFCalculator.defaultTargetBackground) {
         let isNewImage = currentImage?.buffer !== image.buffer
 
-        // Debayer mono CFA images if Bayer pattern is detected
+        // Debayer mono CFA images if Bayer pattern is provided
         let imageForProcessing: DecodedImage
         if image.channelCount == 1,
            let pattern = bayerPattern,
@@ -131,12 +151,14 @@ class MetalRenderer: NSObject, MTKViewDelegate {
 
         self.currentImage = imageForProcessing
         self.cachedPreviewTexture = nil  // Clear preview, use full-res path
+        self.postProcessOutputTexture = nil  // Force post-process recompute
 
         if isNewImage {
             if let locked = lockedSTFParams {
                 currentSTFParams = locked
             } else {
-                currentSTFParams = STFCalculator.calculate(from: imageForProcessing)
+                // Calculate STF from the (possibly debayered) image with user's stretch target
+                currentSTFParams = STFCalculator.calculate(from: imageForProcessing, targetBackground: targetBackground)
             }
             updateSTFBuffer()
             normalizedTexture = nil
@@ -193,29 +215,24 @@ class MetalRenderer: NSObject, MTKViewDelegate {
         self.cachedPreviewHeight = preview.originalHeight
         self.currentImage = nil  // No raw data needed
         self.normalizedTexture = nil
+        self.postProcessOutputTexture = nil  // Force post-process recompute for new image
         view.needsDisplay = true
     }
 
-    // Toggle between auto and locked STF modes
-    // Returns the new mode name for status display
-    func toggleStretchMode() -> String {
-        switch stretchMode {
-        case .auto:
-            // Lock: freeze current STF params for all subsequent images
-            lockedSTFParams = currentSTFParams
-            stretchMode = .locked
-        case .locked:
-            // Unlock: revert to per-image auto stretch
-            lockedSTFParams = nil
-            stretchMode = .auto
-            // Recompute for current image
-            if let image = currentImage {
-                currentSTFParams = STFCalculator.calculate(from: image)
-                updateSTFBuffer()
-                normalizedTexture = nil
-            }
+    // Lock STF: freeze current image's STF params for all subsequent images
+    func lockSTF() {
+        lockedSTFParams = currentSTFParams
+    }
+
+    // Unlock STF: revert to per-image auto stretch
+    func unlockSTF() {
+        lockedSTFParams = nil
+        // Recompute for current image
+        if let image = currentImage {
+            currentSTFParams = STFCalculator.calculate(from: image)
+            updateSTFBuffer()
+            normalizedTexture = nil
         }
-        return stretchMode.rawValue
     }
 
     // Set explicit STF params (e.g. from stretch slider) and force re-render
@@ -223,14 +240,27 @@ class MetalRenderer: NSObject, MTKViewDelegate {
         currentSTFParams = params
         updateSTFBuffer()
         normalizedTexture = nil  // Force recompute on next draw
+        postProcessOutputTexture = nil  // Also re-run post-process
     }
 
     func clearImage(in view: MTKView) {
         self.currentImage = nil
         self.normalizedTexture = nil
         self.cachedPreviewTexture = nil
+        self.postProcessOutputTexture = nil
         self.currentSTFParams = []
         view.needsDisplay = true
+    }
+
+    // Update post-processing parameters and invalidate the output texture
+    func setPostProcessParams(sharpening: Float, contrast: Float, darkLevel: Float) {
+        postProcessParams = PostProcessParamsData(
+            sharpening: sharpening,
+            contrast: contrast,
+            darkLevel: darkLevel
+        )
+        postProcessActive = postProcessParams.isActive
+        postProcessOutputTexture = nil  // Force recompute on next draw
     }
 
     func resetZoom() {
@@ -353,7 +383,63 @@ class MetalRenderer: NSObject, MTKViewDelegate {
             return
         }
 
+        // --- Post-processing pass (sharpening, contrast, dark level) ---
+        let finalTexture: MTLTexture
+        if postProcessActive, let postPipeline = postProcessPipeline {
+            // Reuse cached post-process output if available
+            if let cached = postProcessOutputTexture,
+               cached.width == displayTexture.width, cached.height == displayTexture.height {
+                finalTexture = cached
+            } else {
+                // Need to run the post-process kernel
+                guard let ppOutput = texturePool.texture(
+                    width: displayTexture.width,
+                    height: displayTexture.height,
+                    pixelFormat: .bgra8Unorm
+                ) else {
+                    finalTexture = displayTexture
+                    // Skip post-processing if texture allocation fails
+                    renderQuad(displayTexture, imgW: imgW, imgH: imgH, drawable: drawable, commandBuffer: commandBuffer, view: view)
+                    return
+                }
+
+                guard let ppEncoder = commandBuffer.makeComputeCommandEncoder() else {
+                    finalTexture = displayTexture
+                    renderQuad(displayTexture, imgW: imgW, imgH: imgH, drawable: drawable, commandBuffer: commandBuffer, view: view)
+                    return
+                }
+
+                ppEncoder.setComputePipelineState(postPipeline)
+                ppEncoder.setTexture(displayTexture, index: 0)
+                ppEncoder.setTexture(ppOutput, index: 1)
+
+                var params = postProcessParams
+                ppEncoder.setBytes(&params, length: MemoryLayout<PostProcessParamsData>.size, index: 0)
+
+                let tgSize = MTLSize(width: 32, height: 32, depth: 1)
+                let gridSize = MTLSize(
+                    width: (displayTexture.width + 31) / 32,
+                    height: (displayTexture.height + 31) / 32,
+                    depth: 1
+                )
+                ppEncoder.dispatchThreadgroups(gridSize, threadsPerThreadgroup: tgSize)
+                ppEncoder.endEncoding()
+
+                self.postProcessOutputTexture = ppOutput
+                finalTexture = ppOutput
+            }
+        } else {
+            finalTexture = displayTexture
+        }
+
         // --- Render scaled quad to drawable ---
+        renderQuad(finalTexture, imgW: imgW, imgH: imgH, drawable: drawable, commandBuffer: commandBuffer, view: view)
+    }
+
+    // Render a textured quad to the drawable with zoom/pan transform
+    private func renderQuad(_ displayTexture: MTLTexture, imgW: CGFloat, imgH: CGFloat, drawable: CAMetalDrawable, commandBuffer: MTLCommandBuffer, view: MTKView) {
+        let drawableW = drawable.texture.width
+        let drawableH = drawable.texture.height
         let renderPassDesc = MTLRenderPassDescriptor()
         renderPassDesc.colorAttachments[0].texture = drawable.texture
         renderPassDesc.colorAttachments[0].loadAction = .clear

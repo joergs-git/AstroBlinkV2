@@ -20,6 +20,7 @@ class PreviewGenerator {
     let computePipeline: MTLComputePipelineState
     let debayerPipeline: MTLComputePipelineState?
     let bin2xPipeline: MTLComputePipelineState?
+    let postProcessPipeline: MTLComputePipelineState?
 
     // Bayer pattern string to shader index mapping
     private static let bayerPatternMap: [String: Int] = [
@@ -53,6 +54,14 @@ class PreviewGenerator {
             self.bin2xPipeline = bin2xPipe
         } else {
             self.bin2xPipeline = nil
+        }
+
+        // Load post-process kernel for baking sharpening/contrast/dark into previews
+        if let ppFunc = library.makeFunction(name: "post_process"),
+           let ppPipe = try? device.makeComputePipelineState(function: ppFunc) {
+            self.postProcessPipeline = ppPipe
+        } else {
+            self.postProcessPipeline = nil
         }
     }
 
@@ -102,8 +111,13 @@ class PreviewGenerator {
     }
 
     // Generate a pre-stretched, bin2x preview texture from raw decoded image data.
-    // Chains GPU bin2x → STF stretch in a single command buffer (Phase 3 + 7).
-    func generatePreview(from image: DecodedImage, stfParams: [STFParams]) -> CachedPreview? {
+    // Chains GPU bin2x → STF stretch → optional post-process in a single command buffer.
+    // postProcessParams: when non-nil, bakes sharpening/contrast/dark into the cached preview.
+    func generatePreview(
+        from image: DecodedImage,
+        stfParams: [STFParams],
+        postProcessParams: (sharpening: Float, contrast: Float, darkLevel: Float)? = nil
+    ) -> CachedPreview? {
         let srcW = image.width
         let srcH = image.height
         let channels = image.channelCount
@@ -199,11 +213,57 @@ class PreviewGenerator {
             encoder.endEncoding()
         }
 
+        // Pass 3: Optional post-processing (sharpening, contrast, dark level)
+        // Bakes post-process into the cached preview so navigation stays instant
+        let finalTexture: MTLTexture
+        if let pp = postProcessParams, let ppPipeline = postProcessPipeline,
+           (abs(pp.sharpening) > 0.001 || abs(pp.contrast) > 0.001 || pp.darkLevel > 0.001) {
+            // Create a second texture for post-process output
+            let ppTexDesc = MTLTextureDescriptor.texture2DDescriptor(
+                pixelFormat: .bgra8Unorm,
+                width: binnedW,
+                height: binnedH,
+                mipmapped: false
+            )
+            ppTexDesc.usage = [.shaderWrite, .shaderRead]
+            ppTexDesc.storageMode = .private
+
+            guard let ppOutTexture = device.makeTexture(descriptor: ppTexDesc),
+                  let encoder = commandBuffer.makeComputeCommandEncoder() else {
+                // Fall back to STF-only output if post-process texture allocation fails
+                commandBuffer.commit()
+                commandBuffer.waitUntilCompleted()
+                return CachedPreview(texture: outTexture, stfParams: stfParams,
+                    originalWidth: image.width, originalHeight: image.height,
+                    channelCount: image.channelCount)
+            }
+
+            encoder.setComputePipelineState(ppPipeline)
+            encoder.setTexture(outTexture, index: 0)     // input: STF output
+            encoder.setTexture(ppOutTexture, index: 1)    // output: post-processed
+
+            var ppData = (pp.sharpening, pp.contrast, pp.darkLevel)
+            encoder.setBytes(&ppData, length: MemoryLayout<(Float, Float, Float)>.size, index: 0)
+
+            let tg = MTLSize(width: 32, height: 32, depth: 1)
+            let grid = MTLSize(
+                width: (binnedW + 31) / 32,
+                height: (binnedH + 31) / 32,
+                depth: 1
+            )
+            encoder.dispatchThreadgroups(grid, threadsPerThreadgroup: tg)
+            encoder.endEncoding()
+
+            finalTexture = ppOutTexture
+        } else {
+            finalTexture = outTexture
+        }
+
         commandBuffer.commit()
         commandBuffer.waitUntilCompleted()
 
         return CachedPreview(
-            texture: outTexture,
+            texture: finalTexture,
             stfParams: stfParams,
             originalWidth: image.width,
             originalHeight: image.height,

@@ -1,4 +1,4 @@
-// v2.0.0
+// v2.2.0
 // STF Auto-Stretch + Debayer: PixInsight-compatible Screen Transfer Function
 // Applies per-channel Midtones Transfer Function for proper astro visualization
 // Includes bilinear debayer kernel for OSC (one-shot color) cameras
@@ -178,6 +178,91 @@ kernel void bin2x(
                  + (uint)input[srcIdx + (uint)srcWidth + 1];
         output[dstBase + gid.y * (uint)dstW + gid.x] = (uint16_t)(sum / 4);
     }
+}
+
+// ==========================================================================
+// Post-processing: combined sharpening + contrast + dark level adjustment
+// Operates on already-stretched BGRA8 textures for real-time adjustments
+// Single pass: read input → apply dark level → contrast → sharpen → write output
+// ==========================================================================
+
+struct PostProcessParams {
+    float sharpening;   // 0 = off, 0–2 = mild to strong
+    float contrast;     // -1 to 1 (0 = off), S-curve intensity
+    float darkLevel;    // 0–0.5, shadows clip threshold
+};
+
+kernel void post_process(
+    texture2d<float, access::read> input [[texture(0)]],
+    texture2d<float, access::write> output [[texture(1)]],
+    constant PostProcessParams& params [[buffer(0)]],
+    uint2 gid [[thread_position_in_grid]])
+{
+    if (gid.x >= input.get_width() || gid.y >= input.get_height()) return;
+
+    float4 color = input.read(gid);
+
+    // Step 1: Dark level — clip shadows and rescale
+    if (params.darkLevel > 0.0) {
+        float dl = params.darkLevel;
+        float inv = 1.0 / (1.0 - dl);
+        color.r = clamp((color.r - dl) * inv, 0.0, 1.0);
+        color.g = clamp((color.g - dl) * inv, 0.0, 1.0);
+        color.b = clamp((color.b - dl) * inv, 0.0, 1.0);
+    }
+
+    // Step 2: Contrast — S-curve around midpoint 0.5
+    if (params.contrast != 0.0) {
+        float c = 1.0 + params.contrast;
+        color.r = clamp(0.5 + (color.r - 0.5) * c, 0.0, 1.0);
+        color.g = clamp(0.5 + (color.g - 0.5) * c, 0.0, 1.0);
+        color.b = clamp(0.5 + (color.b - 0.5) * c, 0.0, 1.0);
+    }
+
+    // Step 3: Sharpening (positive) or Blur (negative) — 3x3 kernel
+    if (params.sharpening != 0.0) {
+        int w = (int)input.get_width();
+        int h = (int)input.get_height();
+        int x = (int)gid.x;
+        int y = (int)gid.y;
+
+        // Only sharpen interior pixels (skip 1px border)
+        if (x > 0 && x < w - 1 && y > 0 && y < h - 1) {
+            // Read 3x3 neighborhood for blur estimate
+            float4 n  = input.read(uint2(x, y - 1));
+            float4 s  = input.read(uint2(x, y + 1));
+            float4 e  = input.read(uint2(x + 1, y));
+            float4 w4 = input.read(uint2(x - 1, y));
+
+            // Average of 4-connected neighbors (Laplacian approximation)
+            float4 blur = (n + s + e + w4) * 0.25;
+
+            // Apply dark level and contrast to blur sample too for consistency
+            if (params.darkLevel > 0.0) {
+                float dl = params.darkLevel;
+                float inv = 1.0 / (1.0 - dl);
+                blur.r = clamp((blur.r - dl) * inv, 0.0, 1.0);
+                blur.g = clamp((blur.g - dl) * inv, 0.0, 1.0);
+                blur.b = clamp((blur.b - dl) * inv, 0.0, 1.0);
+            }
+            if (params.contrast != 0.0) {
+                float c = 1.0 + params.contrast;
+                blur.r = clamp(0.5 + (blur.r - 0.5) * c, 0.0, 1.0);
+                blur.g = clamp(0.5 + (blur.g - 0.5) * c, 0.0, 1.0);
+                blur.b = clamp(0.5 + (blur.b - 0.5) * c, 0.0, 1.0);
+            }
+
+            // Positive: unsharp mask (sharpen). Negative: mix towards blur (soften).
+            // sharpened = original + amount * (original - blur)
+            // When amount < 0: effectively blends original towards the blurred version
+            float amount = params.sharpening;
+            color.r = clamp(color.r + amount * (color.r - blur.r), 0.0, 1.0);
+            color.g = clamp(color.g + amount * (color.g - blur.g), 0.0, 1.0);
+            color.b = clamp(color.b + amount * (color.b - blur.b), 0.0, 1.0);
+        }
+    }
+
+    output.write(color, gid);
 }
 
 // MARK: - Textured Quad Shaders (for fit-to-view rendering with zoom/pan)

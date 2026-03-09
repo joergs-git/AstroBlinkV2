@@ -43,6 +43,18 @@
 - **Rule:** Stop at boundaries instead of wrapping. Provide explicit jump keys (Page Up/Down, Home/End) for intentional first/last navigation.
 - **Applies to:** List navigation with key repeat, NSTableView scroll behavior
 
+## [2026-03-09] — ImageViewerView.updateNSView always debayered OSC images
+- **Mistake:** `updateNSView` in `ImageViewerView.swift` always passed `bayerPattern` to `renderer.setImage()` without checking `debayerEnabled`, and used default `targetBackground` (0.25) instead of the user's stretch slider value.
+- **Root cause:** SwiftUI calls `updateNSView` on every `@Published` property change. This re-invoked `setImage()` with the wrong parameters, overriding the debayer toggle and stretch settings that `displayCurrentImage()` or `updateStretchStrength()` had correctly applied moments before.
+- **Rule:** In NSViewRepresentable `updateNSView`, always pass the FULL current state (debayerEnabled, stretchStrength, etc.) to renderer calls — never use hardcoded defaults. SwiftUI re-renders can override imperative state at any time.
+- **Applies to:** NSViewRepresentable + Metal rendering, any SwiftUI wrapper around imperative view logic
+
+## [2026-03-09] — clearImage with dummy MTKView
+- **Mistake:** `toggleDebayer()` called `renderer?.clearImage(in: findMTKView() ?? MTKView())` — creating a dummy `MTKView()` as fallback which does nothing useful.
+- **Root cause:** Copy-paste from early code. `clearImage` needs the actual MTKView to trigger `needsDisplay`.
+- **Rule:** Never create dummy AppKit/UIKit views as fallbacks. Use `if let` guard and skip the call if the real view isn't available.
+- **Applies to:** MetalRenderer API calls, any MTKView operations
+
 ## [2026-03-07] — NSTableView multi-selection destroyed by updateNSView
 - **Mistake:** `updateNSView` was calling `selectRowIndexes(byExtendingSelection: false)` on every SwiftUI update, replacing multi-selection with single selection
 - **Root cause:** `reloadData()` clears selection, then the sync code only restored a single row

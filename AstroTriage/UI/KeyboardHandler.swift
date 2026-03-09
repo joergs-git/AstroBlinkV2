@@ -14,7 +14,22 @@ struct KeyboardHandler {
             }
 
             let handled = handleKeyEvent(event, viewModel: viewModel)
+            if handled {
+                // Reclaim table focus so selection highlight stays visible
+                // and subsequent key events work without needing a mouse click
+                ensureTableFocus()
+            }
             return handled ? nil : event
+        }
+    }
+
+    // Give the NSTableView first responder status so keyboard navigation
+    // works regardless of what the user last clicked (sliders, buttons, etc.)
+    private static func ensureTableFocus() {
+        guard let window = NSApp.keyWindow,
+              let tableView = findTableView() else { return }
+        if window.firstResponder !== tableView {
+            window.makeFirstResponder(tableView)
         }
     }
 
@@ -26,16 +41,19 @@ struct KeyboardHandler {
 
     private static func handleKeyEvent(_ event: NSEvent, viewModel: TriageViewModel) -> Bool {
         let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        // Function keys (Page Up/Down, Home, End, arrows) have .function flag set —
+        // treat .function alone as "no modifier" for these navigation keys
+        let noModifiers = modifiers.isEmpty || modifiers == .function
 
         switch event.keyCode {
         case 123: // Left arrow
-            if modifiers.isEmpty {
+            if noModifiers {
                 Task { @MainActor in viewModel.navigatePrevious() }
                 return true
             }
 
         case 124: // Right arrow
-            if modifiers.isEmpty {
+            if noModifiers {
                 Task { @MainActor in viewModel.navigateNext() }
                 return true
             }
@@ -65,25 +83,25 @@ struct KeyboardHandler {
             }
 
         case 116: // Page Up — jump to first image
-            if modifiers.isEmpty {
+            if noModifiers {
                 Task { @MainActor in viewModel.navigateToFirst() }
                 return true
             }
 
         case 121: // Page Down — jump to last image
-            if modifiers.isEmpty {
+            if noModifiers {
                 Task { @MainActor in viewModel.navigateToLast() }
                 return true
             }
 
         case 115: // Home — jump to first image
-            if modifiers.isEmpty {
+            if noModifiers {
                 Task { @MainActor in viewModel.navigateToFirst() }
                 return true
             }
 
         case 119: // End — jump to last image
-            if modifiers.isEmpty {
+            if noModifiers {
                 Task { @MainActor in viewModel.navigateToLast() }
                 return true
             }
@@ -93,12 +111,6 @@ struct KeyboardHandler {
         }
 
         guard let chars = event.charactersIgnoringModifiers else { return false }
-
-        // S: Toggle stretch mode (auto <-> locked)
-        if modifiers.isEmpty, chars == "s" {
-            Task { @MainActor in viewModel.toggleStretchMode() }
-            return true
-        }
 
         // K: Toggle skip-marked during navigation
         if modifiers.isEmpty, chars == "k" {
@@ -127,6 +139,12 @@ struct KeyboardHandler {
         // D: Toggle debayer for OSC images
         if modifiers.isEmpty, chars == "d" {
             Task { @MainActor in viewModel.toggleDebayer() }
+            return true
+        }
+
+        // S: Toggle Lock STF (freeze exact stretch params from current image)
+        if modifiers.isEmpty, chars == "s" {
+            Task { @MainActor in viewModel.toggleLockSTF() }
             return true
         }
 

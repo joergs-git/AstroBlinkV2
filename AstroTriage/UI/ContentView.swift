@@ -1,4 +1,4 @@
-// v2.1.0
+// v2.2.0
 import SwiftUI
 
 // Root view: toolbar on top, optional side panels (inspector left, session right),
@@ -11,110 +11,184 @@ struct ContentView: View {
     @State private var sliderValue: Double = 0.25  // Local slider state, synced on navigation
 
     // Night mode colors
-    private var nightFg: Color { viewModel.nightMode ? .red : .secondary }
+    private var nightFg: Color { viewModel.nightMode ? .red : Color(NSColor.labelColor) }
+    private var nightFgDim: Color { viewModel.nightMode ? .red.opacity(0.7) : Color(NSColor.secondaryLabelColor) }
     private var nightBg: Color { viewModel.nightMode ? .black : Color(NSColor.windowBackgroundColor) }
+    private var nightToolbarBg: Color { viewModel.nightMode ? Color(red: 0.06, green: 0, blue: 0) : Color(NSColor.underPageBackgroundColor) }
     private var nightControlBg: Color { viewModel.nightMode ? Color(red: 0.08, green: 0, blue: 0) : Color(NSColor.controlBackgroundColor) }
-    private var nightAccent: Color { viewModel.nightMode ? .red : .orange }
     private var nightDivider: Color { viewModel.nightMode ? Color(red: 0.3, green: 0, blue: 0) : Color(NSColor.separatorColor) }
 
     // Thin vertical divider for status bar separation
     private var statusDivider: some View {
         Text("|")
             .font(.system(size: 11, design: .monospaced))
-            .foregroundColor(nightFg.opacity(0.5))
+            .foregroundColor(nightFgDim.opacity(0.5))
             .padding(.horizontal, 4)
     }
 
     var body: some View {
         VStack(spacing: 0) {
-            // Emoji toolbar row — large icons with tiny labels
-            HStack(spacing: 0) {
-                toolbarButton("📂", "Open", "Open Folder (⌘O)") { viewModel.openFolder() }
-                toolbarButton("🔍", "Inspector", "Header Inspector (I)") { viewModel.toggleHeaderInspector() }
-                toolbarButton("📊", "Session", "Session Overview") {
-                    viewModel.showSessionOverview.toggle()
+            // Path bar: shows current session directory with Open button
+            if let rootURL = viewModel.sessionRootURL {
+                HStack(spacing: 6) {
+                    Image(systemName: "folder.fill")
+                        .font(.system(size: 11))
+                        .foregroundColor(nightFgDim.opacity(0.6))
+                    Text(rootURL.path)
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundColor(nightFg.opacity(0.8))
+                        .lineLimit(1)
+                        .truncationMode(.head)
+                        .textSelection(.enabled)
+                    Spacer()
+                    Button(action: { viewModel.openFolder() }) {
+                        Image(systemName: "folder.badge.plus")
+                            .font(.system(size: 11))
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundColor(nightFg)
+                    .help("Open another folder (⌘O)")
                 }
-                toolbarButton("🗑️", "Delete", "Pre-Delete Marked (⌘⌫)") { viewModel.moveMarkedToPreDelete() }
-                if viewModel.canUndoPreDelete {
-                    toolbarButton("↩️", "Undo", "Undo last Pre-Delete (⌘Z)") { viewModel.undoPreDelete() }
-                }
-                toolbarButton("🌟", "STF", "Toggle Auto/Locked Stretch (S)") { viewModel.toggleStretchMode() }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .background(nightToolbarBg)
+                Rectangle().fill(nightDivider).frame(height: 1)
+            }
 
-                Rectangle()
-                    .fill(nightDivider)
-                    .frame(width: 1, height: 30)
-                    .padding(.horizontal, 6)
+            // Toolbar row — two lines: buttons on top, sliders below
+            VStack(spacing: 2) {
+                // Row 1: Icon buttons + toggles + stats
+                HStack(spacing: 0) {
+                    sfToolbarButton("folder", "Open", "Open Folder (⌘O)") { viewModel.openFolder() }
+                    sfToolbarButton("list.bullet.rectangle", "Inspector", "Header Inspector (I)") { viewModel.toggleHeaderInspector() }
+                    sfToolbarButton("chart.bar", "Session", "Session Overview") {
+                        viewModel.showSessionOverview.toggle()
+                    }
+                    sfToolbarButton("trash", "Delete", "Pre-Delete Marked (⌘⌫)") { viewModel.moveMarkedToPreDelete() }
+                    if viewModel.canUndoPreDelete {
+                        sfToolbarButton("arrow.uturn.backward", "Undo", "Undo last Pre-Delete (⌘Z)") { viewModel.undoPreDelete() }
+                    }
+                    toolbarDivider
 
-                // Stretch strength slider: 0% (linear) → 100% (max stretch)
-                // Affects ONLY the currently displayed image, applied on release
-                VStack(spacing: 1) {
-                    Slider(
-                        value: $sliderValue,
-                        in: 0.0...0.50,
-                        step: 0.01,
-                        onEditingChanged: { editing in
-                            if !editing {
-                                // Apply stretch only when user releases the slider
-                                viewModel.updateStretchStrength(Float(sliderValue))
-                            }
-                        }
-                    )
-                    .frame(width: 280)
-                    .tint(viewModel.nightMode ? .red : nil)
-
-                    Text("Stretch \(Int(sliderValue / 0.50 * 100))%")
-                        .font(.system(size: 9, weight: .medium))
-                        .foregroundColor(nightFg)
-                }
-                .frame(width: 300)
-                .help("Adjust stretch for current image (0%=linear, 50%=default, 100%=max)")
-
-                Rectangle()
-                    .fill(nightDivider)
-                    .frame(width: 1, height: 30)
-                    .padding(.horizontal, 6)
-
-                Rectangle()
-                    .fill(nightDivider)
-                    .frame(width: 1, height: 30)
-                    .padding(.horizontal, 6)
-
-                // Native toggle controls
-                VStack(spacing: 4) {
-                    Toggle("Night", isOn: Binding(
-                        get: { viewModel.nightMode },
-                        set: { _ in viewModel.toggleNightMode() }
-                    ))
-                    .toggleStyle(.switch)
-                    .controlSize(.mini)
-                    .tint(.red)
-                    .help("Toggle Night Mode (N)")
-                }
-                .frame(width: 80)
-
-                // Debayer toggle — only shown when session has OSC images
-                if viewModel.hasOSCImages {
-                    VStack(spacing: 4) {
-                        Toggle("Debayer", isOn: Binding(
-                            get: { viewModel.debayerEnabled },
-                            set: { _ in viewModel.toggleDebayer() }
+                    // Lock STF toggle: freezes exact c0/mb from current image for all
+                    VStack(spacing: 2) {
+                        Toggle("Lock STF", isOn: Binding(
+                            get: { viewModel.isSTFLocked },
+                            set: { _ in viewModel.toggleLockSTF() }
                         ))
                         .toggleStyle(.switch)
                         .controlSize(.mini)
-                        .tint(.green)
-                        .help("Toggle OSC debayer (D) — Bayer interpolation to RGB color")
+                        .tint(.orange)
+                        .help("Lock STF — same stretch for all images (S)")
                     }
                     .frame(width: 90)
+
+                    // Apply All toggle: bakes current settings into all cached previews
+                    VStack(spacing: 2) {
+                        Toggle("Apply All", isOn: Binding(
+                            get: { viewModel.applyAllEnabled },
+                            set: { _ in viewModel.toggleApplyAll() }
+                        ))
+                        .toggleStyle(.switch)
+                        .controlSize(.mini)
+                        .tint(.blue)
+                        .help("Apply current settings to all cached previews")
+                    }
+                    .frame(width: 95)
+
+                    // Debayer toggle
+                    if viewModel.hasOSCImages {
+                        VStack(spacing: 2) {
+                            Toggle("Debayer", isOn: Binding(
+                                get: { viewModel.debayerEnabled },
+                                set: { _ in viewModel.toggleDebayer() }
+                            ))
+                            .toggleStyle(.switch)
+                            .controlSize(.mini)
+                            .tint(.green)
+                            .help("Toggle OSC debayer (D)")
+                        }
+                        .frame(width: 90)
+                    }
+
+                    Spacer()
+
+                    // System stats — stacked vertically, readable size
+                    if let stats = viewModel.systemStats {
+                        VStack(alignment: .trailing, spacing: 1) {
+                            Text(stats.memory)
+                                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                                .foregroundColor(nightFgDim)
+                            Text(stats.cpu)
+                                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                                .foregroundColor(nightFgDim)
+                        }
+                        .help("App memory / CPU usage")
+                        .padding(.trailing, 4)
+                    }
+
+                    // Night mode toggle — right side near Help/About
+                    VStack(spacing: 2) {
+                        Toggle("Night", isOn: Binding(
+                            get: { viewModel.nightMode },
+                            set: { _ in viewModel.toggleNightMode() }
+                        ))
+                        .toggleStyle(.switch)
+                        .controlSize(.mini)
+                        .tint(.red)
+                        .help("Toggle Night Mode (N)")
+                    }
+                    .frame(width: 80)
+
+                    toolbarDivider
+
+                    sfToolbarButton("questionmark.circle", "Help", "Help (⌘?)") { HelpWindowController.shared.showWindow(nil) }
+                    sfToolbarButton("info.circle", "About", "About") { AstroBlinkV2AppDelegate.showAboutPanel() }
                 }
 
-                Spacer()
+                // Row 2: Reset button + all sliders in a single horizontal strip
+                HStack(spacing: 12) {
+                    // Reset all sliders to defaults
+                    Button(action: {
+                        viewModel.resetSlidersToDefaults()
+                        sliderValue = Double(viewModel.stretchStrength)
+                    }) {
+                        Image(systemName: "arrow.counterclockwise")
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundColor(nightFg)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Reset all sliders to defaults")
+                    .contentShape(Rectangle())
 
-                toolbarButton("❓", "Help", "Help (⌘?)") { HelpWindowController.shared.showWindow(nil) }
-                toolbarButton("ℹ️", "About", "About AstroBlinkV2") { AstroBlinkV2AppDelegate.showAboutPanel() }
+                    compactSlider("Stretch", value: $sliderValue, range: 0.0...0.50, step: 0.01,
+                        display: { "\(Int($0 / 0.50 * 100))%" },
+                        onRelease: { viewModel.updateStretchStrength(Float(sliderValue)) })
+
+                    compactSlider("Sharp", value: Binding(
+                        get: { Double(viewModel.sharpening) },
+                        set: { viewModel.sharpening = Float($0); viewModel.updatePostProcessParams() }
+                    ), range: -2.0...2.0, step: 0.1,
+                        display: { String(format: "%+.1f", $0) })
+
+                    compactSlider("Contrast", value: Binding(
+                        get: { Double(viewModel.contrast) },
+                        set: { viewModel.contrast = Float($0); viewModel.updatePostProcessParams() }
+                    ), range: -1.0...1.0, step: 0.05,
+                        display: { String(format: "%+.1f", $0) })
+
+                    compactSlider("Dark", value: Binding(
+                        get: { Double(viewModel.darkLevel) },
+                        set: { viewModel.darkLevel = Float($0); viewModel.updatePostProcessParams() }
+                    ), range: 0.0...0.50, step: 0.01,
+                        display: { String(format: "%.2f", $0) })
+
+                    Spacer()
+                }
+                .padding(.horizontal, 8)
             }
-            .padding(.horizontal, 4)
-            .padding(.vertical, 2)
-            .background(nightBg)
+            .padding(.vertical, 4)
+            .background(nightToolbarBg)
 
             Rectangle().fill(nightDivider).frame(height: 1)
 
@@ -198,12 +272,12 @@ struct ContentView: View {
 
                                     Text("Pre-caching \(viewModel.cachingCount)/\(viewModel.cachingTotal) images...")
                                         .font(.system(size: 10, design: .monospaced))
-                                        .foregroundColor(nightFg)
+                                        .foregroundColor(nightFgDim)
                                 }
                             } else {
                                 Text("Caching paused — \(viewModel.prefetchCachedCount)/\(viewModel.images.count)")
                                     .font(.system(size: 10, design: .monospaced))
-                                    .foregroundColor(nightFg)
+                                    .foregroundColor(nightFgDim)
                             }
 
                             if viewModel.isCaching {
@@ -233,97 +307,88 @@ struct ContentView: View {
                         .background(nightControlBg)
                     }
 
-                    // Filter statistics bar
-                    if !viewModel.filterStatistics.isEmpty {
-                        HStack {
-                            Text(viewModel.filterStatistics)
-                                .font(.system(size: 11, design: .monospaced))
-                                .foregroundColor(nightFg)
-                                .lineLimit(1)
-                                .textSelection(.enabled)
-                            Spacer()
+                    // Status bar: LEFT = styled pills, RIGHT = dimensions + status
+                    HStack(spacing: 6) {
+                        // Marked count — always visible, includes total
+                        if !viewModel.images.isEmpty {
+                            statusPill(
+                                "\(viewModel.markedCount) of \(viewModel.images.count) marked",
+                                bg: viewModel.markedCount > 0
+                                    ? (viewModel.nightMode ? Color(red: 0.4, green: 0, blue: 0) : Color(red: 0.8, green: 0.25, blue: 0.25))
+                                    : (viewModel.nightMode ? Color(red: 0.15, green: 0, blue: 0) : Color(white: 0.35))
+                            )
                         }
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 2)
-                        .background(nightControlBg)
-                    }
 
-                    // Status bar: LEFT = selection/file info, RIGHT = session/mode indicators
-                    HStack(spacing: 0) {
-                        // LEFT SIDE: file index, marked count, dimensions (close to filename column)
+                        // Hiding pill
+                        if viewModel.hideMarked {
+                            statusPill("Hiding", bg: viewModel.nightMode
+                                ? Color(red: 0.3, green: 0, blue: 0)
+                                : Color(red: 0.15, green: 0.55, blue: 0.55))
+                        }
+
+                        // Lock STF pill
+                        if viewModel.isSTFLocked {
+                            statusPill("Locked STF", bg: viewModel.nightMode
+                                ? Color(red: 0.35, green: 0.15, blue: 0)
+                                : Color.orange.opacity(0.85))
+                        }
+
+                        // Apply All pill
+                        if viewModel.applyAllEnabled {
+                            statusPill(
+                                viewModel.cacheMatchesCurrentSettings ? "Applied" : "Applying...",
+                                bg: viewModel.nightMode
+                                    ? Color(red: 0, green: 0, blue: 0.3)
+                                    : (viewModel.cacheMatchesCurrentSettings
+                                        ? Color.blue.opacity(0.7)
+                                        : Color.blue.opacity(0.5))
+                            )
+                        }
+
+                        // Skip pill
+                        if viewModel.skipMarked {
+                            statusPill("Skip", bg: viewModel.nightMode
+                                ? Color(red: 0.3, green: 0, blue: 0)
+                                : Color(red: 0.75, green: 0.55, blue: 0.15))
+                        }
+
+                        // Night pill
+                        if viewModel.nightMode {
+                            statusPill("Night", bg: Color(red: 0.35, green: 0, blue: 0))
+                        }
+
+                        // Debayer pill — only shown when session has OSC images
+                        if viewModel.debayerEnabled && viewModel.hasOSCImages {
+                            statusPill("Debayer", bg: viewModel.nightMode
+                                ? Color(red: 0.3, green: 0, blue: 0)
+                                : Color(red: 0.15, green: 0.5, blue: 0.25))
+                        }
+
+                        Spacer()
+
+                        // RIGHT SIDE: dimensions, filter, status
                         if let image = viewModel.selectedImage {
-                            Text("\(viewModel.selectedIndex + 1) / \(viewModel.images.count)")
-                                .font(.system(size: 11, design: .monospaced))
-                                .foregroundColor(nightFg)
-
                             if let w = image.width, let h = image.height {
-                                statusDivider
-
                                 Text("\(w)x\(h)")
                                     .font(.system(size: 11, design: .monospaced))
-                                    .foregroundColor(nightFg)
+                                    .foregroundColor(nightFgDim)
                             }
-                        }
 
-                        if viewModel.markedCount > 0 {
-                            statusDivider
-
-                            Text("\(viewModel.markedCount) of \(viewModel.images.count) marked")
-                                .font(.system(size: 10, weight: .medium, design: .monospaced))
-                                .foregroundColor(.red)
+                            if let filter = image.filter {
+                                statusDivider
+                                Text(filter)
+                                    .font(.system(size: 11, weight: .medium, design: .monospaced))
+                                    .foregroundColor(nightFgDim)
+                            }
                         }
 
                         statusDivider
 
                         Text(viewModel.statusMessage)
                             .font(.system(size: 11, design: .monospaced))
-                            .foregroundColor(nightFg)
+                            .foregroundColor(nightFgDim)
                             .lineLimit(1)
                             .textSelection(.enabled)
-
-                        Spacer()
-
-                        // RIGHT SIDE: mode indicators + filter stats (general info)
-                        if viewModel.skipMarked {
-                            Text("SKIP")
-                                .font(.system(size: 10, weight: .bold, design: .monospaced))
-                                .foregroundColor(nightAccent)
-                                .help("Marked images are skipped during navigation (K)")
-
-                            statusDivider
-                        }
-
-                        if viewModel.hideMarked {
-                            Text("HIDE")
-                                .font(.system(size: 10, weight: .bold, design: .monospaced))
-                                .foregroundColor(nightAccent)
-                                .help("Marked images are hidden from the list (H)")
-
-                            statusDivider
-                        }
-
-                        if let r = renderer {
-                            Text(r.stretchMode.rawValue)
-                                .font(.system(size: 11, design: .monospaced))
-                                .foregroundColor(r.stretchMode == .locked ? nightAccent : nightFg)
-                                .help("Press S to toggle stretch mode")
-
-                            statusDivider
-                        }
-
-                        if viewModel.nightMode {
-                            Text("NIGHT")
-                                .font(.system(size: 10, weight: .bold, design: .monospaced))
-                                .foregroundColor(.red)
-
-                            statusDivider
-                        }
-
-                        if viewModel.debayerEnabled {
-                            Text("DEBAYER")
-                                .font(.system(size: 10, weight: .bold, design: .monospaced))
-                                .foregroundColor(viewModel.nightMode ? .red : .green)
-                        }
                     }
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
@@ -355,6 +420,18 @@ struct ContentView: View {
         .onAppear {
             keyboardMonitor = KeyboardHandler.install(viewModel: viewModel)
         }
+        .onReceive(NotificationCenter.default.publisher(for: .resetSettingsRequest)) { _ in
+            let alert = NSAlert()
+            alert.messageText = "Reset all settings to defaults?"
+            alert.informativeText = "This will reset column order, slider values, and all toggle states."
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: "Reset")
+            alert.addButton(withTitle: "Cancel")
+            if alert.runModal() == .alertFirstButtonReturn {
+                viewModel.resetAllSettings()
+                sliderValue = Double(viewModel.stretchStrength)
+            }
+        }
         .onDisappear {
             KeyboardHandler.remove(monitor: keyboardMonitor)
         }
@@ -368,20 +445,79 @@ struct ContentView: View {
         .frame(minWidth: 800, minHeight: 500)
     }
 
-    // Emoji toolbar button with large icon and tiny label below
-    private func toolbarButton(_ emoji: String, _ label: String, _ tooltip: String, action: @escaping () -> Void) -> some View {
+    // MARK: - Toolbar Helpers
+
+    // Thin vertical divider between toolbar sections
+    private var toolbarDivider: some View {
+        Rectangle()
+            .fill(nightDivider)
+            .frame(width: 1, height: 34)
+            .padding(.horizontal, 6)
+    }
+
+    // SF Symbol toolbar button — monochrome, 24pt icons (50% bigger)
+    private func sfToolbarButton(_ symbol: String, _ label: String, _ tooltip: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            VStack(spacing: 1) {
-                Text(emoji)
-                    .font(.system(size: 28))
+            VStack(spacing: 2) {
+                Image(systemName: symbol)
+                    .font(.system(size: 24, weight: .light))
+                    .foregroundColor(nightFg)
                 Text(label)
                     .font(.system(size: 8, weight: .medium))
-                    .foregroundColor(nightFg)
+                    .foregroundColor(nightFgDim)
             }
-            .frame(width: 50)
+            .frame(width: 56, height: 42)
         }
         .buttonStyle(.plain)
         .help(tooltip)
         .contentShape(Rectangle())
+    }
+
+    // Styled pill for status bar indicators — darker backgrounds for readability
+    private func statusPill(_ text: String, bg: Color) -> some View {
+        Text(text)
+            .font(.system(size: 10, weight: .semibold, design: .monospaced))
+            .foregroundColor(.white)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(
+                RoundedRectangle(cornerRadius: 4)
+                    .fill(bg)
+            )
+    }
+
+    // Compact slider — uniform style for all sliders in the toolbar
+    // onRelease is optional (for stretch slider which only applies on release)
+    private func compactSlider(
+        _ title: String,
+        value: Binding<Double>,
+        range: ClosedRange<Double>,
+        step: Double,
+        display: @escaping (Double) -> String,
+        onRelease: (() -> Void)? = nil
+    ) -> some View {
+        HStack(spacing: 4) {
+            Text(title)
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundColor(nightFgDim)
+                .frame(width: 42, alignment: .trailing)
+
+            if let onRelease = onRelease {
+                Slider(value: value, in: range, step: step, onEditingChanged: { editing in
+                    if !editing { onRelease() }
+                })
+                .frame(width: 100)
+                .tint(viewModel.nightMode ? .red : nil)
+            } else {
+                Slider(value: value, in: range, step: step)
+                    .frame(width: 100)
+                    .tint(viewModel.nightMode ? .red : nil)
+            }
+
+            Text(display(value.wrappedValue))
+                .font(.system(size: 9, weight: .medium, design: .monospaced))
+                .foregroundColor(nightFg)
+                .frame(width: 34, alignment: .leading)
+        }
     }
 }

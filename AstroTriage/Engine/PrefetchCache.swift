@@ -41,9 +41,15 @@ class PrefetchCache {
     // Prefetch ALL images using sliding window: as each decode completes,
     // the next file immediately starts — no batch boundary stalls.
     // debayerEnabled: when true, OSC images with BAYERPAT are debayered to RGB
+    // targetBackground: custom STF target (nil = default 0.25), each image still gets auto-STF
+    // lockedSTFParams: when non-nil, ALL images use these exact frozen STF params (Lock STF mode)
+    // postProcessParams: optional sharpening/contrast/dark baked into cached preview
     func prefetchAll(
         images: [ImageEntry],
         debayerEnabled: Bool,
+        targetBackground: Float? = nil,
+        lockedSTFParams: [STFParams]? = nil,
+        postProcessParams: (sharpening: Float, contrast: Float, darkLevel: Float)? = nil,
         onProgress: @escaping (Int, Int) -> Void
     ) {
         // Build lookup for Bayer patterns by URL (only used when debayer is enabled)
@@ -114,11 +120,23 @@ class PrefetchCache {
                         imageForSTF = decoded
                     }
 
-                    // 3. Compute STF params with default stretch
-                    let stfParams = STFCalculator.calculate(from: imageForSTF)
+                    // 3. Compute STF params: use locked params (exact c0/mb) or per-image auto
+                    let stfParams: [STFParams]
+                    if let locked = lockedSTFParams {
+                        // Lock STF: all images use the exact same frozen stretch params
+                        stfParams = locked
+                    } else if let tb = targetBackground {
+                        stfParams = STFCalculator.calculate(from: imageForSTF, targetBackground: tb)
+                    } else {
+                        stfParams = STFCalculator.calculate(from: imageForSTF)
+                    }
 
-                    // 4. GPU bin2x + STF stretch → BGRA8 texture
-                    let preview = generator?.generatePreview(from: imageForSTF, stfParams: stfParams)
+                    // 4. GPU bin2x + STF stretch + optional post-process → BGRA8 texture
+                    let preview = generator?.generatePreview(
+                        from: imageForSTF,
+                        stfParams: stfParams,
+                        postProcessParams: postProcessParams
+                    )
 
                     // Store result and report progress
                     let completed = completedCount.increment()

@@ -1,4 +1,4 @@
-// v0.9.6
+// v2.2.0
 import SwiftUI
 import AppKit
 
@@ -28,8 +28,13 @@ struct FileListView: NSViewRepresentable {
         tableView.intercellSpacing = NSSize(width: 6, height: 2)
         tableView.autoresizingMask = [.width, .height]
 
-        // Configure columns based on ColumnDefinition
-        for colDef in ColumnDefinition.allColumns where colDef.isDefaultVisible {
+        // Load persisted visible columns, or use defaults
+        let savedVisibleIds = AppSettings.loadStrings(for: .visibleColumns)
+        let visibleIds: Set<String> = savedVisibleIds.map { Set($0) }
+            ?? Set(ColumnDefinition.allColumns.filter(\.isDefaultVisible).map(\.identifier))
+
+        // Configure columns based on ColumnDefinition (respecting saved visibility)
+        for colDef in ColumnDefinition.allColumns where visibleIds.contains(colDef.identifier) {
             let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier(colDef.identifier))
             column.title = colDef.title
             column.width = colDef.defaultWidth
@@ -58,6 +63,24 @@ struct FileListView: NSViewRepresentable {
         let menu = NSMenu()
         menu.delegate = context.coordinator
         tableView.menu = menu
+
+        // Column header right-click menu for show/hide columns (alphabetical)
+        let headerMenu = NSMenu(title: "Columns")
+        let hideableColumns = ColumnDefinition.allColumns
+            .filter(\.isHideable)
+            .sorted { ($0.title.isEmpty ? $0.identifier : $0.title) < ($1.title.isEmpty ? $1.identifier : $1.title) }
+        for colDef in hideableColumns {
+            let item = NSMenuItem(
+                title: colDef.title.isEmpty ? colDef.identifier : colDef.title,
+                action: #selector(Coordinator.toggleColumnVisibility(_:)),
+                keyEquivalent: ""
+            )
+            item.target = context.coordinator
+            item.representedObject = colDef.identifier
+            item.state = visibleIds.contains(colDef.identifier) ? .on : .off
+            headerMenu.addItem(item)
+        }
+        tableView.headerView?.menu = headerMenu
 
         scrollView.documentView = tableView
         context.coordinator.tableView = tableView
@@ -129,10 +152,11 @@ struct FileListView: NSViewRepresentable {
             let desiredIndex = viewModel.selectedIndex
             if desiredIndex >= 0, desiredIndex < newCount {
                 let currentSelection = tableView.selectedRowIndexes
-                if currentSelection.count <= 1 && !currentSelection.contains(desiredIndex) {
-                    tableView.selectRowIndexes(IndexSet(integer: desiredIndex), byExtendingSelection: false)
-                    tableView.scrollRowToVisible(desiredIndex)
-                } else if currentSelection.count <= 1 {
+                if currentSelection.count <= 1 {
+                    if !currentSelection.contains(desiredIndex) {
+                        tableView.selectRowIndexes(IndexSet(integer: desiredIndex), byExtendingSelection: false)
+                    }
+                    // Always scroll to visible — ensures Page Up/Down brings row into view
                     tableView.scrollRowToVisible(desiredIndex)
                 }
             }
@@ -201,11 +225,15 @@ struct FileListView: NSViewRepresentable {
 
             cellView.textField?.stringValue = value
 
-            // Night mode: red text; otherwise: red for marked, normal for rest
+            // Color logic: marked rows get red text, but use white when row is selected
+            // (fixes unreadable red-on-blue issue with macOS default selection highlight)
+            let isSelected = tableView.selectedRowIndexes.contains(row)
             if isNight {
                 cellView.textField?.textColor = entry.isMarkedForDeletion
                     ? NSColor(red: 0.5, green: 0, blue: 0, alpha: 1)
                     : NSColor.systemRed
+            } else if entry.isMarkedForDeletion && isSelected {
+                cellView.textField?.textColor = .white
             } else {
                 cellView.textField?.textColor = entry.isMarkedForDeletion ? .systemRed : .labelColor
             }
@@ -240,7 +268,7 @@ struct FileListView: NSViewRepresentable {
                 let tf = NSTextField(labelWithString: "")
                 tf.translatesAutoresizingMaskIntoConstraints = false
                 tf.lineBreakMode = .byTruncatingTail
-                tf.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
+                tf.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
                 tf.isSelectable = true
                 tf.tag = 100
                 container.addSubview(tf)
@@ -271,11 +299,16 @@ struct FileListView: NSViewRepresentable {
                 indicator.toolTip = nil
             }
 
-            // Night mode: red text
+            // Color logic: marked rows get red text, but use white when selected
+            let isSelected = tableView.selectedRowIndexes.contains(
+                displayedImages.firstIndex(where: { $0.url == entry.url }) ?? -1
+            )
             if isNight {
                 textField.textColor = entry.isMarkedForDeletion
                     ? NSColor(red: 0.5, green: 0, blue: 0, alpha: 1)
                     : NSColor.systemRed
+            } else if entry.isMarkedForDeletion && isSelected {
+                textField.textColor = .white
             } else {
                 textField.textColor = entry.isMarkedForDeletion ? .systemRed : .labelColor
             }
@@ -283,16 +316,16 @@ struct FileListView: NSViewRepresentable {
             return cellView
         }
 
-        // Row background color for night mode
+        // Custom row view for all rows: fixes red-on-blue readability and night mode
         func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? {
+            let rowView = TriageRowView()
+            rowView.isNightMode = viewModel.nightMode
             if viewModel.nightMode {
-                let rowView = NSTableRowView()
                 rowView.backgroundColor = row % 2 == 0
                     ? .black
                     : NSColor(red: 0.06, green: 0, blue: 0, alpha: 1)
-                return rowView
             }
-            return nil
+            return rowView
         }
 
         private func makeCheckboxCell(for row: Int, isMarked: Bool, in tableView: NSTableView) -> NSView {
@@ -459,6 +492,9 @@ struct FileListView: NSViewRepresentable {
                 tableView.tableColumns[i].identifier.rawValue
             }
 
+            // Persist column order
+            AppSettings.saveStrings(columnIds, for: .columnOrder)
+
             Task { @MainActor [weak self] in
                 guard let self = self else { return }
                 self.viewModel.applySortByColumnOrder(columnIds)
@@ -470,6 +506,38 @@ struct FileListView: NSViewRepresentable {
                     tableView.scrollRowToVisible(idx)
                 }
             }
+        }
+
+        // MARK: - Column Visibility Toggle (header right-click menu)
+
+        @objc func toggleColumnVisibility(_ sender: NSMenuItem) {
+            guard let tableView = tableView,
+                  let colId = sender.representedObject as? String else { return }
+
+            let identifier = NSUserInterfaceItemIdentifier(colId)
+
+            if let existingCol = tableView.tableColumns.first(where: { $0.identifier == identifier }) {
+                // Column is visible → remove it
+                tableView.removeTableColumn(existingCol)
+                sender.state = .off
+            } else {
+                // Column is hidden → add it back
+                guard let colDef = ColumnDefinition.allColumns.first(where: { $0.identifier == colId }) else { return }
+                let column = NSTableColumn(identifier: identifier)
+                column.title = colDef.title
+                column.width = colDef.defaultWidth
+                column.minWidth = colDef.minWidth
+                column.sortDescriptorPrototype = NSSortDescriptor(key: colDef.identifier, ascending: true)
+                column.resizingMask = .userResizingMask
+                tableView.addTableColumn(column)
+                sender.state = .on
+            }
+
+            // Persist current visible columns
+            let visibleIds = tableView.tableColumns.map { $0.identifier.rawValue }
+            AppSettings.saveStrings(visibleIds, for: .visibleColumns)
+
+            tableView.reloadData()
         }
 
         // MARK: - Click-to-Sort (ascending/descending toggle)
@@ -489,6 +557,24 @@ struct FileListView: NSViewRepresentable {
                     tableView.scrollRowToVisible(idx)
                 }
             }
+        }
+    }
+}
+
+// Custom row view that draws a muted selection highlight instead of bright blue
+// Fixes red-on-blue readability issue for marked rows
+class TriageRowView: NSTableRowView {
+    var isNightMode: Bool = false
+
+    override func drawSelection(in dirtyRect: NSRect) {
+        if isSelected {
+            if isNightMode {
+                NSColor(calibratedRed: 0.25, green: 0.0, blue: 0.0, alpha: 1.0).setFill()
+            } else {
+                // Darker muted blue that contrasts well with both red and white text
+                NSColor(calibratedRed: 0.15, green: 0.25, blue: 0.45, alpha: 1.0).setFill()
+            }
+            dirtyRect.fill()
         }
     }
 }

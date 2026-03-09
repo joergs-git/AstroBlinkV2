@@ -1,4 +1,4 @@
-// v0.2.0
+// v2.2.0
 import Foundation
 import ImageDecoderBridge
 
@@ -159,5 +159,21 @@ struct MetadataExtractor {
         if let bayer = headers["BAYERPAT"], !bayer.isEmpty {
             entry.bayerPattern = bayer.trimmingCharacters(in: .whitespaces).uppercased()
         }
+
+        // Frame type from IMAGETYP or FRAME header (more reliable than filename parsing)
+        // Normalize variants: "Light Frame" → "LIGHT", "Dark Frame" → "DARK", etc.
+        if let imageType = headers["IMAGETYP"] ?? headers["FRAME"], !imageType.isEmpty {
+            entry.frameType = normalizeFrameType(imageType)
+        }
+    }
+
+    // Normalize IMAGETYP/FRAME header values to consistent short form
+    static func normalizeFrameType(_ raw: String) -> String {
+        let upper = raw.trimmingCharacters(in: .whitespaces).uppercased()
+        if upper.contains("LIGHT") { return "LIGHT" }
+        if upper.contains("DARK")  { return "DARK" }
+        if upper.contains("FLAT")  { return "FLAT" }
+        if upper.contains("BIAS")  { return "BIAS" }
+        return upper
     }
 }

@@ -1,4 +1,4 @@
-// v0.6.0
+// v0.7.0
 import SwiftUI
 import MetalKit
 
@@ -48,9 +48,10 @@ struct ImageViewerView: NSViewRepresentable {
 
         if let decoded = viewModel.currentDecodedImage {
             // Full-res path: set raw image for compute + display
-            // Pass Bayer pattern for auto-debayer of OSC images
-            let bayerPattern = viewModel.selectedImage?.bayerPattern
-            renderer.setImage(decoded, in: mtkView, bayerPattern: bayerPattern)
+            // Only pass Bayer pattern when debayer is enabled — otherwise show mono
+            let bayerPattern = viewModel.debayerEnabled ? viewModel.selectedImage?.bayerPattern : nil
+            renderer.setImage(decoded, in: mtkView, bayerPattern: bayerPattern,
+                              targetBackground: viewModel.stretchStrength)
         } else if viewModel.images.isEmpty {
             // No session loaded: clear display
             renderer.clearImage(in: mtkView)
@@ -82,12 +83,9 @@ class ZoomableMTKView: MTKView {
     private var zoomStartScale: CGFloat = 1.0
     private var zoomStartPan: CGPoint = .zero
 
-    override var acceptsFirstResponder: Bool { true }
-
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-        window?.makeFirstResponder(self)
-    }
+    // Don't steal first responder from the table — keyboard handler uses
+    // a local event monitor that works regardless of focus
+    override var acceptsFirstResponder: Bool { false }
 
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
@@ -106,8 +104,6 @@ class ZoomableMTKView: MTKView {
     // MARK: - Photoshop-style click-drag zoom
 
     override func mouseDown(with event: NSEvent) {
-        window?.makeFirstResponder(self)
-
         guard let renderer = metalRenderer else { return }
 
         if event.clickCount == 2 {
