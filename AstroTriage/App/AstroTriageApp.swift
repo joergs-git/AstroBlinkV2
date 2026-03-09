@@ -1,4 +1,4 @@
-// v2.1.0
+// v3.0.0
 import SwiftUI
 
 @main
@@ -26,6 +26,15 @@ struct AstroBlinkV2App: App {
                     NotificationCenter.default.post(name: .openFolderRequest, object: nil)
                 }
                 .keyboardShortcut("o", modifiers: .command)
+            }
+
+            // View menu: Columns visibility + Reset Settings
+            CommandGroup(after: .toolbar) {
+                Divider()
+
+                Button("Reset Settings to Defaults") {
+                    NotificationCenter.default.post(name: .resetSettingsRequest, object: nil)
+                }
             }
 
             // Help menu
@@ -137,9 +146,10 @@ class AstroBlinkV2AppDelegate: NSObject, NSApplicationDelegate {
     }
 }
 
-// Notification for Cmd+O from menu bar
+// Notifications for menu bar actions
 extension Notification.Name {
     static let openFolderRequest = Notification.Name("openFolderRequest")
+    static let resetSettingsRequest = Notification.Name("resetSettingsRequest")
 }
 
 // AppDelegate extension for help window
@@ -215,11 +225,12 @@ struct HelpContentView: View {
                 shortcutRow("Page Down / End", "Jump to last image")
                 shortcutRow("Space", "Toggle pre-delete mark (single or multi-selection)")
                 shortcutRow("Cmd + ⌫", "Move marked files to PRE-DELETE folder")
+                shortcutRow("Cmd + M", "Move marked files to a chosen folder")
                 shortcutRow("Cmd + Z", "Undo last pre-delete operation")
-                shortcutRow("S", "Toggle stretch mode: Auto STF ↔ Locked STF")
                 shortcutRow("K", "Toggle skip-marked: arrow keys skip over marked images")
-                shortcutRow("H", "Toggle hide-marked: hide marked images from the list")
+                shortcutRow("H", "Cycle view: all → hide marked → only marked → all")
                 shortcutRow("I", "Toggle FITS/XISF header inspector (floating window)")
+                shortcutRow("S", "Toggle Lock STF (freeze stretch params from current image)")
                 shortcutRow("D", "Toggle debayer for OSC (one-shot-color) images")
                 shortcutRow("N", "Toggle night mode (red-on-black for dark-adapted vision)")
                 shortcutRow("Double-click", "Reset zoom to fit-to-view")
@@ -245,9 +256,14 @@ struct HelpContentView: View {
                     .font(.system(size: 12))
                     .foregroundColor(.secondary)
 
-                featureRow("Auto STF (default)", "Each image gets its own optimal stretch — compare sharpness, focus, stars")
-                featureRow("Locked STF (press S)", "Freeze current stretch params for all images — compare brightness, signal depth, gradients")
-                Text("Status bar shows current mode. Orange = Locked.")
+                featureRow("Stretch slider", "STF target background (0–50%, default 25%)")
+                featureRow("Sharpening slider", "GPU unsharp mask (-2 blur to +2 sharpen)")
+                featureRow("Contrast slider", "S-curve contrast adjustment (-1 to +1)")
+                featureRow("Dark Level slider", "Shadows clip threshold (0 to 0.5)")
+                featureRow("Lock STF (S)", "Freeze exact stretch from current image for all — compare brightness")
+                featureRow("Apply All", "Toggle: bake current settings into all cached previews for fast navigation")
+                featureRow("Reset ↺", "Reset all sliders and toggles to defaults")
+                Text("Sliders update the current image live. Lock STF freezes the exact c0/mb stretch params for brightness comparison. Apply All re-caches all images with your current slider settings.")
                     .font(.system(size: 11))
                     .foregroundColor(.secondary)
                     .italic()
@@ -298,12 +314,36 @@ struct HelpContentView: View {
 
                 featureRow("Space — Mark/Unmark", "Toggle pre-delete mark on selected images")
                 featureRow("Cmd+⌫ — Move to PRE-DELETE", "Move all marked files to PRE-DELETE folder")
+                featureRow("Cmd+M — Move to folder", "Move marked files to any folder (create or select)")
+                featureRow("Cmd+Z — Undo", "Undo last move operation (PRE-DELETE or Cmd+M)")
                 featureRow("K — Skip marked", "Arrow keys skip over marked images during blinking")
-                featureRow("H — Hide marked", "Completely hide marked images from the file list")
+                featureRow("H — Cycle view", "All files → hide marked → show only marked → all")
                 featureRow("Session Overview", "Floating window with per-filter statistics + forum copy")
-                featureRow("Filter statistics", "Bottom bar shows per-filter count and total exposure")
 
-                Text("Files are never permanently deleted. Marked files are moved to a PRE-DELETE subfolder for manual review.")
+                Text("Files are never permanently deleted. All move operations support full undo.")
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+                    .italic()
+
+                Divider()
+
+                sectionHeader("Search & Filter")
+
+                Text("The search field in the toolbar filters the file list in real time. Type any text to search across all columns, or use column:value syntax for targeted filtering.")
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                featureRow("Plain text", "Searches filename, object, filter, camera, and all other columns")
+                featureRow("file:xyz", "Search filename only (e.g. file:Veil, file:bias)")
+                featureRow("filter:Ha", "Search by filter name (also: fil:Ha)")
+                featureRow("object:M42", "Search by target/object name (also: obj:M42)")
+                featureRow("type:LIGHT", "Search by frame type (LIGHT, FLAT, DARK, BIAS)")
+                featureRow("fwhm:>4", "Numeric filter with operators: >, <, >=, <=")
+                featureRow("stars:<500", "Find images with fewer than 500 detected stars")
+                featureRow("exp:300", "Find images with specific exposure time")
+                featureRow("Mark / Unmark buttons", "Mark or unmark all filtered images at once")
+                Text("After filtering, use Mark to checkmark all matches, then Cmd+M to move them or Cmd+⌫ for pre-delete.")
                     .font(.system(size: 11))
                     .foregroundColor(.secondary)
                     .italic()

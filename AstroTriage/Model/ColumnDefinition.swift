@@ -1,4 +1,4 @@
-// v0.8.0
+// v2.2.0
 import Foundation
 
 // Table column metadata for NSTableView configuration
@@ -11,12 +11,16 @@ struct ColumnDefinition {
     let isHideable: Bool
 
     // All available columns in default display order
-    // Order: checkbox, #, filename, object, filter, exp, ambtemp, foctemp, temp, gain, size, fwhm, hfr, stars, subfolder
+    // Order: checkbox, #, filename, object, date, time, type, camera, filter, exp, ambtemp, foctemp, temp, gain, size, fwhm, hfr, stars, subfolder
     static let allColumns: [ColumnDefinition] = [
         ColumnDefinition(identifier: "marked",      title: "",          defaultWidth: 28,  minWidth: 28,  isDefaultVisible: true,  isHideable: false),
         ColumnDefinition(identifier: "frameNumber", title: "#",         defaultWidth: 45,  minWidth: 35,  isDefaultVisible: true,  isHideable: true),
         ColumnDefinition(identifier: "filename",    title: "Filename",  defaultWidth: 280, minWidth: 100, isDefaultVisible: true,  isHideable: false),
         ColumnDefinition(identifier: "target",      title: "Object",    defaultWidth: 120, minWidth: 60,  isDefaultVisible: true,  isHideable: true),
+        ColumnDefinition(identifier: "date",        title: "Date",      defaultWidth: 85,  minWidth: 70,  isDefaultVisible: true,  isHideable: true),
+        ColumnDefinition(identifier: "time",        title: "Time",      defaultWidth: 75,  minWidth: 60,  isDefaultVisible: true,  isHideable: true),
+        ColumnDefinition(identifier: "frameType",   title: "Type",      defaultWidth: 50,  minWidth: 40,  isDefaultVisible: true,  isHideable: true),
+        ColumnDefinition(identifier: "camera",      title: "Camera",    defaultWidth: 120, minWidth: 80,  isDefaultVisible: true,  isHideable: true),
         ColumnDefinition(identifier: "filter",      title: "Filter",    defaultWidth: 50,  minWidth: 40,  isDefaultVisible: true,  isHideable: true),
         ColumnDefinition(identifier: "exposure",    title: "Exp",       defaultWidth: 50,  minWidth: 40,  isDefaultVisible: true,  isHideable: true),
         ColumnDefinition(identifier: "ambientTemp", title: "Amb°C",     defaultWidth: 55,  minWidth: 40,  isDefaultVisible: true,  isHideable: true),
@@ -29,14 +33,13 @@ struct ColumnDefinition {
         ColumnDefinition(identifier: "starCount",   title: "Stars",     defaultWidth: 50,  minWidth: 40,  isDefaultVisible: true,  isHideable: true),
         ColumnDefinition(identifier: "subfolder",   title: "Subfolder", defaultWidth: 80,  minWidth: 50,  isDefaultVisible: true,  isHideable: true),
         // Hidden-by-default columns
-        ColumnDefinition(identifier: "date",        title: "Date",        defaultWidth: 85,  minWidth: 70, isDefaultVisible: false, isHideable: true),
-        ColumnDefinition(identifier: "time",        title: "Time",        defaultWidth: 75,  minWidth: 60, isDefaultVisible: false, isHideable: true),
         ColumnDefinition(identifier: "telescope",   title: "Telescope",   defaultWidth: 80,  minWidth: 60, isDefaultVisible: false, isHideable: true),
-        ColumnDefinition(identifier: "camera",      title: "Camera",      defaultWidth: 120, minWidth: 80, isDefaultVisible: false, isHideable: true),
         ColumnDefinition(identifier: "binning",     title: "Binning",     defaultWidth: 55,  minWidth: 40, isDefaultVisible: false, isHideable: true),
         ColumnDefinition(identifier: "offset",      title: "Offset",      defaultWidth: 50,  minWidth: 35, isDefaultVisible: false, isHideable: true),
-        ColumnDefinition(identifier: "frameType",   title: "Type",        defaultWidth: 50,  minWidth: 40, isDefaultVisible: false, isHideable: true),
     ]
+
+    // Default visible column identifiers (factory defaults)
+    static let defaultVisibleColumnIds: [String] = allColumns.filter(\.isDefaultVisible).map(\.identifier)
 
     // Get the string value for a given column from an ImageEntry
     static func value(for columnId: String, from entry: ImageEntry) -> String {

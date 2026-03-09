@@ -1,4 +1,4 @@
-// v2.0.0
+// v2.2.0
 import Foundation
 import SwiftUI
 import Metal
@@ -39,6 +39,12 @@ class TriageViewModel: ObservableObject {
     // Default OFF for faster caching. Only relevant when session has OSC images.
     @Published var debayerEnabled: Bool = false
 
+    // Post-processing sliders: GPU-accelerated adjustments on the display texture
+    // These do NOT modify raw data — only the visual output after STF stretch
+    @Published var sharpening: Float = 0.0    // Range -2 to +2 (negative = blur, positive = sharpen)
+    @Published var contrast: Float = 0.0      // Range -1 to 1 (0 = off)
+    @Published var darkLevel: Float = 0.0     // Range 0–0.5 (0 = off)
+
     // True when the current session contains OSC images (detected via BAYERPAT header)
     @Published var hasOSCImages: Bool = false
 
@@ -54,12 +60,28 @@ class TriageViewModel: ObservableObject {
     // Hide marked images: when true, marked images are invisible in the list
     @Published var hideMarked: Bool = false
 
+    // Show only marked: inverted view — when true, only marked images are shown
+    // Mutually exclusive with hideMarked (Shift+H toggles this)
+    @Published var showOnlyMarked: Bool = false
+
     // Skip marked images during arrow-key navigation
     @Published var skipMarked: Bool = false
+
+    // Spotlight-style search: filters file list in real time
+    // Supports plain text (searches all columns) or "column:value" syntax (e.g. "filter:Ha", "fwhm:>4")
+    @Published var filterText: String = ""
 
     // Side panel visibility (integrated into main window)
     @Published var showInspector: Bool = false
     @Published var showSessionOverview: Bool = false
+
+    // Real-time system stats (CPU + memory), updated every 2 seconds
+    struct SystemStats {
+        var memory: String   // "MEM 2.1 GB"
+        var cpu: String      // "CPU 34% | 28 cores"
+    }
+    @Published var systemStats: SystemStats?
+    private var statsTimer: Timer?
 
     // Models for embedded side panels
     let headerInspectorModel = HeaderInspectorModel()
@@ -130,12 +152,113 @@ class TriageViewModel: ObservableObject {
         return parts.joined(separator: "  ") + "  TOTAL: \(totalStr)"
     }
 
-    // Visible images: all images or only unmarked, depending on hideMarked
+    // Visible images: filtered by hide/show marked state + column filter
     var visibleImages: [ImageEntry] {
+        var result = images
         if hideMarked {
-            return images.filter { !$0.isMarkedForDeletion }
+            result = result.filter { !$0.isMarkedForDeletion }
+        } else if showOnlyMarked {
+            result = result.filter { $0.isMarkedForDeletion }
         }
-        return images
+        if !filterText.isEmpty {
+            result = result.filter { matchesFilter($0) }
+        }
+        return result
+    }
+
+    // Column name aliases for "column:value" syntax (case-insensitive)
+    private static let columnAliases: [String: String] = [
+        "filter": "filter", "fil": "filter",
+        "object": "target", "obj": "target", "target": "target",
+        "type": "frameType", "frametype": "frameType",
+        "camera": "camera", "cam": "camera",
+        "filename": "filename", "file": "filename", "name": "filename",
+        "subfolder": "subfolder", "folder": "subfolder", "sub": "subfolder",
+        "date": "date", "time": "time",
+        "exp": "exposure", "exposure": "exposure",
+        "fwhm": "fwhm", "hfr": "hfr",
+        "stars": "starCount", "starcount": "starCount",
+        "temp": "sensorTemp", "sensortemp": "sensorTemp",
+        "gain": "gain", "offset": "offset",
+        "amb": "ambientTemp", "ambtemp": "ambientTemp", "ambienttemp": "ambientTemp",
+        "foc": "focuserTemp", "foctemp": "focuserTemp", "focusertemp": "focuserTemp",
+        "telescope": "telescope", "tel": "telescope",
+        "binning": "binning", "bin": "binning",
+    ]
+
+    // Check if an image entry matches the current filter criteria.
+    // Supports plain text (all columns) or "column:value" syntax.
+    private func matchesFilter(_ entry: ImageEntry) -> Bool {
+        let query = filterText.trimmingCharacters(in: .whitespaces)
+        guard !query.isEmpty else { return true }
+
+        // Check for "column:value" syntax (e.g. "filter:Ha", "fwhm:>4.0")
+        if let colonIdx = query.firstIndex(of: ":") {
+            let prefix = String(query[query.startIndex..<colonIdx]).lowercased()
+            let value = String(query[query.index(after: colonIdx)...]).trimmingCharacters(in: .whitespaces)
+
+            if let columnId = Self.columnAliases[prefix], !value.isEmpty {
+                if ColumnDefinition.isNumericColumn(columnId) {
+                    return matchesNumericFilter(entry, column: columnId, query: value)
+                } else {
+                    return ColumnDefinition.value(for: columnId, from: entry)
+                        .lowercased().contains(value.lowercased())
+                }
+            }
+        }
+
+        // Plain text: search across all displayable columns
+        let lowerQuery = query.lowercased()
+        let searchColumns = ["filename", "target", "filter", "camera", "frameType",
+                             "subfolder", "telescope", "date", "time", "binning",
+                             "exposure", "fwhm", "hfr", "starCount", "gain",
+                             "sensorTemp", "ambientTemp", "focuserTemp"]
+        return searchColumns.contains { col in
+            ColumnDefinition.value(for: col, from: entry).lowercased().contains(lowerQuery)
+        }
+    }
+
+    // Parse numeric filter: ">4.0", "<2.5", ">=300", "<=0.5", "=120", or plain "4.0"
+    private func matchesNumericFilter(_ entry: ImageEntry, column: String, query: String) -> Bool {
+        guard let entryValue = ColumnDefinition.numericValue(for: column, from: entry) else {
+            return false  // No value for this column → doesn't match
+        }
+
+        var op = "="
+        var numStr = query
+
+        if query.hasPrefix(">=") {
+            op = ">="
+            numStr = String(query.dropFirst(2))
+        } else if query.hasPrefix("<=") {
+            op = "<="
+            numStr = String(query.dropFirst(2))
+        } else if query.hasPrefix(">") {
+            op = ">"
+            numStr = String(query.dropFirst(1))
+        } else if query.hasPrefix("<") {
+            op = "<"
+            numStr = String(query.dropFirst(1))
+        } else if query.hasPrefix("=") {
+            op = "="
+            numStr = String(query.dropFirst(1))
+        }
+
+        guard let threshold = Double(numStr.trimmingCharacters(in: .whitespaces)) else {
+            // Not a valid number — fall back to string contains on formatted value
+            return ColumnDefinition.value(for: column, from: entry)
+                .lowercased().contains(query.lowercased())
+        }
+
+        switch op {
+        case ">":  return entryValue > threshold
+        case "<":  return entryValue < threshold
+        case ">=": return entryValue >= threshold
+        case "<=": return entryValue <= threshold
+        default:
+            // Approximate equality for floating point comparison
+            return Swift.abs(entryValue - threshold) < 0.001
+        }
     }
 
     // Track security-scoped resource for proper cleanup
@@ -148,6 +271,65 @@ class TriageViewModel: ObservableObject {
         }
         // Clean up stale network cache directories (keep most recent 3)
         SessionCache.cleanupOldCaches()
+
+        // Restore persisted settings
+        if let v = AppSettings.loadFloat(for: .stretchStrength) { stretchStrength = v }
+        if let v = AppSettings.loadFloat(for: .sharpening) { sharpening = v }
+        if let v = AppSettings.loadFloat(for: .contrast) { contrast = v }
+        if let v = AppSettings.loadFloat(for: .darkLevel) { darkLevel = v }
+        if let v = AppSettings.loadBool(for: .nightMode) { nightMode = v }
+        if let v = AppSettings.loadBool(for: .debayerEnabled) { debayerEnabled = v }
+        if let v = AppSettings.loadBool(for: .skipMarked) { skipMarked = v }
+        if let v = AppSettings.loadBool(for: .hideMarked) { hideMarked = v }
+
+        // Start lightweight system stats polling (CPU + memory every 2s)
+        startStatsPolling()
+    }
+
+    private func startStatsPolling() {
+        statsTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.updateSystemStats()
+            }
+        }
+    }
+
+    private func updateSystemStats() {
+        // App memory usage via mach_task_basic_info
+        var info = mach_task_basic_info()
+        var count = mach_msg_type_number_t(MemoryLayout<mach_task_basic_info>.size) / 4
+        let memResult = withUnsafeMutablePointer(to: &info) {
+            $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+                task_info(mach_task_self_, task_flavor_t(MACH_TASK_BASIC_INFO), $0, &count)
+            }
+        }
+        let memGB: String
+        if memResult == KERN_SUCCESS {
+            let mb = Double(info.resident_size) / (1024 * 1024)
+            memGB = mb >= 1024 ? String(format: "MEM %.1f GB", mb / 1024) : String(format: "MEM %d MB", Int(mb))
+        } else {
+            memGB = "MEM —"
+        }
+
+        // Process CPU usage via TASK_THREAD_TIMES_INFO
+        var threadInfo = task_thread_times_info()
+        var threadCount = mach_msg_type_number_t(MemoryLayout<task_thread_times_info>.size) / 4
+        let cpuResult = withUnsafeMutablePointer(to: &threadInfo) {
+            $0.withMemoryRebound(to: integer_t.self, capacity: Int(threadCount)) {
+                task_info(mach_task_self_, task_flavor_t(TASK_THREAD_TIMES_INFO), $0, &threadCount)
+            }
+        }
+
+        let cores = ProcessInfo.processInfo.activeProcessorCount
+        let cpuStr: String
+        if cpuResult == KERN_SUCCESS {
+            // Show active core count (actual CPU% requires delta tracking which is heavyweight)
+            cpuStr = "CPU \(cores) cores"
+        } else {
+            cpuStr = "\(cores) cores"
+        }
+
+        systemStats = SystemStats(memory: memGB, cpu: cpuStr)
     }
 
     // MARK: - Session Management
@@ -263,9 +445,13 @@ class TriageViewModel: ObservableObject {
                 self.showInspector = true
 
                 self.statusMessage = "\(entries.count) files loaded"
-                // Start prefetch immediately, read headers in background
-                self.startFullPrefetch()
+                // Enable Apply All by default so cached previews are instant from the start
+                self.applyAllEnabled = true
+                self.triggerApplyAll()
+                // Read headers in background for metadata enrichment
                 self.enrichWithHeaders()
+                // Give table focus so keyboard navigation works immediately
+                self.focusTableAfterDelay()
             }
         }
     }
@@ -308,14 +494,19 @@ class TriageViewModel: ObservableObject {
                 self.showSessionOverview = true
                 self.showInspector = true
 
+                // Enable Apply All by default so cached previews are instant from the start
+                self.applyAllEnabled = true
+
                 if isNetwork {
                     self.statusMessage = "Downloading \(entries.count) images to local cache..."
                 } else {
-                    // Start prefetch immediately (fast, no debayer by default)
-                    self.startFullPrefetch()
+                    // Bake default settings into cache for instant navigation
+                    self.triggerApplyAll()
                     // Read headers in background for metadata enrichment
                     self.enrichWithHeaders()
                 }
+                // Give table focus so keyboard navigation works immediately
+                self.focusTableAfterDelay()
 
                 // Security-scoped access tracked in accessedURL, released on next session or quit
             }
@@ -323,7 +514,7 @@ class TriageViewModel: ObservableObject {
             if isNetwork {
                 await self?.cacheNetworkFiles()
                 await MainActor.run {
-                    self?.startFullPrefetch()
+                    self?.triggerApplyAll()
                 }
             }
         }
@@ -348,7 +539,24 @@ class TriageViewModel: ObservableObject {
             reason: "Pre-caching astrophotography images"
         )
 
-        prefetchCache.prefetchAll(images: images, debayerEnabled: debayerEnabled) { [weak self] completed, total in
+        // Pass applied stretch target, locked STF params, and post-process params for cache baking
+        let targetBg: Float? = abs(appliedStretch - STFCalculator.defaultTargetBackground) > 0.001
+            ? appliedStretch : nil
+        let lockedParams: [STFParams]? = appliedLocked ? renderer?.lockedSTFParams : nil
+        let ppParams: (sharpening: Float, contrast: Float, darkLevel: Float)?
+        if abs(appliedSharpening) > 0.001 || abs(appliedContrast) > 0.001 || appliedDarkLevel > 0.001 {
+            ppParams = (appliedSharpening, appliedContrast, appliedDarkLevel)
+        } else {
+            ppParams = nil
+        }
+
+        prefetchCache.prefetchAll(
+            images: images,
+            debayerEnabled: debayerEnabled,
+            targetBackground: lockedParams != nil ? nil : targetBg,  // locked params override target
+            lockedSTFParams: lockedParams,
+            postProcessParams: ppParams
+        ) { [weak self] completed, total in
             guard let self = self else { return }
             self.cachingCount = completed
             self.cachingTotal = total
@@ -553,6 +761,15 @@ class TriageViewModel: ObservableObject {
                         }
                     }
 
+                    // Ambient temperature
+                    if let ambTemp = headers["AMBTEMP"] ?? headers["AMBIENT"], let val = Double(ambTemp) {
+                        self.images[index].ambientTemp = val
+                    }
+                    // Frame type from IMAGETYP/FRAME header (authoritative)
+                    if let imageType = headers["IMAGETYP"] ?? headers["FRAME"], !imageType.isEmpty {
+                        self.images[index].frameType = MetadataExtractor.normalizeFrameType(imageType)
+                    }
+
                     if self.images[index].bayerPattern != nil {
                         foundOSC = true
                     }
@@ -573,10 +790,16 @@ class TriageViewModel: ObservableObject {
     // When navigating to another image, slider resets to default.
     func updateStretchStrength(_ value: Float) {
         stretchStrength = value
+        AppSettings.saveFloat(value, for: .stretchStrength)
 
-        // If we have raw decoded data, just re-render with new STF params
-        if let image = currentDecodedImage, let mtkView = findMTKView(), let renderer = renderer {
-            let stfParams = STFCalculator.calculate(from: image, targetBackground: value)
+        // Auto-disable Apply All — user is tweaking, let them decide when to re-apply
+        if applyAllEnabled { applyAllEnabled = false }
+
+        // If renderer already has an image loaded (mono or debayered RGB),
+        // recalculate STF from renderer's currentImage with new targetBackground.
+        // This correctly handles both mono and debayered color images.
+        if let rendererImage = renderer?.currentImage, let mtkView = findMTKView(), let renderer = renderer {
+            let stfParams = STFCalculator.calculate(from: rendererImage, targetBackground: value)
             renderer.setSTFParams(stfParams)
             mtkView.needsDisplay = true
             return
@@ -586,7 +809,7 @@ class TriageViewModel: ObservableObject {
         guard let entry = selectedImage, let device = device else { return }
         let targetURL = entry.url
         let decodeURL = entry.decodingURL
-        let bayerPattern = entry.bayerPattern
+        let bayerPattern = debayerEnabled ? entry.bayerPattern : nil
 
         currentDecodeTask?.cancel()
         currentDecodeTask = Task.detached(priority: .userInitiated) { [weak self] in
@@ -596,9 +819,8 @@ class TriageViewModel: ObservableObject {
                 if case .success(let decoded) = result {
                     self.currentDecodedImage = decoded
                     if let mtkView = self.findMTKView(), let renderer = self.renderer {
-                        let stfParams = STFCalculator.calculate(from: decoded, targetBackground: value)
-                        renderer.setSTFParams(stfParams)
-                        renderer.setImage(decoded, in: mtkView, bayerPattern: bayerPattern)
+                        renderer.setImage(decoded, in: mtkView,
+                                          bayerPattern: bayerPattern, targetBackground: value)
                     }
                 }
             }
@@ -608,20 +830,74 @@ class TriageViewModel: ObservableObject {
     // Toggle night mode for dark-adapted vision
     func toggleNightMode() {
         nightMode.toggle()
+        AppSettings.saveBool(nightMode, for: .nightMode)
         statusMessage = nightMode ? "Night mode ON" : "Night mode OFF"
     }
 
     // Toggle debayer for OSC images — re-caches all previews with/without debayer
     func toggleDebayer() {
         debayerEnabled.toggle()
+        AppSettings.saveBool(debayerEnabled, for: .debayerEnabled)
         statusMessage = debayerEnabled
             ? "Debayer ON — re-caching with color interpolation..."
             : "Debayer OFF — re-caching as grayscale..."
+        // Clear current image so displayCurrentImage does a fresh decode with new debayer state
+        currentDecodedImage = nil
+        if let mtkView = findMTKView() {
+            renderer?.clearImage(in: mtkView)
+        }
         // Re-cache with new debayer setting
         prefetchCache?.clear()
         startFullPrefetch()
         // Refresh the currently displayed image so debayer takes effect immediately
         displayCurrentImage()
+    }
+
+    // MARK: - Post-Processing
+
+    // Update post-processing params and trigger re-render (GPU-only, no STF recompute)
+    func updatePostProcessParams() {
+        AppSettings.saveFloat(sharpening, for: .sharpening)
+        AppSettings.saveFloat(contrast, for: .contrast)
+        AppSettings.saveFloat(darkLevel, for: .darkLevel)
+
+        // Auto-disable Apply All — user is tweaking, let them decide when to re-apply
+        if applyAllEnabled { applyAllEnabled = false }
+
+        guard let renderer = renderer else { return }
+        renderer.setPostProcessParams(
+            sharpening: sharpening,
+            contrast: contrast,
+            darkLevel: darkLevel
+        )
+        if let mtkView = findMTKView() {
+            mtkView.needsDisplay = true
+        }
+    }
+
+    // Reset post-processing sliders to defaults
+    func resetPostProcess() {
+        sharpening = 0.0
+        contrast = 0.0
+        darkLevel = 0.0
+        updatePostProcessParams()
+    }
+
+    // Reset all settings to factory defaults
+    func resetAllSettings() {
+        AppSettings.resetAll()
+        stretchStrength = STFCalculator.defaultTargetBackground
+        nightMode = false
+        debayerEnabled = false
+        skipMarked = false
+        hideMarked = false
+        showOnlyMarked = false
+        sharpening = 0.0
+        contrast = 0.0
+        darkLevel = 0.0
+        needsTableRefresh = true
+        updatePostProcessParams()
+        statusMessage = "Settings reset to defaults"
     }
 
     // MARK: - Navigation
@@ -707,17 +983,70 @@ class TriageViewModel: ObservableObject {
         }
     }
 
+    // MARK: - Search Filter
+
+    // Mark all currently filtered/visible images for deletion
+    func markFilteredImages() {
+        let visible = visibleImages
+        guard !visible.isEmpty else {
+            statusMessage = "No filtered images to mark"
+            return
+        }
+        let visibleURLs = Set(visible.map { $0.url })
+        var count = 0
+        for i in images.indices where visibleURLs.contains(images[i].url) {
+            if !images[i].isMarkedForDeletion {
+                images[i].isMarkedForDeletion = true
+                count += 1
+            }
+        }
+        needsTableRefresh = true
+        statusMessage = "Marked \(count) filtered images"
+    }
+
+    // Unmark all currently filtered/visible images
+    func unmarkFilteredImages() {
+        let visible = visibleImages
+        let visibleURLs = Set(visible.map { $0.url })
+        var count = 0
+        for i in images.indices where visibleURLs.contains(images[i].url) {
+            if images[i].isMarkedForDeletion {
+                images[i].isMarkedForDeletion = false
+                count += 1
+            }
+        }
+        needsTableRefresh = true
+        statusMessage = "Unmarked \(count) images"
+    }
+
     // MARK: - Skip/Hide Marked
 
     func toggleSkipMarked() {
         skipMarked.toggle()
+        AppSettings.saveBool(skipMarked, for: .skipMarked)
         statusMessage = skipMarked ? "Skip marked: ON" : "Skip marked: OFF"
     }
 
-    func toggleHideMarked() {
-        hideMarked.toggle()
+    // Cycle view filter: all → hide marked → only marked → all
+    func cycleViewFilter() {
+        if !hideMarked && !showOnlyMarked {
+            // State 1 → 2: hide marked
+            hideMarked = true
+            showOnlyMarked = false
+            statusMessage = "Hide marked: showing only unmarked"
+        } else if hideMarked {
+            // State 2 → 3: show only marked (inverted)
+            hideMarked = false
+            showOnlyMarked = true
+            let markedCount = images.filter { $0.isMarkedForDeletion }.count
+            statusMessage = "Inverted: showing only marked (\(markedCount) files)"
+        } else {
+            // State 3 → 1: show all
+            hideMarked = false
+            showOnlyMarked = false
+            statusMessage = "Showing all files"
+        }
         needsTableRefresh = true
-        statusMessage = hideMarked ? "Hide marked: ON" : "Hide marked: OFF"
     }
 
     // MARK: - Pre-Delete Toggle
@@ -944,6 +1273,101 @@ class TriageViewModel: ObservableObject {
         }
     }
 
+    // MARK: - Move Marked to Custom Folder (Cmd+M)
+
+    // Move checkmarked images to a user-selected destination folder.
+    // Opens a save panel starting at the session directory where the user can
+    // pick an existing folder or create a new one. Supports undo via Cmd+Z.
+    func moveMarkedToFolder() {
+        let markedImages = images.filter { $0.isMarkedForDeletion }
+        guard !markedImages.isEmpty else {
+            statusMessage = "No images marked — checkmark files first (Space)"
+            return
+        }
+
+        // Open panel for folder selection, starting at session root
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.canCreateDirectories = true
+        panel.message = "Select destination folder for \(markedImages.count) marked file(s)"
+        panel.prompt = "Move Here"
+        if let root = sessionRootURL {
+            panel.directoryURL = root
+        }
+
+        guard panel.runModal() == .OK, let destDir = panel.url else {
+            statusMessage = "Move cancelled"
+            return
+        }
+
+        // Security-scoped access for the destination
+        let accessed = destDir.startAccessingSecurityScopedResource()
+
+        let fm = FileManager.default
+        let firstMarkedIndex = images.firstIndex(where: { $0.isMarkedForDeletion }) ?? selectedIndex
+
+        var movedCount = 0
+        var failedCount = 0
+        var undoEntries: [PreDeleteUndoEntry] = []
+
+        for entry in markedImages {
+            // Handle name collision: add numeric suffix
+            var finalDest = destDir.appendingPathComponent(entry.filename)
+            var suffix = 1
+            while fm.fileExists(atPath: finalDest.path) {
+                let name = entry.url.deletingPathExtension().lastPathComponent
+                let ext = entry.url.pathExtension
+                finalDest = destDir.appendingPathComponent("\(name)_\(suffix).\(ext)")
+                suffix += 1
+            }
+            do {
+                let originalIndex = images.firstIndex(where: { $0.url == entry.url }) ?? 0
+                try fm.moveItem(at: entry.url, to: finalDest)
+                undoEntries.append(PreDeleteUndoEntry(
+                    originalURL: entry.url,
+                    preDeleteURL: finalDest,
+                    entry: entry,
+                    originalIndex: originalIndex
+                ))
+                movedCount += 1
+            } catch {
+                failedCount += 1
+            }
+        }
+
+        if accessed { destDir.stopAccessingSecurityScopedResource() }
+
+        // Push to undo stack (same stack as PRE-DELETE — Cmd+Z undoes both)
+        if !undoEntries.isEmpty {
+            preDeleteUndoStack.append(undoEntries)
+        }
+
+        // Remove moved images from the list
+        let markedURLs = Set(markedImages.map { $0.url })
+        images.removeAll { markedURLs.contains($0.url) }
+
+        // Re-select near where moved files were
+        if !images.isEmpty {
+            let newIndex = min(firstMarkedIndex, images.count - 1)
+            selectImage(at: max(0, newIndex))
+        } else {
+            selectedIndex = -1
+            currentDecodedImage = nil
+        }
+
+        needsTableRefresh = true
+        sessionOverviewModel.updateStats(from: images)
+
+        let destName = destDir.lastPathComponent
+        if failedCount > 0 {
+            statusMessage = "Moved \(movedCount) to \"\(destName)\" (\(failedCount) failed) — Undo available"
+        } else {
+            statusMessage = "Moved \(movedCount) file(s) to \"\(destName)\" — Undo available"
+        }
+    }
+
     // MARK: - Header Inspector
 
     func toggleHeaderInspector() {
@@ -953,30 +1377,129 @@ class TriageViewModel: ObservableObject {
         }
     }
 
-    // MARK: - Stretch Mode
+    // MARK: - Lock STF + Apply All
 
-    func toggleStretchMode() {
+    // Lock STF: freeze exact c0/mb params from current image for all images
+    // (compare exposure/brightness across the session)
+    @Published var isSTFLocked: Bool = false
+
+    func toggleLockSTF() {
         guard let renderer = renderer else { return }
-        let modeName = renderer.toggleStretchMode()
-        statusMessage = modeName
-
-        // Invalidate all cached previews — they were stretched with different params
-        prefetchCache?.invalidateAll()
-
-        if renderer.stretchMode == .auto {
-            // Re-cache with per-image auto stretch
-            statusMessage = "Re-caching with Auto STF..."
-            startFullPrefetch()
+        isSTFLocked.toggle()
+        if isSTFLocked {
+            renderer.lockSTF()
+            statusMessage = "STF Locked — same stretch for all images"
         } else {
-            // Locked mode: re-cache with the locked params
-            statusMessage = "Locked STF — re-caching..."
+            renderer.unlockSTF()
+            statusMessage = "STF Unlocked — auto stretch per image"
+        }
+        // Re-cache with locked/unlocked params if Apply All is active
+        if applyAllEnabled {
+            triggerApplyAll()
+        }
+        // Redraw current image
+        if let mtkView = findMTKView() { mtkView.needsDisplay = true }
+    }
+
+    // Apply All toggle: when ON, bakes current settings into all cached previews.
+    // When settings change while active, auto re-caches.
+    @Published var applyAllEnabled: Bool = false
+
+    // Tracks what settings are baked into cached previews
+    private(set) var appliedStretch: Float = STFCalculator.defaultTargetBackground
+    private(set) var appliedSharpening: Float = 0.0
+    private(set) var appliedContrast: Float = 0.0
+    private(set) var appliedDarkLevel: Float = 0.0
+    private(set) var appliedLocked: Bool = false  // Were locked STF params baked in?
+
+    // Whether current slider settings match what's baked into the cache
+    var cacheMatchesCurrentSettings: Bool {
+        abs(stretchStrength - appliedStretch) < 0.001
+        && abs(sharpening - appliedSharpening) < 0.001
+        && abs(contrast - appliedContrast) < 0.001
+        && abs(darkLevel - appliedDarkLevel) < 0.001
+        && isSTFLocked == appliedLocked
+    }
+
+    func toggleApplyAll() {
+        applyAllEnabled.toggle()
+        if applyAllEnabled {
+            triggerApplyAll()
+        } else {
+            // Revert to default auto-cached previews
+            appliedStretch = STFCalculator.defaultTargetBackground
+            appliedSharpening = 0.0
+            appliedContrast = 0.0
+            appliedDarkLevel = 0.0
+            appliedLocked = false
+            prefetchCache?.invalidateAll()
+            statusMessage = "Reverting to default caching..."
+            startFullPrefetch()
+        }
+    }
+
+    // Internal: run the apply-all re-cache with current settings
+    private func triggerApplyAll() {
+        appliedStretch = stretchStrength
+        appliedSharpening = sharpening
+        appliedContrast = contrast
+        appliedDarkLevel = darkLevel
+        appliedLocked = isSTFLocked
+        prefetchCache?.invalidateAll()
+        statusMessage = "Applying settings to all images..."
+        startFullPrefetch()
+    }
+
+    // Reset all visual sliders to defaults
+    func resetSlidersToDefaults() {
+        stretchStrength = STFCalculator.defaultTargetBackground
+        sharpening = 0.0
+        contrast = 0.0
+        darkLevel = 0.0
+        isSTFLocked = false
+        renderer?.unlockSTF()
+
+        // Update live display
+        updatePostProcessParams()
+
+        // Re-cache if Apply All is active, or if applied settings were non-default
+        if applyAllEnabled || !cacheMatchesCurrentSettings {
+            applyAllEnabled = false
+            appliedStretch = stretchStrength
+            appliedSharpening = 0.0
+            appliedContrast = 0.0
+            appliedDarkLevel = 0.0
+            appliedLocked = false
+            prefetchCache?.invalidateAll()
+            statusMessage = "Resetting — re-caching with defaults..."
             startFullPrefetch()
         }
 
-        // Force redraw current image from raw data while cache rebuilds
-        if let mtkView = findMTKView() {
-            if let image = currentDecodedImage {
-                renderer.setImage(image, in: mtkView)
+        // Re-render current image with default stretch
+        if let image = currentDecodedImage, let mtkView = findMTKView(), let renderer = renderer {
+            let stfParams = STFCalculator.calculate(from: image)
+            renderer.setSTFParams(stfParams)
+            renderer.setImage(image, in: mtkView)
+        }
+
+        statusMessage = "Settings reset to defaults"
+    }
+
+    // Give the NSTableView first responder status after a short delay
+    // (table needs time to populate after loading files)
+    func focusTableAfterDelay() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            guard let window = NSApp.keyWindow else { return }
+            func findTable(in view: NSView?) -> NSTableView? {
+                guard let view = view else { return nil }
+                if let tv = view as? NSTableView { return tv }
+                for sub in view.subviews {
+                    if let found = findTable(in: sub) { return found }
+                }
+                return nil
+            }
+            if let tableView = findTable(in: window.contentView) {
+                window.makeFirstResponder(tableView)
             }
         }
     }
@@ -1084,9 +1607,9 @@ class TriageViewModel: ObservableObject {
         headerInspectorModel.update(for: image.decodingURL, filename: image.filename)
 
         // Fast path: use pre-stretched cached preview (instant, zero compute)
-        // Only if slider is at default position — custom stretch needs on-demand decode
-        let isDefaultStretch = abs(stretchStrength - STFCalculator.defaultTargetBackground) < 0.001
-        if isDefaultStretch, let preview = prefetchCache?.getPreview(for: image.url) {
+        // Works when current slider settings match what's baked into the cache.
+        // The cache has stretch + post-process baked in, so no GPU work needed.
+        if cacheMatchesCurrentSettings, let preview = prefetchCache?.getPreview(for: image.url) {
             currentDecodedImage = nil  // No raw data needed for display
             if selectedIndex >= 0 && selectedIndex < images.count {
                 images[selectedIndex].width = preview.originalWidth
@@ -1095,7 +1618,9 @@ class TriageViewModel: ObservableObject {
             }
 
             // Tell renderer to display the cached texture directly
+            // Disable live post-process since it's already baked into the preview
             if let mtkView = findMTKView(), let renderer = renderer {
+                renderer.setPostProcessParams(sharpening: 0, contrast: 0, darkLevel: 0)
                 renderer.setPreview(preview, in: mtkView)
             }
 
@@ -1105,12 +1630,16 @@ class TriageViewModel: ObservableObject {
             return
         }
 
-        // Slow path: decode on demand (image not yet cached or custom stretch active)
+        // Slow path: decode on demand (image not yet cached or settings don't match cache)
         statusMessage = "Loading \(image.filename)..."
         let targetURL = image.url
         let decodeURL = image.decodingURL
-        let bayerPattern = image.bayerPattern
+        // Only pass Bayer pattern when debayer is enabled — otherwise show as mono
+        let bayerPattern = debayerEnabled ? image.bayerPattern : nil
         let currentStretch = stretchStrength
+        let currentSharp = sharpening
+        let currentContrast = contrast
+        let currentDark = darkLevel
 
         currentDecodeTask = Task.detached(priority: .userInitiated) { [weak self] in
             guard !Task.isCancelled else { return }
@@ -1130,18 +1659,27 @@ class TriageViewModel: ObservableObject {
                         self.images[self.selectedIndex].channelCount = decoded.channelCount
                     }
 
-                    // Render the decoded image with appropriate stretch
+                    // Debug: log decoder output to understand color behavior
+                    // Render: setImage handles debayer + STF calculation internally
+                    // (including locked STF and custom targetBackground for correct RGB stretch)
                     if let mtkView = self.findMTKView(), let renderer = self.renderer {
-                        if !isDefaultStretch {
-                            let stfParams = STFCalculator.calculate(from: decoded, targetBackground: currentStretch)
-                            renderer.setSTFParams(stfParams)
-                        }
-                        renderer.setImage(decoded, in: mtkView, bayerPattern: bayerPattern)
+                        renderer.setImage(decoded, in: mtkView,
+                                          bayerPattern: bayerPattern,
+                                          targetBackground: currentStretch)
+                        renderer.setPostProcessParams(
+                            sharpening: currentSharp, contrast: currentContrast, darkLevel: currentDark)
+                        mtkView.needsDisplay = true
                     }
 
-                    let channels = decoded.channelCount == 1 ? "mono" : "RGB"
-                    let bayerInfo = self.selectedImage?.bayerPattern.map { " (\($0) debayer)" } ?? ""
-                    self.statusMessage = "\(decoded.width)x\(decoded.height) \(channels)\(bayerInfo)"
+                    // Status: dimensions + channel info + debayer state (for OSC images)
+                    let rawCh = decoded.channelCount == 1 ? "mono" : "RGB\(decoded.channelCount)ch"
+                    let debayerInfo: String
+                    if let pat = self.selectedImage?.bayerPattern {
+                        debayerInfo = self.debayerEnabled ? " | debayer ON (\(pat))" : " | debayer OFF (\(pat))"
+                    } else {
+                        debayerInfo = ""
+                    }
+                    self.statusMessage = "\(decoded.width)x\(decoded.height) \(rawCh)\(debayerInfo)"
 
                 case .failure(let error):
                     self.currentDecodedImage = nil

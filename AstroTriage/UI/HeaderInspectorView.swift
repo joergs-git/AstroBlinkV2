@@ -9,6 +9,7 @@ import AppKit
 
 // Keywords to highlight in the inspector (case-insensitive match)
 private let highlightedKeywords: Set<String> = [
+    "INSTRUME",
     "EXPOSURE", "EXPTIME", "FILTER", "GAIN", "OFFSET",
     "FOCUSPOS", "FOCPOS", "FOCTEMP",
     "CCD-TEMP", "SET-TEMP",
