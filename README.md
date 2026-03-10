@@ -16,6 +16,31 @@ Nice side effect: Finally you have a native XISF and FITS Quicklook for macOS. (
 
 ---
 
+## What's New in v3.3.0
+
+### LightspeedStacker — blazing fast GPU stacking
+- **GPU warp+accumulate kernel** — bilinear interpolation warping runs entirely on the GPU (10-20x faster than CPU)
+- **Parallel star detection** — all frames analyzed simultaneously via Swift TaskGroup
+- **Hash-based triangle matching** — O(1) candidate lookup instead of O(N²) brute-force comparison
+- **Reduced overhead** — fewer stars (30 vs 50) and triangles (120 vs 455) for preview-quality matching
+- **vDSP vectorized normalization** — final pixel averaging uses Accelerate framework
+- **Smarter previews** — mini preview updates every 3rd frame instead of every frame
+
+### Two stackers — pick your speed
+- **LightspeedStacker** (bolt icon) — GPU-optimized, fast, great for quick visual previews
+- **NormalStacker** (turtle icon) — uses more stars and triangles, potentially better on fields with few bright stars
+
+### Benchmark Stats
+- **Window > Benchmark Stats** — see exactly how long each loading phase takes (file scanning, first image, header reading, pre-caching, stacking)
+- **Memory monitor** — live app RAM usage with system total and swap
+
+### Other improvements
+- **Photoshop-style zoom** in stacked result window (click-drag horizontal = zoom, scroll = pan, pinch, double-click reset)
+- **Friendly alerts** — clicking a stacker without selecting images shows a helpful dialog with tips
+- **Aligned toolbar** — all icons sit on the same baseline with two-line labels
+
+---
+
 ## What's New in v3.2.0
 
 ### Quick Stack — GPU-accelerated live stacking
@@ -95,7 +120,7 @@ After a night of imaging you might have 200-600 sub-exposures. Some have clouds,
 5. **Pre-delete** — Cmd+Backspace moves all marked files to a `PRE-DELETE` subfolder — nothing is ever permanently deleted
 6. **Undo if needed** — full undo stack lets you restore any pre-delete operation (Cmd+Z)
 7. **Review your session** — Session Overview shows per-filter integration times and generates a shareable Fact Sheet
-8. **Quick Stack** — select your best subs and get an instant stacked preview without leaving the app
+8. **Stack** — select your best subs and hit LightspeedStacker or NormalStacker for an instant stacked preview
 
 ---
 
@@ -113,13 +138,15 @@ After a night of imaging you might have 200-600 sub-exposures. Some have clouds,
 - Double-click to reset zoom to fit-to-view
 - Persistent settings — all sliders, toggles, and column layout remembered across sessions
 
-### Quick Stack (NEW in v3.2.0)
-- Select 3+ images and stack them with one click — no plate solving required
+### Stacking — Two Modes
+- **LightspeedStacker** — GPU warp kernel, hash-based triangle matching, parallel star detection. Blazing fast.
+- **NormalStacker** — CPU warp, brute-force triangle matching, more stars. Slower but potentially more accurate on sparse fields.
+- Both: select 3+ images and stack with one click — no plate solving required
 - Triangle pattern matching for scale-invariant star alignment
 - Affine transform alignment (rotation + translation + scale)
 - GPU bin2x pre-processing for ~4x faster stacking
 - Live blue star crosses showing detected stars during processing
-- Full result window with all 4 adjustment sliders
+- Full result window with Photoshop-style zoom and all 4 adjustment sliders
 - Save as PNG with smart filename (object_date_filters_camera.png)
 - Same-target validation — warns if you accidentally select images of different objects
 - vDSP-accelerated rendering for fast slider response in result window
@@ -314,7 +341,7 @@ AstroBlinkV2 decodes FITS and XISF files using cfitsio and libxisf through a C b
 
 The workflow is non-destructive by design: marking a file only sets a flag in memory, and the "pre-delete" action physically moves files to a dedicated subfolder — never to Trash, never permanently deleted. A full undo stack allows you to reverse any pre-delete operation.
 
-Quick Stack uses triangle pattern matching on the brightest stars in each frame, computes affine transforms for sub-pixel alignment, and median-combines aligned frames — all without external plate solving. It's designed for visual impression, not science-grade stacking.
+Both stackers use triangle pattern matching on the brightest stars in each frame, compute affine transforms for alignment, and mean-combine aligned frames — all without external plate solving. LightspeedStacker runs the warp+accumulate step on the GPU via a Metal compute kernel and uses hash-based triangle lookup for near-instant matching. NormalStacker uses CPU warping with more stars for potentially higher accuracy on sparse star fields.
 
 Floating windows (Session Overview, Header Inspector, Quick Stack Result) stay above the main AstroBlinkV2 window while working but go behind other apps when you switch away.
 
@@ -329,6 +356,47 @@ AstroBlinkV2 parses the standard NINA filename pattern:
 ```
 
 Extracted tokens: date, target, time, telescope, camera, frame type, filter, exposure, frame number, binning, gain, offset, sensor temp, FWHM, focuser temp, HFR, star count.
+
+---
+
+## FAQ
+
+### Why is LightspeedStacker so fast?
+
+Six optimizations working together:
+
+1. **GPU warp+accumulate** — The biggest bottleneck in stacking is warping each frame to match the reference. NormalStacker does this on the CPU: a nested loop over millions of pixels with bilinear interpolation. LightspeedStacker offloads this to a Metal compute kernel that runs thousands of GPU threads in parallel, achieving 10-20x speedup on the warp step alone.
+
+2. **Parallel star detection** — NormalStacker detects stars one frame at a time. LightspeedStacker uses Swift's `TaskGroup` to analyze all frames simultaneously across multiple CPU cores.
+
+3. **Hash-based triangle matching** — NormalStacker compares every triangle in each frame against every triangle in the reference (O(N²) comparisons). LightspeedStacker quantizes triangle shape ratios into hash buckets and only checks nearby buckets — turning an O(N²) search into O(1) lookups. With 120 triangles per frame, this eliminates ~99% of comparisons.
+
+4. **Fewer stars, still accurate** — LightspeedStacker uses 30 stars and the 10 brightest for triangles (120 combinations) vs NormalStacker's 50 stars and 15 for triangles (455 combinations). For visual stacking, 30 bright stars provide plenty of matching accuracy.
+
+5. **vDSP vectorized normalization** — The final pixel averaging uses Apple's Accelerate framework (vDSP) for SIMD-vectorized division across the entire image plane.
+
+6. **Smarter mini previews** — During stacking, the live preview only updates every 3rd frame instead of every frame, reducing overhead.
+
+### When should I use NormalStacker instead?
+
+NormalStacker uses more stars (50 vs 30) and builds more triangles (455 vs 120), which can make a difference on:
+- **Sparse star fields** — targets with very few bright stars (e.g. dark nebulae)
+- **Heavily cropped frames** — where only a handful of stars are visible
+- **Mixed focal length sessions** — where scale differences push stars to the edge of matching tolerance
+
+If LightspeedStacker fails to align some frames, try NormalStacker on the same selection.
+
+### Is this scientific stacking?
+
+No. Both stackers are designed for **visual preview only** — a quick "what does my data look like stacked?" without leaving the triage app. They are not a replacement for dedicated stacking software like PixInsight, Siril, or APP. Specifically:
+
+- **No astrometric calibration** — alignment uses triangle pattern matching, not plate solving with a star catalog
+- **No sub-pixel interpolation** — warping uses bilinear interpolation, not Lanczos or drizzle
+- **No outlier rejection** — hot pixels, satellite trails, airplanes, and cosmic rays are not removed
+- **No calibration frames** — no dark, flat, or bias subtraction
+- **Mean combine only** — no sigma clipping, winsorized sigma, or other robust rejection methods
+
+The stacked result is meant to give you a quick visual impression of your session's potential — not a final image.
 
 ---
 

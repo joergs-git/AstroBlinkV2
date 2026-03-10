@@ -68,7 +68,7 @@ struct ContentView: View {
                     if viewModel.canUndoPreDelete {
                         sfToolbarButton("arrow.uturn.backward", "Undo", "Undo last Pre-Delete (⌘Z)") { viewModel.undoPreDelete() }
                     }
-                    sfToolbarButton("tortoise.fill", "Normal\nStack", "Accurate stacking — more stars, slower (select 3+)") {
+                    sfToolbarButton("tortoise.fill", "Normal\nStacker", "Accurate stacking — more stars, slower (select 3+)") {
                         viewModel.startQuickStack()
                     }
                     sfToolbarButton("bolt.fill", "Lightspeed\nStacker", "GPU-accelerated stacking — fast (select 3+)") {

@@ -1191,10 +1191,10 @@ class TriageViewModel: ObservableObject {
             alert.addButton(withTitle: "Got it")
             if indices.isEmpty {
                 alert.messageText = "No Images Selected"
-                alert.informativeText = "Select 3 or more images in the file list first, then hit NormalStack.\n\nTip: Use Cmd+A to select all, or Shift+Click for a range."
+                alert.informativeText = "Select 3 or more images in the file list first, then hit NormalStacker.\n\nTip: Use Cmd+A to select all, or Shift+Click for a range."
             } else {
                 alert.messageText = "Not Enough Images"
-                alert.informativeText = "NormalStack needs at least 3 images to align and stack. You selected \(indices.count).\n\nSelect more images and try again."
+                alert.informativeText = "NormalStacker needs at least 3 images to align and stack. You selected \(indices.count).\n\nSelect more images and try again."
             }
             alert.runModal()
             return
@@ -1213,7 +1213,7 @@ class TriageViewModel: ObservableObject {
             statusMessage = mismatch
             // Show alert dialog so the user can't miss the warning
             let alert = NSAlert()
-            alert.messageText = "Cannot NormalStack"
+            alert.messageText = "Cannot NormalStacker"
             alert.informativeText = mismatch
             alert.alertStyle = .warning
             alert.addButton(withTitle: "OK")
