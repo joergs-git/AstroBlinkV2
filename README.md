@@ -8,7 +8,7 @@ AstroBlinkV2 lets you blink through hundreds of FITS and XISF sub-exposures in s
 
 ---
 
-![AstroBlinkV2 — Main View with Header Inspector and Session Overview](screenshots/AstroBlinkV2_main.png)
+![AstroBlinkV2 — Main View with Header Inspector and Session Overview](AstroBlinkV2_screenshot2.png)
 
 ---
 
