@@ -89,6 +89,9 @@ class TriageViewModel: ObservableObject {
     // Quick Stack: triangle-match alignment + mean combine for visual impression
     @Published var showQuickStack: Bool = false
     var quickStackEngine: QuickStackEngine?
+    // Quick Stack V2: optimized pipeline with GPU warp, hash-based matching, parallel star detection
+    @Published var showQuickStackV2: Bool = false
+    var quickStackEngineV2: QuickStackEngineV2?
     // Selected row indices from the file list (for multi-select operations like stacking)
     var selectedTableIndices: IndexSet = IndexSet()
 
@@ -1181,29 +1184,36 @@ class TriageViewModel: ObservableObject {
     // Validates that all selected images target the same object (by name or RA/DEC proximity).
     func startQuickStack() {
         let indices = selectedTableIndices
-        guard indices.count >= 3 else {
-            statusMessage = "Select at least 3 images to stack"
+
+        if indices.count < 3 {
+            let alert = NSAlert()
+            alert.alertStyle = .informational
+            alert.addButton(withTitle: "Got it")
+            if indices.isEmpty {
+                alert.messageText = "No Images Selected"
+                alert.informativeText = "Select 3 or more images in the file list first, then hit NormalStack.\n\nTip: Use Cmd+A to select all, or Shift+Click for a range."
+            } else {
+                alert.messageText = "Not Enough Images"
+                alert.informativeText = "NormalStack needs at least 3 images to align and stack. You selected \(indices.count).\n\nSelect more images and try again."
+            }
+            alert.runModal()
             return
         }
 
-        // Map visible indices to actual image entries
         let visible = visibleImages
         let entries = indices.compactMap { idx -> ImageEntry? in
             guard idx >= 0 && idx < visible.count else { return nil }
             return visible[idx]
         }
 
-        guard entries.count >= 3 else {
-            statusMessage = "Need at least 3 valid images to stack"
-            return
-        }
+        guard entries.count >= 3 else { return }
 
         // Safety check: all images must target the same object (prevents accidental mixed stacking)
         if let mismatch = validateSameTarget(entries) {
             statusMessage = mismatch
             // Show alert dialog so the user can't miss the warning
             let alert = NSAlert()
-            alert.messageText = "Cannot Quick Stack"
+            alert.messageText = "Cannot NormalStack"
             alert.informativeText = mismatch
             alert.alertStyle = .warning
             alert.addButton(withTitle: "OK")
@@ -1216,13 +1226,60 @@ class TriageViewModel: ObservableObject {
             quickStackEngine = QuickStackEngine(device: device)
         }
 
-        guard let engine = quickStackEngine else {
-            statusMessage = "Metal device not available for stacking"
+        guard let engine = quickStackEngine else { return }
+
+        showQuickStack = true
+        benchmarkStats.markQuickStackStart(frameCount: entries.count)
+        engine.startStack(entries: entries, debayerEnabled: debayerEnabled)
+    }
+
+    // Quick Stack V2: GPU warp, hash-based matching, parallel star detection
+    func startQuickStackV2() {
+        let indices = selectedTableIndices
+
+        // No selection or too few images
+        if indices.count < 3 {
+            let alert = NSAlert()
+            alert.alertStyle = .informational
+            alert.addButton(withTitle: "Got it")
+
+            if indices.isEmpty {
+                alert.messageText = "No Images Selected"
+                alert.informativeText = "Select 3 or more images in the file list first, then hit LightspeedStacker.\n\nTip: Use Cmd+A to select all, or Shift+Click for a range."
+            } else {
+                alert.messageText = "Not Enough Images"
+                alert.informativeText = "LightspeedStacker needs at least 3 images to align and stack. You selected \(indices.count).\n\nSelect more images and try again."
+            }
+
+            alert.runModal()
             return
         }
 
-        showQuickStack = true
-        statusMessage = "Quick Stack: processing \(entries.count) frames..."
+        let visible = visibleImages
+        let entries = indices.compactMap { idx -> ImageEntry? in
+            guard idx >= 0 && idx < visible.count else { return nil }
+            return visible[idx]
+        }
+
+        guard entries.count >= 3 else { return }
+
+        if let mismatch = validateSameTarget(entries) {
+            let alert = NSAlert()
+            alert.messageText = "Cannot LightspeedStack"
+            alert.informativeText = mismatch
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: "OK")
+            alert.runModal()
+            return
+        }
+
+        if quickStackEngineV2 == nil, let device = device {
+            quickStackEngineV2 = QuickStackEngineV2(device: device)
+        }
+
+        guard let engine = quickStackEngineV2 else { return }
+
+        showQuickStackV2 = true
         benchmarkStats.markQuickStackStart(frameCount: entries.count)
         engine.startStack(entries: entries, debayerEnabled: debayerEnabled)
     }

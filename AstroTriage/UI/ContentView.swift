@@ -68,8 +68,11 @@ struct ContentView: View {
                     if viewModel.canUndoPreDelete {
                         sfToolbarButton("arrow.uturn.backward", "Undo", "Undo last Pre-Delete (⌘Z)") { viewModel.undoPreDelete() }
                     }
-                    sfToolbarButton("square.3.layers.3d.down.right", "QuickStack", "Quick Stack selected images (select 3+)") {
+                    sfToolbarButton("tortoise.fill", "Normal\nStack", "Accurate stacking — more stars, slower (select 3+)") {
                         viewModel.startQuickStack()
+                    }
+                    sfToolbarButton("bolt.fill", "Lightspeed\nStacker", "GPU-accelerated stacking — fast (select 3+)") {
+                        viewModel.startQuickStackV2()
                     }
                     toolbarDivider
 
@@ -323,6 +326,25 @@ struct ContentView: View {
                                     Spacer()
                                 }
                             }
+
+                            // Quick Stack V2 progress overlay (anchored top-right)
+                            if viewModel.showQuickStackV2, let engine = viewModel.quickStackEngineV2 {
+                                VStack {
+                                    HStack {
+                                        Spacer()
+                                        QuickStackV2ProgressView(
+                                            engine: engine,
+                                            nightMode: viewModel.nightMode,
+                                            onDismiss: {
+                                                viewModel.showQuickStackV2 = false
+                                                viewModel.quickStackEngineV2?.cancel()
+                                            }
+                                        )
+                                        .padding(12)
+                                    }
+                                    Spacer()
+                                }
+                            }
                         }
                         .frame(minHeight: 200)
 
@@ -553,6 +575,11 @@ struct ContentView: View {
                 viewModel.benchmarkStats.markQuickStackEnd()
             }
         }
+        .onChange(of: viewModel.quickStackEngineV2?.phase) { newPhase in
+            if newPhase == .done || newPhase == .failed {
+                viewModel.benchmarkStats.markQuickStackEnd()
+            }
+        }
         .onDisappear {
             KeyboardHandler.remove(monitor: keyboardMonitor)
         }
@@ -583,11 +610,15 @@ struct ContentView: View {
                 Image(systemName: symbol)
                     .font(.system(size: 24, weight: .light))
                     .foregroundColor(nightFg)
+                Spacer(minLength: 0)
                 Text(label)
                     .font(.system(size: 8, weight: .medium))
                     .foregroundColor(nightFgDim)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            .frame(width: 56, height: 42)
+            .frame(width: 56, height: 48)
         }
         .buttonStyle(.plain)
         .help(tooltip)

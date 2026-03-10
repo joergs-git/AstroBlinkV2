@@ -181,6 +181,65 @@ kernel void bin2x(
 }
 
 // ==========================================================================
+// GPU bilinear warp + accumulate for Quick Stack V2
+// Backward-maps each destination pixel through an affine inverse transform,
+// reads source with bilinear interpolation, writes to float accumulator.
+// One dispatch per frame — massively parallel (one thread per output pixel).
+// ==========================================================================
+
+struct AffineParams {
+    float a, b, tx;     // Row 1: x' = a*x + b*y + tx
+    float c, d, ty;     // Row 2: y' = c*x + d*y + ty
+};
+
+kernel void warp_accumulate(
+    device const uint16_t* source [[buffer(0)]],
+    device float* accumulator [[buffer(1)]],
+    device float* weights [[buffer(2)]],
+    constant AffineParams& invTransform [[buffer(3)]],
+    constant int& width [[buffer(4)]],
+    constant int& height [[buffer(5)]],
+    constant int& channelCount [[buffer(6)]],
+    uint2 gid [[thread_position_in_grid]])
+{
+    if ((int)gid.x >= width || (int)gid.y >= height) return;
+
+    int w = width;
+    int h = height;
+    int planeSize = w * h;
+
+    // Backward map: destination → source coordinate
+    float sx = invTransform.a * float(gid.x) + invTransform.b * float(gid.y) + invTransform.tx;
+    float sy = invTransform.c * float(gid.x) + invTransform.d * float(gid.y) + invTransform.ty;
+
+    // Bounds check with 1px margin for bilinear
+    if (sx < 0.0 || sx >= float(w - 1) || sy < 0.0 || sy >= float(h - 1)) return;
+
+    // Bilinear interpolation weights
+    int ix = int(sx);
+    int iy = int(sy);
+    float fx = sx - float(ix);
+    float fy = sy - float(iy);
+    float w00 = (1.0 - fx) * (1.0 - fy);
+    float w10 = fx * (1.0 - fy);
+    float w01 = (1.0 - fx) * fy;
+    float w11 = fx * fy;
+
+    int dstIdx = int(gid.y) * w + int(gid.x);
+
+    for (int ch = 0; ch < channelCount; ch++) {
+        int chOff = ch * planeSize;
+        float v = float(source[chOff + iy * w + ix])       * w00
+                + float(source[chOff + iy * w + ix + 1])   * w10
+                + float(source[chOff + (iy + 1) * w + ix]) * w01
+                + float(source[chOff + (iy + 1) * w + ix + 1]) * w11;
+        accumulator[ch * planeSize + dstIdx] += v;
+    }
+
+    weights[dstIdx] += 1.0;
+}
+
+// ==========================================================================
 // Post-processing: combined sharpening + contrast + dark level adjustment
 // Operates on already-stretched BGRA8 textures for real-time adjustments
 // Single pass: read input → apply dark level → contrast → sharpen → write output

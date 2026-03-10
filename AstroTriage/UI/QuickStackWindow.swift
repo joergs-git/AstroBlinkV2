@@ -990,3 +990,348 @@ struct MetalTextureView: NSViewRepresentable {
         }
     }
 }
+
+// MARK: - Quick Stack V2 Views
+// These mirror QuickStackProgressView and StackResultView but use QuickStackEngineV2
+
+struct QuickStackV2ProgressView: View {
+    @ObservedObject var engine: QuickStackEngineV2
+    let nightMode: Bool
+    var onDismiss: () -> Void
+
+    private var fg: Color { nightMode ? .red : .primary }
+    private var fgDim: Color { nightMode ? .red.opacity(0.7) : .secondary }
+    private var bg: Color { nightMode ? .black : Color(NSColor.windowBackgroundColor) }
+
+    var body: some View {
+        VStack(spacing: 12) {
+            HStack {
+                Image(systemName: "square.3.layers.3d.down.right")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(fg)
+                Text("LightspeedStacker")
+                    .font(.system(size: 14, weight: .semibold, design: .monospaced))
+                    .foregroundColor(fg)
+                Spacer()
+
+                if engine.phase != .done && engine.phase != .failed && engine.phase != .idle {
+                    Button(action: {
+                        engine.cancel()
+                        onDismiss()
+                    }) {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 14))
+                            .foregroundColor(fgDim)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Cancel stacking")
+                }
+            }
+
+            ZStack {
+                Rectangle()
+                    .fill(Color.black)
+                    .frame(width: 200, height: 200)
+
+                if let texture = engine.miniPreviewTexture {
+                    MetalTextureView(texture: texture)
+                        .frame(width: 200, height: 200)
+                } else {
+                    VStack(spacing: 8) {
+                        ProgressView()
+                            .progressViewStyle(.circular)
+                            .tint(nightMode ? .red : nil)
+                        Text("Preparing...")
+                            .font(.system(size: 11, design: .monospaced))
+                            .foregroundColor(.gray)
+                    }
+                }
+
+                if engine.phase == .detecting && !engine.detectedStarPositions.isEmpty {
+                    ForEach(0..<engine.detectedStarPositions.count, id: \.self) { i in
+                        let pos = engine.detectedStarPositions[i]
+                        StarCrossShape()
+                            .stroke(Color(red: 0.3, green: 0.6, blue: 1.0), lineWidth: 1.5)
+                            .frame(width: 10, height: 10)
+                            .position(x: pos.x, y: pos.y)
+                    }
+                }
+            }
+            .frame(width: 200, height: 200)
+            .clipped()
+            .cornerRadius(4)
+
+            Text(engine.phase.rawValue)
+                .font(.system(size: 11, weight: .medium, design: .monospaced))
+                .foregroundColor(fg)
+
+            if engine.phase == .aligning || engine.phase == .stacking {
+                Text("Layer \(engine.currentLayer) / \(engine.totalLayers)")
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundColor(fgDim)
+            }
+
+            ProgressView(value: engine.progress)
+                .progressViewStyle(.linear)
+                .tint(nightMode ? .red : .accentColor)
+
+            if let error = engine.errorMessage {
+                Text(error)
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundColor(.red)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 4)
+            }
+
+            if engine.phase == .done {
+                Button(action: { openResultWindow() }) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "photo")
+                            .font(.system(size: 12))
+                        Text("Open Result (\(engine.resultWidth)x\(engine.resultHeight))")
+                            .font(.system(size: 12, weight: .medium, design: .monospaced))
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+            }
+
+            if engine.phase == .done || engine.phase == .failed {
+                Button("Close") { onDismiss() }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .foregroundColor(fg)
+            }
+        }
+        .padding(16)
+        .frame(width: 240)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(bg.opacity(0.95))
+                .shadow(radius: 8)
+        )
+        .onChange(of: engine.phase) { newPhase in
+            if newPhase == .done {
+                openResultWindow()
+            }
+        }
+    }
+
+    private func openResultWindow() {
+        guard engine.resultTexture != nil else { return }
+
+        let resultView = StackResultViewV2(engine: engine, nightMode: nightMode)
+        let hostingView = NSHostingView(rootView: resultView)
+        let maxDim: CGFloat = 1200
+        let scale = min(maxDim / CGFloat(engine.resultWidth), maxDim / CGFloat(engine.resultHeight), 1.0)
+        let winW = CGFloat(engine.resultWidth) * scale + 40
+        let winH = CGFloat(engine.resultHeight) * scale + 80
+
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: winW, height: winH),
+            styleMask: [.titled, .closable, .resizable, .miniaturizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = "LightspeedStacker Result — \(engine.resultWidth)x\(engine.resultHeight)"
+        window.contentView = hostingView
+        window.center()
+        window.isReleasedWhenClosed = false
+        window.makeKeyAndOrderFront(nil)
+    }
+}
+
+struct StackResultViewV2: View {
+    let engine: QuickStackEngineV2
+    let nightMode: Bool
+    @State private var stretchValue: Double = 0.25
+    @State private var sharpening: Double = 0.0
+    @State private var contrast: Double = 0.0
+    @State private var darkLevel: Double = 0.0
+    @State private var displayTexture: MTLTexture?
+    @State private var savedMessage: String?
+    @State private var isRendering: Bool = false
+    @State private var renderTask: Task<Void, Never>?
+
+    private var fgDim: Color { nightMode ? .red.opacity(0.7) : .secondary }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ZStack {
+                if let tex = displayTexture ?? engine.resultTexture {
+                    ZoomableMetalTextureView(texture: tex)
+                }
+                if isRendering {
+                    VStack {
+                        Spacer()
+                        HStack {
+                            Spacer()
+                            ProgressView()
+                                .progressViewStyle(.circular)
+                                .scaleEffect(1.2)
+                                .tint(nightMode ? .red : .blue)
+                                .padding(12)
+                                .background(Color.black.opacity(0.6))
+                                .cornerRadius(10)
+                            Spacer()
+                        }
+                        Spacer()
+                    }
+                }
+            }
+
+            HStack(spacing: 10) {
+                Button(action: resetSliders) {
+                    Image(systemName: "arrow.counterclockwise")
+                        .font(.system(size: 12, weight: .medium))
+                }
+                .buttonStyle(.plain)
+                .foregroundColor(nightMode ? .red : .primary)
+                .help("Reset all sliders")
+
+                resultSlider("Stretch", value: $stretchValue, range: 0.0...1.0, step: 0.01,
+                             display: "\(Int(stretchValue * 100))%")
+                resultSlider("Sharp", value: $sharpening, range: -4.0...4.0, step: 0.1,
+                             display: String(format: "%+.1f", sharpening))
+                resultSlider("Contrast", value: $contrast, range: -2.0...2.0, step: 0.05,
+                             display: String(format: "%+.1f", contrast))
+                resultSlider("Dark", value: $darkLevel, range: 0.0...1.0, step: 0.01,
+                             display: String(format: "%.2f", darkLevel))
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(nightMode ? Color(red: 0.06, green: 0, blue: 0) : Color(NSColor.underPageBackgroundColor))
+
+            HStack(spacing: 12) {
+                Text("\(engine.resultWidth)x\(engine.resultHeight) — LightspeedStacker")
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundColor(fgDim)
+                Spacer()
+                Button(action: saveAsPNG) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "square.and.arrow.down")
+                            .font(.system(size: 12))
+                        Text("Save PNG")
+                            .font(.system(size: 11, weight: .medium, design: .monospaced))
+                    }
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+                if let msg = savedMessage {
+                    Text(msg)
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundColor(.green)
+                }
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(nightMode ? Color.black : Color(NSColor.windowBackgroundColor))
+        }
+        .background(Color.black)
+        .onAppear { scheduleRender() }
+    }
+
+    private func resultSlider(_ label: String, value: Binding<Double>,
+                               range: ClosedRange<Double>, step: Double,
+                               display: String) -> some View {
+        HStack(spacing: 3) {
+            Text(label)
+                .font(.system(size: 10, design: .monospaced))
+                .foregroundColor(fgDim)
+                .frame(width: 48, alignment: .trailing)
+            Slider(value: value, in: range, step: step)
+                .frame(minWidth: 60, maxWidth: 100)
+                .onChange(of: value.wrappedValue) { _ in scheduleRender() }
+            Text(display)
+                .font(.system(size: 10, design: .monospaced))
+                .foregroundColor(fgDim)
+                .frame(width: 32, alignment: .leading)
+        }
+    }
+
+    private func resetSliders() {
+        stretchValue = 0.25; sharpening = 0.0; contrast = 0.0; darkLevel = 0.0
+        scheduleRender()
+    }
+
+    private func scheduleRender() {
+        renderTask?.cancel()
+        isRendering = true
+        renderTask = Task {
+            try? await Task.sleep(nanoseconds: 50_000_000)
+            guard !Task.isCancelled else { return }
+            await restretch()
+        }
+    }
+
+    @MainActor
+    private func restretch() async {
+        guard let floatData = engine.resultFloatData else { isRendering = false; return }
+        let w = engine.resultWidth, h = engine.resultHeight, ch = engine.resultChannelCount
+        let target = Float(stretchValue), sharp = Float(sharpening)
+        let cont = Float(contrast), dark = Float(darkLevel)
+        let dev = engine.device
+
+        let tex = await Task.detached(priority: .userInitiated) {
+            renderFloatToTexture(data: floatData, width: w, height: h,
+                                channelCount: ch, targetBackground: target,
+                                sharpening: sharp, contrast: cont, darkLevel: dark,
+                                device: dev)
+        }.value
+
+        displayTexture = tex
+        isRendering = false
+    }
+
+    private func defaultFilename() -> String {
+        let entries = engine.stackedEntries
+        guard !entries.isEmpty else { return "quickstack_v2_result.png" }
+        var parts: [String] = []
+        if let obj = entries.compactMap({ $0.target }).first, !obj.isEmpty, obj.lowercased() != "unknown" {
+            parts.append(obj.replacingOccurrences(of: " ", with: "_"))
+        }
+        if let date = entries.compactMap({ $0.date }).sorted().first { parts.append(date) }
+        let filters = Set(entries.compactMap { $0.filter?.replacingOccurrences(of: "'", with: "").trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty && $0.lowercased() != "none" })
+        if !filters.isEmpty { parts.append(filters.sorted().joined(separator: "+")) }
+        if let cam = entries.compactMap({ $0.camera }).first, !cam.isEmpty {
+            parts.append(cam.replacingOccurrences(of: " ", with: "_"))
+        }
+        if parts.isEmpty { return "quickstack_v2_result.png" }
+        let name = parts.joined(separator: "_")
+            .components(separatedBy: CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "_+-")).inverted).joined()
+        return "\(name)_v2.png"
+    }
+
+    private func saveAsPNG() {
+        guard let tex = displayTexture ?? engine.resultTexture else { return }
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.png]
+        panel.nameFieldStringValue = defaultFilename()
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+
+        let w = tex.width, h = tex.height
+        var pixels = [UInt8](repeating: 0, count: w * h * 4)
+        tex.getBytes(&pixels, bytesPerRow: w * 4,
+                     from: MTLRegion(origin: MTLOrigin(), size: MTLSize(width: w, height: h, depth: 1)),
+                     mipmapLevel: 0)
+        for i in stride(from: 0, to: pixels.count, by: 4) {
+            let b = pixels[i]; pixels[i] = pixels[i + 2]; pixels[i + 2] = b
+        }
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        guard let context = CGContext(data: &pixels, width: w, height: h,
+                                      bitsPerComponent: 8, bytesPerRow: w * 4,
+                                      space: colorSpace,
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue),
+              let cgImage = context.makeImage() else { return }
+        let rep = NSBitmapImageRep(cgImage: cgImage)
+        guard let pngData = rep.representation(using: .png, properties: [:]) else { return }
+        do {
+            try pngData.write(to: url)
+            savedMessage = "Saved!"
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { savedMessage = nil }
+        } catch {
+            savedMessage = "Error: \(error.localizedDescription)"
+        }
+    }
+}
