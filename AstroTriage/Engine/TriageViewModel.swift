@@ -104,6 +104,9 @@ class TriageViewModel: ObservableObject {
     let headerInspectorModel = HeaderInspectorModel()
     let sessionOverviewModel = SessionOverviewModel()
 
+    // Benchmark timing for session loading performance (zero overhead — just Date() stamps)
+    let benchmarkStats = BenchmarkStats()
+
     // Current sort descriptors (supports multi-level sorting)
     private var currentSortDescriptors: [NSSortDescriptor] = []
 
@@ -398,6 +401,7 @@ class TriageViewModel: ObservableObject {
             return
         }
 
+        benchmarkStats.markSessionStart()
         isLoading = true
         isCaching = false
         cacheProgress = 0
@@ -460,6 +464,7 @@ class TriageViewModel: ObservableObject {
 
             await MainActor.run {
                 guard let self = self else { return }
+                self.benchmarkStats.markScanComplete(fileCount: entries.count, totalBytes: entries.reduce(Int64(0)) { $0 + ($1.fileSize ?? 0) })
                 self.images = entries
                 self.isLoading = false
                 self.needsTableRefresh = true
@@ -485,6 +490,7 @@ class TriageViewModel: ObservableObject {
     }
 
     func loadSession(url: URL) {
+        benchmarkStats.markSessionStart()
         isLoading = true
         isCaching = false
         cacheProgress = 0
@@ -509,6 +515,7 @@ class TriageViewModel: ObservableObject {
 
             await MainActor.run {
                 guard let self = self else { return }
+                self.benchmarkStats.markScanComplete(fileCount: entries.count, totalBytes: entries.reduce(Int64(0)) { $0 + ($1.fileSize ?? 0) })
                 self.images = entries
                 self.isLoading = false
                 self.needsTableRefresh = true
@@ -621,6 +628,7 @@ class TriageViewModel: ObservableObject {
     private func startFullPrefetch() {
         guard let prefetchCache = prefetchCache else { return }
 
+        benchmarkStats.markCachingStart()
         isCaching = true
         cachingStopped = false
         cachingTotal = images.count
@@ -667,6 +675,7 @@ class TriageViewModel: ObservableObject {
                     self.isCaching = false
                     self.needsTableRefresh = true
                     self.statusMessage = "instant navigation ready"
+                    self.benchmarkStats.markCachingEnd()
                     // Release App Nap assertion when caching completes
                     self.appNapAssertion = nil
                     // Update session overview with noise stats now that all images are measured
@@ -771,6 +780,7 @@ class TriageViewModel: ObservableObject {
         let urls = images.map { $0.url }
         let total = urls.count
         loadingPhase = .readingHeaders
+        benchmarkStats.markHeaderEnrichStart()
         headerReadCount = 0
         headerReadTotal = total
         headerProgress = 0
@@ -911,6 +921,7 @@ class TriageViewModel: ObservableObject {
 
                 self.needsTableRefresh = true
                 self.loadingPhase = .none
+                self.benchmarkStats.markHeaderEnrichEnd()
                 self.sessionOverviewModel.updateStats(from: self.images)
                 self.hasOSCImages = foundOSC
                 self.detectMeridianFlip()
@@ -1212,6 +1223,7 @@ class TriageViewModel: ObservableObject {
 
         showQuickStack = true
         statusMessage = "Quick Stack: processing \(entries.count) frames..."
+        benchmarkStats.markQuickStackStart(frameCount: entries.count)
         engine.startStack(entries: entries, debayerEnabled: debayerEnabled)
     }
 
@@ -2033,6 +2045,7 @@ class TriageViewModel: ObservableObject {
             if let mtkView = findMTKView(), let renderer = renderer {
                 renderer.setPostProcessParams(sharpening: 0, contrast: 0, darkLevel: 0)
                 renderer.setPreview(preview, in: mtkView)
+                benchmarkStats.markFirstImageDisplayed()
             }
 
             statusMessage = isCaching
@@ -2080,6 +2093,7 @@ class TriageViewModel: ObservableObject {
                         renderer.setPostProcessParams(
                             sharpening: currentSharp, contrast: currentContrast, darkLevel: currentDark)
                         mtkView.needsDisplay = true
+                        self.benchmarkStats.markFirstImageDisplayed()
                     }
 
                     // Status: dimensions + channel info + debayer state (for OSC images)

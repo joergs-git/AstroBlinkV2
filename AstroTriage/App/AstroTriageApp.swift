@@ -37,6 +37,13 @@ struct AstroBlinkV2App: App {
                 }
             }
 
+            // Window menu: Benchmark Stats
+            CommandGroup(after: .windowList) {
+                Button("Benchmark Stats") {
+                    NotificationCenter.default.post(name: .showBenchmarkStats, object: nil)
+                }
+            }
+
             // Help menu
             CommandGroup(replacing: .help) {
                 Button("AstroBlinkV2 Help") {
@@ -150,6 +157,7 @@ class AstroBlinkV2AppDelegate: NSObject, NSApplicationDelegate {
 extension Notification.Name {
     static let openFolderRequest = Notification.Name("openFolderRequest")
     static let resetSettingsRequest = Notification.Name("resetSettingsRequest")
+    static let showBenchmarkStats = Notification.Name("showBenchmarkStats")
 }
 
 // AppDelegate extension for help window

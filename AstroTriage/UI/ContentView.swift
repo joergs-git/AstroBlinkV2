@@ -533,6 +533,9 @@ struct ContentView: View {
         .onAppear {
             keyboardMonitor = KeyboardHandler.install(viewModel: viewModel)
         }
+        .onReceive(NotificationCenter.default.publisher(for: .showBenchmarkStats)) { _ in
+            BenchmarkStatsWindowController.shared.show(stats: viewModel.benchmarkStats)
+        }
         .onReceive(NotificationCenter.default.publisher(for: .resetSettingsRequest)) { _ in
             let alert = NSAlert()
             alert.messageText = "Reset all settings to defaults?"
@@ -543,6 +546,11 @@ struct ContentView: View {
             if alert.runModal() == .alertFirstButtonReturn {
                 viewModel.resetAllSettings()
                 sliderValue = Double(viewModel.stretchStrength)
+            }
+        }
+        .onChange(of: viewModel.quickStackEngine?.phase) { newPhase in
+            if newPhase == .done || newPhase == .failed {
+                viewModel.benchmarkStats.markQuickStackEnd()
             }
         }
         .onDisappear {

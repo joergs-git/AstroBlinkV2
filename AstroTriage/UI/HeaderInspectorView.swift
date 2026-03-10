@@ -176,7 +176,7 @@ struct HeaderScrollView: NSViewRepresentable {
         tableView.style = .plain
         tableView.headerView = nil
         tableView.backgroundColor = .clear
-        tableView.rowHeight = 24
+        tableView.rowHeight = 22
         tableView.intercellSpacing = NSSize(width: 0, height: 0)
         tableView.selectionHighlightStyle = .none
         tableView.usesAlternatingRowBackgroundColors = false
@@ -234,7 +234,7 @@ struct HeaderScrollView: NSViewRepresentable {
             let isEven = row % 2 == 0
 
             let cell = NSTextField(labelWithString: "")
-            cell.font = NSFont.monospacedSystemFont(ofSize: 13, weight: isImportant ? .semibold : .regular)
+            cell.font = NSFont.monospacedSystemFont(ofSize: 12, weight: isImportant ? .semibold : .regular)
             cell.drawsBackground = true
             cell.isSelectable = true
             cell.lineBreakMode = .byTruncatingTail
@@ -258,7 +258,7 @@ struct HeaderScrollView: NSViewRepresentable {
         }
 
         func tableView(_ tableView: NSTableView, heightOfRow row: Int) -> CGFloat {
-            24
+            22
         }
     }
 }
@@ -273,14 +273,14 @@ struct HeaderInspectorContentView: View {
             // Filename header
             HStack {
                 Text(model.filename)
-                    .font(.system(size: 14, weight: .semibold, design: .monospaced))
+                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
                     .lineLimit(1)
                     .truncationMode(.middle)
 
                 Spacer()
 
                 Text("\(model.headers.count) keywords")
-                    .font(.system(size: 13))
+                    .font(.system(size: 12))
                     .foregroundColor(.secondary)
             }
             .padding(.horizontal, 12)
@@ -291,17 +291,17 @@ struct HeaderInspectorContentView: View {
             HStack {
                 Image(systemName: "magnifyingglass")
                     .foregroundColor(.secondary)
-                    .font(.system(size: 13))
+                    .font(.system(size: 12))
 
                 TextField("Filter keywords...", text: $model.searchText)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 13, design: .monospaced))
+                    .font(.system(size: 12, design: .monospaced))
 
                 if !model.searchText.isEmpty {
                     Button(action: { model.searchText = "" }) {
                         Image(systemName: "xmark.circle.fill")
                             .foregroundColor(.secondary)
-                            .font(.system(size: 13))
+                            .font(.system(size: 12))
                     }
                     .buttonStyle(.plain)
                 }
@@ -322,7 +322,7 @@ struct HeaderInspectorContentView: View {
                     VStack {
                         Spacer()
                         ProgressView("Reading headers...")
-                            .font(.system(size: 13))
+                            .font(.system(size: 12))
                         Spacer()
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -331,7 +331,7 @@ struct HeaderInspectorContentView: View {
                     VStack {
                         Spacer()
                         Text(model.searchText.isEmpty ? "No headers found" : "No matching keywords")
-                            .font(.system(size: 13))
+                            .font(.system(size: 12))
                             .foregroundColor(.secondary)
                         Spacer()
                     }

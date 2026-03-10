@@ -191,8 +191,7 @@ struct StackResultView: View {
         VStack(spacing: 0) {
             ZStack {
                 if let tex = displayTexture ?? engine.resultTexture {
-                    MetalTextureView(texture: tex)
-                        .aspectRatio(CGFloat(engine.resultWidth) / CGFloat(max(1, engine.resultHeight)), contentMode: .fit)
+                    ZoomableMetalTextureView(texture: tex)
                 }
 
                 // Subtle loading spinner while re-rendering after slider change
@@ -656,6 +655,238 @@ struct StarCrossShape: Shape {
         path.move(to: CGPoint(x: cx, y: cy - half))
         path.addLine(to: CGPoint(x: cx, y: cy + half))
         return path
+    }
+}
+
+// Zoomable MTKView for Quick Stack result: Photoshop-style click-drag zoom,
+// scroll-wheel pan, trackpad pinch, double-click reset to fit.
+class ZoomableTextureMTKView: MTKView {
+    var textureCoordinator: ZoomableMetalTextureView.Coordinator?
+
+    // Zoom state (self-contained, no dependency on MetalRenderer)
+    var zoomScale: CGFloat = 1.0
+    var panOffset: CGPoint = .zero
+    var imageWidth: Int = 0
+    var imageHeight: Int = 0
+
+    private var isZoomDragging = false
+    private var zoomAnchorView: NSPoint = .zero
+    private var zoomStartScale: CGFloat = 1.0
+    private var zoomStartPan: CGPoint = .zero
+
+    override var acceptsFirstResponder: Bool { true }
+
+    // Fit scale: how much to scale image to fit the view
+    func fitScale() -> CGFloat {
+        guard imageWidth > 0, imageHeight > 0 else { return 1.0 }
+        let vw = bounds.width
+        let vh = bounds.height
+        guard vw > 0, vh > 0 else { return 1.0 }
+        return min(vw / CGFloat(imageWidth), vh / CGFloat(imageHeight))
+    }
+
+    func resetZoom() {
+        zoomScale = 1.0
+        panOffset = .zero
+    }
+
+    // MARK: - Photoshop-style click-drag zoom
+
+    override func mouseDown(with event: NSEvent) {
+        if event.clickCount == 2 {
+            resetZoom()
+            needsDisplay = true
+            return
+        }
+        isZoomDragging = true
+        zoomAnchorView = convert(event.locationInWindow, from: nil)
+        zoomStartScale = zoomScale
+        zoomStartPan = panOffset
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard isZoomDragging else { return }
+        let current = convert(event.locationInWindow, from: nil)
+        let dx = current.x - zoomAnchorView.x
+
+        // Horizontal drag: right = zoom in, left = zoom out (~200px = 2x)
+        let zoomFactor = pow(2.0, dx / 200.0)
+        let newScale = max(0.1, min(50.0, zoomStartScale * zoomFactor))
+
+        let viewBounds = bounds.size
+        let baseFit = fitScale()
+        guard baseFit > 0 else { return }
+
+        let oldEffective = baseFit * zoomStartScale
+        let newEffective = baseFit * newScale
+
+        let relX = zoomAnchorView.x - viewBounds.width / 2.0
+        let relY = zoomAnchorView.y - viewBounds.height / 2.0
+
+        let imgX = (relX - zoomStartPan.x) / oldEffective
+        let imgY = (relY + zoomStartPan.y) / oldEffective
+
+        panOffset.x = relX - imgX * newEffective
+        panOffset.y = -(relY - imgY * newEffective)
+        zoomScale = newScale
+
+        needsDisplay = true
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        isZoomDragging = false
+    }
+
+    // Scroll wheel: pan when zoomed in
+    override func scrollWheel(with event: NSEvent) {
+        guard zoomScale > 1.01 else {
+            super.scrollWheel(with: event)
+            return
+        }
+        panOffset.x += event.scrollingDeltaX
+        panOffset.y += event.scrollingDeltaY
+        needsDisplay = true
+    }
+
+    // Trackpad pinch-to-zoom
+    override func magnify(with event: NSEvent) {
+        let mouseInView = convert(event.locationInWindow, from: nil)
+        let factor = 1.0 + event.magnification
+        let oldScale = zoomScale
+        let newScale = max(0.1, min(50.0, oldScale * factor))
+
+        let viewBounds = bounds.size
+        let baseFit = fitScale()
+        guard baseFit > 0 else { return }
+
+        let oldEffective = baseFit * oldScale
+        let newEffective = baseFit * newScale
+
+        let relX = mouseInView.x - viewBounds.width / 2.0
+        let relY = mouseInView.y - viewBounds.height / 2.0
+
+        let imgX = (relX - panOffset.x) / oldEffective
+        let imgY = (relY + panOffset.y) / oldEffective
+
+        panOffset.x = relX - imgX * newEffective
+        panOffset.y = -(relY - imgY * newEffective)
+        zoomScale = newScale
+
+        needsDisplay = true
+    }
+}
+
+// SwiftUI wrapper for the zoomable texture view (used in Quick Stack result window)
+struct ZoomableMetalTextureView: NSViewRepresentable {
+    let texture: MTLTexture
+
+    func makeNSView(context: Context) -> ZoomableTextureMTKView {
+        let view = ZoomableTextureMTKView()
+        view.device = texture.device
+        view.colorPixelFormat = .bgra8Unorm
+        view.isPaused = true
+        view.enableSetNeedsDisplay = true
+        view.delegate = context.coordinator
+        view.textureCoordinator = context.coordinator
+        view.imageWidth = texture.width
+        view.imageHeight = texture.height
+        return view
+    }
+
+    func updateNSView(_ mtkView: ZoomableTextureMTKView, context: Context) {
+        context.coordinator.texture = texture
+        mtkView.imageWidth = texture.width
+        mtkView.imageHeight = texture.height
+        mtkView.needsDisplay = true
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(texture: texture)
+    }
+
+    class Coordinator: NSObject, MTKViewDelegate {
+        var texture: MTLTexture
+        private var renderPipeline: MTLRenderPipelineState?
+        private var sampler: MTLSamplerState?
+        private var commandQueue: MTLCommandQueue?
+
+        init(texture: MTLTexture) {
+            self.texture = texture
+            super.init()
+
+            let device = texture.device
+            commandQueue = device.makeCommandQueue()
+
+            if let library = device.makeDefaultLibrary(),
+               let vertexFunc = library.makeFunction(name: "quad_vertex"),
+               let fragmentFunc = library.makeFunction(name: "quad_fragment") {
+                let desc = MTLRenderPipelineDescriptor()
+                desc.vertexFunction = vertexFunc
+                desc.fragmentFunction = fragmentFunc
+                desc.colorAttachments[0].pixelFormat = .bgra8Unorm
+                renderPipeline = try? device.makeRenderPipelineState(descriptor: desc)
+            }
+
+            let samplerDesc = MTLSamplerDescriptor()
+            samplerDesc.minFilter = .linear
+            samplerDesc.magFilter = .linear
+            sampler = device.makeSamplerState(descriptor: samplerDesc)
+        }
+
+        func mtkView(_ view: MTKView, drawableSizeWillChange size: CGSize) {
+            view.needsDisplay = true
+        }
+
+        func draw(in view: MTKView) {
+            guard let zoomView = view as? ZoomableTextureMTKView,
+                  let drawable = view.currentDrawable,
+                  let pipeline = renderPipeline,
+                  let queue = commandQueue,
+                  let commandBuffer = queue.makeCommandBuffer(),
+                  let samp = sampler else { return }
+
+            let renderPassDesc = MTLRenderPassDescriptor()
+            renderPassDesc.colorAttachments[0].texture = drawable.texture
+            renderPassDesc.colorAttachments[0].loadAction = .clear
+            renderPassDesc.colorAttachments[0].clearColor = MTLClearColor(red: 0.05, green: 0.05, blue: 0.05, alpha: 1)
+            renderPassDesc.colorAttachments[0].storeAction = .store
+
+            guard let encoder = commandBuffer.makeRenderCommandEncoder(descriptor: renderPassDesc) else { return }
+            encoder.setRenderPipelineState(pipeline)
+
+            let dw = Float(drawable.texture.width)
+            let dh = Float(drawable.texture.height)
+            let tw = Float(texture.width)
+            let th = Float(texture.height)
+
+            // Fit-to-view base scale, then apply zoom + pan
+            let baseFit = Float(zoomView.fitScale())
+            let scale = baseFit * Float(zoomView.zoomScale)
+
+            let ndcHW = (tw * scale) / dw
+            let ndcHH = (th * scale) / dh
+
+            // Pan offset in NDC (convert from points to drawable pixels for Retina)
+            let backingScale = Float(view.window?.backingScaleFactor ?? 2.0)
+            let panX = Float(zoomView.panOffset.x) * backingScale / dw * 2.0
+            let panY = Float(zoomView.panOffset.y) * backingScale / dh * 2.0
+
+            var vertices: [Float] = [
+                -ndcHW + panX, -ndcHH - panY, 0.0, 1.0,
+                 ndcHW + panX, -ndcHH - panY, 1.0, 1.0,
+                -ndcHW + panX,  ndcHH - panY, 0.0, 0.0,
+                 ndcHW + panX,  ndcHH - panY, 1.0, 0.0,
+            ]
+
+            encoder.setVertexBytes(&vertices, length: vertices.count * MemoryLayout<Float>.size, index: 0)
+            encoder.setFragmentTexture(texture, index: 0)
+            encoder.setFragmentSamplerState(samp, index: 0)
+            encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
+            encoder.endEncoding()
+
+            commandBuffer.present(drawable)
+            commandBuffer.commit()
+        }
     }
 }
 

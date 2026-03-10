@@ -358,7 +358,7 @@ class SessionOverviewModel: ObservableObject {
 
         if !rows.isEmpty {
             lines.append("")
-            lines.append("Integration:")
+            lines.append("Session sumup:")
 
             let objects = Set(rows.map { $0.object }).sorted()
             var currentObject = ""
@@ -495,41 +495,42 @@ struct SessionOverviewContentView: View {
 
                     Divider()
 
-                    // Scrollable rows (limited height, grows with content)
+                    // Scrollable rows + totals (totals always directly after last row)
                     ScrollView {
                         VStack(spacing: 0) {
                             ForEach(model.rows) { row in
                                 filterRow(row)
                             }
+
+                            // Totals row — inside ScrollView so it sits right after last row
+                            Rectangle().fill(Color.gray.opacity(0.3)).frame(height: 1)
+                            HStack(spacing: 0) {
+                                if hasMultipleObjects {
+                                    Text("")
+                                        .frame(minWidth: 50, alignment: .leading)
+                                    Spacer(minLength: 4)
+                                }
+                                Text("TOTAL")
+                                    .frame(width: 50, alignment: .leading)
+                                    .fontWeight(.bold)
+                                Text("\(model.totalShots)")
+                                    .frame(width: 45, alignment: .trailing)
+                                    .fontWeight(.bold)
+                                Text("")
+                                    .frame(width: 45, alignment: .trailing)
+                                Text(formatHours(model.totalExposure))
+                                    .frame(width: 55, alignment: .trailing)
+                                    .fontWeight(.bold)
+                            }
+                            .font(.system(size: 12, design: .monospaced))
+                            .foregroundColor(.accentColor)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 4)
+                            .background(Color(NSColor.controlBackgroundColor))
                         }
                         .textSelection(.enabled)
                     }
                     .frame(maxHeight: 200)
-
-                    // Totals row
-                    HStack(spacing: 0) {
-                        if hasMultipleObjects {
-                            Text("")
-                                .frame(minWidth: 50, alignment: .leading)
-                            Spacer(minLength: 4)
-                        }
-                        Text("TOTAL")
-                            .frame(width: 50, alignment: .leading)
-                            .fontWeight(.bold)
-                        Text("\(model.totalShots)")
-                            .frame(width: 45, alignment: .trailing)
-                            .fontWeight(.bold)
-                        Text("")
-                            .frame(width: 45, alignment: .trailing)
-                        Text(formatHours(model.totalExposure))
-                            .frame(width: 55, alignment: .trailing)
-                            .fontWeight(.bold)
-                    }
-                    .font(.system(size: 12, design: .monospaced))
-                    .foregroundColor(.accentColor)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 4)
-                    .background(Color(NSColor.controlBackgroundColor))
                 }
             }
 
@@ -598,57 +599,57 @@ struct SessionOverviewContentView: View {
                                         .padding(.horizontal, 10)
                                 }
                             }
+
+                            // Summary row — inside ScrollView so it sits right after last row
+                            if model.qualityRows.count > 0 {
+                                Rectangle().fill(Color.gray.opacity(0.3)).frame(height: 1)
+
+                                let totalCount = model.qualityRows.reduce(0) { $0 + $1.count }
+                                let avgNoise = model.qualityRows.reduce(Float(0)) { $0 + $1.avgNoise } / Float(model.qualityRows.count)
+                                let avgBkg = model.qualityRows.reduce(Float(0)) { $0 + $1.avgBackground } / Float(model.qualityRows.count)
+                                let avgSNR = model.qualityRows.reduce(Float(0)) { $0 + $1.avgSNR } / Float(model.qualityRows.count)
+
+                                HStack(spacing: 0) {
+                                    Text("All")
+                                        .frame(width: 28, alignment: .leading)
+                                        .fontWeight(.bold)
+                                    if hasDate {
+                                        Text("")
+                                            .frame(width: 50, alignment: .leading)
+                                    }
+                                    Text("\(totalCount)")
+                                        .frame(width: 24, alignment: .trailing)
+                                        .fontWeight(.bold)
+                                    Text(formatSci(avgNoise))
+                                        .frame(maxWidth: .infinity, alignment: .trailing)
+                                        .foregroundColor(noiseColor(avgNoise))
+                                        .fontWeight(.bold)
+                                    Text(formatSci(avgBkg))
+                                        .frame(maxWidth: .infinity, alignment: .trailing)
+                                        .fontWeight(.bold)
+                                    Text(String(format: "%.0f", avgSNR))
+                                        .frame(width: 34, alignment: .trailing)
+                                        .foregroundColor(snrColor(avgSNR))
+                                        .fontWeight(.bold)
+                                    // Empty bar placeholders for alignment
+                                    Text("")
+                                        .frame(width: 36)
+                                        .padding(.leading, 2)
+                                    Text("")
+                                        .frame(width: 36)
+                                    Text("")
+                                        .frame(width: 36)
+                                }
+                                .font(.system(size: 12, design: .monospaced))
+                                .foregroundColor(.accentColor)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 4)
+                                .background(Color(NSColor.controlBackgroundColor))
+                            }
                         }
                         .textSelection(.enabled)
                     }
                     .frame(maxHeight: 250)
-
-                    // Summary row: totals and averages across all filter groups
-                    if model.qualityRows.count > 0 {
-                        Rectangle().fill(Color.gray.opacity(0.3)).frame(height: 1)
-
-                        let totalCount = model.qualityRows.reduce(0) { $0 + $1.count }
-                        let avgNoise = model.qualityRows.reduce(Float(0)) { $0 + $1.avgNoise } / Float(model.qualityRows.count)
-                        let avgBkg = model.qualityRows.reduce(Float(0)) { $0 + $1.avgBackground } / Float(model.qualityRows.count)
-                        let avgSNR = model.qualityRows.reduce(Float(0)) { $0 + $1.avgSNR } / Float(model.qualityRows.count)
-
-                        HStack(spacing: 0) {
-                            Text("All")
-                                .frame(width: 28, alignment: .leading)
-                                .fontWeight(.bold)
-                            if hasDate {
-                                Text("")
-                                    .frame(width: 50, alignment: .leading)
-                            }
-                            Text("\(totalCount)")
-                                .frame(width: 24, alignment: .trailing)
-                                .fontWeight(.bold)
-                            Text(formatSci(avgNoise))
-                                .frame(maxWidth: .infinity, alignment: .trailing)
-                                .foregroundColor(noiseColor(avgNoise))
-                                .fontWeight(.bold)
-                            Text(formatSci(avgBkg))
-                                .frame(maxWidth: .infinity, alignment: .trailing)
-                                .fontWeight(.bold)
-                            Text(String(format: "%.0f", avgSNR))
-                                .frame(width: 34, alignment: .trailing)
-                                .foregroundColor(snrColor(avgSNR))
-                                .fontWeight(.bold)
-                            // Empty bar placeholders for alignment
-                            Text("")
-                                .frame(width: 36)
-                                .padding(.leading, 2)
-                            Text("")
-                                .frame(width: 36)
-                            Text("")
-                                .frame(width: 36)
-                        }
-                        .font(.system(size: 12, design: .monospaced))
-                        .foregroundColor(.accentColor)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 4)
-                        .background(Color(NSColor.controlBackgroundColor))
-                    }
                 }
             }
 
@@ -663,8 +664,6 @@ struct SessionOverviewContentView: View {
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .frame(maxHeight: 100)
-
                 Button(action: copyFactSheet) {
                     Image(systemName: copied ? "checkmark.circle.fill" : "doc.on.doc")
                         .font(.system(size: 14))
@@ -676,9 +675,6 @@ struct SessionOverviewContentView: View {
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
                 .background(Color(NSColor.controlBackgroundColor))
-
-            // Push all content to the top when panel has extra vertical space
-            Spacer(minLength: 0)
         }
     }
 
