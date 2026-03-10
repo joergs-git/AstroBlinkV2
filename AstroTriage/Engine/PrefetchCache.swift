@@ -1,4 +1,4 @@
-// v2.0.0
+// v3.2.0
 import Foundation
 import Metal
 
@@ -50,7 +50,8 @@ class PrefetchCache {
         targetBackground: Float? = nil,
         lockedSTFParams: [STFParams]? = nil,
         postProcessParams: (sharpening: Float, contrast: Float, darkLevel: Float)? = nil,
-        onProgress: @escaping (Int, Int) -> Void
+        onProgress: @escaping (Int, Int) -> Void,
+        onNoiseStats: ((URL, STFCalculator.NoiseStats) -> Void)? = nil
     ) {
         // Build lookup for Bayer patterns by URL (only used when debayer is enabled)
         let bayerPatterns: [URL: String]
@@ -118,6 +119,12 @@ class PrefetchCache {
                         imageForSTF = generator?.debayer(image: decoded, pattern: pattern) ?? decoded
                     } else {
                         imageForSTF = decoded
+                    }
+
+                    // 2b. Measure noise stats (uses same 5% subsample as STF — ~2ms)
+                    if let onNoiseStats = onNoiseStats {
+                        let stats = STFCalculator.measureNoise(from: imageForSTF)
+                        Task { @MainActor in onNoiseStats(url, stats) }
                     }
 
                     // 3. Compute STF params: use locked params (exact c0/mb) or per-image auto

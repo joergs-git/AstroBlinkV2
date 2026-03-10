@@ -1,4 +1,4 @@
-// v0.9.0
+// v3.2.0
 import Foundation
 
 // Core data model representing a single astro image in the session
@@ -30,8 +30,15 @@ struct ImageEntry: Identifiable, Hashable {
     var ambientTemp: Double?   // Ambient/environment temperature from AMBTEMP header
     var mount: String?
     var bayerPattern: String?  // CFA pattern from BAYERPAT header (RGGB, GRBG, GBRG, BGGR)
+    var pierSide: String?      // Pier side from PIERSIDE header (EAST or WEST)
+    var objctRA: String?       // Object RA from OBJCTRA header (e.g. "20 14 28")
+    var objctDec: String?      // Object Dec from OBJCTDEC header (e.g. "+36 29 24")
     var subfolder: String      // Relative path from session root (empty if root)
     var fileSize: Int64?       // File size in bytes
+
+    // Noise statistics (computed during prefetch from STF subsample — essentially free)
+    var noiseMedian: Float?    // Background level [0,1] — median of normalized pixel values
+    var noiseMAD: Float?       // Noise estimator [0,1] — 1.4826 * median absolute deviation
 
     // Display helpers
     var filename: String { url.lastPathComponent }

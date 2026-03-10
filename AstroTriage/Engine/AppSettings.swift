@@ -1,4 +1,4 @@
-// v2.2.0
+// v3.2.0
 import Foundation
 
 // Centralized UserDefaults wrapper for persistent app settings
@@ -18,6 +18,7 @@ struct AppSettings {
         case debayerEnabled       // Bool
         case skipMarked           // Bool
         case hideMarked           // Bool
+        case autoMeridian         // Bool — auto-rotate images across meridian flip
     }
 
     // MARK: - Save
@@ -59,7 +60,8 @@ struct AppSettings {
     static func resetAll() {
         for key in [Key.columnOrder, .visibleColumns, .stretchStrength,
                     .sharpening, .contrast, .darkLevel,
-                    .nightMode, .debayerEnabled, .skipMarked, .hideMarked] {
+                    .nightMode, .debayerEnabled, .skipMarked, .hideMarked,
+                    .autoMeridian] {
             defaults.removeObject(forKey: key.rawValue)
         }
     }

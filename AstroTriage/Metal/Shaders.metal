@@ -1,4 +1,4 @@
-// v2.2.0
+// v3.2.0
 // STF Auto-Stretch + Debayer: PixInsight-compatible Screen Transfer Function
 // Applies per-channel Midtones Transfer Function for proper astro visualization
 // Includes bilinear debayer kernel for OSC (one-shot color) cameras

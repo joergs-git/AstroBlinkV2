@@ -1,4 +1,4 @@
-// v2.1.0
+// v3.2.0
 import SwiftUI
 
 // Global keyboard event handler for navigation and triage shortcuts
@@ -163,6 +163,33 @@ struct KeyboardHandler {
         // Cmd+Z: Undo last pre-delete
         if modifiers == .command, chars == "z" {
             Task { @MainActor in viewModel.undoPreDelete() }
+            return true
+        }
+
+        // +/= key: Zoom in by 20% (re-focus table after zoom so arrow keys keep working)
+        if modifiers.isEmpty, (chars == "+" || chars == "=") {
+            Task { @MainActor in
+                viewModel.zoomIn()
+                ensureTableFocus()
+            }
+            return true
+        }
+
+        // - key: Zoom out by 20%
+        if modifiers.isEmpty, chars == "-" {
+            Task { @MainActor in
+                viewModel.zoomOut()
+                ensureTableFocus()
+            }
+            return true
+        }
+
+        // 0 key: Reset zoom to fit-to-view
+        if modifiers.isEmpty, chars == "0" {
+            Task { @MainActor in
+                viewModel.resetZoom()
+                ensureTableFocus()
+            }
             return true
         }
 

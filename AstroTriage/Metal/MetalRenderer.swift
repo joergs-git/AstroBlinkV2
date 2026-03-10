@@ -1,4 +1,4 @@
-// v2.2.0
+// v3.2.0
 import Metal
 import MetalKit
 import AppKit
@@ -49,6 +49,9 @@ class MetalRenderer: NSObject, MTKViewDelegate {
     // Zoom and pan state (persists across image changes)
     var zoomScale: CGFloat = 1.0       // 1.0 = fit-to-view
     var panOffset: CGPoint = .zero     // Offset in points from centered position
+
+    // Auto Meridian: 180° rotation via UV flip (zero GPU cost — just flips texture coordinates)
+    var rotate180: Bool = false
 
     init?(mtkView: MTKView) {
         guard let device = MTLCreateSystemDefaultDevice(),
@@ -473,11 +476,20 @@ class MetalRenderer: NSObject, MTKViewDelegate {
         let ndcOX = Float(panPxX / vW) * 2.0
         let ndcOY = Float(-panPxY / vH) * 2.0
 
+        // UV coordinates: normal or flipped 180° for meridian flip correction
+        // Rotation is just a UV swap (u→1-u, v→1-v) — zero GPU cost
+        let (u0, u1, v0, v1): (Float, Float, Float, Float)
+        if rotate180 {
+            (u0, u1, v0, v1) = (1.0, 0.0, 0.0, 1.0)
+        } else {
+            (u0, u1, v0, v1) = (0.0, 1.0, 1.0, 0.0)
+        }
+
         var vertices: [Float] = [
-            -ndcHW + ndcOX, -ndcHH + ndcOY, 0.0, 1.0,
-             ndcHW + ndcOX, -ndcHH + ndcOY, 1.0, 1.0,
-            -ndcHW + ndcOX,  ndcHH + ndcOY, 0.0, 0.0,
-             ndcHW + ndcOX,  ndcHH + ndcOY, 1.0, 0.0,
+            -ndcHW + ndcOX, -ndcHH + ndcOY, u0, v0,
+             ndcHW + ndcOX, -ndcHH + ndcOY, u1, v0,
+            -ndcHW + ndcOX,  ndcHH + ndcOY, u0, v1,
+             ndcHW + ndcOX,  ndcHH + ndcOY, u1, v1,
         ]
 
         renderEncoder.setVertexBytes(&vertices, length: vertices.count * MemoryLayout<Float>.size, index: 0)

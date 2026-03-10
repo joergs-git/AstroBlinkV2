@@ -1,4 +1,4 @@
-// v2.0.0
+// v3.2.0
 import Foundation
 import Metal
 import Accelerate
@@ -112,6 +112,61 @@ struct STFCalculator {
         }
 
         return STFParams(c0: c0, mb: mb)
+    }
+
+    // Noise statistics from first channel (mono or green for OSC)
+    // Uses the same 5% subsample as STF — essentially free, ~2ms per image.
+    // Returns (median, normalizedMAD) where median = background level, MAD = noise estimator.
+    struct NoiseStats {
+        let median: Float        // Background signal level [0,1]
+        let normalizedMAD: Float // Noise estimator [0,1] (1.4826 * MAD)
+    }
+
+    static func measureNoise(from image: DecodedImage) -> NoiseStats {
+        let ptr = image.buffer.contents().bindMemory(
+            to: UInt16.self,
+            capacity: image.pixelCount
+        )
+        let planeSize = image.width * image.height
+
+        // Use first channel (mono: only channel; OSC debayered: red; represents noise level)
+        let sampleCount = max(1000, Int(Float(planeSize) * sampleFraction))
+        let stride = max(1, planeSize / sampleCount)
+
+        var samples = [Float]()
+        samples.reserveCapacity(sampleCount)
+
+        var i = 0
+        while i < planeSize {
+            samples.append(Float(ptr[i]) / 65535.0)
+            i += stride
+        }
+
+        let n = samples.count
+        guard n > 0 else { return NoiseStats(median: 0, normalizedMAD: 0) }
+
+        vDSP_vsort(&samples, vDSP_Length(n), 1)
+
+        let median: Float
+        if n % 2 == 0 {
+            median = (samples[n / 2 - 1] + samples[n / 2]) / 2.0
+        } else {
+            median = samples[n / 2]
+        }
+
+        let negMedian = -median
+        vDSP_vsadd(samples, 1, [negMedian], &samples, 1, vDSP_Length(n))
+        vDSP_vabs(samples, 1, &samples, 1, vDSP_Length(n))
+        vDSP_vsort(&samples, vDSP_Length(n), 1)
+
+        let mad: Float
+        if n % 2 == 0 {
+            mad = (samples[n / 2 - 1] + samples[n / 2]) / 2.0
+        } else {
+            mad = samples[n / 2]
+        }
+
+        return NoiseStats(median: median, normalizedMAD: 1.4826 * mad)
     }
 
     // Midtones Transfer Function — inverse for parameter calculation

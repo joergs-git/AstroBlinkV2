@@ -1,4 +1,4 @@
-// v0.9.4
+// v3.2.0
 import SwiftUI
 import AppKit
 
@@ -157,6 +157,112 @@ class HeaderInspectorModel: ObservableObject {
     }
 }
 
+// MARK: - NSScrollView wrapper that preserves scroll position across data updates
+// AppKit's NSScrollView keeps its contentOffset when the content changes,
+// unlike SwiftUI's ScrollView which resets on every @Published change.
+
+struct HeaderScrollView: NSViewRepresentable {
+    let entries: [HeaderEntry]
+
+    func makeNSView(context: Context) -> NSScrollView {
+        let scrollView = NSScrollView()
+        scrollView.hasVerticalScroller = true
+        scrollView.hasHorizontalScroller = false
+        scrollView.autohidesScrollers = true
+        scrollView.drawsBackground = false
+        scrollView.borderType = .noBorder
+
+        let tableView = NSTableView()
+        tableView.style = .plain
+        tableView.headerView = nil
+        tableView.backgroundColor = .clear
+        tableView.rowHeight = 24
+        tableView.intercellSpacing = NSSize(width: 0, height: 0)
+        tableView.selectionHighlightStyle = .none
+        tableView.usesAlternatingRowBackgroundColors = false
+
+        let keyCol = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("key"))
+        keyCol.width = 120
+        keyCol.minWidth = 80
+        keyCol.maxWidth = 160
+        tableView.addTableColumn(keyCol)
+
+        let valCol = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("value"))
+        valCol.width = 280
+        valCol.minWidth = 100
+        tableView.addTableColumn(valCol)
+
+        tableView.delegate = context.coordinator
+        tableView.dataSource = context.coordinator
+
+        scrollView.documentView = tableView
+        context.coordinator.tableView = tableView
+
+        return scrollView
+    }
+
+    func updateNSView(_ scrollView: NSScrollView, context: Context) {
+        // Save scroll position before reload
+        let savedOffset = scrollView.contentView.bounds.origin
+
+        context.coordinator.entries = entries
+        context.coordinator.tableView?.reloadData()
+
+        // Restore scroll position after reload (AppKit preserves this naturally,
+        // but explicit restore handles edge cases with content size changes)
+        DispatchQueue.main.async {
+            scrollView.contentView.scroll(to: savedOffset)
+        }
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
+    class Coordinator: NSObject, NSTableViewDelegate, NSTableViewDataSource {
+        var entries: [HeaderEntry] = []
+        weak var tableView: NSTableView?
+
+        func numberOfRows(in tableView: NSTableView) -> Int {
+            entries.count
+        }
+
+        func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
+            guard row < entries.count else { return nil }
+            let entry = entries[row]
+            let isImportant = entry.isHighlighted
+            let isEven = row % 2 == 0
+
+            let cell = NSTextField(labelWithString: "")
+            cell.font = NSFont.monospacedSystemFont(ofSize: 13, weight: isImportant ? .semibold : .regular)
+            cell.drawsBackground = true
+            cell.isSelectable = true
+            cell.lineBreakMode = .byTruncatingTail
+            cell.maximumNumberOfLines = 1
+
+            if tableColumn?.identifier.rawValue == "key" {
+                cell.stringValue = entry.key
+                cell.alignment = .right
+                cell.textColor = isImportant ? .systemRed : .controlAccentColor
+                cell.backgroundColor = isImportant ? NSColor.systemRed.withAlphaComponent(0.06) : (isEven ? .clear : NSColor.controlBackgroundColor.withAlphaComponent(0.3))
+            } else {
+                cell.stringValue = entry.value
+                cell.alignment = .left
+                cell.textColor = isImportant ? .systemRed : .labelColor
+                cell.backgroundColor = isImportant ? NSColor.systemRed.withAlphaComponent(0.06) : (isEven ? .clear : NSColor.controlBackgroundColor.withAlphaComponent(0.3))
+                cell.maximumNumberOfLines = 2
+                cell.lineBreakMode = .byWordWrapping
+            }
+
+            return cell
+        }
+
+        func tableView(_ tableView: NSTableView, heightOfRow row: Int) -> CGFloat {
+            24
+        }
+    }
+}
+
 // MARK: - SwiftUI View
 
 struct HeaderInspectorContentView: View {
@@ -206,57 +312,33 @@ struct HeaderInspectorContentView: View {
 
             Divider()
 
-            // Header list
-            if model.isLoading {
-                Spacer()
-                ProgressView("Reading headers...")
-                    .font(.system(size: 13))
-                Spacer()
-            } else if model.filteredHeaders.isEmpty {
-                Spacer()
-                Text(model.searchText.isEmpty ? "No headers found" : "No matching keywords")
-                    .font(.system(size: 13))
-                    .foregroundColor(.secondary)
-                Spacer()
-            } else {
-                ScrollView {
-                    LazyVStack(spacing: 0) {
-                        ForEach(model.filteredHeaders) { entry in
-                            headerRow(entry)
-                        }
+            // Header list — uses AppKit NSScrollView to preserve scroll position.
+            // Always mounted (never conditionally removed) so scroll position persists
+            // across image navigation. Loading/empty states overlay on top.
+            ZStack {
+                HeaderScrollView(entries: model.filteredHeaders)
+
+                if model.isLoading {
+                    VStack {
+                        Spacer()
+                        ProgressView("Reading headers...")
+                            .font(.system(size: 13))
+                        Spacer()
                     }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(Color(NSColor.windowBackgroundColor).opacity(0.8))
+                } else if model.filteredHeaders.isEmpty {
+                    VStack {
+                        Spacer()
+                        Text(model.searchText.isEmpty ? "No headers found" : "No matching keywords")
+                            .font(.system(size: 13))
+                            .foregroundColor(.secondary)
+                        Spacer()
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(Color(NSColor.windowBackgroundColor).opacity(0.8))
                 }
             }
         }
-    }
-
-    private func headerRow(_ entry: HeaderEntry) -> some View {
-        let isImportant = entry.isHighlighted
-
-        return HStack(alignment: .top, spacing: 8) {
-            // Keyword name
-            Text(entry.key)
-                .font(.system(size: 13, weight: .medium, design: .monospaced))
-                .foregroundColor(isImportant ? .red : .accentColor)
-                .frame(width: 120, alignment: .trailing)
-                .lineLimit(1)
-
-            // Value
-            Text(entry.value)
-                .font(.system(size: 13, design: .monospaced))
-                .foregroundColor(isImportant ? .red : .primary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .lineLimit(2)
-                .textSelection(.enabled)
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 3)
-        .background(
-            isImportant
-                ? Color.red.opacity(0.06)
-                : Color(NSColor.controlBackgroundColor).opacity(
-                    model.filteredHeaders.firstIndex(where: { $0.id == entry.id })?.isMultiple(of: 2) == true ? 0.0 : 0.3
-                )
-        )
     }
 }

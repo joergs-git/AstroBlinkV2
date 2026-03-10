@@ -1,4 +1,4 @@
-// v2.2.0
+// v3.2.0
 import Foundation
 import ImageDecoderBridge
 
@@ -164,6 +164,31 @@ struct MetadataExtractor {
         // Normalize variants: "Light Frame" → "LIGHT", "Dark Frame" → "DARK", etc.
         if let imageType = headers["IMAGETYP"] ?? headers["FRAME"], !imageType.isEmpty {
             entry.frameType = normalizeFrameType(imageType)
+        }
+
+        // Pier side for meridian flip detection (NINA writes PIERSIDE as EAST or WEST)
+        // FITS values may be wrapped in single quotes (e.g. "'East'"), strip them
+        if let pier = headers["PIERSIDE"], !pier.isEmpty {
+            let cleaned = pier.trimmingCharacters(in: .whitespaces)
+                .replacingOccurrences(of: "'", with: "")
+                .trimmingCharacters(in: .whitespaces)
+                .uppercased()
+            if cleaned == "EAST" || cleaned == "WEST" {
+                entry.pierSide = cleaned
+            }
+        }
+
+        // Object coordinates for meridian flip matching (more reliable than target name)
+        // Strip FITS single-quote wrappers from coordinate strings
+        if let ra = headers["OBJCTRA"], !ra.isEmpty {
+            entry.objctRA = ra.trimmingCharacters(in: .whitespaces)
+                .replacingOccurrences(of: "'", with: "")
+                .trimmingCharacters(in: .whitespaces)
+        }
+        if let dec = headers["OBJCTDEC"], !dec.isEmpty {
+            entry.objctDec = dec.trimmingCharacters(in: .whitespaces)
+                .replacingOccurrences(of: "'", with: "")
+                .trimmingCharacters(in: .whitespaces)
         }
     }
 

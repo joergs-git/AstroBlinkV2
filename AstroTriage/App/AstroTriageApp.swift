@@ -1,4 +1,4 @@
-// v3.0.0
+// v3.2.0
 import SwiftUI
 
 @main

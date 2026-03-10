@@ -12,6 +12,32 @@ AstroBlinkV2 lets you blink through hundreds of FITS and XISF sub-exposures in s
 
 ---
 
+## What's New in v3.2.0
+
+### Quick Stack — GPU-accelerated live stacking
+- **Quick Stack** — select 3+ subs and stack them instantly with star-alignment (no plate solving needed)
+- **Triangle pattern matching** — scale-invariant star matching with affine alignment
+- **GPU bin2x** — halves resolution before stacking for ~4x speed improvement
+- **Blue star crosses** — live visualization of detected stars during processing
+- **Full result window** — zoomable stacked result with all 4 sliders (stretch, sharp, contrast, dark)
+- **Save as PNG** — exports with current adjustments, smart filename from session metadata
+- **Same-target validation** — prevents accidental stacking of different objects (checks name + RA/DEC)
+
+### Slider improvements
+- **Doubled slider ranges** — Stretch 0–100%, Sharp -4/+4, Contrast -2/+2, Dark 0–1.0
+- **vDSP-optimized rendering** — Quick Stack result slider adjustments ~5-10x faster
+
+### Quality Overview
+- **Interactive help** — click the ? icon for a comprehensive beginner-friendly guide with real-world examples
+- **More space** — expanded quality section, compact fact sheet area
+- **Brown replaces yellow** — better readability for medium noise/SNR values
+
+### Other improvements
+- **Zoom keys keep focus** — +/- no longer loses keyboard focus on file list
+- **Inspector scroll preserved** — header inspector scroll position persists across image navigation
+
+---
+
 ## What's New in v3.0.0
 
 - **Spotlight-style search** — real-time filtering with `column:value` syntax (e.g. `filter:Ha`, `fwhm:>4`, `file:Veil`)
@@ -45,7 +71,7 @@ AstroBlinkV2 was rewritten for full hardware utilization on Apple Silicon. On a 
 
 **End-to-end (300 files, local SSD):**
 
-| Phase | v0.9.7 | v2.0.0 |
+| Phase | v0.9.7 | v2.0.0+ |
 |---|---|---|
 | Header reading | ~9 s | ~1.5 s |
 | First image display | ~250 ms | ~170 ms |
@@ -65,58 +91,81 @@ After a night of imaging you might have 200-600 sub-exposures. Some have clouds,
 5. **Pre-delete** — Cmd+Backspace moves all marked files to a `PRE-DELETE` subfolder — nothing is ever permanently deleted
 6. **Undo if needed** — full undo stack lets you restore any pre-delete operation (Cmd+Z)
 7. **Review your session** — Session Overview shows per-filter integration times and generates a shareable Fact Sheet
+8. **Quick Stack** — select your best subs and get an instant stacked preview without leaving the app
 
 ---
 
-## Features
+## Complete Feature List
 
-### Image Viewing
-- **Metal GPU rendering** — 50-megapixel images display in milliseconds on Apple Silicon
-- **Auto STF stretch** — PixInsight-compatible Screen Transfer Function makes raw linear data visible
-- **Lock STF** — freeze exact c0/mb stretch params from current image for brightness comparison across frames
-- **Apply All** — bake current stretch + post-processing into all cached previews for instant navigation
-- **Adjustable stretch strength** — slider from 0% (linear) to 100% (maximum stretch)
-- **GPU post-processing** — real-time sharpening (unsharp mask), contrast (S-curve), and dark level sliders
-- **Zoom & pan** — click-drag zoom (Photoshop-style), trackpad pinch, scroll to pan
-- **Persistent settings** — all sliders, toggles, and column layout remembered across sessions
+### Image Viewing & Rendering
+- Metal GPU rendering — 50-megapixel images display in milliseconds on Apple Silicon
+- Auto STF stretch — PixInsight-compatible Screen Transfer Function makes raw linear data visible
+- Lock STF (S key) — freeze exact c0/mb stretch params from current image for brightness comparison
+- Apply All — bake current stretch + post-processing into all cached previews for instant navigation
+- Adjustable stretch strength — slider from 0% (linear) to 100% (maximum stretch)
+- GPU post-processing — real-time sharpening (unsharp mask), contrast (S-curve), and dark level sliders
+- Doubled slider ranges — Stretch 0–100%, Sharpening -4/+4, Contrast -2/+2, Dark Level 0–1.0
+- Zoom & pan — click-drag zoom (Photoshop-style), trackpad pinch, +/- keys, scroll to pan
+- Double-click to reset zoom to fit-to-view
+- Persistent settings — all sliders, toggles, and column layout remembered across sessions
+
+### Quick Stack (NEW in v3.2.0)
+- Select 3+ images and stack them with one click — no plate solving required
+- Triangle pattern matching for scale-invariant star alignment
+- Affine transform alignment (rotation + translation + scale)
+- GPU bin2x pre-processing for ~4x faster stacking
+- Live blue star crosses showing detected stars during processing
+- Full result window with all 4 adjustment sliders
+- Save as PNG with smart filename (object_date_filters_camera.png)
+- Same-target validation — warns if you accidentally select images of different objects
+- vDSP-accelerated rendering for fast slider response in result window
 
 ### OSC Debayer
-- **Automatic detection** — Bayer pattern (RGGB, GRBG, GBRG, BGGR) detected from FITS/XISF headers
-- **Toggle on/off** — debayer OFF (default) for fastest caching, ON for color preview
-- **Bilinear interpolation** — GPU-accelerated Metal compute kernel
+- Automatic Bayer pattern detection (RGGB, GRBG, GBRG, BGGR) from FITS/XISF headers
+- Toggle on/off (D key) — debayer OFF (default) for fastest caching, ON for color preview
+- GPU-accelerated bilinear interpolation Metal compute kernel
+- Debayer indicator only visible when session contains OSC images
 
 ### Night Mode
-- **Red-on-black UI** — preserves dark-adapted vision at the telescope
-- **Press N** — toggle night mode on/off, affects all UI elements including file list and status bar
+- Red-on-black UI — preserves dark-adapted vision at the telescope
+- Press N — toggle night mode on/off, affects all UI elements including file list, status bar, and overlays
 
 ### Search & Filter
-- **Spotlight-style search** — real-time filtering in the toolbar, reduces file list as you type
-- **Plain text search** — searches across all columns (filename, object, filter, camera, etc.)
-- **Column syntax** — `filter:Ha`, `file:Veil`, `type:LIGHT`, `fwhm:>4`, `stars:<500`, `exp:300`
-- **Mark/Unmark filtered** — batch checkmark all search results, then move or delete
+- Spotlight-style search — real-time filtering in the toolbar, reduces file list as you type
+- Plain text search — searches across all columns (filename, object, filter, camera, etc.)
+- Column syntax — `filter:Ha`, `file:Veil`, `type:LIGHT`, `fwhm:>4`, `stars:<500`, `exp:300`
+- Column aliases — short forms like `fil`, `obj`, `cam` work as column prefixes
+- Numeric operators — `>`, `<`, `>=`, `<=`, `=` for FWHM, HFR, stars, exp, gain, etc.
+- Mark/Unmark filtered — batch checkmark all search results, then move or delete
 
-### Blink Workflow
-- **Space** — mark/unmark images for pre-deletion
-- **K** — skip over already-marked images during navigation
-- **H** — cycle view: all files → hide marked → show only marked → all
-- **Cmd+Backspace** — move all marked files to a `PRE-DELETE` subfolder (never permanent deletion)
-- **Cmd+M** — move checkmarked files to any folder (with "Create New Folder" dialog)
-- **Full undo stack** — Cmd+Z undoes both PRE-DELETE and Cmd+M moves, unlimited depth
-- **Multi-select** — Shift/Cmd+click in the file list, then Space to mark all selected at once
+### Blink Workflow & File Operations
+- Space — mark/unmark images for pre-deletion (single or multi-select)
+- K — skip over already-marked images during navigation
+- H — cycle view: all files → hide marked → show only marked → all
+- Cmd+Backspace — move all marked files to a `PRE-DELETE` subfolder (never permanent deletion)
+- Cmd+M — move checkmarked files to any folder (with "Create New Folder" dialog)
+- Full undo stack — Cmd+Z undoes both PRE-DELETE and Cmd+M moves, unlimited depth
+- Multi-select — Shift/Cmd+click in the file list, then Space to mark all selected at once
+- Arrow keys stop at boundaries (no wrap-around)
+- Page Up/Home and Page Down/End for jump to first/last image
 
 ### Metadata & Session Overview
-- **NINA filename parsing** — automatically extracts target, filter, exposure, gain, temperature, HFR, star count, and more from NINA-style filenames
-- **FITS/XISF header reading** — pulls metadata directly from file headers (filter, exposure, camera, telescope, mount, etc.)
-- **Header Inspector** — press I to see all FITS/XISF keywords with search filtering; important keywords highlighted
-- **Session Overview window** — per-object/filter/exposure breakdown with total integration time
-- **Fact Sheet generator** — one click copies a ready-to-paste summary with hashtags for Astrobin, Instagram, or forums
+- NINA filename parsing — automatically extracts target, filter, exposure, gain, temperature, HFR, star count, and more
+- FITS/XISF header reading — pulls metadata directly from file headers (filter, exposure, camera, telescope, mount, coordinates, pier side, etc.)
+- Header Inspector (I key) — floating window with all FITS/XISF keywords, search filtering, highlighted important keywords, scroll position preserved
+- Session Overview — per-object/filter/exposure breakdown with total integration time
+- Quality Overview — per-filter noise, background, and SNR statistics with color-coded bars
+- Interactive quality help — click ? for beginner-friendly explanation with real-world examples and rules of thumb
+- Fact Sheet generator — one click copies a ready-to-paste summary with hashtags for Astrobin, Instagram, or forums
+- Auto Meridian Flip — automatically rotates images across pier side changes for consistent orientation
 
 ### File List & Sorting
-- **Sortable columns** — click any column header, drag columns to reorder
-- **Right-click menu** — copy filename, file path, or full path
-- **Smart folder scanning** — opens root images only when present, scans subfolders when root is empty (e.g. per-filter folders like Ha/, OIII/, SII/)
-- **Individual file selection** — select specific files instead of entire folders
-- **File size column** — see how much disk space each sub uses
+- 19+ sortable columns — click any column header to sort, drag to reorder
+- Columns include: #, Filename, Object, Date, Time, Type, Camera, Filter, Exposure, Ambient Temp, Focuser Temp, Sensor Temp, Gain, Size, FWHM, HFR, Stars, Subfolder, and more
+- Right-click context menu — copy filename, file path, or full path
+- Smart folder scanning — opens root images only when present, scans subfolders when root is empty
+- Individual file selection — select specific files instead of entire folders
+- File size column with human-readable formatting (MB/GB)
 
 ### Format Support
 
@@ -128,7 +177,12 @@ After a night of imaging you might have 200-600 sub-exposures. Some have clouds,
 ### Network Volumes
 - Images from NAS/SMB shares are automatically cached locally for fast browsing
 - Stop/continue caching at any time with inline controls
+- 4 parallel network streams for maximum throughput
 - Cache is cleaned up automatically on quit
+
+### QuickLook Extensions
+- Thumbnail provider — FITS/XISF thumbnails in Finder
+- Preview provider — full-size FITS/XISF preview in QuickLook (press Space in Finder)
 
 ---
 
@@ -164,6 +218,7 @@ After a night of imaging you might have 200-600 sub-exposures. Some have clouds,
 | `←` `→` | Previous / next image |
 | `Page Up/Home` | Jump to first image |
 | `Page Down/End` | Jump to last image |
+| `+` `-` | Zoom in / out |
 | `Space` | Toggle pre-delete mark (single or multi-select) |
 | `Cmd+Backspace` | Move marked files to PRE-DELETE folder |
 | `Cmd+M` | Move marked files to a chosen folder |
@@ -255,7 +310,9 @@ AstroBlinkV2 decodes FITS and XISF files using cfitsio and libxisf through a C b
 
 The workflow is non-destructive by design: marking a file only sets a flag in memory, and the "pre-delete" action physically moves files to a dedicated subfolder — never to Trash, never permanently deleted. A full undo stack allows you to reverse any pre-delete operation.
 
-Floating windows (Session Overview, Header Inspector) stay above the main AstroBlinkV2 window while working but go behind other apps when you switch away.
+Quick Stack uses triangle pattern matching on the brightest stars in each frame, computes affine transforms for sub-pixel alignment, and median-combines aligned frames — all without external plate solving. It's designed for visual impression, not science-grade stacking.
+
+Floating windows (Session Overview, Header Inspector, Quick Stack Result) stay above the main AstroBlinkV2 window while working but go behind other apps when you switch away.
 
 ---
 

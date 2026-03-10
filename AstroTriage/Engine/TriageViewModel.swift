@@ -1,4 +1,4 @@
-// v2.2.0
+// v3.2.0
 import Foundation
 import SwiftUI
 import Metal
@@ -48,6 +48,17 @@ class TriageViewModel: ObservableObject {
     // True when the current session contains OSC images (detected via BAYERPAT header)
     @Published var hasOSCImages: Bool = false
 
+    // Auto Meridian: rotate images 180° to normalize orientation across meridian flips.
+    // Uses PIERSIDE header (EAST/WEST) + OBJCTRA/OBJCTDEC for same-target matching.
+    // First image's pier side = reference. Opposite side with same coordinates → rotated.
+    @Published var autoMeridianEnabled: Bool = true  // Default ON
+    // True when session has images with PIERSIDE on both sides (meridian flip detected)
+    @Published var hasMeridianFlip: Bool = false
+    // Reference pier side determined from the first image with PIERSIDE data
+    private var referencePierSide: String?
+    // Reference coordinates (RA/DEC) for pier side matching
+    private var referenceCoords: (ra: String, dec: String)?
+
     // Prefetch progress (0.0 to 1.0)
     @Published var cacheProgress: Double = 0
     @Published var cachingCount: Int = 0
@@ -74,6 +85,12 @@ class TriageViewModel: ObservableObject {
     // Side panel visibility (integrated into main window)
     @Published var showInspector: Bool = false
     @Published var showSessionOverview: Bool = false
+
+    // Quick Stack: triangle-match alignment + mean combine for visual impression
+    @Published var showQuickStack: Bool = false
+    var quickStackEngine: QuickStackEngine?
+    // Selected row indices from the file list (for multi-select operations like stacking)
+    var selectedTableIndices: IndexSet = IndexSet()
 
     // Real-time system stats (CPU + memory), updated every 2 seconds
     struct SystemStats {
@@ -281,6 +298,7 @@ class TriageViewModel: ObservableObject {
         if let v = AppSettings.loadBool(for: .debayerEnabled) { debayerEnabled = v }
         if let v = AppSettings.loadBool(for: .skipMarked) { skipMarked = v }
         if let v = AppSettings.loadBool(for: .hideMarked) { hideMarked = v }
+        if let v = AppSettings.loadBool(for: .autoMeridian) { autoMeridianEnabled = v }
 
         // Start lightweight system stats polling (CPU + memory every 2s)
         startStatsPolling()
@@ -555,28 +573,39 @@ class TriageViewModel: ObservableObject {
             debayerEnabled: debayerEnabled,
             targetBackground: lockedParams != nil ? nil : targetBg,  // locked params override target
             lockedSTFParams: lockedParams,
-            postProcessParams: ppParams
-        ) { [weak self] completed, total in
-            guard let self = self else { return }
-            self.cachingCount = completed
-            self.cachingTotal = total
-            self.cacheProgress = total > 0 ? Double(completed) / Double(total) : 0
+            postProcessParams: ppParams,
+            onProgress: { [weak self] completed, total in
+                guard let self = self else { return }
+                self.cachingCount = completed
+                self.cachingTotal = total
+                self.cacheProgress = total > 0 ? Double(completed) / Double(total) : 0
 
-            // Refresh table periodically so cache checkmarks appear (every 4 images)
-            if completed % 4 == 0 || completed == total {
-                self.needsTableRefresh = true
-            }
+                // Refresh table periodically so cache checkmarks appear (every 4 images)
+                if completed % 4 == 0 || completed == total {
+                    self.needsTableRefresh = true
+                }
 
-            if completed < total {
-                self.statusMessage = "Pre-caching \(completed)/\(total)..."
-            } else {
-                self.isCaching = false
-                self.needsTableRefresh = true
-                self.statusMessage = "\(total) images cached — instant navigation ready"
-                // Release App Nap assertion when caching completes
-                self.appNapAssertion = nil
+                if completed < total {
+                    self.statusMessage = "Pre-caching \(completed)/\(total)..."
+                } else {
+                    self.isCaching = false
+                    self.needsTableRefresh = true
+                    self.statusMessage = "\(total) images cached — instant navigation ready"
+                    // Release App Nap assertion when caching completes
+                    self.appNapAssertion = nil
+                    // Update session overview with noise stats now that all images are measured
+                    self.sessionOverviewModel.updateStats(from: self.images)
+                }
+            },
+            onNoiseStats: { [weak self] url, stats in
+                guard let self = self else { return }
+                // Store noise stats in the corresponding ImageEntry
+                if let idx = self.images.firstIndex(where: { $0.url == url }) {
+                    self.images[idx].noiseMedian = stats.median
+                    self.images[idx].noiseMAD = stats.normalizedMAD
+                }
             }
-        }
+        )
     }
 
     // Tracks whether caching was stopped by user (for continue button)
@@ -770,6 +799,35 @@ class TriageViewModel: ObservableObject {
                         self.images[index].frameType = MetadataExtractor.normalizeFrameType(imageType)
                     }
 
+                    // Pier side for meridian flip detection
+                    // Case-insensitive key lookup (XISF may store differently than FITS)
+                    // FITS values may be wrapped in single quotes (e.g. "'East'"), strip them
+                    let pierVal = headers["PIERSIDE"] ?? headers.first(where: { $0.key.uppercased() == "PIERSIDE" })?.value
+                    if let pier = pierVal, !pier.isEmpty {
+                        let cleaned = pier.trimmingCharacters(in: .whitespaces)
+                            .replacingOccurrences(of: "'", with: "")
+                            .trimmingCharacters(in: .whitespaces)
+                            .uppercased()
+                        if cleaned == "EAST" || cleaned == "WEST" {
+                            self.images[index].pierSide = cleaned
+                        }
+                    }
+
+                    // Object coordinates for meridian flip matching
+                    // Case-insensitive key lookup, strip FITS single-quote wrappers
+                    let raVal = headers["OBJCTRA"] ?? headers.first(where: { $0.key.uppercased() == "OBJCTRA" })?.value
+                    if let ra = raVal, !ra.isEmpty {
+                        self.images[index].objctRA = ra.trimmingCharacters(in: .whitespaces)
+                            .replacingOccurrences(of: "'", with: "")
+                            .trimmingCharacters(in: .whitespaces)
+                    }
+                    let decVal = headers["OBJCTDEC"] ?? headers.first(where: { $0.key.uppercased() == "OBJCTDEC" })?.value
+                    if let dec = decVal, !dec.isEmpty {
+                        self.images[index].objctDec = dec.trimmingCharacters(in: .whitespaces)
+                            .replacingOccurrences(of: "'", with: "")
+                            .trimmingCharacters(in: .whitespaces)
+                    }
+
                     if self.images[index].bayerPattern != nil {
                         foundOSC = true
                     }
@@ -779,6 +837,18 @@ class TriageViewModel: ObservableObject {
                 self.loadingPhase = .none
                 self.sessionOverviewModel.updateStats(from: self.images)
                 self.hasOSCImages = foundOSC
+                self.detectMeridianFlip()
+                // Update rotation for current image now that pier side data is available
+                self.updateMeridianRotation()
+
+                // If debayer is enabled and OSC images were found, previews were cached
+                // without bayerPattern (headers weren't available yet). Re-cache with debayer.
+                if foundOSC && self.debayerEnabled {
+                    self.prefetchCache?.invalidateAll()
+                    self.startFullPrefetch()
+                    // Also re-display current image with debayer applied
+                    self.displayCurrentImage()
+                }
             }
         }
     }
@@ -853,6 +923,266 @@ class TriageViewModel: ObservableObject {
         displayCurrentImage()
     }
 
+    // MARK: - Auto Meridian
+
+    // Toggle auto meridian rotation for normalized orientation across meridian flips
+    func toggleAutoMeridian() {
+        autoMeridianEnabled.toggle()
+        AppSettings.saveBool(autoMeridianEnabled, for: .autoMeridian)
+        statusMessage = autoMeridianEnabled
+            ? "Auto Meridian ON — normalizing pier side orientation"
+            : "Auto Meridian OFF"
+        // Update rotation for current image and redraw
+        updateMeridianRotation()
+    }
+
+    // Determine whether the current image needs 180° rotation for meridian flip correction.
+    // Logic: reference = first image's pier side. Images on the opposite side with matching
+    // coordinates (same target) get rotated. Coordinate matching uses OBJCTRA/OBJCTDEC with
+    // tolerance (~1 arcmin) — more reliable than target name matching.
+    func shouldRotateForMeridian(_ entry: ImageEntry) -> Bool {
+        guard autoMeridianEnabled,
+              let refSide = referencePierSide,
+              let entrySide = entry.pierSide,
+              entrySide.uppercased() != refSide.uppercased() else {
+            return false
+        }
+
+        // Check if same target by coordinates (within ~1 arcmin tolerance)
+        if let refCoords = referenceCoords,
+           let entryRA = entry.objctRA,
+           let entryDec = entry.objctDec {
+            return coordinatesMatch(
+                ra1: refCoords.ra, dec1: refCoords.dec,
+                ra2: entryRA, dec2: entryDec
+            )
+        }
+
+        // Fallback: match by target name if coordinates not available
+        if let refTarget = images.first(where: { $0.pierSide == referencePierSide })?.target,
+           let entryTarget = entry.target {
+            return refTarget.lowercased() == entryTarget.lowercased()
+        }
+
+        return false
+    }
+
+    // Update rotation state for the currently displayed image
+    private func updateMeridianRotation() {
+        guard let entry = selectedImage else {
+            renderer?.rotate180 = false
+            if let mtkView = findMTKView() { mtkView.needsDisplay = true }
+            return
+        }
+        let shouldRotate = shouldRotateForMeridian(entry)
+        renderer?.rotate180 = shouldRotate
+        if let mtkView = findMTKView() { mtkView.needsDisplay = true }
+    }
+
+    // Detect meridian flip in session after headers are loaded.
+    // Sets reference pier side from first image and checks for flip.
+    func detectMeridianFlip() {
+        let withPierSide = images.filter { $0.pierSide != nil }
+        guard !withPierSide.isEmpty else {
+            hasMeridianFlip = false
+            referencePierSide = nil
+            referenceCoords = nil
+            return
+        }
+
+        // Reference = first image's pier side
+        referencePierSide = withPierSide.first?.pierSide
+        if let first = withPierSide.first {
+            if let ra = first.objctRA, let dec = first.objctDec {
+                referenceCoords = (ra: ra, dec: dec)
+            }
+        }
+
+        // Check if we have both EAST and WEST in the session
+        let sides = Set(withPierSide.compactMap { $0.pierSide })
+        hasMeridianFlip = sides.count > 1
+
+        // Count images per side for status feedback
+        let eastCount = withPierSide.filter { $0.pierSide == "EAST" }.count
+        let westCount = withPierSide.filter { $0.pierSide == "WEST" }.count
+        if hasMeridianFlip {
+            print("[Meridian] Flip detected: \(eastCount) EAST, \(westCount) WEST — ref: \(referencePierSide ?? "?"), coords: \(referenceCoords?.ra ?? "nil") / \(referenceCoords?.dec ?? "nil")")
+        } else if !withPierSide.isEmpty {
+            print("[Meridian] All images on same side: \(referencePierSide ?? "?") (\(withPierSide.count) images)")
+        }
+    }
+
+    // Compare RA/DEC coordinate strings with generous tolerance.
+    // Mount pointing can drift across meridian flips due to plate-solve refinement,
+    // polar alignment error, or centering differences. 10 arcmin (~0.17°) is safe —
+    // wide enough for real-world drift but won't confuse distinct nearby targets.
+    // Supports formats: "HH MM SS.ss" (space-separated) and decimal degrees.
+    private func coordinatesMatch(ra1: String, dec1: String, ra2: String, dec2: String) -> Bool {
+        let ra1deg = parseRA(ra1)
+        let ra2deg = parseRA(ra2)
+        let dec1deg = parseDec(dec1)
+        let dec2deg = parseDec(dec2)
+
+        guard let r1 = ra1deg, let r2 = ra2deg, let d1 = dec1deg, let d2 = dec2deg else {
+            // Can't parse — fall back to case-insensitive string match
+            return ra1.lowercased() == ra2.lowercased() && dec1.lowercased() == dec2.lowercased()
+        }
+
+        // ~2 arcmin tolerance (2/60 = 0.033 degrees)
+        let tolerance: Double = 2.0 / 60.0
+        let raDiff: Double = Swift.abs(r1 - r2)
+        let decDiff: Double = Swift.abs(d1 - d2)
+        return raDiff < tolerance && decDiff < tolerance
+    }
+
+    // Parse RA string to degrees. Supports "HH MM SS.ss" or decimal degrees.
+    private func parseRA(_ ra: String) -> Double? {
+        let parts = ra.split(separator: " ").compactMap { Double($0) }
+        if parts.count >= 3 {
+            // HH MM SS → degrees (15° per hour)
+            return (parts[0] + parts[1] / 60.0 + parts[2] / 3600.0) * 15.0
+        }
+        if parts.count == 1 { return parts[0] }
+        return nil
+    }
+
+    // Parse Dec string to degrees. Supports "+DD MM SS.ss" or decimal degrees.
+    private func parseDec(_ dec: String) -> Double? {
+        let trimmed = dec.trimmingCharacters(in: .whitespaces)
+        let isNegative = trimmed.hasPrefix("-")
+        let cleaned = trimmed.replacingOccurrences(of: "+", with: "").replacingOccurrences(of: "-", with: "")
+        let parts = cleaned.split(separator: " ").compactMap { Double($0) }
+        if parts.count >= 3 {
+            let deg = parts[0] + parts[1] / 60.0 + parts[2] / 3600.0
+            return isNegative ? -deg : deg
+        }
+        if parts.count == 1 {
+            return isNegative ? -parts[0] : parts[0]
+        }
+        return nil
+    }
+
+    // MARK: - Zoom
+
+    // Zoom in by 20% (multiplicative so each step feels equal)
+    func zoomIn() {
+        guard let renderer = renderer, let mtkView = findMTKView() else { return }
+        renderer.zoomScale *= 1.2
+        mtkView.needsDisplay = true
+        statusMessage = String(format: "Zoom: %.0f%%", renderer.zoomScale * 100)
+    }
+
+    // Zoom out by 20%
+    func zoomOut() {
+        guard let renderer = renderer, let mtkView = findMTKView() else { return }
+        renderer.zoomScale = max(0.1, renderer.zoomScale / 1.2)
+        mtkView.needsDisplay = true
+        statusMessage = String(format: "Zoom: %.0f%%", renderer.zoomScale * 100)
+    }
+
+    // Reset zoom to fit-to-view
+    func resetZoom() {
+        guard let renderer = renderer, let mtkView = findMTKView() else { return }
+        renderer.resetZoom()
+        mtkView.needsDisplay = true
+        statusMessage = "Zoom: Fit to view"
+    }
+
+    // MARK: - Quick Stack
+
+    // Start quick stack with the currently selected images from the file list.
+    // Validates that all selected images target the same object (by name or RA/DEC proximity).
+    func startQuickStack() {
+        let indices = selectedTableIndices
+        guard indices.count >= 3 else {
+            statusMessage = "Select at least 3 images to stack"
+            return
+        }
+
+        // Map visible indices to actual image entries
+        let visible = visibleImages
+        let entries = indices.compactMap { idx -> ImageEntry? in
+            guard idx >= 0 && idx < visible.count else { return nil }
+            return visible[idx]
+        }
+
+        guard entries.count >= 3 else {
+            statusMessage = "Need at least 3 valid images to stack"
+            return
+        }
+
+        // Safety check: all images must target the same object (prevents accidental mixed stacking)
+        if let mismatch = validateSameTarget(entries) {
+            statusMessage = mismatch
+            // Show alert dialog so the user can't miss the warning
+            let alert = NSAlert()
+            alert.messageText = "Cannot Quick Stack"
+            alert.informativeText = mismatch
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: "OK")
+            alert.runModal()
+            return
+        }
+
+        // Create engine if needed
+        if quickStackEngine == nil, let device = device {
+            quickStackEngine = QuickStackEngine(device: device)
+        }
+
+        guard let engine = quickStackEngine else {
+            statusMessage = "Metal device not available for stacking"
+            return
+        }
+
+        showQuickStack = true
+        statusMessage = "Quick Stack: processing \(entries.count) frames..."
+        engine.startStack(entries: entries, debayerEnabled: debayerEnabled)
+    }
+
+    // Validate all entries target the same sky object. Returns error message if mismatch found, nil if OK.
+    // Checks by object name first; falls back to RA/DEC coordinate proximity (1° tolerance).
+    private func validateSameTarget(_ entries: [ImageEntry]) -> String? {
+        // Collect unique target names (ignoring nil/empty/unknown)
+        let targets = Set(entries.compactMap { entry -> String? in
+            guard let t = entry.target, !t.isEmpty, t.lowercased() != "unknown" else { return nil }
+            return t.trimmingCharacters(in: .whitespaces).lowercased()
+        })
+
+        if targets.count > 1 {
+            let names = Set(entries.compactMap { entry -> String? in
+                guard let t = entry.target, !t.isEmpty, t.lowercased() != "unknown" else { return nil }
+                return t.trimmingCharacters(in: .whitespaces)
+            })
+            return "Cannot stack: mixed targets detected (\(names.sorted().joined(separator: ", "))). Select only images of the same object."
+        }
+
+        // If no target names, try RA/DEC proximity check
+        if targets.isEmpty {
+            let coords = entries.compactMap { entry -> (ra: Double, dec: Double)? in
+                guard let raStr = entry.objctRA, let decStr = entry.objctDec,
+                      let ra = parseRA(raStr), let dec = parseDec(decStr) else { return nil }
+                return (ra, dec)
+            }
+
+            if coords.count >= 2 {
+                let refRA = coords[0].ra
+                let refDec = coords[0].dec
+                for coord in coords.dropFirst() {
+                    let dRA: Double = Swift.abs(coord.ra - refRA) * cos(refDec * Double.pi / 180.0)
+                    let dDec: Double = Swift.abs(coord.dec - refDec)
+                    let separation: Double = (dRA * dRA + dDec * dDec).squareRoot()
+                    if separation > 1.0 {  // >1° apart = different field
+                        return "Cannot stack: images point to different sky regions (>1° apart). Select only images of the same target field."
+                    }
+                }
+            }
+        }
+
+        return nil
+    }
+
+    // parseRA and parseDec already defined above (Auto Meridian section)
+
     // MARK: - Post-Processing
 
     // Update post-processing params and trigger re-render (GPU-only, no STF recompute)
@@ -895,8 +1225,10 @@ class TriageViewModel: ObservableObject {
         sharpening = 0.0
         contrast = 0.0
         darkLevel = 0.0
+        autoMeridianEnabled = true  // Default ON
         needsTableRefresh = true
         updatePostProcessParams()
+        updateMeridianRotation()
         statusMessage = "Settings reset to defaults"
     }
 
@@ -1605,6 +1937,9 @@ class TriageViewModel: ObservableObject {
 
         // Update header inspector model (panel updates reactively via SwiftUI)
         headerInspectorModel.update(for: image.decodingURL, filename: image.filename)
+
+        // Update meridian rotation for this image (zero-cost UV flip)
+        updateMeridianRotation()
 
         // Fast path: use pre-stretched cached preview (instant, zero compute)
         // Works when current slider settings match what's baked into the cache.

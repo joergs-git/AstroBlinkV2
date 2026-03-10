@@ -1,4 +1,4 @@
-// v3.0.0
+// v3.2.0
 import SwiftUI
 
 // Root view: toolbar on top, optional side panels (inspector left, session right),
@@ -67,6 +67,9 @@ struct ContentView: View {
                     sfToolbarButton("trash", "Delete", "Pre-Delete Marked (⌘⌫)") { viewModel.moveMarkedToPreDelete() }
                     if viewModel.canUndoPreDelete {
                         sfToolbarButton("arrow.uturn.backward", "Undo", "Undo last Pre-Delete (⌘Z)") { viewModel.undoPreDelete() }
+                    }
+                    sfToolbarButton("square.3.layers.3d.down.right", "QuickStack", "Quick Stack selected images (select 3+)") {
+                        viewModel.startQuickStack()
                     }
                     toolbarDivider
 
@@ -224,27 +227,40 @@ struct ContentView: View {
                     .help("Reset all sliders to defaults")
                     .contentShape(Rectangle())
 
-                    compactSlider("Stretch", value: $sliderValue, range: 0.0...0.50, step: 0.01,
-                        display: { "\(Int($0 / 0.50 * 100))%" },
+                    compactSlider("Stretch", value: $sliderValue, range: 0.0...1.0, step: 0.01,
+                        display: { "\(Int($0 / 1.0 * 100))%" },
                         onRelease: { viewModel.updateStretchStrength(Float(sliderValue)) })
 
                     compactSlider("Sharp", value: Binding(
                         get: { Double(viewModel.sharpening) },
                         set: { viewModel.sharpening = Float($0); viewModel.updatePostProcessParams() }
-                    ), range: -2.0...2.0, step: 0.1,
+                    ), range: -4.0...4.0, step: 0.1,
                         display: { String(format: "%+.1f", $0) })
 
                     compactSlider("Contrast", value: Binding(
                         get: { Double(viewModel.contrast) },
                         set: { viewModel.contrast = Float($0); viewModel.updatePostProcessParams() }
-                    ), range: -1.0...1.0, step: 0.05,
+                    ), range: -2.0...2.0, step: 0.05,
                         display: { String(format: "%+.1f", $0) })
 
                     compactSlider("Dark", value: Binding(
                         get: { Double(viewModel.darkLevel) },
                         set: { viewModel.darkLevel = Float($0); viewModel.updatePostProcessParams() }
-                    ), range: 0.0...0.50, step: 0.01,
+                    ), range: 0.0...1.0, step: 0.01,
                         display: { String(format: "%.2f", $0) })
+
+                    // Auto Meridian toggle — always visible, rotates images across meridian flip
+                    VStack(spacing: 2) {
+                        Toggle("MeridianFlip", isOn: Binding(
+                            get: { viewModel.autoMeridianEnabled },
+                            set: { _ in viewModel.toggleAutoMeridian() }
+                        ))
+                        .toggleStyle(.switch)
+                        .controlSize(.mini)
+                        .tint(.purple)
+                        .help("Auto-rotate images across meridian flip for consistent orientation")
+                    }
+                    .frame(width: 120)
 
                     Spacer()
                 }
@@ -260,7 +276,7 @@ struct ContentView: View {
                 // LEFT: Header Inspector panel
                 if viewModel.showInspector {
                     HeaderInspectorContentView(model: viewModel.headerInspectorModel)
-                        .frame(width: 320)
+                        .frame(width: 420)
                         .background(nightBg)
 
                     Rectangle().fill(nightDivider).frame(width: 1)
@@ -287,6 +303,25 @@ struct ContentView: View {
                                         RoundedRectangle(cornerRadius: 8)
                                             .fill(Color.black.opacity(0.6))
                                     )
+                            }
+
+                            // Quick Stack progress overlay (anchored top-right)
+                            if viewModel.showQuickStack, let engine = viewModel.quickStackEngine {
+                                VStack {
+                                    HStack {
+                                        Spacer()
+                                        QuickStackProgressView(
+                                            engine: engine,
+                                            nightMode: viewModel.nightMode,
+                                            onDismiss: {
+                                                viewModel.showQuickStack = false
+                                                viewModel.quickStackEngine?.cancel()
+                                            }
+                                        )
+                                        .padding(12)
+                                    }
+                                    Spacer()
+                                }
                             }
                         }
                         .frame(minHeight: 200)
@@ -434,6 +469,13 @@ struct ContentView: View {
                                 : Color(red: 0.15, green: 0.5, blue: 0.25))
                         }
 
+                        // Auto Meridian pill — shows when active and session has meridian flip
+                        if viewModel.autoMeridianEnabled && viewModel.hasMeridianFlip {
+                            statusPill("MeridianFlip", bg: viewModel.nightMode
+                                ? Color(red: 0.25, green: 0, blue: 0.15)
+                                : Color.purple.opacity(0.7))
+                        }
+
                         Spacer()
 
                         // RIGHT SIDE: dimensions, filter, status
@@ -470,7 +512,7 @@ struct ContentView: View {
                     Rectangle().fill(nightDivider).frame(width: 1)
 
                     SessionOverviewContentView(model: viewModel.sessionOverviewModel)
-                        .frame(width: 380)
+                        .frame(width: 480)
                         .background(nightBg)
                 }
             }

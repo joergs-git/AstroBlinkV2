@@ -108,6 +108,7 @@ struct FileListView: NSViewRepresentable {
         let isFiltered = viewModel.hideMarked || viewModel.showOnlyMarked || !viewModel.filterText.isEmpty
         coordinator.displayedImages = isFiltered ? viewModel.visibleImages : viewModel.images
         coordinator.cachedURLs = Set(coordinator.displayedImages.filter { viewModel.isImageCached($0.url) }.map { $0.url })
+        coordinator.rotatedURLs = Set(coordinator.displayedImages.filter { viewModel.shouldRotateForMeridian($0) }.map { $0.url })
 
         guard let tableView = coordinator.tableView else { return }
 
@@ -156,9 +157,9 @@ struct FileListView: NSViewRepresentable {
                 if currentSelection.count <= 1 {
                     if !currentSelection.contains(desiredIndex) {
                         tableView.selectRowIndexes(IndexSet(integer: desiredIndex), byExtendingSelection: false)
+                        // Only scroll when selection actually changes (avoids jump during cache refreshes)
+                        tableView.scrollRowToVisible(desiredIndex)
                     }
-                    // Always scroll to visible — ensures Page Up/Down brings row into view
-                    tableView.scrollRowToVisible(desiredIndex)
                 }
             }
         }
@@ -178,6 +179,7 @@ struct FileListView: NSViewRepresentable {
         // Snapshot of displayed images and cached URLs, updated from main actor in updateNSView
         var displayedImages: [ImageEntry] = []
         var cachedURLs: Set<URL> = []
+        var rotatedURLs: Set<URL> = []
 
         func numberOfRows(in tableView: NSTableView) -> Int {
             displayedImages.count
@@ -290,8 +292,17 @@ struct FileListView: NSViewRepresentable {
 
             textField.stringValue = entry.filename
 
-            // Cache indicator
-            if isCached {
+            // Cache indicator + meridian rotation icon
+            let isRotated = rotatedURLs.contains(entry.url)
+            if isCached && isRotated {
+                indicator.stringValue = "\u{21BB}"  // Clockwise arrow (rotated indicator)
+                indicator.textColor = isNight ? NSColor(red: 0.35, green: 0, blue: 0.2, alpha: 1) : .systemPurple
+                indicator.toolTip = "Cached · Rotated 180° (meridian flip)"
+            } else if isRotated {
+                indicator.stringValue = "\u{21BB}"  // Clockwise arrow
+                indicator.textColor = isNight ? NSColor(red: 0.35, green: 0, blue: 0.2, alpha: 1) : .systemPurple
+                indicator.toolTip = "Rotated 180° (meridian flip)"
+            } else if isCached {
                 indicator.stringValue = "\u{2713}"  // Checkmark
                 indicator.textColor = isNight ? NSColor(red: 0.4, green: 0, blue: 0, alpha: 1) : .systemGray
                 indicator.toolTip = "Cached for instant display"
@@ -391,6 +402,9 @@ struct FileListView: NSViewRepresentable {
                 tableView.selectRowIndexes(selectedRows, byExtendingSelection: false)
             }
             previousSelectedRows = selectedRows
+
+            // Track selected indices in ViewModel for Quick Stack and other multi-select operations
+            viewModel.selectedTableIndices = selectedRows
 
             // Determine which row to display: for multi-select (shift+click/arrow),
             // show the image at the cursor position (last added row in the selection).
