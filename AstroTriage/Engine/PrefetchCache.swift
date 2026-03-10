@@ -1,4 +1,4 @@
-// v3.2.0
+// v3.3.0
 import Foundation
 import Metal
 
@@ -37,6 +37,14 @@ class PrefetchCache {
     }
 
     var cachedCount: Int { cache.count }
+
+    // Total memory used by cached BGRA8 textures (bytes)
+    var cacheMemoryBytes: Int64 {
+        cache.values.reduce(Int64(0)) { total, preview in
+            // BGRA8 = 4 bytes per pixel
+            total + Int64(preview.texture.width) * Int64(preview.texture.height) * 4
+        }
+    }
 
     // Prefetch ALL images using sliding window: as each decode completes,
     // the next file immediately starts — no batch boundary stalls.

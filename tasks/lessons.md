@@ -55,6 +55,30 @@
 - **Rule:** Never create dummy AppKit/UIKit views as fallbacks. Use `if let` guard and skip the call if the real view isn't available.
 - **Applies to:** MetalRenderer API calls, any MTKView operations
 
+## [2026-03-10] — vDSP on Swift Arrays: no .advanced(by:) method
+- **Mistake:** Used `original.advanced(by: offset)` with vDSP functions, but Swift `[Float]` has no `.advanced` method (that's for UnsafePointer)
+- **Root cause:** Confused pointer arithmetic (C-style) with Swift array operations
+- **Rule:** Use `withUnsafeBufferPointer { buf in ... buf.baseAddress! + offset ... }` to get pointer offsets for vDSP calls on Swift arrays
+- **Applies to:** Accelerate/vDSP operations, any C-bridged function expecting pointers with offsets
+
+## [2026-03-10] — SwiftUI .help() tooltips unreliable in floating NSHostingView windows
+- **Mistake:** Added `.help("tooltip text")` to small Text views in Session Overview — tooltips never appeared
+- **Root cause:** `.help()` modifier has unreliable hit-testing on small frames inside NSHostingView in floating windows
+- **Rule:** For explanatory content, use a dedicated help button (?) that opens an NSWindow with NSAttributedString rich text, or NSAlert for simple messages. Don't rely on `.help()` for important information.
+- **Applies to:** SwiftUI tooltips, floating windows, NSHostingView
+
+## [2026-03-10] — Duplicate method declarations from RA/DEC parsing
+- **Mistake:** Added new `parseRA`/`parseDec` methods in TriageViewModel, but they already existed in the Auto Meridian section
+- **Root cause:** Large file, didn't search for existing methods first
+- **Rule:** Always grep for existing method names before adding new ones in large files. Reuse existing utility methods.
+- **Applies to:** TriageViewModel.swift, any large Swift class files
+
+## [2026-03-10] — Swift abs/sqrt/cos ambiguity with tuples
+- **Mistake:** `abs(coord.ra - refRA)` caused "ambiguous use of abs" compile error
+- **Root cause:** Swift can't disambiguate between Foundation.abs and Swift.abs when used with tuple member access
+- **Rule:** Use `Swift.abs()` explicitly and `.squareRoot()` method instead of global `sqrt()` to avoid ambiguity
+- **Applies to:** Math operations on tuple/struct members in Swift
+
 ## [2026-03-07] — NSTableView multi-selection destroyed by updateNSView
 - **Mistake:** `updateNSView` was calling `selectRowIndexes(byExtendingSelection: false)` on every SwiftUI update, replacing multi-selection with single selection
 - **Root cause:** `reloadData()` clears selection, then the sync code only restored a single row

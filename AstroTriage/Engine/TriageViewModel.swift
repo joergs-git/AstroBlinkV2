@@ -1,4 +1,4 @@
-// v3.2.0
+// v3.3.0
 import Foundation
 import SwiftUI
 import Metal
@@ -131,6 +131,16 @@ class TriageViewModel: ObservableObject {
     // Count of already-cached preview images
     var prefetchCachedCount: Int {
         prefetchCache?.cachedCount ?? 0
+    }
+
+    // Total memory used by cached preview textures
+    var cacheMemoryBytes: Int64 {
+        prefetchCache?.cacheMemoryBytes ?? 0
+    }
+
+    // Total raw file size of all loaded images
+    var totalRawFileSize: Int64 {
+        images.reduce(Int64(0)) { $0 + ($1.fileSize ?? 0) }
     }
 
     // Check if a specific image URL has been cached (for table UI indicator)
@@ -518,10 +528,8 @@ class TriageViewModel: ObservableObject {
                 if isNetwork {
                     self.statusMessage = "Downloading \(entries.count) images to local cache..."
                 } else {
-                    // Bake default settings into cache for instant navigation
-                    self.triggerApplyAll()
-                    // Read headers in background for metadata enrichment
-                    self.enrichWithHeaders()
+                    // Check memory budget — if over budget, shows alert and calls back
+                    self.checkMemoryBudgetAndCache(for: entries)
                 }
                 // Give table focus so keyboard navigation works immediately
                 self.focusTableAfterDelay()
@@ -534,6 +542,74 @@ class TriageViewModel: ObservableObject {
                 await MainActor.run {
                     self?.triggerApplyAll()
                 }
+            }
+        }
+    }
+
+    // Estimate cache memory needed and warn user if it exceeds available RAM.
+    // If within budget, starts caching immediately. If over budget, shows a non-blocking
+    // sheet alert and starts/skips caching based on user choice.
+    private func checkMemoryBudgetAndCache(for entries: [ImageEntry]) {
+        let totalRawBytes = entries.reduce(Int64(0)) { $0 + ($1.fileSize ?? 0) }
+        let physicalMemory = Int64(ProcessInfo.processInfo.physicalMemory)
+        // Safe budget: 70% of physical RAM for cache (leaves 30% for OS, app, and decode buffers)
+        let safeBudget = Int64(Double(physicalMemory) * 0.7)
+
+        // Always enrich headers regardless of cache decision
+        enrichWithHeaders()
+
+        // If estimated cache fits comfortably, proceed without warning
+        if totalRawBytes <= safeBudget {
+            applyAllEnabled = true
+            triggerApplyAll()
+            return
+        }
+
+        // Calculate how many images would fit safely
+        let avgFileSize = totalRawBytes / max(Int64(entries.count), 1)
+        let safeImageCount = avgFileSize > 0 ? Int(safeBudget / avgFileSize) : entries.count
+        let reductionPercent = Int(100.0 - Double(safeImageCount) / Double(entries.count) * 100.0)
+
+        let totalGB = String(format: "%.1f", Double(totalRawBytes) / 1_073_741_824.0)
+        let ramGB = String(format: "%.0f", Double(physicalMemory) / 1_073_741_824.0)
+        let safeGB = String(format: "%.1f", Double(safeBudget) / 1_073_741_824.0)
+
+        let alert = NSAlert()
+        alert.messageText = "Large session — memory warning"
+        alert.informativeText = """
+        This session has \(entries.count) images (~\(totalGB) GB). \
+        Caching all previews may use more memory than your system comfortably supports \
+        (\(ramGB) GB RAM, ~\(safeGB) GB available for cache).
+
+        You can proceed, but navigation may slow down once memory fills up. \
+        To avoid this, consider reducing your selection by ~\(reductionPercent)% \
+        (~\(safeImageCount) images would fit safely).
+        """
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Cache All Anyway")
+        alert.addButton(withTitle: "Skip Caching")
+
+        // Non-blocking sheet on key window, with callback
+        if let window = NSApp.keyWindow {
+            alert.beginSheetModal(for: window) { [weak self] response in
+                guard let self = self else { return }
+                if response == .alertFirstButtonReturn {
+                    self.applyAllEnabled = true
+                    self.triggerApplyAll()
+                } else {
+                    self.statusMessage = "Caching skipped — use arrow keys for on-demand viewing"
+                    self.applyAllEnabled = false
+                }
+            }
+        } else {
+            // Fallback: app-modal (no window available yet)
+            let response = alert.runModal()
+            if response == .alertFirstButtonReturn {
+                applyAllEnabled = true
+                triggerApplyAll()
+            } else {
+                statusMessage = "Caching skipped — use arrow keys for on-demand viewing"
+                applyAllEnabled = false
             }
         }
     }
@@ -590,7 +666,7 @@ class TriageViewModel: ObservableObject {
                 } else {
                     self.isCaching = false
                     self.needsTableRefresh = true
-                    self.statusMessage = "\(total) images cached — instant navigation ready"
+                    self.statusMessage = "instant navigation ready"
                     // Release App Nap assertion when caching completes
                     self.appNapAssertion = nil
                     // Update session overview with noise stats now that all images are measured
@@ -618,7 +694,7 @@ class TriageViewModel: ObservableObject {
         cachingStopped = true
         appNapAssertion = nil  // Release App Nap assertion
         let cached = prefetchCache?.cachedCount ?? 0
-        statusMessage = "Caching paused — \(cached) of \(images.count) images cached"
+        statusMessage = "Caching paused"
     }
 
     // Continue caching from where it left off
@@ -671,7 +747,7 @@ class TriageViewModel: ObservableObject {
         }
 
         results.deallocate()
-        statusMessage = "\(total) files cached locally"
+        statusMessage = "ready"
 
         Task.detached(priority: .background) {
             SessionCache.cleanupOldCaches()

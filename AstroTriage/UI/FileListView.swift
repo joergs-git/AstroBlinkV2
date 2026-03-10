@@ -19,6 +19,7 @@ struct FileListView: NSViewRepresentable {
         scrollView.autohidesScrollers = true
 
         let tableView = NSTableView()
+        tableView.identifier = NSUserInterfaceItemIdentifier("fileListTable")
         tableView.style = .plain
         tableView.usesAlternatingRowBackgroundColors = true
         tableView.allowsMultipleSelection = true

@@ -1,4 +1,4 @@
-// v3.2.0
+// v3.3.0
 import SwiftUI
 
 // Root view: toolbar on top, optional side panels (inspector left, session right),
@@ -478,20 +478,21 @@ struct ContentView: View {
 
                         Spacer()
 
-                        // RIGHT SIDE: dimensions, filter, status
-                        if let image = viewModel.selectedImage {
-                            if let w = image.width, let h = image.height {
-                                Text("\(w)x\(h)")
-                                    .font(.system(size: 11, design: .monospaced))
-                                    .foregroundColor(nightFgDim)
-                            }
+                        // RIGHT SIDE: filter, cache/file stats, status
+                        if let image = viewModel.selectedImage,
+                           let filter = image.filter {
+                            statusDivider
+                            Text(filter)
+                                .font(.system(size: 11, weight: .medium, design: .monospaced))
+                                .foregroundColor(nightFgDim)
+                        }
 
-                            if let filter = image.filter {
-                                statusDivider
-                                Text(filter)
-                                    .font(.system(size: 11, weight: .medium, design: .monospaced))
-                                    .foregroundColor(nightFgDim)
-                            }
+                        // Cache and file size info
+                        if !viewModel.images.isEmpty {
+                            statusDivider
+                            Text("\(viewModel.prefetchCachedCount) cached (\(formatBytes(viewModel.cacheMemoryBytes))) — Raw: \(formatBytes(viewModel.totalRawFileSize))")
+                                .font(.system(size: 11, design: .monospaced))
+                                .foregroundColor(nightFgDim)
                         }
 
                         statusDivider
@@ -583,6 +584,16 @@ struct ContentView: View {
         .buttonStyle(.plain)
         .help(tooltip)
         .contentShape(Rectangle())
+    }
+
+    // Format byte count as human-readable string (e.g. "1.2 GB", "384 MB")
+    private func formatBytes(_ bytes: Int64) -> String {
+        let gb = Double(bytes) / (1024.0 * 1024.0 * 1024.0)
+        if gb >= 1.0 {
+            return String(format: "%.1f GB", gb)
+        }
+        let mb = Double(bytes) / (1024.0 * 1024.0)
+        return String(format: "%.0f MB", mb)
     }
 
     // Styled pill for status bar indicators — darker backgrounds for readability

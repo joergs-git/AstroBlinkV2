@@ -204,7 +204,11 @@ struct KeyboardHandler {
 
     private static func findTableViewIn(view: NSView?) -> NSTableView? {
         guard let view = view else { return nil }
-        if let tableView = view as? NSTableView { return tableView }
+        // Only match the file list table, not inspector or other NSTableViews
+        if let tableView = view as? NSTableView,
+           tableView.identifier == NSUserInterfaceItemIdentifier("fileListTable") {
+            return tableView
+        }
         for subview in view.subviews {
             if let found = findTableViewIn(view: subview) {
                 return found

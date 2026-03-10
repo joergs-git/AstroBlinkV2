@@ -1,4 +1,4 @@
-// v2.2.0
+// v3.3.0
 import Foundation
 
 // Table column metadata for NSTableView configuration
@@ -31,6 +31,7 @@ struct ColumnDefinition {
         ColumnDefinition(identifier: "fwhm",        title: "FWHM",      defaultWidth: 55,  minWidth: 40,  isDefaultVisible: true,  isHideable: true),
         ColumnDefinition(identifier: "hfr",         title: "HFR",       defaultWidth: 50,  minWidth: 40,  isDefaultVisible: true,  isHideable: true),
         ColumnDefinition(identifier: "starCount",   title: "Stars",     defaultWidth: 50,  minWidth: 40,  isDefaultVisible: true,  isHideable: true),
+        ColumnDefinition(identifier: "snr",          title: "SNR",       defaultWidth: 50,  minWidth: 40,  isDefaultVisible: true,  isHideable: true),
         ColumnDefinition(identifier: "subfolder",   title: "Subfolder", defaultWidth: 80,  minWidth: 50,  isDefaultVisible: true,  isHideable: true),
         // Hidden-by-default columns
         ColumnDefinition(identifier: "telescope",   title: "Telescope",   defaultWidth: 80,  minWidth: 60, isDefaultVisible: false, isHideable: true),
@@ -65,6 +66,11 @@ struct ColumnDefinition {
         case "focuserTemp": return entry.focuserTemp.map { String(format: "%.1f", $0) } ?? ""
         case "ambientTemp": return entry.ambientTemp.map { String(format: "%.1f", $0) } ?? ""
         case "frameType":   return entry.frameType ?? ""
+        case "snr":
+            // SNR = median / MAD (same formula as Quality Overview)
+            guard let med = entry.noiseMedian, let mad = entry.noiseMAD, mad > 0 else { return "" }
+            let snr = med / mad
+            return String(format: "%.0f", snr)
         default:            return ""
         }
     }
@@ -83,6 +89,9 @@ struct ColumnDefinition {
         case "focuserTemp": return entry.focuserTemp
         case "ambientTemp": return entry.ambientTemp
         case "fileSize":    return entry.fileSize.map { Double($0) }
+        case "snr":
+            guard let med = entry.noiseMedian, let mad = entry.noiseMAD, mad > 0 else { return nil }
+            return Double(med / mad)
         default:            return nil
         }
     }
@@ -91,7 +100,7 @@ struct ColumnDefinition {
     static func isNumericColumn(_ columnId: String) -> Bool {
         switch columnId {
         case "frameNumber", "exposure", "hfr", "starCount", "sensorTemp",
-             "fwhm", "gain", "offset", "focuserTemp", "ambientTemp", "fileSize":
+             "fwhm", "gain", "offset", "focuserTemp", "ambientTemp", "fileSize", "snr":
             return true
         default:
             return false

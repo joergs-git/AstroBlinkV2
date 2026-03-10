@@ -1,4 +1,4 @@
-// v3.2.0
+// v3.3.0
 import SwiftUI
 import AppKit
 
@@ -676,6 +676,9 @@ struct SessionOverviewContentView: View {
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
                 .background(Color(NSColor.controlBackgroundColor))
+
+            // Push all content to the top when panel has extra vertical space
+            Spacer(minLength: 0)
         }
     }
 
@@ -690,21 +693,28 @@ struct SessionOverviewContentView: View {
 
         let helpText = NSAttributedString.qualityHelpContent()
 
-        let textView = NSTextView()
+        let contentWidth: CGFloat = 600
+        let scrollView = NSScrollView(frame: NSRect(x: 0, y: 0, width: contentWidth, height: 750))
+        scrollView.hasVerticalScroller = true
+        scrollView.autohidesScrollers = true
+
+        let textView = NSTextView(frame: NSRect(x: 0, y: 0, width: contentWidth, height: 750))
         textView.isEditable = false
         textView.isSelectable = true
         textView.drawsBackground = true
         textView.backgroundColor = NSColor.textBackgroundColor
+        textView.textContainerInset = NSSize(width: 20, height: 20)
+        textView.autoresizingMask = [.width]
+        textView.isVerticallyResizable = true
+        textView.isHorizontallyResizable = false
+        textView.textContainer?.widthTracksTextView = true
+        textView.textContainer?.containerSize = NSSize(width: contentWidth - 40, height: .greatestFiniteMagnitude)
         textView.textStorage?.setAttributedString(helpText)
-        textView.textContainerInset = NSSize(width: 16, height: 16)
 
-        let scrollView = NSScrollView()
         scrollView.documentView = textView
-        scrollView.hasVerticalScroller = true
-        scrollView.autohidesScrollers = true
 
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 560, height: 620),
+            contentRect: NSRect(x: 0, y: 0, width: 600, height: 750),
             styleMask: [.titled, .closable, .resizable],
             backing: .buffered,
             defer: false
@@ -935,6 +945,30 @@ extension NSAttributedString {
 
         addBody("This table measures the quality of your sub-exposures grouped by filter and date. It helps you spot bad data, compare nights, and decide which subs to keep or discard.")
 
+        // Embed the example screenshot from the asset catalog
+        if let exampleImage = NSImage(named: "QualityHelpExample") {
+            // Scale image to fit within the text column width (~520px with padding)
+            let maxWidth: CGFloat = 520
+            let scale = min(maxWidth / exampleImage.size.width, 1.0)
+            let scaledSize = NSSize(
+                width: exampleImage.size.width * scale,
+                height: exampleImage.size.height * scale
+            )
+
+            let attachment = NSTextAttachment()
+            let cell = NSTextAttachmentCell(imageCell: exampleImage)
+            cell.image?.size = scaledSize
+            attachment.attachmentCell = cell
+
+            result.append(NSAttributedString(string: "\n"))
+            result.append(NSAttributedString(attachment: attachment))
+            result.append(NSAttributedString(string: "\n", attributes: [.font: bodyFont]))
+            addDim("Example: Multi-target session with IC1848 (SHO + Lextr), NGC 6960, and LRG 3-757.")
+            result.append(NSAttributedString(string: "\n", attributes: [.font: bodyFont]))
+        }
+
+        addBody("The upper table shows the integration summary grouped by object, filter, and exposure. The lower \"Quality Overview\" table adds noise, background, and SNR measurements with color-coded mini bar charts for quick comparison.")
+
         addHeading("Columns")
         addMono("Fi     Filter name (Ha, OIII, SII, L, R, G, B ...)")
         addMono("Date   Acquisition date (shown if multi-night session)")
@@ -976,32 +1010,37 @@ extension NSAttributedString {
         result.append(NSAttributedString(string: " = poor\n", attributes: [.font: bodyFont, .foregroundColor: bodyColor]))
 
         addHeading("Real-World Example")
-        addDim("This is from a multi-target, multi-night session with IC1848 (SHO + Lextr):")
+        addDim("Refer to the screenshot above — this is from a real multi-target, multi-night session with IC1848 (SHO + Lextr), NGC 6960, and LRG 3-757. Here is what the numbers tell us:")
 
-        addMono("  Fi    Date   #   Noise     Bkg     SNR")
-        addMono("  L     01-24  6   2.1e-2    0.32     17")
-        addMono("  Lextr 03-05  5   5.7e-3    1.9e-2    3")
-        addMono("  O     11-12  5   1.9e-4    6.7e-4    3")
-        addMono("  O     03-03  28  4.3e-4    1.0e-2   24")
-        addMono("  S     03-03  25  2.9e-4    8.8e-3   31")
-        addMono("  —     02-27  6   2.4e-2    0.11      5")
-        addMono("  All   108    avg 5.9e-3    5.6e-2   15")
+        addMono("  Fi    Date   #   Noise     Bkg      SNR")
+        addMono("  H     11-12  4   1.8e-4    6.2e-4     3")
+        addMono("  H     03-03  28  3.2e-4    9.1e-3    28")
+        addMono("  H     03-06  1   1.2e-3    2.0e-2    17")
+        addMono("  L     01-24  6   2.1e-2    0.32      17")
+        addMono("  Lextr 03-05  5   5.7e-3    1.9e-2     3")
+        addMono("  O     11-12  5   1.9e-4    6.7e-4     3")
+        addMono("  O     03-03  28  4.3e-4    1.0e-2    24")
+        addMono("  S     03-03  25  2.9e-4    8.8e-3    31")
+        addMono("  —     02-27  6   4.4e-3    9.4e-2    22")
+        addMono("  All   108       3.7e-3    5.4e-2    17")
 
         addHeading("What can we learn from this?")
 
-        addBody("1. The L (Luminance) subs from Jan 24 have very high noise (2.1e-2, orange) and a bright background (0.32). SNR is only 17. This was likely a night with thin clouds or moon. The long N bar and huge purple B bar confirm this visually.")
+        addBody("1. H (Ha) from Nov 12 has only 4 subs with excellent noise (1.8e-4, green) but SNR of just 3. Compare this to H from Mar 03 (28 subs, SNR 28) — same filter, vastly different results. The Nov data was likely a very short run or poor conditions.")
 
-        addBody("2. Lextr (Extreme narrowband) on Mar 05 has moderate noise (5.7e-3) but very low SNR of only 3 — this filter passes so little light that even 300s exposures struggle. These subs may need many more frames to be useful.")
+        addBody("2. H from Mar 03 is solid: 28 subs, low noise (3.2e-4, green), and SNR 28 (brown = decent). The long S bar confirms this is your strongest Ha dataset. The single H sub from Mar 06 (SNR 17) is an outlier — possibly an aborted sequence.")
 
-        addBody("3. OIII from Nov 12 (5 subs) has excellent noise (1.9e-4, green) and very low background (6.7e-4), but SNR is only 3. The tiny bar sizes compared to Mar 03 OIII show this was a much shorter/weaker dataset.")
+        addBody("3. L (Luminance) from Jan 24 has the worst data: very high noise (2.1e-2, orange) and extremely bright background (0.32, purple bar!). This was likely a moonlit or cloudy night. SNR is only 17 despite broadband luminance collecting more photons.")
 
-        addBody("4. OIII from Mar 03 (28 subs) is solid: low noise (4.3e-4), moderate background, and SNR 24 (brown = decent). This is your strongest narrowband dataset.")
+        addBody("4. Lextr (Extreme narrowband) on Mar 05 has moderate noise (5.7e-3) but very low SNR of only 3 — this filter passes so little light that even 300s exposures struggle. These subs need many more frames to be useful.")
 
-        addBody("5. SII from Mar 03 is the best data in this session: lowest noise (2.9e-4), SNR 31. The long S bar confirms it visually.")
+        addBody("5. OIII from Nov 12 (5 subs) has excellent noise (1.9e-4, green) and very dark sky (6.7e-4), but SNR is only 3. Compare with OIII from Mar 03 (28 subs, SNR 24) — the Nov data was too short for meaningful signal.")
 
-        addBody("6. The \"—\" row (no filter, Feb 27, 6 subs) has the worst noise (2.4e-2, orange) and background (0.11) with SNR only 5. These subs are problematic — check if clouds, moon, or focus issues were the cause. Consider discarding them.")
+        addBody("6. SII from Mar 03 is the best narrowband data: lowest noise (2.9e-4), SNR 31. The long S bar confirms it visually.")
 
-        addBody("7. The \"All\" summary (108 subs, avg SNR 15) is dragged down by the poor L and unfiltered data. Without those, the narrowband data alone would average much higher.")
+        addBody("7. The \"—\" row (no filter name, Feb 27, 6 subs) shows SNR 22 but higher background (9.4e-2, blue dot). Check if these are test frames or a missing filter assignment in NINA.")
+
+        addBody("8. The \"All\" summary (108 subs, avg SNR 17) is dragged down by the poor L data and short Nov runs. The Mar 03 narrowband data alone averages much higher.")
 
         addHeading("Quick Rules of Thumb")
         addMono("  SNR > 50   Excellent — keep all subs")
