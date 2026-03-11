@@ -32,6 +32,12 @@ struct QualityEstimator {
     /// Compute quality tiers for all images in `entries`.
     /// Returns a mapping URL → QualityTier for images where a tier can be assigned.
     /// Images in groups with < minGroupSize members receive no tier (not included in result).
+    ///
+    /// Metrics used (in order of availability):
+    ///   Tier 1 — from FITS/XISF headers or NINA filename tokens (if present):
+    ///     FWHM, HFR (lower = better), StarCount (higher = better)
+    ///   Always available — from prefetch STF subsample:
+    ///     noiseMAD (lower = better; reflects noise floor, cloud scatter, bad seeing)
     static func computeScores(for entries: [ImageEntry]) -> [URL: QualityTier] {
         // Group images by (filter, object, night, exposure)
         var groups: [GroupKey: [Int]] = [:]
@@ -52,22 +58,26 @@ struct QualityEstimator {
             let isNarrowband = narrowbandKeywords.contains(where: { filterName.contains($0) })
             let starWeight: Double = isNarrowband ? 0.3 : 1.0
 
-            // Compute z-scores for each available Tier-1 metric
+            // Tier-1 metrics from headers / filename tokens (not always present)
             let fwhmZscores  = zscores(values: groupEntries.map { $0.fwhm })
             let hfrZscores   = zscores(values: groupEntries.map { $0.hfr })
             let starsZscores = zscores(values: groupEntries.map { $0.starCount.map { Double($0) } })
+
+            // noiseMAD from STF subsample — always available once prefetch has run.
+            // Lower noiseMAD = less noise scatter = better frame (clouds/bad seeing raise it).
+            let noiseMadZscores = zscores(values: groupEntries.map { $0.noiseMAD.map { Double($0) } })
 
             for (localIdx, globalIdx) in indices.enumerated() {
                 let entry = entries[globalIdx]
 
                 // Collect available per-image weighted z-scores.
-                // FWHM and HFR: lower = better → negate for uniform "higher = better" scale.
+                // FWHM, HFR, noiseMAD: lower = better → negate.
                 // StarCount: higher = better → keep sign.
                 var zSum: Double = 0
                 var wSum: Double = 0
 
                 if let z = fwhmZscores[localIdx] {
-                    zSum += -z * 1.0   // weight 1.0
+                    zSum += -z * 1.0
                     wSum += 1.0
                 }
                 if let z = hfrZscores[localIdx] {
@@ -77,6 +87,10 @@ struct QualityEstimator {
                 if let z = starsZscores[localIdx] {
                     zSum += z * starWeight
                     wSum += starWeight
+                }
+                if let z = noiseMadZscores[localIdx] {
+                    zSum += -z * 1.0
+                    wSum += 1.0
                 }
 
                 // No metrics available for this image → skip

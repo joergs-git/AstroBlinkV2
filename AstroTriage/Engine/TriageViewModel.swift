@@ -683,6 +683,8 @@ class TriageViewModel: ObservableObject {
                     self.appNapAssertion = nil
                     // Update session overview with noise stats now that all images are measured
                     self.sessionOverviewModel.updateStats(from: self.images)
+                    // Recompute quality scores now that noiseMAD is populated for all images
+                    self.recomputeQualityScores()
                 }
             },
             onNoiseStats: { [weak self] url, stats in
