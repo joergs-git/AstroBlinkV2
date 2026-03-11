@@ -40,6 +40,10 @@ struct ImageEntry: Identifiable, Hashable {
     var noiseMedian: Float?    // Background level [0,1] — median of normalized pixel values
     var noiseMAD: Float?       // Noise estimator [0,1] — 1.4826 * median absolute deviation
 
+    // Quality tier (computed after header enrichment via QualityEstimator)
+    // nil = group too small (<20 frames) or metrics unavailable
+    var qualityTier: QualityTier?
+
     // Display helpers
     var filename: String { url.lastPathComponent }
     var fileExtension: String { url.pathExtension.lowercased() }

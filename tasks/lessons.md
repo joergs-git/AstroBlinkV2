@@ -84,3 +84,14 @@
 - **Root cause:** `reloadData()` clears selection, then the sync code only restored a single row
 - **Rule:** Save and restore selection across `reloadData()`. Only override selection when table has ≤1 rows selected (programmatic navigation).
 - **Applies to:** NSViewRepresentable + NSTableView interaction
+
+## [2026-03-10] — Duplicate engine code: use protocol or keep separate V2 views
+- **Decision:** Created separate QuickStackV2ProgressView + StackResultViewV2 rather than refactoring V1 views with generics/protocols
+- **Root cause:** SwiftUI @ObservedObject requires concrete ObservableObject types, making protocol-based generics awkward
+- **Rule:** When adding a V2 engine with identical @Published interface, duplicate the SwiftUI views (typed to V2) rather than over-engineering a protocol. If V2 replaces V1, delete the V1 views entirely.
+- **Applies to:** QuickStackWindow.swift, any SwiftUI view paired with an ObservableObject engine
+
+## [2026-03-10] — Toolbar icon alignment: use Spacer + fixed frame height
+- **Decision:** Icons at top, Spacer pushes labels to bottom, fixed height 48pt, multiline labels
+- **Rule:** For toolbar buttons with varying label lengths, use VStack { Icon; Spacer; Text } with .fixedSize(horizontal: false, vertical: true) and lineLimit(2)
+- **Applies to:** sfToolbarButton in ContentView.swift

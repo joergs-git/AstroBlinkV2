@@ -202,6 +202,11 @@ struct FileListView: NSViewRepresentable {
                 return makeFilenameCellWithCacheIndicator(entry: entry, isNight: isNight, in: tableView)
             }
 
+            // Quality column: SF Symbol icon with semantic color
+            if colId == "quality" {
+                return makeQualityCell(for: entry, in: tableView)
+            }
+
             // Regular text column
             let value = ColumnDefinition.value(for: colId, from: entry)
             let identifier = NSUserInterfaceItemIdentifier("Cell_\(colId)")
@@ -240,6 +245,53 @@ struct FileListView: NSViewRepresentable {
                 cellView.textField?.textColor = .white
             } else {
                 cellView.textField?.textColor = entry.isMarkedForDeletion ? .systemRed : .labelColor
+            }
+
+            return cellView
+        }
+
+        // Quality column cell: centered SF Symbol icon with semantic color.
+        // good=green checkmark, uncertain=orange dash, trash=red xmark, nil=empty.
+        private func makeQualityCell(for entry: ImageEntry, in tableView: NSTableView) -> NSView {
+            let identifier = NSUserInterfaceItemIdentifier("Cell_quality")
+            let cellView: NSTableCellView
+
+            if let reused = tableView.makeView(withIdentifier: identifier, owner: self) as? NSTableCellView {
+                cellView = reused
+            } else {
+                let cell = NSTableCellView()
+                cell.identifier = identifier
+                let imageView = NSImageView()
+                imageView.translatesAutoresizingMaskIntoConstraints = false
+                imageView.imageScaling = .scaleProportionallyDown
+                cell.addSubview(imageView)
+                cell.imageView = imageView
+                NSLayoutConstraint.activate([
+                    imageView.widthAnchor.constraint(equalToConstant: 14),
+                    imageView.heightAnchor.constraint(equalToConstant: 14),
+                    imageView.centerXAnchor.constraint(equalTo: cell.centerXAnchor),
+                    imageView.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
+                ])
+                cellView = cell
+            }
+
+            // Pick icon + color based on tier
+            let (symbolName, color): (String?, NSColor?) = {
+                switch entry.qualityTier {
+                case .good:      return ("checkmark.circle.fill", .systemGreen)
+                case .uncertain: return ("minus.circle.fill",     .systemOrange)
+                case .trash:     return ("xmark.circle.fill",     .systemRed)
+                case nil:        return (nil, nil)
+                }
+            }()
+
+            if let name = symbolName, let color = color,
+               let image = NSImage(systemSymbolName: name, accessibilityDescription: nil) {
+                let config = NSImage.SymbolConfiguration(pointSize: 11, weight: .medium)
+                cellView.imageView?.image = image.withSymbolConfiguration(config)
+                cellView.imageView?.contentTintColor = color
+            } else {
+                cellView.imageView?.image = nil
             }
 
             return cellView

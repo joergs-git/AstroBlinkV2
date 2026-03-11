@@ -1,4 +1,4 @@
-// v3.3.0
+// v3.5.0
 import Foundation
 
 // Table column metadata for NSTableView configuration
@@ -10,18 +10,23 @@ struct ColumnDefinition {
     let isDefaultVisible: Bool
     let isHideable: Bool
 
-    // All available columns in default display order
-    // Order: checkbox, #, filename, object, date, time, type, camera, filter, exp, ambtemp, foctemp, temp, gain, size, fwhm, hfr, stars, subfolder
+    // All available columns in default display order.
+    // New order (v3.5.0): marked, #, filename, filter, quality, date, time, snr,
+    //                     object, type, camera, exp, ambtemp, foctemp, temp, gain,
+    //                     size, fwhm, hfr, stars, subfolder
+    //                     (hidden: telescope, binning, offset)
     static let allColumns: [ColumnDefinition] = [
         ColumnDefinition(identifier: "marked",      title: "",          defaultWidth: 28,  minWidth: 28,  isDefaultVisible: true,  isHideable: false),
         ColumnDefinition(identifier: "frameNumber", title: "#",         defaultWidth: 45,  minWidth: 35,  isDefaultVisible: true,  isHideable: true),
         ColumnDefinition(identifier: "filename",    title: "Filename",  defaultWidth: 280, minWidth: 100, isDefaultVisible: true,  isHideable: false),
-        ColumnDefinition(identifier: "target",      title: "Object",    defaultWidth: 120, minWidth: 60,  isDefaultVisible: true,  isHideable: true),
+        ColumnDefinition(identifier: "filter",      title: "Filter",    defaultWidth: 50,  minWidth: 40,  isDefaultVisible: true,  isHideable: true),
+        ColumnDefinition(identifier: "quality",     title: "Q",         defaultWidth: 28,  minWidth: 28,  isDefaultVisible: true,  isHideable: true),
         ColumnDefinition(identifier: "date",        title: "Date",      defaultWidth: 85,  minWidth: 70,  isDefaultVisible: true,  isHideable: true),
         ColumnDefinition(identifier: "time",        title: "Time",      defaultWidth: 75,  minWidth: 60,  isDefaultVisible: true,  isHideable: true),
+        ColumnDefinition(identifier: "snr",         title: "SNR",       defaultWidth: 50,  minWidth: 40,  isDefaultVisible: true,  isHideable: true),
+        ColumnDefinition(identifier: "target",      title: "Object",    defaultWidth: 120, minWidth: 60,  isDefaultVisible: true,  isHideable: true),
         ColumnDefinition(identifier: "frameType",   title: "Type",      defaultWidth: 50,  minWidth: 40,  isDefaultVisible: true,  isHideable: true),
         ColumnDefinition(identifier: "camera",      title: "Camera",    defaultWidth: 120, minWidth: 80,  isDefaultVisible: true,  isHideable: true),
-        ColumnDefinition(identifier: "filter",      title: "Filter",    defaultWidth: 50,  minWidth: 40,  isDefaultVisible: true,  isHideable: true),
         ColumnDefinition(identifier: "exposure",    title: "Exp",       defaultWidth: 50,  minWidth: 40,  isDefaultVisible: true,  isHideable: true),
         ColumnDefinition(identifier: "ambientTemp", title: "Amb°C",     defaultWidth: 55,  minWidth: 40,  isDefaultVisible: true,  isHideable: true),
         ColumnDefinition(identifier: "focuserTemp", title: "Foc°C",     defaultWidth: 55,  minWidth: 40,  isDefaultVisible: true,  isHideable: true),
@@ -31,22 +36,23 @@ struct ColumnDefinition {
         ColumnDefinition(identifier: "fwhm",        title: "FWHM",      defaultWidth: 55,  minWidth: 40,  isDefaultVisible: true,  isHideable: true),
         ColumnDefinition(identifier: "hfr",         title: "HFR",       defaultWidth: 50,  minWidth: 40,  isDefaultVisible: true,  isHideable: true),
         ColumnDefinition(identifier: "starCount",   title: "Stars",     defaultWidth: 50,  minWidth: 40,  isDefaultVisible: true,  isHideable: true),
-        ColumnDefinition(identifier: "snr",          title: "SNR",       defaultWidth: 50,  minWidth: 40,  isDefaultVisible: true,  isHideable: true),
         ColumnDefinition(identifier: "subfolder",   title: "Subfolder", defaultWidth: 80,  minWidth: 50,  isDefaultVisible: true,  isHideable: true),
         // Hidden-by-default columns
-        ColumnDefinition(identifier: "telescope",   title: "Telescope",   defaultWidth: 80,  minWidth: 60, isDefaultVisible: false, isHideable: true),
-        ColumnDefinition(identifier: "binning",     title: "Binning",     defaultWidth: 55,  minWidth: 40, isDefaultVisible: false, isHideable: true),
-        ColumnDefinition(identifier: "offset",      title: "Offset",      defaultWidth: 50,  minWidth: 35, isDefaultVisible: false, isHideable: true),
+        ColumnDefinition(identifier: "telescope",   title: "Telescope", defaultWidth: 80,  minWidth: 60,  isDefaultVisible: false, isHideable: true),
+        ColumnDefinition(identifier: "binning",     title: "Binning",   defaultWidth: 55,  minWidth: 40,  isDefaultVisible: false, isHideable: true),
+        ColumnDefinition(identifier: "offset",      title: "Offset",    defaultWidth: 50,  minWidth: 35,  isDefaultVisible: false, isHideable: true),
     ]
 
     // Default visible column identifiers (factory defaults)
     static let defaultVisibleColumnIds: [String] = allColumns.filter(\.isDefaultVisible).map(\.identifier)
 
-    // Get the string value for a given column from an ImageEntry
+    // Get the string value for a given column from an ImageEntry.
+    // The "quality" column returns "" — its cell is rendered as an SF Symbol icon, not text.
     static func value(for columnId: String, from entry: ImageEntry) -> String {
         switch columnId {
         case "frameNumber": return entry.frameNumber.map { String($0) } ?? ""
         case "filter":      return entry.filter ?? ""
+        case "quality":     return ""  // Icon cell; handled separately in FileListView
         case "time":        return entry.time ?? ""
         case "date":        return entry.date ?? ""
         case "exposure":    return entry.exposure.map { formatExposure($0) } ?? ""
@@ -75,7 +81,7 @@ struct ColumnDefinition {
         }
     }
 
-    // Get a numeric value for sorting (returns nil for non-numeric columns)
+    // Get a numeric value for sorting (returns nil for non-numeric / non-sortable columns)
     static func numericValue(for columnId: String, from entry: ImageEntry) -> Double? {
         switch columnId {
         case "frameNumber": return entry.frameNumber.map { Double($0) }
@@ -89,6 +95,7 @@ struct ColumnDefinition {
         case "focuserTemp": return entry.focuserTemp
         case "ambientTemp": return entry.ambientTemp
         case "fileSize":    return entry.fileSize.map { Double($0) }
+        case "quality":     return entry.qualityTier.map { Double($0.rawValue) }
         case "snr":
             guard let med = entry.noiseMedian, let mad = entry.noiseMAD, mad > 0 else { return nil }
             return Double(med / mad)
@@ -96,11 +103,25 @@ struct ColumnDefinition {
         }
     }
 
-    // Returns true if this column has numeric values (for default descending sort)
+    // Returns true for columns that should sort descending by default when used as a sort key.
+    // Numeric columns: highest value first.
+    // Date/time columns: newest first (lexicographic descending works for ISO-8601 format).
+    static func isDefaultDescending(_ columnId: String) -> Bool {
+        switch columnId {
+        case "frameNumber", "exposure", "hfr", "starCount", "sensorTemp",
+             "fwhm", "gain", "offset", "focuserTemp", "ambientTemp", "fileSize", "snr",
+             "quality", "date", "time":
+            return true
+        default:
+            return false
+        }
+    }
+
+    // Returns true if this column has numeric values (used for header click sort indicator)
     static func isNumericColumn(_ columnId: String) -> Bool {
         switch columnId {
         case "frameNumber", "exposure", "hfr", "starCount", "sensorTemp",
-             "fwhm", "gain", "offset", "focuserTemp", "ambientTemp", "fileSize", "snr":
+             "fwhm", "gain", "offset", "focuserTemp", "ambientTemp", "fileSize", "snr", "quality":
             return true
         default:
             return false

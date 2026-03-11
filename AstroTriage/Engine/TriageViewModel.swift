@@ -927,6 +927,8 @@ class TriageViewModel: ObservableObject {
                 self.benchmarkStats.markHeaderEnrichEnd()
                 self.sessionOverviewModel.updateStats(from: self.images)
                 self.hasOSCImages = foundOSC
+                // Compute relative quality scores now that all header metadata is available
+                self.recomputeQualityScores()
                 self.detectMeridianFlip()
                 // Update rotation for current image now that pier side data is available
                 self.updateMeridianRotation()
@@ -941,6 +943,40 @@ class TriageViewModel: ObservableObject {
                 }
             }
         }
+    }
+
+    // MARK: - Quality Estimation
+
+    // Compute or recompute quality tiers for all images using QualityEstimator.
+    // Called after header enrichment completes (FWHM, HFR, StarCount are now populated).
+    // Also call this after adding a new folder to the session (new images may change group stats).
+    func recomputeQualityScores() {
+        let scores = QualityEstimator.computeScores(for: images)
+        for index in images.indices {
+            images[index].qualityTier = scores[images[index].url]
+        }
+        // Notify table that quality column cells need redrawing
+        needsTableRefresh = true
+
+        let scored = scores.count
+        let total  = images.count
+        if scored > 0 {
+            statusMessage = "Quality scored: \(scored)/\(total) images in \(countGroups(scores)) group(s)"
+        }
+    }
+
+    /// Count distinct groups that produced at least one score
+    private func countGroups(_ scores: [URL: QualityTier]) -> Int {
+        // Use a set of GroupKey-equivalent tuples built from scored images
+        var groups = Set<String>()
+        for entry in images where scores[entry.url] != nil {
+            let filter = (entry.filter   ?? "").uppercased()
+            let object = entry.target    ?? ""
+            let night  = String((entry.date ?? "").prefix(10))
+            let exp    = String(entry.exposure.map { Int($0.rounded()) } ?? 0)
+            groups.insert("\(filter)|\(object)|\(night)|\(exp)")
+        }
+        return groups.count
     }
 
     // MARK: - Stretch Strength (current image only)
@@ -2049,19 +2085,19 @@ class TriageViewModel: ObservableObject {
         statusMessage = "Sorted: \(sortInfo)"
     }
 
-    // Sort by the first 3 visible columns (excluding the marked checkbox).
+    // Sort by the first 4 visible columns (excluding the marked checkbox).
     // Moving a column to position 1 makes it the primary sort key,
-    // position 2 = secondary, position 3 = tertiary.
-    // Numeric columns default to descending (highest first),
-    // text columns default to ascending (A-Z).
+    // position 2 = secondary, position 3 = tertiary, position 4 = quaternary.
+    // Uses isDefaultDescending: numeric AND date/time columns sort descending by default
+    // (newest date first, highest SNR first, etc.), text columns ascending (A-Z).
     func applySortByColumnOrder(_ columnIdentifiers: [String]) {
         let sortColumns = Array(
             columnIdentifiers
                 .filter { $0 != "marked" }
-                .prefix(3)
+                .prefix(4)
         )
         let descriptors = sortColumns.map { colId in
-            let ascending = !ColumnDefinition.isNumericColumn(colId)
+            let ascending = !ColumnDefinition.isDefaultDescending(colId)
             return NSSortDescriptor(key: colId, ascending: ascending)
         }
 
