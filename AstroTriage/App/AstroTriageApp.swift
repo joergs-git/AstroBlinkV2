@@ -58,6 +58,11 @@ struct AstroBlinkV2App: App {
 // Custom app delegate for About panel and cleanup
 class AstroBlinkV2AppDelegate: NSObject, NSApplicationDelegate {
 
+    // Quit the app when the main window is closed (single-window app)
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        return true
+    }
+
     // Clean up all caches when the app quits so nothing piles up on disk
     func applicationWillTerminate(_ notification: Notification) {
         SessionCache.cleanupAllCaches()

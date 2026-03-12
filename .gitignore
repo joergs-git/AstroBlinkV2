@@ -35,7 +35,9 @@ default.profraw
 .claude/
 
 # Test images (too large for git, even with LFS)
-TestImages/
+TestImages/*
+# Exception: Apple Review sample files (tracked via Git LFS)
+!TestImages/TESTFILES_FOR_APPLEREVIEW/
 
 # Internal dev docs (not needed in public repo)
 CAVEATS.md
