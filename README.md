@@ -182,7 +182,7 @@ After a night of imaging you might have 200-600 sub-exposures. Some have clouds,
 
 ### Computed Star Metrics (HFR & FWHM)
 - **GPU-accelerated star detection** — during session loading, every frame is analyzed for stars using a Metal compute kernel on the GPU (~3-5ms per image)
-- **HFR & FWHM measurement** — Half-Flux Radius and Full Width at Half Maximum are computed for the brightest unsaturated stars in each frame
+- **HFR & FWHM measurement** — Half-Flux Radius and Full Width at Half Maximum are computed via Gaussian fitting for the brightest unsaturated stars in each frame
 - **Automatic quality scoring** — computed metrics feed into the quality estimator for z-score based frame ranking (good/uncertain/trash)
 - **Works without NINA** — even if your capture software doesn't provide HFR/FWHM, AstroBlinkV2 computes them from the actual image data
 - **Per-group source consistency** — when mixing images with and without capture-software HFR, quality scoring uses a single consistent measurement method per group to ensure fair comparison
@@ -190,16 +190,18 @@ After a night of imaging you might have 200-600 sub-exposures. Some have clouds,
 ### Metadata & Session Overview
 - NINA filename parsing — automatically extracts target, filter, exposure, gain, temperature, HFR, star count, and more
 - FITS/XISF header reading — pulls metadata directly from file headers (filter, exposure, camera, telescope, mount, coordinates, pier side, etc.)
-- Header Inspector (I key) — floating window with all FITS/XISF keywords, search filtering, highlighted important keywords, scroll position preserved
+- Header Inspector (I key) — floating window with all FITS/XISF keywords, search filtering, highlighted important keywords, scroll position preserved, multi-row selection with Cmd+C copy and "Copy All" button
 - Session Overview — per-object/filter/exposure breakdown with total integration time
 - Quality Overview — per-filter noise, background, and SNR statistics with color-coded bars
 - Interactive quality help — click ? for beginner-friendly explanation with real-world examples and rules of thumb
 - Fact Sheet generator — one click copies a ready-to-paste summary with hashtags for Astrobin, Instagram, or forums
-- Auto Meridian Flip — automatically rotates images across pier side changes for consistent orientation
+- Auto Meridian Flip — automatically rotates images across pier side changes for consistent orientation. Supports both PIERSIDE header and ROTATOR angle fallback (for mounts like ASIAIR on AM5 that don't write PIERSIDE)
+- Astronomical observing night — sessions spanning midnight are treated as one night. Quality scoring and grouping use the evening date, not the calendar date
 
 ### File List & Sorting
-- 19+ sortable columns — click any column header to sort, drag to reorder
-- Columns include: #, Filename, Object, Date, Time, Type, Camera, Filter, Exposure, Ambient Temp, Focuser Temp, Sensor Temp, Gain, Size, FWHM, HFR, Stars, Subfolder, and more
+- 20+ sortable columns — click any column header to sort, drag to reorder
+- Columns include: #, Filter, Q (quality), SNR, FWHM, HFR, Night (observing night), Time, Object, Filename, Type, Camera, Exposure, Temps, Gain, Size, Stars, Subfolder, and more
+- Quality tooltips — hover over Q column for score explanations or why a score is missing
 - Right-click context menu — copy filename, file path, or full path
 - Smart folder scanning — opens root images only when present, scans subfolders when root is empty
 - Individual file selection — select specific files instead of entire folders
