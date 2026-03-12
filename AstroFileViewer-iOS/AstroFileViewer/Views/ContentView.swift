@@ -423,6 +423,8 @@ class ZoomableImageView: UIScrollView, UIScrollViewDelegate {
 
         imageView.contentMode = .scaleAspectFit
         imageView.clipsToBounds = true
+        // Trilinear filtering reduces Moiré artifacts when image is zoomed out
+        imageView.layer.minificationFilter = .trilinear
         addSubview(imageView)
 
         updateTexture(texture)
