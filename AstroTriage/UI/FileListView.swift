@@ -275,15 +275,17 @@ struct FileListView: NSViewRepresentable {
                 cellView = cell
             }
 
-            // Pick icon + color based on tier
-            let (symbolName, color): (String?, NSColor?) = {
+            // Pick icon + color + tooltip based on tier
+            let (symbolName, color, tooltip): (String?, NSColor?, String) = {
                 switch entry.qualityTier {
-                case .good:      return ("checkmark.circle.fill", .systemGreen)
-                case .uncertain: return ("minus.circle.fill",     .systemOrange)
-                case .trash:     return ("xmark.circle.fill",     .systemRed)
-                case nil:        return (nil, nil)
+                case .good:      return ("checkmark.circle.fill", .systemGreen, "Above average quality (z > 0.5)")
+                case .uncertain: return ("minus.circle.fill",     .systemOrange, "Average quality (-1.0 ≤ z ≤ 0.5)")
+                case .trash:     return ("xmark.circle.fill",     .systemRed, "Below average quality (z < -1.0)")
+                case nil:        return (nil, nil, "No quality score — needs ≥\(QualityEstimator.minGroupSize) images per filter/object/night/exposure group")
                 }
             }()
+
+            cellView.toolTip = tooltip
 
             if let name = symbolName, let color = color,
                let image = NSImage(systemSymbolName: name, accessibilityDescription: nil) {

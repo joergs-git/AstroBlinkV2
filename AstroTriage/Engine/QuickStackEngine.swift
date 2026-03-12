@@ -317,103 +317,18 @@ class QuickStackEngine: ObservableObject {
         progress = 1.0
     }
 
-    // MARK: - Star Detection
+    // MARK: - Star Detection (delegates to shared StarDetector)
 
-    // Simple star detection: threshold above background + centroid extraction
-    // Operates on subsampled data for speed (~1-2ms per frame)
-    struct Star: Comparable {
-        let x: Float     // Sub-pixel position in full-res coordinates
-        let y: Float
-        let brightness: Float
-
-        static func < (lhs: Star, rhs: Star) -> Bool {
-            lhs.brightness > rhs.brightness  // Sort brightest first
-        }
-    }
+    // Type alias for compatibility with triangle matching code
+    typealias Star = DetectedStar
 
     private nonisolated func detectStars(in image: DecodedImage) -> [Star] {
-        let w = image.width
-        let h = image.height
-        let ptr = image.buffer.contents().bindMemory(to: UInt16.self, capacity: w * h)
-
-        // Subsample for speed
-        let subW = w / subsampleFactor
-        let subH = h / subsampleFactor
-        guard subW > 10, subH > 10 else { return [] }
-
-        // Build subsampled float array (first channel only for star detection)
-        var subData = [Float](repeating: 0, count: subW * subH)
-        for sy in 0..<subH {
-            for sx in 0..<subW {
-                let srcIdx = sy * subsampleFactor * w + sx * subsampleFactor
-                subData[sy * subW + sx] = Float(ptr[srcIdx])
-            }
-        }
-
-        // Compute background median and MAD for threshold
-        var sorted = subData
-        vDSP_vsort(&sorted, vDSP_Length(sorted.count), 1)
-        let median = sorted[sorted.count / 2]
-
-        var deviations = subData
-        let negMedian = -median
-        vDSP_vsadd(deviations, 1, [negMedian], &deviations, 1, vDSP_Length(deviations.count))
-        vDSP_vabs(deviations, 1, &deviations, 1, vDSP_Length(deviations.count))
-        vDSP_vsort(&deviations, vDSP_Length(deviations.count), 1)
-        let mad = deviations[deviations.count / 2]
-        let sigma = 1.4826 * mad
-
-        guard sigma > 0 else { return [] }
-        let threshold = median + sigmaThreshold * sigma
-
-        // Find local maxima above threshold (simple 3x3 neighborhood check)
-        var stars: [Star] = []
-        let border = 2
-
-        for sy in border..<(subH - border) {
-            for sx in border..<(subW - border) {
-                let val = subData[sy * subW + sx]
-                guard val > threshold else { continue }
-
-                // Check if local maximum in 3x3 neighborhood
-                var isMax = true
-                for dy in -1...1 {
-                    for dx in -1...1 {
-                        if dx == 0 && dy == 0 { continue }
-                        if subData[(sy + dy) * subW + (sx + dx)] >= val {
-                            isMax = false
-                            break
-                        }
-                    }
-                    if !isMax { break }
-                }
-                guard isMax else { continue }
-
-                // Compute weighted centroid in 3x3 neighborhood for sub-pixel accuracy
-                var sumX: Float = 0, sumY: Float = 0, sumW: Float = 0
-                for dy in -1...1 {
-                    for dx in -1...1 {
-                        let v = subData[(sy + dy) * subW + (sx + dx)] - median
-                        if v > 0 {
-                            sumX += Float(sx + dx) * v
-                            sumY += Float(sy + dy) * v
-                            sumW += v
-                        }
-                    }
-                }
-
-                if sumW > 0 {
-                    // Convert back to full-res coordinates
-                    let fullX = (sumX / sumW) * Float(subsampleFactor)
-                    let fullY = (sumY / sumW) * Float(subsampleFactor)
-                    stars.append(Star(x: fullX, y: fullY, brightness: val - median))
-                }
-            }
-        }
-
-        // Keep only the brightest N stars
-        stars.sort()
-        return Array(stars.prefix(maxStars))
+        return StarDetector.detectStars(
+            in: image,
+            maxStars: maxStars,
+            subsampleFactor: subsampleFactor,
+            sigmaThreshold: sigmaThreshold
+        )
     }
 
     // MARK: - Triangle Matching

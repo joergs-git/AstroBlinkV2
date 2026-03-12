@@ -180,6 +180,13 @@ After a night of imaging you might have 200-600 sub-exposures. Some have clouds,
 - Arrow keys stop at boundaries (no wrap-around)
 - Page Up/Home and Page Down/End for jump to first/last image
 
+### Computed Star Metrics (HFR & FWHM)
+- **GPU-accelerated star detection** — during session loading, every frame is analyzed for stars using a Metal compute kernel on the GPU (~3-5ms per image)
+- **HFR & FWHM measurement** — Half-Flux Radius and Full Width at Half Maximum are computed for the brightest unsaturated stars in each frame
+- **Automatic quality scoring** — computed metrics feed into the quality estimator for z-score based frame ranking (good/uncertain/trash)
+- **Works without NINA** — even if your capture software doesn't provide HFR/FWHM, AstroBlinkV2 computes them from the actual image data
+- **Per-group source consistency** — when mixing images with and without capture-software HFR, quality scoring uses a single consistent measurement method per group to ensure fair comparison
+
 ### Metadata & Session Overview
 - NINA filename parsing — automatically extracts target, filter, exposure, gain, temperature, HFR, star count, and more
 - FITS/XISF header reading — pulls metadata directly from file headers (filter, exposure, camera, telescope, mount, coordinates, pier side, etc.)
@@ -385,6 +392,14 @@ NormalStacker uses more stars (50 vs 30) and builds more triangles (455 vs 120),
 - **Mixed focal length sessions** — where scale differences push stars to the edge of matching tolerance
 
 If LightspeedStacker fails to align some frames, try NormalStacker on the same selection.
+
+### Why don't the computed HFR/FWHM values match what NINA reports?
+
+Different software measures HFR/FWHM differently. NINA measures during capture (often on a subframe), while AstroBlinkV2 measures post-capture on the full saved frame with its own star detection algorithm. The absolute numbers will differ, but the *relative ranking* (which frames are better/worse) should be very consistent. AstroBlinkV2's quality scoring always uses the same measurement method across all frames in a group to ensure fair comparison.
+
+### Is the quality scoring scientifically accurate?
+
+The quality scoring is designed for *triage* — quickly identifying the best and worst frames for stacking decisions. It uses robust statistical methods (median HFR, FWHM, noise estimation, z-scores within groups) but is not intended to replace scientific photometry tools like PixInsight or AstroImageJ. Think of it as a fast, automated version of the visual blinking you'd do in PixInsight's Blink tool, enhanced with quantitative metrics.
 
 ### Is this scientific stacking?
 

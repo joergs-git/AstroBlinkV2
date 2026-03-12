@@ -698,6 +698,15 @@ class TriageViewModel: ObservableObject {
                     self.images[idx].noiseMedian = stats.median
                     self.images[idx].noiseMAD = stats.normalizedMAD
                 }
+            },
+            onStarMetrics: { [weak self] url, metrics in
+                guard let self = self else { return }
+                // Store computed star metrics (always computed for per-group source consistency)
+                if let idx = self.images.firstIndex(where: { $0.url == url }) {
+                    self.images[idx].computedHFR = metrics.medianHFR
+                    self.images[idx].computedFWHM = metrics.medianFWHM
+                    self.images[idx].computedStarCount = metrics.measuredStarCount
+                }
             }
         )
     }
@@ -908,6 +917,12 @@ class TriageViewModel: ObservableObject {
                         }
                     }
 
+                    // Rotator angle for meridian flip fallback (ASIAIR/AM5 mounts)
+                    let rotVal = headers["ROTATOR"] ?? headers.first(where: { $0.key.uppercased() == "ROTATOR" })?.value
+                    if let rot = rotVal, let val = Double(rot) {
+                        self.images[index].rotatorAngle = val
+                    }
+
                     // Object coordinates for meridian flip matching
                     // Case-insensitive key lookup, strip FITS single-quote wrappers
                     let raVal = headers["OBJCTRA"] ?? headers.first(where: { $0.key.uppercased() == "OBJCTRA" })?.value
@@ -1112,36 +1127,104 @@ class TriageViewModel: ObservableObject {
     }
 
     // Detect meridian flip in session after headers are loaded.
-    // Sets reference pier side from first image and checks for flip.
+    // Primary: PIERSIDE header (EAST/WEST). Fallback: ROTATOR angle (~180° change).
     func detectMeridianFlip() {
         let withPierSide = images.filter { $0.pierSide != nil }
-        guard !withPierSide.isEmpty else {
+
+        if !withPierSide.isEmpty {
+            // Primary detection via PIERSIDE header
+            referencePierSide = withPierSide.first?.pierSide
+            if let first = withPierSide.first {
+                if let ra = first.objctRA, let dec = first.objctDec {
+                    referenceCoords = (ra: ra, dec: dec)
+                }
+            }
+
+            let sides = Set(withPierSide.compactMap { $0.pierSide })
+            hasMeridianFlip = sides.count > 1
+
+            let eastCount = withPierSide.filter { $0.pierSide == "EAST" }.count
+            let westCount = withPierSide.filter { $0.pierSide == "WEST" }.count
+            if hasMeridianFlip {
+                print("[Meridian] Flip detected via PIERSIDE: \(eastCount) EAST, \(westCount) WEST")
+            } else {
+                print("[Meridian] All images on same side: \(referencePierSide ?? "?") (\(withPierSide.count) images)")
+            }
+            return
+        }
+
+        // Fallback: detect meridian flip from ROTATOR angle change (~180°)
+        // ASIAIR/AM5 mounts write ROTATOR but not PIERSIDE.
+        // After a meridian flip, rotator angle changes by ~180° (±20° tolerance).
+        let withRotator = images.filter { $0.rotatorAngle != nil }
+        guard withRotator.count >= 2 else {
             hasMeridianFlip = false
             referencePierSide = nil
             referenceCoords = nil
             return
         }
 
-        // Reference = first image's pier side
-        referencePierSide = withPierSide.first?.pierSide
-        if let first = withPierSide.first {
+        let refAngle = withRotator.first!.rotatorAngle!
+        if let first = withRotator.first {
             if let ra = first.objctRA, let dec = first.objctDec {
                 referenceCoords = (ra: ra, dec: dec)
             }
         }
 
-        // Check if we have both EAST and WEST in the session
-        let sides = Set(withPierSide.compactMap { $0.pierSide })
-        hasMeridianFlip = sides.count > 1
+        // Classify images into two groups based on rotator angle:
+        // "same side" = within 30° of reference, "flipped" = within 30° of reference+180°
+        var sameCount = 0
+        var flippedCount = 0
+        let flipThreshold: Double = 30.0  // degrees tolerance
 
-        // Count images per side for status feedback
-        let eastCount = withPierSide.filter { $0.pierSide == "EAST" }.count
-        let westCount = withPierSide.filter { $0.pierSide == "WEST" }.count
-        if hasMeridianFlip {
-            print("[Meridian] Flip detected: \(eastCount) EAST, \(westCount) WEST — ref: \(referencePierSide ?? "?"), coords: \(referenceCoords?.ra ?? "nil") / \(referenceCoords?.dec ?? "nil")")
-        } else if !withPierSide.isEmpty {
-            print("[Meridian] All images on same side: \(referencePierSide ?? "?") (\(withPierSide.count) images)")
+        for img in withRotator {
+            let angle = img.rotatorAngle!
+            let diff = angleDifference(angle, refAngle)
+            if diff <= flipThreshold {
+                sameCount += 1
+            } else if Swift.abs(diff - 180.0) <= flipThreshold {
+                flippedCount += 1
+            }
+            // Anything else: ambiguous, skip
         }
+
+        hasMeridianFlip = sameCount > 0 && flippedCount > 0
+
+        if hasMeridianFlip {
+            // Infer pier side from rotator angle groups and set on images
+            let flippedAngle = normalizeAngle(refAngle + 180.0)
+            referencePierSide = "EAST"  // Arbitrary assignment for first group
+            for i in images.indices {
+                guard let angle = images[i].rotatorAngle else { continue }
+                let diff = angleDifference(angle, refAngle)
+                if diff <= flipThreshold {
+                    images[i].pierSide = "EAST"
+                } else if Swift.abs(diff - 180.0) <= flipThreshold {
+                    images[i].pierSide = "WEST"
+                }
+            }
+
+            let eastCount = images.filter { $0.pierSide == "EAST" }.count
+            let westCount = images.filter { $0.pierSide == "WEST" }.count
+            print("[Meridian] Flip detected via ROTATOR angle: \(eastCount) EAST (ref ~\(String(format: "%.0f", refAngle))°), \(westCount) WEST (~\(String(format: "%.0f", flippedAngle))°)")
+        } else {
+            referencePierSide = nil
+            print("[Meridian] No flip detected via ROTATOR (\(withRotator.count) images, ref angle ~\(String(format: "%.0f", refAngle))°)")
+        }
+    }
+
+    // Compute absolute angle difference in [0, 180] range
+    private func angleDifference(_ a: Double, _ b: Double) -> Double {
+        var diff = Swift.abs(a - b).truncatingRemainder(dividingBy: 360.0)
+        if diff > 180.0 { diff = 360.0 - diff }
+        return diff
+    }
+
+    // Normalize angle to [0, 360) range
+    private func normalizeAngle(_ a: Double) -> Double {
+        var result = a.truncatingRemainder(dividingBy: 360.0)
+        if result < 0 { result += 360.0 }
+        return result
     }
 
     // Compare RA/DEC coordinate strings with generous tolerance.

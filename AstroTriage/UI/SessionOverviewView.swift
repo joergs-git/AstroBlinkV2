@@ -283,16 +283,17 @@ class SessionOverviewModel: ObservableObject {
             let date: String?
         }
 
-        // Check if we have multiple dates (multi-night session)
-        let uniqueDates = Set(withNoise.compactMap { $0.date })
-        let useDate = uniqueDates.count > 1
+        // Check if we have multiple observing nights (multi-night session)
+        // Uses astronomical night (evening date) so sessions spanning midnight stay grouped
+        let uniqueNights = Set(withNoise.compactMap { $0.observingNight })
+        let useDate = uniqueNights.count > 1
 
         var grouped: [GroupKey: [(median: Float, mad: Float)]] = [:]
 
         for entry in withNoise {
             guard let median = entry.noiseMedian, let mad = entry.noiseMAD else { continue }
             let filter = entry.filter ?? "none"
-            let date = useDate ? entry.date : nil
+            let date = useDate ? entry.observingNight : nil
             let key = GroupKey(filter: filter, date: date)
             grouped[key, default: []].append((median: median, mad: mad))
         }

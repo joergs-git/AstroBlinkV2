@@ -178,7 +178,8 @@ struct HeaderScrollView: NSViewRepresentable {
         tableView.backgroundColor = .clear
         tableView.rowHeight = 22
         tableView.intercellSpacing = NSSize(width: 0, height: 0)
-        tableView.selectionHighlightStyle = .none
+        tableView.selectionHighlightStyle = .regular
+        tableView.allowsMultipleSelection = true
         tableView.usesAlternatingRowBackgroundColors = false
 
         let keyCol = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("key"))
@@ -260,6 +261,23 @@ struct HeaderScrollView: NSViewRepresentable {
         func tableView(_ tableView: NSTableView, heightOfRow row: Int) -> CGFloat {
             22
         }
+
+        // Copy selected rows as "KEY = VALUE" lines (Cmd+C)
+        @objc func copy(_ sender: Any?) {
+            guard let tableView = tableView else { return }
+            let selectedRows = tableView.selectedRowIndexes
+            guard !selectedRows.isEmpty else { return }
+
+            let lines = selectedRows.compactMap { row -> String? in
+                guard row < entries.count else { return nil }
+                let e = entries[row]
+                return "\(e.key) = \(e.value)"
+            }
+
+            let text = lines.joined(separator: "\n")
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(text, forType: .string)
+        }
     }
 }
 
@@ -278,6 +296,19 @@ struct HeaderInspectorContentView: View {
                     .truncationMode(.middle)
 
                 Spacer()
+
+                Button(action: {
+                    // Copy all headers as "KEY = VALUE" lines
+                    let lines = model.filteredHeaders.map { "\($0.key) = \($0.value)" }
+                    let text = lines.joined(separator: "\n")
+                    NSPasteboard.general.clearContents()
+                    NSPasteboard.general.setString(text, forType: .string)
+                }) {
+                    Image(systemName: "doc.on.doc")
+                        .font(.system(size: 11))
+                }
+                .buttonStyle(.plain)
+                .help("Copy all headers to clipboard")
 
                 Text("\(model.headers.count) keywords")
                     .font(.system(size: 12))

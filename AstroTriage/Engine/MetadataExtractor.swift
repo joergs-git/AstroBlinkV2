@@ -178,6 +178,12 @@ struct MetadataExtractor {
             }
         }
 
+        // Rotator angle for meridian flip fallback (when PIERSIDE unavailable)
+        // ASIAIR/AM5 mounts report ROTATOR angle that changes ~180° across meridian flip
+        if let rot = headers["ROTATOR"], let val = Double(rot) {
+            entry.rotatorAngle = val
+        }
+
         // Object coordinates for meridian flip matching (more reliable than target name)
         // Strip FITS single-quote wrappers from coordinate strings
         if let ra = headers["OBJCTRA"], !ra.isEmpty {

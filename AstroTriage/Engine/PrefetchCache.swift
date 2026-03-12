@@ -59,7 +59,8 @@ class PrefetchCache {
         lockedSTFParams: [STFParams]? = nil,
         postProcessParams: (sharpening: Float, contrast: Float, darkLevel: Float)? = nil,
         onProgress: @escaping (Int, Int) -> Void,
-        onNoiseStats: ((URL, STFCalculator.NoiseStats) -> Void)? = nil
+        onNoiseStats: ((URL, STFCalculator.NoiseStats) -> Void)? = nil,
+        onStarMetrics: ((URL, StarMetrics) -> Void)? = nil
     ) {
         // Build lookup for Bayer patterns by URL (only used when debayer is enabled)
         let bayerPatterns: [URL: String]
@@ -133,6 +134,21 @@ class PrefetchCache {
                     if let onNoiseStats = onNoiseStats {
                         let stats = STFCalculator.measureNoise(from: imageForSTF)
                         Task { @MainActor in onNoiseStats(url, stats) }
+                    }
+
+                    // 2c. GPU star detection + CPU HFR/FWHM measurement (~5-7ms per image)
+                    // Always computed for all images to support per-group source consistency
+                    if let onStarMetrics = onStarMetrics {
+                        let channel = imageForSTF.channelCount == 3 ? 1 : 0  // Green for OSC
+                        let stars = generator?.detectStarsFromImage(imageForSTF, channel: channel) ?? []
+                        if !stars.isEmpty {
+                            let metrics = StarMetricsCalculator.measure(
+                                stars: stars, fullResImage: imageForSTF, channel: channel
+                            )
+                            if let metrics = metrics {
+                                Task { @MainActor in onStarMetrics(url, metrics) }
+                            }
+                        }
                     }
 
                     // 3. Compute STF params: use locked params (exact c0/mb) or per-image auto

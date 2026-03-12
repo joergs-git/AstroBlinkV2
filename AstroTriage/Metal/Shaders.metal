@@ -324,6 +324,69 @@ kernel void post_process(
     output.write(color, gid);
 }
 
+// ==========================================================================
+// GPU Star Detection — threshold + 3x3 local maxima on binned uint16 data
+// Operates on the bin2x output buffer (already computed during prefetch).
+// Candidates are atomically appended to an output buffer for CPU readback.
+// ==========================================================================
+
+struct StarCandidate {
+    uint x;      // Binned pixel x coordinate
+    uint y;      // Binned pixel y coordinate
+    float value; // Background-subtracted brightness
+};
+
+kernel void detect_stars_binned(
+    device const uint16_t* binnedData  [[buffer(0)]],
+    device StarCandidate* candidates   [[buffer(1)]],
+    device atomic_uint* candidateCount [[buffer(2)]],
+    constant int& width                [[buffer(3)]],
+    constant int& height               [[buffer(4)]],
+    constant float& threshold          [[buffer(5)]],
+    constant float& median             [[buffer(6)]],
+    constant int& channel              [[buffer(7)]],
+    constant int& channelCount         [[buffer(8)]],
+    constant int& maxCandidates        [[buffer(9)]],
+    uint2 gid [[thread_position_in_grid]])
+{
+    int w = width;
+    int h = height;
+    if ((int)gid.x >= w || (int)gid.y >= h) return;
+
+    // Border exclusion: skip 3px from edge (need 1px neighborhood + margin)
+    int x = (int)gid.x;
+    int y = (int)gid.y;
+    if (x < 3 || x >= w - 3 || y < 3 || y >= h - 3) return;
+
+    // Read pixel from selected channel
+    int planeSize = w * h;
+    int ch = min(channel, channelCount - 1);
+    int idx = ch * planeSize + y * w + x;
+    float val = float(binnedData[idx]);
+
+    // Threshold check
+    if (val <= threshold) return;
+
+    // 3x3 local maximum check (strict: must be greater than all neighbors)
+    for (int dy = -1; dy <= 1; dy++) {
+        for (int dx = -1; dx <= 1; dx++) {
+            if (dx == 0 && dy == 0) continue;
+            int nIdx = ch * planeSize + (y + dy) * w + (x + dx);
+            if (float(binnedData[nIdx]) >= val) return;
+        }
+    }
+
+    // Atomic append to candidate buffer (capped at maxCandidates)
+    uint slot = atomic_fetch_add_explicit(candidateCount, 1, memory_order_relaxed);
+    if (slot < (uint)maxCandidates) {
+        StarCandidate c;
+        c.x = (uint)x;
+        c.y = (uint)y;
+        c.value = val - median;
+        candidates[slot] = c;
+    }
+}
+
 // MARK: - Textured Quad Shaders (for fit-to-view rendering with zoom/pan)
 
 struct QuadVertexOut {

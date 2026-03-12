@@ -58,10 +58,27 @@ struct QualityEstimator {
             let isNarrowband = narrowbandKeywords.contains(where: { filterName.contains($0) })
             let starWeight: Double = isNarrowband ? 0.3 : 1.0
 
-            // Tier-1 metrics from headers / filename tokens (not always present)
-            let fwhmZscores  = zscores(values: groupEntries.map { $0.fwhm })
-            let hfrZscores   = zscores(values: groupEntries.map { $0.hfr })
-            let starsZscores = zscores(values: groupEntries.map { $0.starCount.map { Double($0) } })
+            // Per-group source consistency: if ALL images have header-sourced values,
+            // use those. If ANY are missing, use computed values for the entire group.
+            // This avoids biased z-scores from mixing measurement methods with systematic offsets.
+            let allHaveHeaderFWHM = groupEntries.allSatisfy { $0.fwhm != nil }
+            let allHaveHeaderHFR = groupEntries.allSatisfy { $0.hfr != nil }
+            let allHaveHeaderStars = groupEntries.allSatisfy { $0.starCount != nil }
+
+            let fwhmValues: [Double?] = groupEntries.map { entry in
+                allHaveHeaderFWHM ? entry.fwhm : entry.computedFWHM
+            }
+            let hfrValues: [Double?] = groupEntries.map { entry in
+                allHaveHeaderHFR ? entry.hfr : entry.computedHFR
+            }
+            let starsValues: [Double?] = groupEntries.map { entry in
+                let count = allHaveHeaderStars ? entry.starCount : entry.computedStarCount
+                return count.map { Double($0) }
+            }
+
+            let fwhmZscores  = zscores(values: fwhmValues)
+            let hfrZscores   = zscores(values: hfrValues)
+            let starsZscores = zscores(values: starsValues)
 
             // noiseMAD from STF subsample — always available once prefetch has run.
             // Lower noiseMAD = less noise scatter = better frame (clouds/bad seeing raise it).
@@ -142,17 +159,18 @@ struct QualityEstimator {
 // MARK: - Group key
 
 /// Identifies a comparable group of images for relative quality scoring.
-/// Groups are defined by: filter + object + acquisition night + exposure duration.
+/// Groups are defined by: filter + object + observing night + exposure duration.
+/// "Observing night" uses the evening date — images after midnight belong to the previous evening.
 private struct GroupKey: Hashable {
     let filter:   String   // Uppercase filter name, "" if unknown
     let object:   String   // Target object name, "" if unknown
-    let night:    String   // First 10 chars of DATE-LOC/DATE-OBS (YYYY-MM-DD), "" if unknown
+    let night:    String   // Observing night (evening date, YYYY-MM-DD), "" if unknown
     let exposure: Int      // Exposure time rounded to nearest second, 0 if unknown
 
     init(entry: ImageEntry) {
         filter   = (entry.filter   ?? "").uppercased().trimmingCharacters(in: .whitespaces)
         object   = (entry.target   ?? "").trimmingCharacters(in: .whitespaces)
-        night    = String((entry.date ?? "").prefix(10))
+        night    = entry.observingNight ?? ""
         exposure = entry.exposure.map { Int($0.rounded()) } ?? 0
     }
 }

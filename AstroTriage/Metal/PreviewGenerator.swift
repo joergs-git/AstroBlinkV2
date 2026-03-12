@@ -21,6 +21,7 @@ class PreviewGenerator {
     let debayerPipeline: MTLComputePipelineState?
     let bin2xPipeline: MTLComputePipelineState?
     let postProcessPipeline: MTLComputePipelineState?
+    let starDetectPipeline: MTLComputePipelineState?
 
     // Bayer pattern string to shader index mapping
     private static let bayerPatternMap: [String: Int] = [
@@ -62,6 +63,14 @@ class PreviewGenerator {
             self.postProcessPipeline = ppPipe
         } else {
             self.postProcessPipeline = nil
+        }
+
+        // Load GPU star detection kernel
+        if let starFunc = library.makeFunction(name: "detect_stars_binned"),
+           let starPipe = try? device.makeComputePipelineState(function: starFunc) {
+            self.starDetectPipeline = starPipe
+        } else {
+            self.starDetectPipeline = nil
         }
     }
 
@@ -268,6 +277,174 @@ class PreviewGenerator {
             originalWidth: image.width,
             originalHeight: image.height,
             channelCount: image.channelCount
+        )
+    }
+
+    // MARK: - GPU Star Detection
+
+    // Maximum candidates the GPU kernel can emit (capped by atomic counter)
+    private static let maxGPUCandidates = 512
+
+    /// Detect stars on a binned uint16 buffer using the GPU `detect_stars_binned` kernel.
+    /// Returns detected stars in full-resolution coordinates (scaled ×2 from binned).
+    ///
+    /// - Parameters:
+    ///   - binnedBuffer: uint16 buffer at bin2x resolution (output of bin2x kernel)
+    ///   - binnedWidth: Width of binned image
+    ///   - binnedHeight: Height of binned image
+    ///   - channelCount: Number of channels (1=mono, 3=RGB planar)
+    ///   - channel: Which channel for detection (0=mono/first, 1=green for OSC)
+    ///   - median: Background median in uint16 scale (from StarDetector.computeThreshold)
+    ///   - threshold: Detection threshold in uint16 scale
+    /// - Returns: Array of detected stars in full-res coordinates, sorted by brightness
+    func detectStarsGPU(
+        binnedBuffer: MTLBuffer,
+        binnedWidth: Int,
+        binnedHeight: Int,
+        channelCount: Int,
+        channel: Int,
+        median: Float,
+        threshold: Float
+    ) -> [DetectedStar] {
+        guard let pipeline = starDetectPipeline else { return [] }
+
+        let maxCandidates = Self.maxGPUCandidates
+
+        // Allocate output buffers
+        // StarCandidate: (uint x, uint y, float value) = 12 bytes each
+        let candidateBufferSize = maxCandidates * 12
+        guard let candidateBuffer = device.makeBuffer(length: candidateBufferSize, options: .storageModeShared),
+              let counterBuffer = device.makeBuffer(length: 4, options: .storageModeShared) else {
+            return []
+        }
+
+        // Zero the counter
+        memset(counterBuffer.contents(), 0, 4)
+
+        guard let commandBuffer = commandQueue.makeCommandBuffer(),
+              let encoder = commandBuffer.makeComputeCommandEncoder() else {
+            return []
+        }
+
+        encoder.setComputePipelineState(pipeline)
+        encoder.setBuffer(binnedBuffer, offset: 0, index: 0)
+        encoder.setBuffer(candidateBuffer, offset: 0, index: 1)
+        encoder.setBuffer(counterBuffer, offset: 0, index: 2)
+
+        var w = Int32(binnedWidth)
+        var h = Int32(binnedHeight)
+        var thresh = threshold
+        var med = median
+        var ch = Int32(channel)
+        var cc = Int32(channelCount)
+        var maxC = Int32(maxCandidates)
+
+        encoder.setBytes(&w, length: 4, index: 3)
+        encoder.setBytes(&h, length: 4, index: 4)
+        encoder.setBytes(&thresh, length: 4, index: 5)
+        encoder.setBytes(&med, length: 4, index: 6)
+        encoder.setBytes(&ch, length: 4, index: 7)
+        encoder.setBytes(&cc, length: 4, index: 8)
+        encoder.setBytes(&maxC, length: 4, index: 9)
+
+        let threadGroupSize = MTLSize(width: 32, height: 32, depth: 1)
+        let threadGroups = MTLSize(
+            width: (binnedWidth + 31) / 32,
+            height: (binnedHeight + 31) / 32,
+            depth: 1
+        )
+        encoder.dispatchThreadgroups(threadGroups, threadsPerThreadgroup: threadGroupSize)
+        encoder.endEncoding()
+        commandBuffer.commit()
+        commandBuffer.waitUntilCompleted()
+
+        // Read back candidates
+        let count = min(Int(counterBuffer.contents().load(as: UInt32.self)), maxCandidates)
+        guard count > 0 else { return [] }
+
+        let candidatePtr = candidateBuffer.contents()
+        var stars: [DetectedStar] = []
+        stars.reserveCapacity(count)
+
+        for i in 0..<count {
+            let offset = i * 12
+            let bx = candidatePtr.load(fromByteOffset: offset, as: UInt32.self)
+            let by = candidatePtr.load(fromByteOffset: offset + 4, as: UInt32.self)
+            let val = candidatePtr.load(fromByteOffset: offset + 8, as: Float.self)
+
+            // Scale binned coordinates to full resolution (×2)
+            let fullX = Float(bx) * 2.0 + 1.0  // +1 for bin2x center offset
+            let fullY = Float(by) * 2.0 + 1.0
+
+            stars.append(DetectedStar(x: fullX, y: fullY, brightness: val))
+        }
+
+        // Sort by brightness (brightest first) and cap at 50
+        stars.sort()
+        return Array(stars.prefix(50))
+    }
+
+    /// Detect stars from a full-resolution image: GPU bin2x + GPU star detection.
+    /// Computes threshold on CPU from a 5% subsample, then runs GPU detection on binned data.
+    ///
+    /// - Parameters:
+    ///   - image: Full-resolution decoded image (uint16)
+    ///   - channel: Which channel (0=mono, 1=green for debayered OSC)
+    /// - Returns: Detected stars in full-res coordinates, or empty array on failure
+    func detectStarsFromImage(_ image: DecodedImage, channel: Int = 0) -> [DetectedStar] {
+        guard let bin2xPipeline = bin2xPipeline, starDetectPipeline != nil else {
+            // GPU not available, fall back to CPU
+            return StarDetector.detectStars(in: image, maxStars: 50, subsampleFactor: 4, channel: channel)
+        }
+
+        // Compute threshold on CPU from 5% subsample (~2ms)
+        guard let (median, threshold) = StarDetector.computeThreshold(
+            from: image, subsampleFactor: 2, sigmaThreshold: 5.0, channel: channel
+        ) else {
+            return []
+        }
+
+        let srcW = image.width
+        let srcH = image.height
+        let channels = image.channelCount
+        let binnedW = srcW / 2
+        let binnedH = srcH / 2
+        guard binnedW > 0, binnedH > 0 else { return [] }
+
+        // GPU bin2x
+        let binnedBytes = binnedW * binnedH * channels * MemoryLayout<UInt16>.size
+        guard let binnedBuffer = device.makeBuffer(length: binnedBytes, options: .storageModeShared),
+              let commandBuffer = commandQueue.makeCommandBuffer(),
+              let encoder = commandBuffer.makeComputeCommandEncoder() else {
+            return StarDetector.detectStars(in: image, maxStars: 50, subsampleFactor: 4, channel: channel)
+        }
+
+        encoder.setComputePipelineState(bin2xPipeline)
+        encoder.setBuffer(image.buffer, offset: 0, index: 0)
+        encoder.setBuffer(binnedBuffer, offset: 0, index: 1)
+        var sw = Int32(srcW)
+        var sh = Int32(srcH)
+        var cc = Int32(channels)
+        encoder.setBytes(&sw, length: 4, index: 2)
+        encoder.setBytes(&sh, length: 4, index: 3)
+        encoder.setBytes(&cc, length: 4, index: 4)
+
+        let tg = MTLSize(width: 32, height: 32, depth: 1)
+        let grid = MTLSize(width: (binnedW + 31) / 32, height: (binnedH + 31) / 32, depth: 1)
+        encoder.dispatchThreadgroups(grid, threadsPerThreadgroup: tg)
+        encoder.endEncoding()
+        commandBuffer.commit()
+        commandBuffer.waitUntilCompleted()
+
+        // GPU star detection on binned buffer
+        return detectStarsGPU(
+            binnedBuffer: binnedBuffer,
+            binnedWidth: binnedW,
+            binnedHeight: binnedH,
+            channelCount: channels,
+            channel: channel,
+            median: median,
+            threshold: threshold
         )
     }
 }
