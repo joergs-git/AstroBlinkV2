@@ -32,10 +32,8 @@
         <dict>
             <key>QLSupportedContentTypes</key>
             <array>
-                <string>com.joergsflow.fits-image</string>
-                <string>com.joergsflow.xisf-image</string>
+                <string>gov.nasa.gsfc.fits</string>
                 <string>com.pixinsight.xisf</string>
-                <string>org.fits.fits</string>
             </array>
             <key>QLSupportsSearchableItems</key>
             <false/>

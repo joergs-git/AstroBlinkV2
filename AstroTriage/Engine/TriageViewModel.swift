@@ -4,6 +4,7 @@ import SwiftUI
 import Metal
 import MetalKit
 import UniformTypeIdentifiers
+import StoreKit
 
 // Central state manager for the triage workflow
 // @MainActor ensures all UI updates happen on main thread (Lesson L9)
@@ -543,6 +544,9 @@ class TriageViewModel: ObservableObject {
                 }
                 // Give table focus so keyboard navigation works immediately
                 self.focusTableAfterDelay()
+
+                // Ask for App Store review after 5th session (Apple limits to 3x/year automatically)
+                self.checkForReviewPrompt()
 
                 // Security-scoped access tracked in accessedURL, released on next session or quit
             }
@@ -2206,6 +2210,23 @@ class TriageViewModel: ObservableObject {
                     self.statusMessage = "Error: \(error.localizedDescription)"
                 }
             }
+        }
+    }
+
+    // MARK: - App Store Review
+
+    // Prompt for review after 5th session load. Apple's API automatically limits
+    // to 3 prompts per 365 days and suppresses if user already reviewed.
+    private func checkForReviewPrompt() {
+        let count = (AppSettings.defaults.object(forKey: AppSettings.Key.sessionCount.rawValue) as? Int ?? 0) + 1
+        AppSettings.defaults.set(count, forKey: AppSettings.Key.sessionCount.rawValue)
+
+        // Trigger on 5th and every 50th session after that (Apple rate-limits anyway)
+        guard count == 5 || (count > 5 && count % 50 == 0) else { return }
+
+        // Small delay so the session is visually loaded before the prompt appears
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+            SKStoreReviewController.requestReview()
         }
     }
 

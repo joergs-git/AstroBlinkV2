@@ -160,7 +160,8 @@ struct ContentView: View {
         let key = "launchCount"
         let count = UserDefaults.standard.integer(forKey: key) + 1
         UserDefaults.standard.set(count, forKey: key)
-        if count == 10 {
+        // Trigger on 10th launch and every 50th after that (Apple rate-limits to 3x/year anyway)
+        if count == 10 || (count > 10 && count % 50 == 0) {
             requestReview()
         }
     }

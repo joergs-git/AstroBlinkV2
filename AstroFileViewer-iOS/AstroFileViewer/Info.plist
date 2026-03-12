@@ -12,7 +12,7 @@
 			<key>CFBundleTypeRole</key>
 			<string>Viewer</string>
 			<key>LSHandlerRank</key>
-			<string>Owner</string>
+			<string>Alternate</string>
 			<key>LSItemContentTypes</key>
 			<array>
 				<string>com.pixinsight.xisf</string>
@@ -24,10 +24,10 @@
 			<key>CFBundleTypeRole</key>
 			<string>Viewer</string>
 			<key>LSHandlerRank</key>
-			<string>Owner</string>
+			<string>Alternate</string>
 			<key>LSItemContentTypes</key>
 			<array>
-				<string>org.fits.fits</string>
+				<string>gov.nasa.gsfc.fits</string>
 			</array>
 		</dict>
 	</array>
@@ -100,7 +100,7 @@
 			<key>UTTypeDescription</key>
 			<string>FITS Image</string>
 			<key>UTTypeIdentifier</key>
-			<string>org.fits.fits</string>
+			<string>gov.nasa.gsfc.fits</string>
 			<key>UTTypeTagSpecification</key>
 			<dict>
 				<key>public.filename-extension</key>

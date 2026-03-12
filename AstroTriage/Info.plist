@@ -26,16 +26,17 @@
     <string>$(MACOSX_DEPLOYMENT_TARGET)</string>
     <key>ITSAppUsesNonExemptEncryption</key>
     <false/>
-    <key>UTExportedTypeDeclarations</key>
+    <key>UTImportedTypeDeclarations</key>
     <array>
         <dict>
             <key>UTTypeIdentifier</key>
-            <string>com.joergsflow.fits-image</string>
+            <string>gov.nasa.gsfc.fits</string>
             <key>UTTypeDescription</key>
             <string>FITS Image</string>
             <key>UTTypeConformsTo</key>
             <array>
                 <string>public.data</string>
+                <string>public.image</string>
             </array>
             <key>UTTypeTagSpecification</key>
             <dict>
@@ -45,16 +46,19 @@
                     <string>fit</string>
                     <string>fts</string>
                 </array>
+                <key>public.mime-type</key>
+                <string>application/fits</string>
             </dict>
         </dict>
         <dict>
             <key>UTTypeIdentifier</key>
-            <string>com.joergsflow.xisf-image</string>
+            <string>com.pixinsight.xisf</string>
             <key>UTTypeDescription</key>
             <string>XISF Image</string>
             <key>UTTypeConformsTo</key>
             <array>
                 <string>public.data</string>
+                <string>public.image</string>
             </array>
             <key>UTTypeTagSpecification</key>
             <dict>
@@ -62,45 +66,8 @@
                 <array>
                     <string>xisf</string>
                 </array>
-            </dict>
-        </dict>
-    </array>
-    <key>UTImportedTypeDeclarations</key>
-    <array>
-        <dict>
-            <key>UTTypeIdentifier</key>
-            <string>com.pixinsight.xisf</string>
-            <key>UTTypeDescription</key>
-            <string>XISF Image (PixInsight)</string>
-            <key>UTTypeConformsTo</key>
-            <array>
-                <string>public.data</string>
-            </array>
-            <key>UTTypeTagSpecification</key>
-            <dict>
-                <key>public.filename-extension</key>
-                <array>
-                    <string>xisf</string>
-                </array>
-            </dict>
-        </dict>
-        <dict>
-            <key>UTTypeIdentifier</key>
-            <string>org.fits.fits</string>
-            <key>UTTypeDescription</key>
-            <string>FITS Image</string>
-            <key>UTTypeConformsTo</key>
-            <array>
-                <string>public.data</string>
-            </array>
-            <key>UTTypeTagSpecification</key>
-            <dict>
-                <key>public.filename-extension</key>
-                <array>
-                    <string>fits</string>
-                    <string>fit</string>
-                    <string>fts</string>
-                </array>
+                <key>public.mime-type</key>
+                <string>application/x-xisf</string>
             </dict>
         </dict>
     </array>
