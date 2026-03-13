@@ -95,3 +95,15 @@
 - **Decision:** Icons at top, Spacer pushes labels to bottom, fixed height 48pt, multiline labels
 - **Rule:** For toolbar buttons with varying label lengths, use VStack { Icon; Spacer; Text } with .fixedSize(horizontal: false, vertical: true) and lineLimit(2)
 - **Applies to:** sfToolbarButton in ContentView.swift
+
+## [2026-03-13] — XcodeGen test target: DEVELOPMENT_TEAM + TEST_HOST + PRODUCT_MODULE_NAME
+- **Mistake:** Test target failed with 3 different errors sequentially: (1) "no such module AstroTriage" because PRODUCT_MODULE_NAME defaulted to PRODUCT_NAME (AstroBlinkV2), (2) TEST_HOST pointed to AstroTriage.app instead of AstroBlinkV2.app, (3) "different Team IDs" because test target had no DEVELOPMENT_TEAM
+- **Root cause:** XcodeGen derives PRODUCT_MODULE_NAME from PRODUCT_NAME, not the target name. When PRODUCT_NAME differs from target name, `@testable import` breaks.
+- **Rule:** When target name ≠ product name, set PRODUCT_MODULE_NAME explicitly on the main target. Set DEVELOPMENT_TEAM on test target. Set TEST_HOST to actual product name. Put test target in scheme `test:` section only (not `build:`).
+- **Applies to:** project.yml test target config, any XcodeGen project with PRODUCT_NAME override
+
+## [2026-03-13] — Calibration filter: substring matching causes false positives on target names
+- **Mistake:** `isCalibration()` used `filename.lowercased().contains("dark")` which falsely excluded targets like "Dark Nebula" and "Flat Rock Galaxy"
+- **Root cause:** Substring matching on full filenames doesn't distinguish between calibration frame types and target names containing calibration keywords
+- **Rule:** For filename-level calibration detection, parse the frame type token (LIGHT/DARK/FLAT/BIAS) via NINAFilenameParser first. Only fall back to substring matching for non-NINA filenames. Folder-level detection can safely use substring matching.
+- **Applies to:** SessionScanner.swift, any calibration frame detection logic

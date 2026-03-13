@@ -538,6 +538,8 @@ class TriageViewModel: ObservableObject {
 
                 if isNetwork {
                     self.statusMessage = "Downloading \(entries.count) images to local cache..."
+                    // Enrich headers so metadata columns populate and loading overlay dismisses
+                    self.enrichWithHeaders()
                 } else {
                     // Check memory budget — if over budget, shows alert and calls back
                     self.checkMemoryBudgetAndCache(for: entries)
