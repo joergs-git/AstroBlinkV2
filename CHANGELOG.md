@@ -45,20 +45,160 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - **Star metrics coverage**: Relaxed star filtering criteria (saturation 95%→98%, edge margin 15→12px, crowding distance 20→15px, min stars 3→2) so more images get computed metrics.
 - **Stars column**: No longer shows internal measurement count (capped at 30). Only displays header/filename-sourced star counts to avoid confusion.
 
-## [3.5.1] — 2026-03-11
+## [3.5.1] — 2026-03-12
 
 ### Fixed
-- UTI declarations: removed exported UTIs, use standard identifiers
+- UTI declarations: removed exported UTIs, use standard identifiers.
 
-## [3.5.0] — 2026-03-10
-
-### Added
-- Quality scoring with noiseMAD metric
-- Filename column moved right in default order
-
-## [3.4.0] — 2026-03-08
+## [3.5.0] — 2026-03-11
 
 ### Added
-- LightspeedStacker (V2): GPU-accelerated stacking engine
-- Benchmark Stats window
-- ZoomableTextureMTKView for Quick Stack results
+- **Quality Estimator**: Automatic frame quality scoring using z-scores within filter/object/night/exposure groups (min 20 frames). Metrics: FWHM, HFR, StarCount. Filter-aware weighting for narrowband (Ha/OIII/SII). Three tiers: good (green checkmark), uncertain (orange minus), trash (red X).
+- **SNR Column**: Signal-to-noise ratio computed from noiseMedian/noiseMAD, sortable and searchable (`snr:<10`).
+- **Quality column**: Color-coded SF Symbol icons in file list.
+- **noiseMAD metric**: Robust noise estimation for quality scoring.
+
+### Changed
+- **Column order**: Filename moved right in default layout. Quality metrics (Q, SNR) promoted to early positions.
+- **4-level sort**: Column sorting now supports 4 sort levels (was 3).
+
+## [3.4.0] — 2026-03-10
+
+### Added
+- **LightspeedStacker (V2)**: GPU-accelerated stacking engine — ~15s for 16 frames vs ~102s with NormalStacker. GPU warp+accumulate Metal kernel, parallel star detection via TaskGroup, hash-based triangle matching O(1), vDSP normalization.
+- **Dual Stacker UI**: NormalStacker (turtle icon) and LightspeedStacker (bolt icon) side by side in toolbar.
+- **Benchmark Stats Window**: Horizontal bar chart showing file scanning, first image, header reading, caching, Quick Stack durations plus live memory/swap usage (Window menu).
+- **Photoshop-style Zoom**: Click-drag horizontal zoom in Quick Stack result window, plus pinch-to-zoom and scroll-to-pan.
+
+## [3.3.0] — 2026-03-10
+
+### Added
+- **SNR Column**: Signal-to-noise ratio in file list, computed from noise statistics, sortable and searchable.
+- **Memory Budget Warning**: Warns before caching if session exceeds 70% of physical RAM, with reduction percentage and safe image count recommendation.
+- **Quality Overview Help**: Embedded example screenshot, enlarged window (600×750), real-world example data walkthrough.
+
+### Changed
+- **Status bar stats**: Replaced pixel dimensions with cache/file size stats (e.g. "108 cached (6.0 GB) — Raw: 10.2 GB").
+- **Session overview panel**: Top-aligned layout (was vertically floating).
+
+### Fixed
+- **File list focus**: Fixed Shift+Space multi-mark and keyboard nav stealing focus to header inspector table.
+
+## [3.2.0] — 2026-03-10
+
+### Added
+- **Quick Stack**: Select 3+ subs and stack with triangle star matching + affine alignment. GPU bin2x pre-processing, blue star crosses, full result window with 4 sliders + Save as PNG. Same-target validation (name + RA/DEC).
+- **Save as PNG**: Export stacked results with current adjustments, smart filename from session metadata.
+
+### Changed
+- **Doubled slider ranges**: Stretch 0–100%, Sharpening -4/+4, Contrast -2/+2, Dark Level 0–1.0.
+- **vDSP-optimized rendering**: Quick Stack result slider adjustments ~5-10x faster.
+- **Quality Overview**: Interactive ? help button with beginner-friendly walkthrough. Brown replaces yellow for readability. Expanded quality section, compact fact sheet.
+
+### Fixed
+- Zoom +/- keys no longer lose file list focus.
+- Header inspector scroll position preserved across image navigation.
+
+## [3.0.0] — 2026-03-09
+
+### Added
+- **Spotlight-style Search**: Real-time toolbar filtering with `column:value` syntax (e.g. `filter:Ha`, `fwhm:>4`, `file:Veil`). Plain text searches across all columns. Column aliases (`fil`, `obj`, `cam`). Numeric operators (`>`, `<`, `>=`, `<=`, `=`).
+- **Cmd+M Move to Folder**: Move checkmarked files to any destination folder with "Create New Folder" dialog. Full undo via Cmd+Z.
+- **H Cycles 3 View States**: All files → hide marked → show only marked → all. Orange "Only Marked" pill in status bar.
+- **Lock STF (S key)**: Freeze STF stretch params from current image for brightness comparison across frames.
+- **Apply All**: Bake current stretch + post-processing into all cached previews for instant navigation.
+- **GPU Post-Processing**: Real-time sharpening (unsharp mask), contrast (S-curve), and dark level sliders via Metal compute.
+- **Mark/Unmark Filtered**: Batch checkmark all search results for quick triage.
+- **Persistent Settings**: Sliders, toggles, column order remembered across sessions via UserDefaults.
+- **19 default-visible columns**: Date, Time, Type, Camera promoted to default-visible.
+
+### Fixed
+- OSC debayer: proper mono/color toggle with correct stretch for both modes.
+- Keyboard focus stays on table after clicking image/sliders.
+
+## [2.2.0] — 2026-03-09
+
+### Added
+- **Lock STF toggle** (S key): Freeze exact c0/mb stretch params for brightness comparison.
+- **Apply All toggle**: Bake stretch + post-processing into all cached previews.
+- **GPU post-processing pipeline**: Sharpening, contrast, dark level sliders via Metal compute.
+- **Persistent settings**: All sliders and toggles saved via UserDefaults.
+
+### Changed
+- Redesigned toolbar with SF Symbol toggles + status bar pills.
+- Debayer pill hidden when session has no OSC images.
+- Real-time CPU/memory stats in status bar.
+
+### Fixed
+- updateNSView now respects debayerEnabled + stretchStrength (was overriding user).
+- Red-on-blue selection readability in night mode.
+
+## [2.1.0] — 2026-03-08
+
+### Added
+- **QuickLook Preview Extension**: Spacebar preview in Finder shows STF auto-stretched FITS/XISF images. CPU rendering with 65536-entry LUT per channel, parallel row processing. Bin2x for images >4096px.
+- **QuickLook Thumbnail Extension**: Thumbnail provider for FITS/XISF in Finder.
+
+## [2.0.1] — 2026-03-08
+
+### Fixed
+- PRE-DELETE sandbox permission when files opened individually (request folder access via NSOpenPanel).
+
+## [2.0.0] — 2026-03-08
+
+### Added
+- **8-Phase Performance Optimization**: Up to 5x faster on local SSD, 8x faster on NAS/10GbE.
+  - Concurrent FITS decode via cfitsio `_REENTRANT` (4x throughput)
+  - Zero-copy Metal buffers via `posix_memalign` + `bytesNoCopy` (-116 MB/image)
+  - GPU bin2x compute kernel (30–150 ms → <1 ms per image)
+  - Sliding window prefetch via OperationQueue (50% less stall)
+  - Parallel header reading via `concurrentPerform` (6x faster)
+  - Vectorized STF median via `vDSP_vsort` (3x faster)
+  - Combined GPU command buffers (single submission)
+  - Parallel network file copy (4 concurrent streams)
+- **Ambient/focuser temperature columns** in file list.
+- **Page Up/Home, Page Down/End** jump to first/last image.
+
+### Changed
+- Status bar rearranged: selections left, general info right.
+- Navigation: arrow keys stop at boundaries (no wrap-around).
+- Column order: checkbox, #, filename, object, filter, exp, amb, foc, temp, gain, size, fwhm, hfr, stars, subfolder.
+
+## [1.3.0] — 2026-03-08
+
+### Added
+- **Bin2 display** for large sensor images (>8192px) — prevents crash on ZWO ASI6200MM (9576×6388).
+- **Stretch slider** from 0% (fully linear) to 100%.
+
+## [0.9.7] — 2026-03-08
+
+### Added
+- **Debayer toggle** (D key): OSC Bayer pattern detection (RGGB/GRBG/GBRG/BGGR) from headers, GPU bilinear interpolation, default OFF for speed.
+- **Night mode** (N key): Red-on-black UI for dark-adapted vision.
+- **Stretch slider**: Adjustable 0–100% stretch strength per image.
+- **Splash screen**: About panel on launch, auto-dismiss after 2 seconds.
+- **Cache indicator**: Checkmark next to cached filenames.
+- **App Nap prevention**: Background processing continues during caching.
+- **Two-phase loading**: Fast filename scan + background header enrichment in parallel.
+
+### Fixed
+- Image navigation for uncached images.
+- Debayer toggle refreshes currently displayed image immediately.
+
+## [0.9.4] — 2026-03-07
+
+### Added
+- **Initial public release**: Fast visual culling tool for astrophotography sessions on macOS.
+- Metal GPU rendering with PixInsight-compatible STF auto-stretch.
+- FITS/XISF decoding via libxisf + cfitsio (all compression formats).
+- NINA filename token parsing (date, target, time, filter, exposure, gain, temp, HFR, stars, etc.).
+- Integrated side panels: Header Inspector + Session Overview with Fact Sheet generator.
+- Pre-delete workflow: mark with Space, move to `_predel/` subfolder with Cmd+Backspace, full undo stack.
+- Multi-level column sorting (click to sort, drag to reorder, 20+ columns).
+- Keyboard-first navigation with key repeat for rapid blinking.
+- Smart folder scanning with subfolder auto-detection.
+- Individual file selection support.
+- Network volume caching with 4 parallel streams.
+
+### iOS — AstroFileViewer v1.0.0
+- FITS/XISF viewer for iPhone/iPad with STF auto-stretch, pinch-to-zoom, header inspector, Save to Photos.
