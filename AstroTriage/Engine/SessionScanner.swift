@@ -10,14 +10,32 @@ struct SessionScanner {
     static let supportedExtensions: Set<String> = ["xisf", "fits", "fit", "fts"]
     static let defaultMaxDepth = 3
 
-    // Calibration keywords — if any of these appear anywhere in a folder name
-    // or filename (case-insensitive), the item is considered a calibration frame.
+    // Calibration keywords for folder-level detection (case-insensitive substring match).
     // "dark" also catches "darkflat", "masterdark", "Dark_Frames" etc.
     private static let calibrationKeywords = ["dark", "flat", "bias"]
 
-    // Check if a string contains any calibration keyword (case-insensitive)
-    private static func isCalibration(_ name: String) -> Bool {
-        let lower = name.lowercased()
+    // Check if a folder name contains any calibration keyword (case-insensitive)
+    // Used for folder-level exclusion where substring matching is appropriate
+    // (folders named "Dark", "FlatFrames", "BiasFrames" etc.)
+    static func isFolderCalibration(_ folderName: String) -> Bool {
+        let lower = folderName.lowercased()
+        return calibrationKeywords.contains { lower.contains($0) }
+    }
+
+    // Check if a filename indicates a calibration frame.
+    // First tries NINA filename parsing to extract the frame type token (DARK/FLAT/BIAS/LIGHT).
+    // If a frame type is found:
+    //   - LIGHT → NOT calibration (even if target name contains "dark"/"flat")
+    //   - DARK/FLAT/BIAS → IS calibration
+    // If no frame type found (non-NINA filename): fall back to keyword substring match.
+    static func isFileCalibration(_ filename: String) -> Bool {
+        let tokens = NINAFilenameParser.parse(filename)
+        if let frameType = tokens.frameType?.uppercased() {
+            // Frame type explicitly parsed → use it (avoids false positives)
+            return frameType == "DARK" || frameType == "FLAT" || frameType == "BIAS"
+        }
+        // No frame type token found → fall back to keyword matching for non-NINA files
+        let lower = filename.lowercased()
         return calibrationKeywords.contains { lower.contains($0) }
     }
 
@@ -66,7 +84,7 @@ struct SessionScanner {
 
         // Skip calibration folders entirely when lightsOnly is active
         // Matches any folder containing "dark", "flat", or "bias" anywhere in the name
-        if lightsOnly && isCalibration(url.lastPathComponent) { return }
+        if lightsOnly && isFolderCalibration(url.lastPathComponent) { return }
 
         guard let contents = try? fm.contentsOfDirectory(
             at: url,
@@ -91,8 +109,9 @@ struct SessionScanner {
                 let tokens = NINAFilenameParser.parse(item.lastPathComponent)
 
                 // Skip calibration frames when lightsOnly is active
-                // Check filename for any calibration keyword (case-insensitive, flexible matching)
-                if lightsOnly && isCalibration(item.lastPathComponent) { continue }
+                // Uses frame type token parsing (not substring match) to avoid
+                // false positives on target names like "Dark Nebula"
+                if lightsOnly && isFileCalibration(item.lastPathComponent) { continue }
 
                 var entry = ImageEntry(url: item, subfolder: subfolder)
                 entry.date = tokens.date

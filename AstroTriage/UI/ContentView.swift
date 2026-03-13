@@ -60,18 +60,18 @@ struct ContentView: View {
                 // Row 1: Icon buttons + toggles + stats
                 HStack(spacing: 4) {
                     sfToolbarButton("folder", "Open", "Open Folder (⌘O)") { viewModel.openFolder() }
-                    sfToolbarButton("list.bullet.rectangle", "Inspector", "Header Inspector (I)") { viewModel.toggleHeaderInspector() }
-                    sfToolbarButton("chart.bar", "Session", "Session Overview") {
+                    sfToolbarButton("list.bullet.rectangle", "Inspector", "Show FITS/XISF header keywords for selected image (I)") { viewModel.toggleHeaderInspector() }
+                    sfToolbarButton("chart.bar", "Session", "Session overview — group stats by filter, night, and target") {
                         viewModel.showSessionOverview.toggle()
                     }
-                    sfToolbarButton("trash", "Delete", "Pre-Delete Marked (⌘⌫)") { viewModel.moveMarkedToPreDelete() }
+                    sfToolbarButton("trash", "Delete", "Move spacebar-marked files to _predel/ staging folder (⌘⌫)\nFiles are NOT permanently deleted") { viewModel.moveMarkedToPreDelete() }
                     if viewModel.canUndoPreDelete {
                         sfToolbarButton("arrow.uturn.backward", "Undo", "Undo last Pre-Delete (⌘Z)") { viewModel.undoPreDelete() }
                     }
-                    sfToolbarButton("tortoise.fill", "Normal\nStacker", "Accurate stacking — more stars, slower (select 3+)") {
+                    sfToolbarButton("tortoise.fill", "Normal\nStacker", "CPU stacking — accurate, detects more stars, slower.\nSelect 3+ images first.") {
                         viewModel.startQuickStack()
                     }
-                    sfToolbarButton("bolt.fill", "Lightspeed\nStacker", "GPU-accelerated stacking — fast (select 3+)") {
+                    sfToolbarButton("bolt.fill", "Lightspeed\nStacker", "GPU-accelerated stacking — fast preview.\nSelect 3+ images first.") {
                         viewModel.startQuickStackV2()
                     }
                     toolbarDivider
@@ -208,7 +208,7 @@ struct ContentView: View {
                     }
                     .frame(width: 80)
 
-                    sfToolbarButton("gauge.with.dots.needle.67percent", "Benchmark", "Open Benchmark Stats", iconColor: .cyan) {
+                    sfToolbarButton("gauge.with.dots.needle.67percent", "Benchmark", "Session load & stacking performance stats.\nCompare with community leaderboard.", iconColor: .cyan) {
                         NotificationCenter.default.post(name: .showBenchmarkStats, object: nil)
                     }
 
@@ -563,6 +563,9 @@ struct ContentView: View {
         }
         .onAppear {
             keyboardMonitor = KeyboardHandler.install(viewModel: viewModel)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .showBatchRename)) { _ in
+            BatchRenameWindowController.shared.show(viewModel: viewModel)
         }
         .onReceive(NotificationCenter.default.publisher(for: .showBenchmarkStats)) { _ in
             BenchmarkStatsWindowController.shared.show(stats: viewModel.benchmarkStats, sessionRootURL: viewModel.sessionRootURL)

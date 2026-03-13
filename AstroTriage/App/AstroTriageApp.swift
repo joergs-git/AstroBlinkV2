@@ -40,6 +40,15 @@ struct AstroBlinkV2App: App {
                 }
             }
 
+            // Edit menu: Batch Rename
+            CommandGroup(after: .pasteboard) {
+                Divider()
+                Button("Batch Rename & Header Edit...") {
+                    NotificationCenter.default.post(name: .showBatchRename, object: nil)
+                }
+                .keyboardShortcut("r", modifiers: [.command, .shift])
+            }
+
             // Window menu: Benchmark Stats
             CommandGroup(after: .windowList) {
                 Button("Benchmark Stats") {
@@ -282,6 +291,7 @@ extension Notification.Name {
     static let openFolderRequest = Notification.Name("openFolderRequest")
     static let resetSettingsRequest = Notification.Name("resetSettingsRequest")
     static let showBenchmarkStats = Notification.Name("showBenchmarkStats")
+    static let showBatchRename = Notification.Name("showBatchRename")
 }
 
 // AppDelegate extension for help window

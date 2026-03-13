@@ -295,6 +295,71 @@ extern "C" HeaderResult read_fits_headers(const char* path) {
 }
 
 // ============================================================================
+// FITS header modification — uses cfitsio READWRITE mode
+// ============================================================================
+
+extern "C" WriteResult write_fits_keyword(const char* path, const char* keyword, const char* value) {
+    WriteResult result;
+    memset(&result, 0, sizeof(result));
+
+    fitsfile* fptr = nullptr;
+    int status = 0;
+
+    if (fits_open_file(&fptr, path, READWRITE, &status)) {
+        result.success = 0;
+        fits_get_errstatus(status, result.error);
+        return result;
+    }
+
+    // Update or create string keyword (cfitsio handles both cases)
+    if (fits_update_key_str(fptr, keyword, value, nullptr, &status)) {
+        result.success = 0;
+        fits_get_errstatus(status, result.error);
+        fits_close_file(fptr, &status);
+        return result;
+    }
+
+    fits_close_file(fptr, &status);
+    result.success = 1;
+    return result;
+}
+
+// ============================================================================
+// XISF header modification — uses libxisf XISFModify
+// ============================================================================
+
+extern "C" WriteResult write_xisf_keyword(const char* path, const char* save_path,
+                                           const char* keyword, const char* value) {
+    WriteResult result;
+    memset(&result, 0, sizeof(result));
+
+    try {
+        LibXISF::XISFModify modify;
+        modify.open(path);
+
+        // Create FITSKeyword with name, value, and empty comment
+        LibXISF::FITSKeyword kw;
+        kw.name = keyword;
+        kw.value = value;
+        kw.comment = "";
+
+        // Update keyword on first image (index 0), add=true creates if missing
+        modify.updateFITSKeyword(0, kw, true);
+
+        modify.save(save_path);
+        modify.close();
+
+        result.success = 1;
+
+    } catch (const std::exception& e) {
+        result.success = 0;
+        snprintf(result.error, sizeof(result.error), "XISF write error: %.240s", e.what());
+    }
+
+    return result;
+}
+
+// ============================================================================
 // Memory cleanup (Lesson L4: caller MUST free C-allocated memory)
 // ============================================================================
 

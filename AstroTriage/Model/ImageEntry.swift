@@ -68,6 +68,9 @@ struct ImageEntry: Identifiable, Hashable {
     // Triage state
     var isMarkedForDeletion: Bool = false
 
+    // Batch modification indicator — set to true after batch rename/header edit
+    var batchModified: Bool = false
+
     // Decoded image dimensions (populated after first decode)
     var width: Int?
     var height: Int?

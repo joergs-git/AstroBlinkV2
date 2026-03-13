@@ -20,6 +20,20 @@ final class MetadataExtractorTests: XCTestCase {
         XCTAssertEqual(entry.filename, filename)
     }
 
+    // Test normalizeFrameType variants
+    func testNormalizeFrameType() {
+        XCTAssertEqual(MetadataExtractor.normalizeFrameType("Light Frame"), "LIGHT")
+        XCTAssertEqual(MetadataExtractor.normalizeFrameType("LIGHT"), "LIGHT")
+        XCTAssertEqual(MetadataExtractor.normalizeFrameType("light"), "LIGHT")
+        XCTAssertEqual(MetadataExtractor.normalizeFrameType("Dark Frame"), "DARK")
+        XCTAssertEqual(MetadataExtractor.normalizeFrameType("DARK"), "DARK")
+        XCTAssertEqual(MetadataExtractor.normalizeFrameType("Flat Frame"), "FLAT")
+        XCTAssertEqual(MetadataExtractor.normalizeFrameType("FLAT"), "FLAT")
+        XCTAssertEqual(MetadataExtractor.normalizeFrameType("Bias Frame"), "BIAS")
+        XCTAssertEqual(MetadataExtractor.normalizeFrameType("SCIENCE"), "SCIENCE")
+        XCTAssertEqual(MetadataExtractor.normalizeFrameType("  Light Frame  "), "LIGHT")
+    }
+
     // Test column value extraction
     func testColumnValues() {
         let url = URL(fileURLWithPath: "/tmp/test.xisf")

@@ -38,6 +38,7 @@ struct FileListView: NSViewRepresentable {
         for colDef in ColumnDefinition.allColumns where visibleIds.contains(colDef.identifier) {
             let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier(colDef.identifier))
             column.title = colDef.title
+            column.headerToolTip = ColumnDefinition.headerToolTip(for: colDef.identifier)
             column.width = colDef.defaultWidth
             column.minWidth = colDef.minWidth
 
@@ -347,9 +348,13 @@ struct FileListView: NSViewRepresentable {
 
             textField.stringValue = entry.filename
 
-            // Cache indicator + meridian rotation icon
+            // Status indicator: batch-modified > rotated > cached
             let isRotated = rotatedURLs.contains(entry.url)
-            if isCached && isRotated {
+            if entry.batchModified {
+                indicator.stringValue = "\u{21C4}"  // Left-right arrow (batch modified)
+                indicator.textColor = isNight ? NSColor(red: 0, green: 0, blue: 0.5, alpha: 1) : .systemBlue
+                indicator.toolTip = "Modified by batch rename/header edit"
+            } else if isCached && isRotated {
                 indicator.stringValue = "\u{21BB}"  // Clockwise arrow (rotated indicator)
                 indicator.textColor = isNight ? NSColor(red: 0.35, green: 0, blue: 0.2, alpha: 1) : .systemPurple
                 indicator.toolTip = "Cached · Rotated 180° (meridian flip)"
@@ -613,6 +618,7 @@ struct FileListView: NSViewRepresentable {
                 guard let colDef = ColumnDefinition.allColumns.first(where: { $0.identifier == colId }) else { return }
                 let column = NSTableColumn(identifier: identifier)
                 column.title = colDef.title
+                column.headerToolTip = ColumnDefinition.headerToolTip(for: colDef.identifier)
                 column.width = colDef.defaultWidth
                 column.minWidth = colDef.minWidth
                 column.sortDescriptorPrototype = NSSortDescriptor(key: colDef.identifier, ascending: true)

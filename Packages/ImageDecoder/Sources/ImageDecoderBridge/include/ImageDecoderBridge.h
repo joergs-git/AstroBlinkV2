@@ -44,6 +44,21 @@ HeaderResult read_xisf_headers(const char* path);
 // Extract headers from FITS file
 HeaderResult read_fits_headers(const char* path);
 
+// Result for write/modify operations
+typedef struct {
+    int success;            // 1=ok, 0=error
+    char error[256];        // Error message if success==0
+} WriteResult;
+
+// Modify a FITS header keyword value (opens READWRITE, updates, closes)
+// Creates the keyword if it doesn't exist. Overwrites if it does.
+WriteResult write_fits_keyword(const char* path, const char* keyword, const char* value);
+
+// Modify an XISF FITS keyword value
+// save_path: output file path (can be same as path for in-place, or different for save-as)
+WriteResult write_xisf_keyword(const char* path, const char* save_path,
+                                const char* keyword, const char* value);
+
 // Free pixel data returned by decode functions
 void free_decode_result(DecodeResult* result);
 

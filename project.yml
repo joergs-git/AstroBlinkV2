@@ -7,6 +7,18 @@ options:
   createIntermediateGroups: true
   groupSortPosition: top
 
+schemes:
+  AstroTriage:
+    build:
+      targets:
+        AstroTriage: all
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - AstroTriageTests
+
 packages:
   ImageDecoder:
     path: Packages/ImageDecoder
@@ -45,6 +57,7 @@ targets:
         DEVELOPMENT_TEAM: FDSVBU33S8
         CODE_SIGN_STYLE: Automatic
         PRODUCT_NAME: AstroBlinkV2
+        PRODUCT_MODULE_NAME: AstroTriage
         METAL_COMPILER_FLAGS: ""
         SWIFT_OBJC_INTEROP_MODE: objcxx
         OTHER_LDFLAGS:
@@ -129,5 +142,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.joergsflow.AstroTriageTests
         GENERATE_INFOPLIST_FILE: YES
-        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/AstroTriage.app/Contents/MacOS/AstroTriage"
+        DEVELOPMENT_TEAM: FDSVBU33S8
+        CODE_SIGN_STYLE: Automatic
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/AstroBlinkV2.app/Contents/MacOS/AstroBlinkV2"
         BUNDLE_LOADER: "$(TEST_HOST)"

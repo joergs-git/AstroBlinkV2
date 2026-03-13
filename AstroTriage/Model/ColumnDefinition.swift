@@ -133,6 +133,42 @@ struct ColumnDefinition {
         }
     }
 
+    // Column header tooltips — explains what each metric is, how it's computed, and why it matters
+    static func headerToolTip(for columnId: String) -> String? {
+        switch columnId {
+        case "quality":
+            return "Relative quality score within group (same filter + target + exposure).\nBased on z-scores of FWHM, HFR, star count, and noise.\nGood (green) = above average, Trash (red) = below average."
+        case "snr":
+            return "Signal-to-Noise Ratio.\nComputed from median pixel value / noise MAD during auto-stretch.\nHigher = cleaner signal. Affected by exposure, light pollution, clouds."
+        case "fwhm":
+            return "Full Width at Half Maximum of stars (arcsec).\nMeasured by GPU star detection + Gaussian fitting.\nLower = sharper stars = better seeing/focus."
+        case "hfr":
+            return "Half-Flux Radius of stars.\nFrom NINA filename token, CSV, or GPU star detection.\nLower = tighter stars = better focus."
+        case "starCount":
+            return "Number of detected stars.\nFrom NINA filename token, CSV, or GPU star detection.\nFewer stars may indicate clouds, fog, or tracking issues."
+        case "filter":
+            return "Active filter during capture.\nRead from FITS/XISF FILTER header keyword.\nCommon: L (Luminance), R/G/B, H (Ha), O (OIII), S (SII)."
+        case "nightDate":
+            return "Observing night (evening date).\nImages taken after midnight are mapped to the previous evening.\nUseful for grouping a single session that spans midnight."
+        case "exposure":
+            return "Exposure time in seconds.\nFrom FITS/XISF EXPTIME header or NINA filename token."
+        case "sensorTemp":
+            return "Camera sensor temperature (°C).\nFrom CCD-TEMP header keyword.\nLower = less thermal noise."
+        case "focuserTemp":
+            return "Focuser temperature (°C).\nFrom FOCTEMP header keyword.\nTemperature shifts cause focus drift."
+        case "ambientTemp":
+            return "Ambient/environment temperature (°C).\nFrom AMBTEMP header keyword."
+        case "gain":
+            return "Camera gain setting.\nFrom GAIN header keyword.\nHigher gain = more sensitivity but more read noise."
+        case "frameNumber":
+            return "Frame sequence number from NINA filename (#0001, #0002, ...)."
+        case "filename":
+            return "Full filename including NINA tokens.\nDouble-click column header to auto-resize width."
+        default:
+            return nil
+        }
+    }
+
     // Format exposure value: show integer if whole number, otherwise one decimal
     private static func formatExposure(_ value: Double) -> String {
         if value == value.rounded() && value >= 1 {

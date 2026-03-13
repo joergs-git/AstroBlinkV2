@@ -2343,6 +2343,85 @@ class TriageViewModel: ObservableObject {
         }
     }
 
+    // MARK: - Batch Rename / Header Edit
+
+    var batchUndoStack: [BatchUndoEntry] = []
+    var canUndoBatch: Bool { !batchUndoStack.isEmpty }
+
+    /// Apply a batch result: update entry URLs, re-parse filenames, mark as modified
+    func applyBatchResult(_ result: BatchResult) {
+        // Update URLs for renamed files
+        for i in images.indices {
+            if let newURL = result.affectedURLs[images[i].url] {
+                images[i] = ImageEntry(url: newURL, subfolder: images[i].subfolder)
+                // Re-parse filename tokens for the new name
+                let tokens = NINAFilenameParser.parse(newURL.lastPathComponent)
+                images[i].date = tokens.date
+                images[i].time = tokens.time
+                images[i].target = tokens.target
+                images[i].frameNumber = tokens.frameNumber
+                images[i].exposure = tokens.exposure
+                images[i].filter = tokens.filter
+                images[i].frameType = tokens.frameType
+                images[i].gain = tokens.gain
+                images[i].offset = tokens.offset
+                images[i].binning = tokens.binning
+                images[i].sensorTemp = tokens.sensorTemp
+                images[i].telescope = tokens.telescope
+                images[i].camera = tokens.camera
+                images[i].fwhm = tokens.fwhm
+                images[i].focuserTemp = tokens.focuserTemp
+                images[i].hfr = tokens.hfr
+                images[i].starCount = tokens.starCount
+                images[i].batchModified = true
+            }
+        }
+
+        // Mark header-only modified files
+        // (files that were modified but not renamed — still at original URL)
+        for i in images.indices {
+            if !result.affectedURLs.keys.contains(images[i].url) {
+                // Check if this file was in the preview as a header-only change
+                // by looking at backup directory contents
+                let backupFile = result.backupDirectory.appendingPathComponent(images[i].filename)
+                if FileManager.default.fileExists(atPath: backupFile.path) {
+                    images[i].batchModified = true
+                }
+            }
+        }
+
+        // Store undo entry
+        batchUndoStack.append(BatchUndoEntry(
+            backupDirectory: result.backupDirectory,
+            result: result,
+            timestamp: Date()
+        ))
+
+        // Recompute quality scores (filter/exposure may have changed)
+        let scores = QualityEstimator.computeScores(for: images)
+        for i in images.indices {
+            images[i].qualityTier = scores[images[i].url]
+        }
+
+        statusMessage = "Batch: \(result.succeeded) files modified"
+    }
+
+    func undoBatchRename() {
+        guard let entry = batchUndoStack.popLast() else { return }
+        let (restored, errors) = BatchOperations.undo(entry: entry)
+
+        // Reload session to pick up restored files
+        if let rootURL = sessionRootURL {
+            loadSession(url: rootURL)
+        }
+
+        if errors.isEmpty {
+            statusMessage = "Batch undo: \(restored) files restored"
+        } else {
+            statusMessage = "Batch undo: \(restored) restored, \(errors.count) errors"
+        }
+    }
+
     // MARK: - Helpers
 
     private func formatDuration(_ seconds: Double) -> String {
