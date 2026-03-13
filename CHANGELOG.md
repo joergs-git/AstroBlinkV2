@@ -4,6 +4,11 @@ All notable changes to AstroBlinkV2 will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.8.0] — 2026-03-13
+
+### Added
+- **Lights-Only Folder Scan**: When opening a folder, calibration frames (DARK, FLAT, BIAS) are now automatically excluded. Detection works via both NINA filename tokens (`_DARK_`, `_FLAT_`, `_BIAS_`) and calibration subfolder names (`DARK/`, `FLAT/`, `BIAS/`, `DARKS/`, `FLATS/`, etc.). Individual file selection bypasses this filter so you can still open any file type directly.
+
 ## [3.7.0] — 2026-03-13
 
 ### Added

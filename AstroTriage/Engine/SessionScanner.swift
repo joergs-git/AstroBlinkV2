@@ -1,16 +1,29 @@
-// v0.9.5
+// v1.0.0
 import Foundation
 
 // Scans a folder for FITS/XISF files with smart subfolder logic:
 // - If root has image files → only load root images, ignore subfolders
 // - If root has NO image files but has subfolders → scan subfolders recursively
+// - Calibration frames (DARK, FLAT, BIAS) are excluded by default (folder scan only)
 struct SessionScanner {
 
     static let supportedExtensions: Set<String> = ["xisf", "fits", "fit", "fts"]
     static let defaultMaxDepth = 3
 
+    // Folder names that indicate calibration frames (case-insensitive)
+    private static let calibrationFolderNames: Set<String> = [
+        "dark", "darks", "flat", "flats", "bias", "biases",
+        "darkflat", "darkflats", "dark_flat", "dark_flats",
+        "masterdark", "masterflat", "masterbias",
+        "master_dark", "master_flat", "master_bias"
+    ]
+
+    // Frame types that are calibration (not lights)
+    private static let calibrationFrameTypes: Set<String> = ["DARK", "FLAT", "BIAS"]
+
     // Scan a root folder with smart subfolder detection
-    static func scan(rootURL: URL, maxDepth: Int = defaultMaxDepth) -> [ImageEntry] {
+    // lightsOnly: when true (default for folder open), skip calibration frames (DARK/FLAT/BIAS)
+    static func scan(rootURL: URL, maxDepth: Int = defaultMaxDepth, lightsOnly: Bool = true) -> [ImageEntry] {
         var entries: [ImageEntry] = []
         let fm = FileManager.default
 
@@ -19,10 +32,10 @@ struct SessionScanner {
 
         if rootHasImages {
             // Root has images → only scan root level, ignore subfolders
-            scanDirectory(url: rootURL, rootURL: rootURL, depth: 0, maxDepth: 0, fm: fm, entries: &entries)
+            scanDirectory(url: rootURL, rootURL: rootURL, depth: 0, maxDepth: 0, fm: fm, lightsOnly: lightsOnly, entries: &entries)
         } else {
             // Root has no images → scan subfolders recursively (e.g. per-filter folders)
-            scanDirectory(url: rootURL, rootURL: rootURL, depth: 0, maxDepth: maxDepth, fm: fm, entries: &entries)
+            scanDirectory(url: rootURL, rootURL: rootURL, depth: 0, maxDepth: maxDepth, fm: fm, lightsOnly: lightsOnly, entries: &entries)
         }
 
         // Default sort: date/time ascending
@@ -45,11 +58,14 @@ struct SessionScanner {
         }
     }
 
-    private static func scanDirectory(url: URL, rootURL: URL, depth: Int, maxDepth: Int, fm: FileManager, entries: inout [ImageEntry]) {
+    private static func scanDirectory(url: URL, rootURL: URL, depth: Int, maxDepth: Int, fm: FileManager, lightsOnly: Bool, entries: inout [ImageEntry]) {
         guard depth <= maxDepth else { return }
 
         // Skip _predel directories
         if url.lastPathComponent == "_predel" { return }
+
+        // Skip calibration folders entirely when lightsOnly is active
+        if lightsOnly && calibrationFolderNames.contains(url.lastPathComponent.lowercased()) { return }
 
         guard let contents = try? fm.contentsOfDirectory(
             at: url,
@@ -61,7 +77,7 @@ struct SessionScanner {
             let isDirectory = (try? item.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
 
             if isDirectory {
-                scanDirectory(url: item, rootURL: rootURL, depth: depth + 1, maxDepth: maxDepth, fm: fm, entries: &entries)
+                scanDirectory(url: item, rootURL: rootURL, depth: depth + 1, maxDepth: maxDepth, fm: fm, lightsOnly: lightsOnly, entries: &entries)
             } else {
                 let ext = item.pathExtension.lowercased()
                 guard supportedExtensions.contains(ext) else { continue }
@@ -72,6 +88,10 @@ struct SessionScanner {
                 // Parse filename tokens only (fast — no file I/O)
                 // Headers are read in background by TriageViewModel.enrichWithHeaders()
                 let tokens = NINAFilenameParser.parse(item.lastPathComponent)
+
+                // Skip calibration frames by filename token when lightsOnly is active
+                if lightsOnly, let ft = tokens.frameType, calibrationFrameTypes.contains(ft) { continue }
+
                 var entry = ImageEntry(url: item, subfolder: subfolder)
                 entry.date = tokens.date
                 entry.time = tokens.time

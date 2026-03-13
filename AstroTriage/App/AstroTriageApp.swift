@@ -53,7 +53,7 @@ struct AstroBlinkV2App: App {
 
                 Divider()
 
-                Button("What's New in v3.7.0") {
+                Button("What's New in v3.8.0") {
                     ReleaseNotesWindowController.shared.show()
                 }
             }

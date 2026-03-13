@@ -16,6 +16,15 @@ Nice side effect: Finally you have a native XISF and FITS Quicklook for macOS. (
 
 ---
 
+## What's New in v3.8.0
+
+### Lights-Only Folder Scan
+- **Calibration frames excluded automatically** — when opening a folder, DARK, FLAT, and BIAS frames are skipped so you only see your light frames
+- **Smart detection** — works via NINA filename tokens (`_DARK_`, `_FLAT_`, `_BIAS_`) and calibration subfolder names (`DARK/`, `FLAT/`, `DARKS/`, `FLATS/`, `BIAS/`, etc.)
+- **Individual file selection unaffected** — you can still open any file type directly via file picker
+
+---
+
 ## What's New in v3.7.0
 
 ### Benchmark Sharing & Community Leaderboard
@@ -217,7 +226,7 @@ After a night of imaging you might have 200-600 sub-exposures. Some have clouds,
 - Columns include: #, Filter, Q (quality), SNR, FWHM, HFR, Night (observing night), Time, Object, Filename, Type, Camera, Exposure, Temps, Gain, Size, Stars, Subfolder, and more
 - Quality tooltips — hover over Q column for score explanations or why a score is missing
 - Right-click context menu — copy filename, file path, or full path
-- Smart folder scanning — opens root images only when present, scans subfolders when root is empty
+- Smart folder scanning — opens root images only when present, scans subfolders when root is empty, automatically excludes calibration frames (DARK/FLAT/BIAS)
 - Individual file selection — select specific files instead of entire folders
 - File size column with human-readable formatting (MB/GB)
 

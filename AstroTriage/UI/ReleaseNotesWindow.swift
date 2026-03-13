@@ -38,6 +38,14 @@ struct ReleaseNotesView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 releaseSection(
+                    version: "3.8.0",
+                    date: "March 13, 2026",
+                    items: [
+                        (.added, "Lights-Only Folder Scan", "Calibration frames (DARK, FLAT, BIAS) are automatically excluded when opening folders. Works via filename tokens and subfolder names. Individual file selection is unaffected."),
+                    ]
+                )
+
+                releaseSection(
                     version: "3.7.0",
                     date: "March 13, 2026",
                     items: [
