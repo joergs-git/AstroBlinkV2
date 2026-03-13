@@ -16,6 +16,16 @@ Nice side effect: Finally you have a native XISF and FITS Quicklook for macOS. (
 
 ---
 
+## What's New in v3.9.0
+
+### Anti-Moiré & Leaderboard Polish
+- **Trilinear filtering** — GPU mipmap-based anti-moiré eliminates shimmer artifacts on MacBook screens when images are zoomed out. Pixel-accurate zoom preserved when zoomed in.
+- **Leaderboard layout** — proper column alignment, larger fonts, consistent spacing, copy-to-clipboard button
+- **1000 entries** — leaderboard now fetches up to 1000 benchmarks (was 200), ordered newest first
+- **Flexible calibration detection** — DARK/FLAT/BIAS filtering now matches any case/position in filenames and folder names
+
+---
+
 ## What's New in v3.8.0
 
 ### Lights-Only Folder Scan

@@ -333,7 +333,7 @@ class BenchmarkService: ObservableObject {
     func fetchLeaderboard(engine: String) async throws {
         isFetching = true; defer { isFetching = false }
         let urlString = "\(BenchmarkConfig.supabaseURL)/rest/v1/benchmarks" +
-            "?select=*&stack_engine=eq.\(engine)&limit=200"
+            "?select=*&stack_engine=eq.\(engine)&order=created_at.desc&limit=1000"
         guard let url = URL(string: urlString) else { return }
         var request = URLRequest(url: url)
         request.setValue(BenchmarkConfig.supabaseAnonKey, forHTTPHeaderField: "apikey")
@@ -371,7 +371,7 @@ class BenchmarkService: ObservableObject {
 
     func fetchSessionLeaderboard(sourceType: String?) async throws {
         isFetching = true; defer { isFetching = false }
-        var urlString = "\(BenchmarkConfig.supabaseURL)/rest/v1/session_benchmarks?select=*&limit=200"
+        var urlString = "\(BenchmarkConfig.supabaseURL)/rest/v1/session_benchmarks?select=*&order=created_at.desc&limit=1000"
         if let src = sourceType {
             urlString += "&source_type=eq.\(src)"
         }

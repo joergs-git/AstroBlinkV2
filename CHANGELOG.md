@@ -4,6 +4,19 @@ All notable changes to AstroBlinkV2 will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.9.0] — 2026-03-13
+
+### Added
+- **Anti-Moiré Trilinear Filtering**: GPU mipmap generation + trilinear sampler eliminates moiré artifacts when images are zoomed out on lower-resolution screens (MacBook 13"/14"). Pixel-accurate nearest-neighbor zoom preserved when zoomed in.
+- **Leaderboard Copy Button**: Copy entire leaderboard as tab-separated text for pasting into spreadsheets or forums.
+
+### Changed
+- **Leaderboard Layout**: Proper column alignment with consistent spacing, increased font sizes (10→11pt), divider between headers and data, wider window (920px). All numeric columns right-aligned, chip name left-aligned.
+- **Leaderboard Limit**: Fetch up to 1000 entries (was 200), ordered by newest first.
+
+### Fixed
+- **Calibration Frame Filtering**: Flexible case-insensitive substring matching for DARK/FLAT/BIAS in filenames and folder names. No longer requires strict NINA `_DARK_` underscore pattern.
+
 ## [3.8.0] — 2026-03-13
 
 ### Added

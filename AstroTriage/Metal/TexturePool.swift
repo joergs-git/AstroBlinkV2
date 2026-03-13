@@ -27,7 +27,7 @@ class TexturePool {
             pixelFormat: pixelFormat,
             width: width,
             height: height,
-            mipmapped: false
+            mipmapped: true
         )
         desc.usage = [.shaderWrite, .shaderRead]
         desc.storageMode = .private

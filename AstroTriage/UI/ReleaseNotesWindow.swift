@@ -38,6 +38,18 @@ struct ReleaseNotesView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 releaseSection(
+                    version: "3.9.0",
+                    date: "March 13, 2026",
+                    items: [
+                        (.added, "Anti-Moiré Trilinear Filtering", "GPU mipmap-based filtering eliminates shimmer on MacBook screens when zoomed out. Pixel-accurate zoom preserved when zoomed in."),
+                        (.added, "Leaderboard Copy Button", "Copy entire leaderboard as tab-separated text for spreadsheets or forums."),
+                        (.changed, "Leaderboard Layout", "Proper column alignment, larger fonts (11pt), consistent spacing, wider window."),
+                        (.changed, "Leaderboard Limit", "Fetches up to 1000 entries (was 200), ordered newest first."),
+                        (.fixed, "Calibration Filtering", "Flexible matching — any filename or folder containing dark/flat/bias is excluded, not just strict NINA patterns."),
+                    ]
+                )
+
+                releaseSection(
                     version: "3.8.0",
                     date: "March 13, 2026",
                     items: [

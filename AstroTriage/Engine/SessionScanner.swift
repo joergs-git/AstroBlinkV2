@@ -10,16 +10,16 @@ struct SessionScanner {
     static let supportedExtensions: Set<String> = ["xisf", "fits", "fit", "fts"]
     static let defaultMaxDepth = 3
 
-    // Folder names that indicate calibration frames (case-insensitive)
-    private static let calibrationFolderNames: Set<String> = [
-        "dark", "darks", "flat", "flats", "bias", "biases",
-        "darkflat", "darkflats", "dark_flat", "dark_flats",
-        "masterdark", "masterflat", "masterbias",
-        "master_dark", "master_flat", "master_bias"
-    ]
+    // Calibration keywords — if any of these appear anywhere in a folder name
+    // or filename (case-insensitive), the item is considered a calibration frame.
+    // "dark" also catches "darkflat", "masterdark", "Dark_Frames" etc.
+    private static let calibrationKeywords = ["dark", "flat", "bias"]
 
-    // Frame types that are calibration (not lights)
-    private static let calibrationFrameTypes: Set<String> = ["DARK", "FLAT", "BIAS"]
+    // Check if a string contains any calibration keyword (case-insensitive)
+    private static func isCalibration(_ name: String) -> Bool {
+        let lower = name.lowercased()
+        return calibrationKeywords.contains { lower.contains($0) }
+    }
 
     // Scan a root folder with smart subfolder detection
     // lightsOnly: when true (default for folder open), skip calibration frames (DARK/FLAT/BIAS)
@@ -65,7 +65,8 @@ struct SessionScanner {
         if url.lastPathComponent == "_predel" { return }
 
         // Skip calibration folders entirely when lightsOnly is active
-        if lightsOnly && calibrationFolderNames.contains(url.lastPathComponent.lowercased()) { return }
+        // Matches any folder containing "dark", "flat", or "bias" anywhere in the name
+        if lightsOnly && isCalibration(url.lastPathComponent) { return }
 
         guard let contents = try? fm.contentsOfDirectory(
             at: url,
@@ -89,8 +90,9 @@ struct SessionScanner {
                 // Headers are read in background by TriageViewModel.enrichWithHeaders()
                 let tokens = NINAFilenameParser.parse(item.lastPathComponent)
 
-                // Skip calibration frames by filename token when lightsOnly is active
-                if lightsOnly, let ft = tokens.frameType, calibrationFrameTypes.contains(ft) { continue }
+                // Skip calibration frames when lightsOnly is active
+                // Check filename for any calibration keyword (case-insensitive, flexible matching)
+                if lightsOnly && isCalibration(item.lastPathComponent) { continue }
 
                 var entry = ImageEntry(url: item, subfolder: subfolder)
                 entry.date = tokens.date

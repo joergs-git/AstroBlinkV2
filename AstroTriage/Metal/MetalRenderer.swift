@@ -110,11 +110,12 @@ class MetalRenderer: NSObject, MTKViewDelegate {
         }
         self.renderPipeline = renderPipe
 
-        // Linear sampler for minification, nearest for magnification (pixel-accurate zoom)
+        // Trilinear sampler for minification (anti-moiré on MacBook screens),
+        // nearest for magnification (pixel-accurate zoom)
         let samplerDesc = MTLSamplerDescriptor()
         samplerDesc.minFilter = .linear
         samplerDesc.magFilter = .nearest
-        samplerDesc.mipFilter = .notMipmapped
+        samplerDesc.mipFilter = .linear   // trilinear: interpolate between mip levels
         samplerDesc.sAddressMode = .clampToEdge
         samplerDesc.tAddressMode = .clampToEdge
         guard let samp = device.makeSamplerState(descriptor: samplerDesc) else {
@@ -433,6 +434,14 @@ class MetalRenderer: NSObject, MTKViewDelegate {
             }
         } else {
             finalTexture = displayTexture
+        }
+
+        // Generate mipmaps for trilinear filtering (anti-moiré when zoomed out)
+        if finalTexture.mipmapLevelCount > 1 {
+            if let blitEncoder = commandBuffer.makeBlitCommandEncoder() {
+                blitEncoder.generateMipmaps(for: finalTexture)
+                blitEncoder.endEncoding()
+            }
         }
 
         // --- Render scaled quad to drawable ---

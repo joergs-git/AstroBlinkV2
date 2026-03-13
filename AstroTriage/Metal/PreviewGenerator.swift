@@ -159,12 +159,12 @@ class PreviewGenerator {
             options: .storageModeShared
         ) else { return nil }
 
-        // Create output BGRA8 texture at binned resolution
+        // Create output BGRA8 texture at binned resolution (mipmapped for trilinear anti-moiré)
         let texDesc = MTLTextureDescriptor.texture2DDescriptor(
             pixelFormat: .bgra8Unorm,
             width: binnedW,
             height: binnedH,
-            mipmapped: false
+            mipmapped: true
         )
         texDesc.usage = [.shaderWrite, .shaderRead]
         texDesc.storageMode = .private
@@ -227,12 +227,12 @@ class PreviewGenerator {
         let finalTexture: MTLTexture
         if let pp = postProcessParams, let ppPipeline = postProcessPipeline,
            (abs(pp.sharpening) > 0.001 || abs(pp.contrast) > 0.001 || pp.darkLevel > 0.001) {
-            // Create a second texture for post-process output
+            // Create a second texture for post-process output (mipmapped for trilinear anti-moiré)
             let ppTexDesc = MTLTextureDescriptor.texture2DDescriptor(
                 pixelFormat: .bgra8Unorm,
                 width: binnedW,
                 height: binnedH,
-                mipmapped: false
+                mipmapped: true
             )
             ppTexDesc.usage = [.shaderWrite, .shaderRead]
             ppTexDesc.storageMode = .private
@@ -266,6 +266,14 @@ class PreviewGenerator {
             finalTexture = ppOutTexture
         } else {
             finalTexture = outTexture
+        }
+
+        // Generate mipmaps for trilinear filtering (anti-moiré when zoomed out on MacBook screens)
+        if finalTexture.mipmapLevelCount > 1 {
+            if let blitEncoder = commandBuffer.makeBlitCommandEncoder() {
+                blitEncoder.generateMipmaps(for: finalTexture)
+                blitEncoder.endEncoding()
+            }
         }
 
         commandBuffer.commit()

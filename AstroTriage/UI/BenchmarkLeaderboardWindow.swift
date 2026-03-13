@@ -25,7 +25,7 @@ class BenchmarkLeaderboardWindowController {
 
         let hostingView = NSHostingView(rootView: view)
         let win = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 850, height: 540),
+            contentRect: NSRect(x: 0, y: 0, width: 920, height: 560),
             styleMask: [.titled, .closable, .resizable, .miniaturizable],
             backing: .buffered,
             defer: false
@@ -34,7 +34,7 @@ class BenchmarkLeaderboardWindowController {
         win.contentView = hostingView
         win.center()
         win.isReleasedWhenClosed = false
-        win.minSize = NSSize(width: 700, height: 400)
+        win.minSize = NSSize(width: 780, height: 420)
         win.makeKeyAndOrderFront(nil)
         self.window = win
     }
@@ -46,6 +46,50 @@ enum LeaderboardTab: String, CaseIterable {
     case stacking = "Stacking"
     case sessionLoad = "Session Load"
 }
+
+// MARK: - Column layout constants
+
+// Stacking tab column widths — all right-aligned except Chip (left) and # (center)
+private enum SC {
+    static let rank: CGFloat = 32
+    static let tPerFrame: CGFloat = 68
+    static let totalTime: CGFloat = 68
+    static let frames: CGFloat = 52
+    static let mp: CGFloat = 46
+    static let msPerMP: CGFloat = 66
+    static let gap: CGFloat = 10
+    static let chip: CGFloat = 130
+    static let cores: CGFloat = 46
+    static let ram: CGFloat = 44
+    static let version: CGFloat = 44
+    static let date: CGFloat = 90
+    static let pad: CGFloat = 6   // padding between each column
+}
+
+// Session load tab column widths
+private enum SL {
+    static let rank: CGFloat = 32
+    static let throughput: CGFloat = 58
+    static let totalTime: CGFloat = 60
+    static let scan: CGFloat = 52
+    static let firstImg: CGFloat = 56
+    static let headers: CGFloat = 58
+    static let cache: CGFloat = 54
+    static let files: CGFloat = 44
+    static let size: CGFloat = 50
+    static let source: CGFloat = 44
+    static let gap: CGFloat = 10
+    static let chip: CGFloat = 110
+    static let ram: CGFloat = 40
+    static let date: CGFloat = 90
+    static let pad: CGFloat = 5
+}
+
+// Shared font sizes
+private let headerFont: Font = .system(size: 11, weight: .semibold, design: .monospaced)
+private let cellFont: Font = .system(size: 11, design: .monospaced)
+private let cellFontBold: Font = .system(size: 11, weight: .medium, design: .monospaced)
+private let dateFont: Font = .system(size: 10, design: .monospaced)
 
 // MARK: - Main Leaderboard View
 
@@ -117,6 +161,17 @@ struct BenchmarkLeaderboardView: View {
                     .font(.system(size: 10, design: .monospaced))
                     .foregroundColor(.secondary)
                 Spacer()
+                Button(action: copyToClipboard) {
+                    HStack(spacing: 3) {
+                        Image(systemName: "doc.on.doc")
+                            .font(.system(size: 9))
+                        Text("Copy")
+                            .font(.system(size: 10, design: .monospaced))
+                    }
+                }
+                .buttonStyle(.plain)
+                .foregroundColor(.secondary)
+                .padding(.trailing, 8)
                 let count = selectedTab == .stacking ? service.leaderboard.count : service.sessionLeaderboard.count
                 Text("\(count) entries")
                     .font(.system(size: 10, design: .monospaced))
@@ -127,9 +182,30 @@ struct BenchmarkLeaderboardView: View {
             .background(Color(NSColor.controlBackgroundColor))
         }
         .onAppear {
-            // Fetch session leaderboard on first appear
             Task { try? await service.fetchSessionLeaderboard(sourceType: nil) }
         }
+    }
+
+    // MARK: - Copy to clipboard (tab-separated for spreadsheet paste)
+
+    private func copyToClipboard() {
+        var text = ""
+        if selectedTab == .stacking {
+            text = "# t/frame Time Frames MP ms/MP/f Chip Cores RAM Ver Date\n"
+            for (i, entry) in service.sortedLeaderboard.enumerated() {
+                let chip = entry.chip_name.replacingOccurrences(of: "Apple ", with: "")
+                text += "\(i+1)\t\(String(format: "%.2fs", entry.timePerFrame))\t\(entry.formattedTime)\t\(entry.file_count)\t\(String(format: "%.1f", entry.image_megapixels))\t\(String(format: "%.0f", entry.msPerMPPerFrame))\t\(chip)\t\(entry.cpu_cores)\t\(entry.ram_gb)G\t\(entry.app_version)\t\(entry.formattedDateTime)\n"
+            }
+        } else {
+            text = "# MB/s Total Scan 1stImg Headers Cache Files Size Source Chip RAM Date\n"
+            for (i, entry) in service.sortedSessionLeaderboard.enumerated() {
+                let chip = entry.chip_name.replacingOccurrences(of: "Apple ", with: "")
+                let src = entry.source_type == "local" ? "SSD" : entry.source_type == "network" ? "Net" : "?"
+                text += "\(i+1)\t\(String(format: "%.0f", entry.throughputMBs))\t\(entry.formattedTotalTime)\t\(formatMs(entry.scan_ms))\t\(formatMs(entry.first_image_ms))\t\(formatMs(entry.header_ms))\t\(formatMs(entry.caching_ms))\t\(entry.file_count)\t\(entry.formattedSize)\t\(src)\t\(chip)\t\(entry.ram_gb)G\t\(entry.formattedDateTime)\n"
+            }
+        }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
     }
 
     // MARK: - Stacking Tab
@@ -144,26 +220,29 @@ struct BenchmarkLeaderboardView: View {
             Spacer()
         } else {
             // Column headers
-            HStack(spacing: 0) {
-                Text("#").frame(width: 30, alignment: .center)
-                stackHeader(.timePerFrame, width: 65)
-                stackHeader(.totalTime, width: 65)
-                stackHeader(.frames, width: 50)
-                stackHeader(.megapixels, width: 40)
-                stackHeader(.msPerMP, width: 62)
-                Spacer().frame(width: 8)
-                stackHeader(.chip, width: 120)
-                stackHeader(.cores, width: 42)
-                stackHeader(.ram, width: 40)
-                stackHeader(.version, width: 42)
-                stackHeader(.date, width: 85)
+            HStack(spacing: SC.pad) {
+                Text("#")
+                    .frame(width: SC.rank, alignment: .center)
+                stackHeader(.timePerFrame, width: SC.tPerFrame)
+                stackHeader(.totalTime, width: SC.totalTime)
+                stackHeader(.frames, width: SC.frames)
+                stackHeader(.megapixels, width: SC.mp)
+                stackHeader(.msPerMP, width: SC.msPerMP)
+                Spacer().frame(width: SC.gap)
+                stackHeader(.chip, width: SC.chip)
+                stackHeader(.cores, width: SC.cores)
+                stackHeader(.ram, width: SC.ram)
+                stackHeader(.version, width: SC.version)
+                stackHeader(.date, width: SC.date)
                 Spacer()
             }
-            .font(.system(size: 10, weight: .semibold, design: .monospaced))
+            .font(headerFont)
             .foregroundColor(.secondary)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 7)
             .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
+
+            Divider()
 
             ScrollView {
                 LazyVStack(spacing: 0) {
@@ -181,68 +260,68 @@ struct BenchmarkLeaderboardView: View {
                 Text(col.rawValue)
                 if service.sortColumn == col {
                     Image(systemName: service.sortAscending ? "chevron.up" : "chevron.down")
-                        .font(.system(size: 7, weight: .bold))
+                        .font(.system(size: 8, weight: .bold))
                 }
             }
-            .frame(width: width, alignment: col == .chip ? .leading : .trailing)
+            .frame(width: width, alignment: .trailing)
         }
         .buttonStyle(.plain)
         .foregroundColor(service.sortColumn == col ? .accentColor : .secondary)
     }
 
     private func stackingRow(rank: Int, entry: BenchmarkEntry, isMe: Bool) -> some View {
-        HStack(spacing: 0) {
+        HStack(spacing: SC.pad) {
             rankBadge(rank)
-                .frame(width: 30, alignment: .center)
-                .font(.system(size: 11, weight: rank <= 3 ? .bold : .regular, design: .monospaced))
+                .frame(width: SC.rank, alignment: .center)
+                .font(.system(size: 12, weight: rank <= 3 ? .bold : .regular, design: .monospaced))
 
             Text(String(format: "%.2fs", entry.timePerFrame))
-                .frame(width: 65, alignment: .trailing)
-                .font(.system(size: 11, weight: .medium, design: .monospaced))
+                .frame(width: SC.tPerFrame, alignment: .trailing)
+                .font(cellFontBold)
                 .foregroundColor(isMe ? .blue : .primary)
             Text(entry.formattedTime)
-                .frame(width: 65, alignment: .trailing)
-                .font(.system(size: 10, design: .monospaced))
+                .frame(width: SC.totalTime, alignment: .trailing)
+                .font(cellFont)
                 .foregroundColor(.secondary)
             Text("\(entry.file_count)")
-                .frame(width: 50, alignment: .trailing)
-                .font(.system(size: 10, design: .monospaced))
+                .frame(width: SC.frames, alignment: .trailing)
+                .font(cellFont)
             Text(String(format: "%.1f", entry.image_megapixels))
-                .frame(width: 40, alignment: .trailing)
-                .font(.system(size: 10, design: .monospaced))
+                .frame(width: SC.mp, alignment: .trailing)
+                .font(cellFont)
                 .foregroundColor(.secondary)
             Text(String(format: "%.0f", entry.msPerMPPerFrame))
-                .frame(width: 62, alignment: .trailing)
-                .font(.system(size: 10, design: .monospaced))
+                .frame(width: SC.msPerMP, alignment: .trailing)
+                .font(cellFont)
                 .foregroundColor(.secondary)
 
-            Spacer().frame(width: 8)
+            Spacer().frame(width: SC.gap)
 
             Text(entry.chip_name.replacingOccurrences(of: "Apple ", with: ""))
-                .frame(width: 120, alignment: .leading)
-                .font(.system(size: 10, design: .monospaced))
+                .frame(width: SC.chip, alignment: .leading)
+                .font(cellFont)
                 .lineLimit(1)
             Text("\(entry.cpu_cores)")
-                .frame(width: 42, alignment: .center)
-                .font(.system(size: 10, design: .monospaced))
+                .frame(width: SC.cores, alignment: .trailing)
+                .font(cellFont)
                 .foregroundColor(.secondary)
             Text("\(entry.ram_gb)G")
-                .frame(width: 40, alignment: .trailing)
-                .font(.system(size: 10, design: .monospaced))
+                .frame(width: SC.ram, alignment: .trailing)
+                .font(cellFont)
                 .foregroundColor(.secondary)
             Text(entry.app_version)
-                .frame(width: 42, alignment: .center)
-                .font(.system(size: 10, design: .monospaced))
+                .frame(width: SC.version, alignment: .trailing)
+                .font(cellFont)
                 .foregroundColor(.secondary)
             Text(entry.formattedDateTime)
-                .frame(width: 85, alignment: .center)
-                .font(.system(size: 9, design: .monospaced))
+                .frame(width: SC.date, alignment: .trailing)
+                .font(dateFont)
                 .foregroundColor(.secondary)
 
             Spacer()
             youBadge(isMe)
         }
-        .padding(.horizontal, 12).padding(.vertical, 4)
+        .padding(.horizontal, 14).padding(.vertical, 5)
         .background(rowBackground(rank: rank, isMe: isMe))
     }
 
@@ -260,28 +339,31 @@ struct BenchmarkLeaderboardView: View {
             Spacer()
         } else {
             // Column headers
-            HStack(spacing: 0) {
-                Text("#").frame(width: 30, alignment: .center)
-                sessionHeader(.throughput, width: 55)
-                sessionHeader(.totalTime, width: 58)
-                sessionHeader(.scanTime, width: 48)
-                sessionHeader(.firstImage, width: 52)
-                sessionHeader(.headerTime, width: 55)
-                sessionHeader(.cacheTime, width: 50)
-                sessionHeader(.files, width: 40)
-                sessionHeader(.size, width: 45)
-                sessionHeader(.source, width: 48)
-                Spacer().frame(width: 6)
-                sessionHeader(.chip, width: 100)
-                sessionHeader(.ram, width: 36)
-                sessionHeader(.date, width: 85)
+            HStack(spacing: SL.pad) {
+                Text("#")
+                    .frame(width: SL.rank, alignment: .center)
+                sessionHeader(.throughput, width: SL.throughput)
+                sessionHeader(.totalTime, width: SL.totalTime)
+                sessionHeader(.scanTime, width: SL.scan)
+                sessionHeader(.firstImage, width: SL.firstImg)
+                sessionHeader(.headerTime, width: SL.headers)
+                sessionHeader(.cacheTime, width: SL.cache)
+                sessionHeader(.files, width: SL.files)
+                sessionHeader(.size, width: SL.size)
+                sessionHeader(.source, width: SL.source)
+                Spacer().frame(width: SL.gap)
+                sessionHeader(.chip, width: SL.chip)
+                sessionHeader(.ram, width: SL.ram)
+                sessionHeader(.date, width: SL.date)
                 Spacer()
             }
-            .font(.system(size: 10, weight: .semibold, design: .monospaced))
+            .font(headerFont)
             .foregroundColor(.secondary)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 6)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 7)
             .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
+
+            Divider()
 
             ScrollView {
                 LazyVStack(spacing: 0) {
@@ -299,86 +381,86 @@ struct BenchmarkLeaderboardView: View {
                 Text(col.rawValue)
                 if service.sessionSortColumn == col {
                     Image(systemName: service.sessionSortAscending ? "chevron.up" : "chevron.down")
-                        .font(.system(size: 7, weight: .bold))
+                        .font(.system(size: 8, weight: .bold))
                 }
             }
-            .frame(width: width, alignment: col == .chip || col == .source ? .leading : .trailing)
+            .frame(width: width, alignment: .trailing)
         }
         .buttonStyle(.plain)
         .foregroundColor(service.sessionSortColumn == col ? .accentColor : .secondary)
     }
 
     private func sessionRow(rank: Int, entry: SessionBenchmarkEntry, isMe: Bool) -> some View {
-        HStack(spacing: 0) {
+        HStack(spacing: SL.pad) {
             rankBadge(rank)
-                .frame(width: 30, alignment: .center)
-                .font(.system(size: 11, weight: rank <= 3 ? .bold : .regular, design: .monospaced))
+                .frame(width: SL.rank, alignment: .center)
+                .font(.system(size: 12, weight: rank <= 3 ? .bold : .regular, design: .monospaced))
 
             Text(String(format: "%.0f", entry.throughputMBs))
-                .frame(width: 55, alignment: .trailing)
-                .font(.system(size: 11, weight: .medium, design: .monospaced))
+                .frame(width: SL.throughput, alignment: .trailing)
+                .font(cellFontBold)
                 .foregroundColor(isMe ? .blue : .primary)
 
             Text(entry.formattedTotalTime)
-                .frame(width: 58, alignment: .trailing)
-                .font(.system(size: 10, design: .monospaced))
+                .frame(width: SL.totalTime, alignment: .trailing)
+                .font(cellFont)
                 .foregroundColor(.secondary)
 
             Text(formatMs(entry.scan_ms))
-                .frame(width: 48, alignment: .trailing)
-                .font(.system(size: 10, design: .monospaced))
+                .frame(width: SL.scan, alignment: .trailing)
+                .font(cellFont)
                 .foregroundColor(.secondary)
 
             Text(formatMs(entry.first_image_ms))
-                .frame(width: 52, alignment: .trailing)
-                .font(.system(size: 10, design: .monospaced))
+                .frame(width: SL.firstImg, alignment: .trailing)
+                .font(cellFont)
                 .foregroundColor(.secondary)
 
             Text(formatMs(entry.header_ms))
-                .frame(width: 55, alignment: .trailing)
-                .font(.system(size: 10, design: .monospaced))
+                .frame(width: SL.headers, alignment: .trailing)
+                .font(cellFont)
                 .foregroundColor(.secondary)
 
             Text(formatMs(entry.caching_ms))
-                .frame(width: 50, alignment: .trailing)
-                .font(.system(size: 10, design: .monospaced))
+                .frame(width: SL.cache, alignment: .trailing)
+                .font(cellFont)
                 .foregroundColor(.secondary)
 
             Text("\(entry.file_count)")
-                .frame(width: 40, alignment: .trailing)
-                .font(.system(size: 10, design: .monospaced))
+                .frame(width: SL.files, alignment: .trailing)
+                .font(cellFont)
 
             Text(entry.formattedSize)
-                .frame(width: 45, alignment: .trailing)
-                .font(.system(size: 10, design: .monospaced))
+                .frame(width: SL.size, alignment: .trailing)
+                .font(cellFont)
                 .foregroundColor(.secondary)
 
             Text(entry.source_type == "local" ? "SSD" : entry.source_type == "network" ? "Net" : "?")
-                .frame(width: 48, alignment: .leading)
-                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                .frame(width: SL.source, alignment: .trailing)
+                .font(cellFontBold)
                 .foregroundColor(entry.source_type == "local" ? .green : (entry.source_type == "network" ? .orange : .secondary))
 
-            Spacer().frame(width: 6)
+            Spacer().frame(width: SL.gap)
 
             Text(entry.chip_name.replacingOccurrences(of: "Apple ", with: ""))
-                .frame(width: 100, alignment: .leading)
-                .font(.system(size: 10, design: .monospaced))
+                .frame(width: SL.chip, alignment: .leading)
+                .font(cellFont)
                 .lineLimit(1)
 
             Text("\(entry.ram_gb)G")
-                .frame(width: 36, alignment: .trailing)
-                .font(.system(size: 10, design: .monospaced))
+                .frame(width: SL.ram, alignment: .trailing)
+                .font(cellFont)
                 .foregroundColor(.secondary)
 
             Text(entry.formattedDateTime)
-                .frame(width: 85, alignment: .center)
-                .font(.system(size: 9, design: .monospaced))
+                .frame(width: SL.date, alignment: .trailing)
+                .font(dateFont)
                 .foregroundColor(.secondary)
 
             Spacer()
             youBadge(isMe)
         }
-        .padding(.horizontal, 12).padding(.vertical, 4)
+        .padding(.horizontal, 14).padding(.vertical, 5)
         .background(rowBackground(rank: rank, isMe: isMe))
     }
 
