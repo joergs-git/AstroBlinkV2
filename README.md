@@ -16,28 +16,42 @@ Nice side effect: Finally you have a native XISF and FITS Quicklook for macOS. (
 
 ---
 
-## What's New in v3.3.0
+## What's New in v3.7.0
 
-### LightspeedStacker — blazing fast GPU stacking
-- **GPU warp+accumulate kernel** — bilinear interpolation warping runs entirely on the GPU (10-20x faster than CPU)
-- **Parallel star detection** — all frames analyzed simultaneously via Swift TaskGroup
-- **Hash-based triangle matching** — O(1) candidate lookup instead of O(N²) brute-force comparison
-- **Reduced overhead** — fewer stars (30 vs 50) and triangles (120 vs 455) for preview-quality matching
-- **vDSP vectorized normalization** — final pixel averaging uses Accelerate framework
-- **Smarter previews** — mini preview updates every 3rd frame instead of every frame
+### Benchmark Sharing & Community Leaderboard
+- **Share & Compare** — upload your stacking and session load benchmarks anonymously and see how your machine ranks against other AstroBlinkV2 users worldwide
+- **Two leaderboard tabs** — "Stacking" (ranked by seconds/frame) and "Session Load" (ranked by MB/s throughput)
+- **Sortable columns** — click any column header to sort ascending/descending, secondary sort on ties
+- **Privacy-first** — only hardware specs and timing data are shared; machine identity is a non-reversible SHA256 hash
+- **Duplicate prevention** — identical benchmarks are detected and silently skipped
+- **Auto-detects local SSD vs network storage** for fair session load comparison
 
-### Two stackers — pick your speed
-- **LightspeedStacker** (bolt icon) — GPU-optimized, fast, great for quick visual previews
-- **NormalStacker** (turtle icon) — uses more stars and triangles, potentially better on fields with few bright stars
+### Toolbar & UI improvements
+- **Speedometer icon** in toolbar for quick access to Benchmark Stats
+- **Separator line** between toolbar icons and image settings row
+- **Centered image settings** (stretch, sharp, contrast, dark) aligned with the image frame
+- **MeridianFlip toggle** moved to toolbar row 1 (between Lock STF and Apply All)
+- **Release Notes** — see what's new directly in the app via Help > What's New
 
-### Benchmark Stats
-- **Window > Benchmark Stats** — see exactly how long each loading phase takes (file scanning, first image, header reading, pre-caching, stacking)
-- **Memory monitor** — live app RAM usage with system total and swap
+---
 
-### Other improvements
-- **Photoshop-style zoom** in stacked result window (click-drag horizontal = zoom, scroll = pan, pinch, double-click reset)
-- **Friendly alerts** — clicking a stacker without selecting images shows a helpful dialog with tips
-- **Aligned toolbar** — all icons sit on the same baseline with two-line labels
+## What's New in v3.6.0
+
+### GPU Star Metrics & Meridian Flip Detection
+- **GPU HFR/FWHM** — automatic star metrics computed during session load, no external tools needed
+- **ROTATOR-based flip detection** — works with mounts that don't report PIERSIDE (e.g. ZWO ASIAIR on AM5)
+- **Observing night grouping** — sessions spanning midnight attributed correctly
+
+---
+
+## What's New in v3.4.0
+
+### LightspeedStacker — GPU stacking
+- **GPU warp+accumulate** — 10-20x faster than CPU stacking
+- **Hash-based triangle matching** — O(1) star matching with full centroid refinement
+- **Two stackers** — LightspeedStacker (~15s) and NormalStacker (~102s) for 16 frames
+- **GPU restretch** — result window sliders respond in <16ms via Metal compute
+- **Benchmark Stats** — see loading phase timings and memory usage
 
 ---
 
@@ -139,17 +153,17 @@ After a night of imaging you might have 200-600 sub-exposures. Some have clouds,
 - Persistent settings — all sliders, toggles, and column layout remembered across sessions
 
 ### Stacking — Two Modes
-- **LightspeedStacker** — GPU warp kernel, hash-based triangle matching, parallel star detection. Blazing fast.
-- **NormalStacker** — CPU warp, brute-force triangle matching, more stars. Slower but potentially more accurate on sparse fields.
+- **LightspeedStacker** — GPU warp kernel, hash-based triangle matching, parallel star detection, full-res centroid refinement, two-pass least-squares alignment. ~15s for 16 frames with near-V1 accuracy.
+- **NormalStacker** — CPU warp, brute-force triangle matching, ~102s for 16 frames. Kept as reference/fallback.
 - Both: select 3+ images and stack with one click — no plate solving required
 - Triangle pattern matching for scale-invariant star alignment
 - Affine transform alignment (rotation + translation + scale)
 - GPU bin2x pre-processing for ~4x faster stacking
 - Live blue star crosses showing detected stars during processing
 - Full result window with Photoshop-style zoom and all 4 adjustment sliders
+- GPU Metal compute kernel for instant slider response in result window
 - Save as PNG with smart filename (object_date_filters_camera.png)
 - Same-target validation — warns if you accidentally select images of different objects
-- vDSP-accelerated rendering for fast slider response in result window
 
 ### OSC Debayer
 - Automatic Bayer pattern detection (RGGB, GRBG, GBRG, BGGR) from FITS/XISF headers
@@ -370,28 +384,25 @@ Extracted tokens: date, target, time, telescope, camera, frame type, filter, exp
 
 ## FAQ
 
-### Why is LightspeedStacker so fast?
+### Why is LightspeedStacker so fast — and is it accurate?
 
-Six optimizations working together:
+LightspeedStacker is ~7x faster than NormalStacker (15s vs 102s for 16 frames) while achieving near-identical alignment quality. Here's how:
 
-1. **GPU warp+accumulate** — The biggest bottleneck in stacking is warping each frame to match the reference. NormalStacker does this on the CPU: a nested loop over millions of pixels with bilinear interpolation. LightspeedStacker offloads this to a Metal compute kernel that runs thousands of GPU threads in parallel, achieving 10-20x speedup on the warp step alone.
+1. **GPU warp+accumulate** — The biggest bottleneck in stacking is warping each frame to match the reference. NormalStacker does this on the CPU: a nested loop over millions of pixels with bilinear interpolation. LightspeedStacker offloads this to a Metal compute kernel that runs thousands of GPU threads in parallel, achieving 10-20x speedup on the warp step alone. This single change accounts for most of the speed difference.
 
-2. **Parallel star detection** — NormalStacker detects stars one frame at a time. LightspeedStacker uses Swift's `TaskGroup` to analyze all frames simultaneously across multiple CPU cores.
+2. **Parallel star detection + full-res centroid refinement** — All frames are analyzed simultaneously via Swift TaskGroup. After coarse detection on subsampled data, each star position is refined using a 9×9 weighted centroid on the full binned-resolution image — the same approach used by professional astrometry tools (SExtractor, DAOPHOT).
 
-3. **Hash-based triangle matching** — NormalStacker compares every triangle in each frame against every triangle in the reference (O(N²) comparisons). LightspeedStacker quantizes triangle shape ratios into hash buckets and only checks nearby buckets — turning an O(N²) search into O(1) lookups. With 120 triangles per frame, this eliminates ~99% of comparisons.
+3. **Hash-based triangle matching** — NormalStacker compares every triangle pair (O(N²)). LightspeedStacker quantizes triangle shape ratios into hash buckets for O(1) lookups — same 455 triangles from 50 stars, but matched ~100x faster.
 
-4. **Fewer stars, still accurate** — LightspeedStacker uses 30 stars and the 10 brightest for triangles (120 combinations) vs NormalStacker's 50 stars and 15 for triangles (455 combinations). For visual stacking, 30 bright stars provide plenty of matching accuracy.
+4. **Two-pass least-squares refinement** — The initial 3-point affine from triangle matching is refined using ALL inlier star correspondences (typically 20-40 pairs) via least-squares normal equations. A second pass with a tighter threshold (4px) converges to sub-pixel alignment accuracy.
 
-5. **vDSP vectorized normalization** — The final pixel averaging uses Apple's Accelerate framework (vDSP) for SIMD-vectorized division across the entire image plane.
-
-6. **Smarter mini previews** — During stacking, the live preview only updates every 3rd frame instead of every frame, reducing overhead.
+5. **GPU restretch** — The result window sliders use a Metal compute kernel (`restretch_float`) for instant response (<16ms) instead of CPU processing.
 
 ### When should I use NormalStacker instead?
 
-NormalStacker uses more stars (50 vs 30) and builds more triangles (455 vs 120), which can make a difference on:
-- **Sparse star fields** — targets with very few bright stars (e.g. dark nebulae)
-- **Heavily cropped frames** — where only a handful of stars are visible
-- **Mixed focal length sessions** — where scale differences push stars to the edge of matching tolerance
+Both stackers now use the same detection parameters (50 stars, 455 triangles). NormalStacker may still be worth trying on:
+- **Extremely sparse star fields** — its exhaustive O(N²) matching checks every possible pairing
+- **Edge cases** where hash bucket quantization might miss an unusual triangle shape
 
 If LightspeedStacker fails to align some frames, try NormalStacker on the same selection.
 

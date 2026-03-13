@@ -387,6 +387,124 @@ kernel void detect_stars_binned(
     }
 }
 
+// ==========================================================================
+// Restretch Float — GPU-accelerated STF + post-process for stacked result
+// Input: float buffer (planar, normalized to 0–65535 range)
+// Output: BGRA8 texture
+// Combines STF stretch + dark level + contrast + sharpening in one pass
+// ==========================================================================
+
+struct RestretchParams {
+    float c0;           // STF shadows clipping point
+    float mb;           // STF midtone balance
+    float darkLevel;    // 0–1, shadows clip
+    float contrast;     // -2 to 2
+    float sharpening;   // -4 to 4
+    int width;
+    int height;
+    int channelCount;
+};
+
+kernel void restretch_float(
+    device const float* data [[buffer(0)]],
+    texture2d<float, access::write> output [[texture(0)]],
+    constant RestretchParams& params [[buffer(1)]],
+    uint2 gid [[thread_position_in_grid]])
+{
+    if ((int)gid.x >= params.width || (int)gid.y >= params.height) return;
+
+    int idx = (int)gid.y * params.width + (int)gid.x;
+    int planeSize = params.width * params.height;
+    float c0 = params.c0;
+    float mb = params.mb;
+    float rangeInv = 1.0 / max(1.0 - c0, 0.001);
+
+    // Read and stretch per channel
+    float r, g, b;
+    if (params.channelCount == 1) {
+        float v = data[idx] / 65535.0;
+        v = clamp((v - c0) * rangeInv, 0.0, 1.0);
+        v = mtf(v, mb);
+        r = g = b = v;
+    } else {
+        r = data[idx] / 65535.0;
+        g = data[planeSize + idx] / 65535.0;
+        b = data[2 * planeSize + idx] / 65535.0;
+        r = clamp((r - c0) * rangeInv, 0.0, 1.0); r = mtf(r, mb);
+        g = clamp((g - c0) * rangeInv, 0.0, 1.0); g = mtf(g, mb);
+        b = clamp((b - c0) * rangeInv, 0.0, 1.0); b = mtf(b, mb);
+    }
+
+    // Dark level
+    if (params.darkLevel > 0.0) {
+        float dl = params.darkLevel;
+        float inv = 1.0 / max(1.0 - dl, 0.001);
+        r = clamp((r - dl) * inv, 0.0, 1.0);
+        g = clamp((g - dl) * inv, 0.0, 1.0);
+        b = clamp((b - dl) * inv, 0.0, 1.0);
+    }
+
+    // Contrast
+    if (params.contrast != 0.0) {
+        float c = 1.0 + params.contrast;
+        r = clamp(0.5 + (r - 0.5) * c, 0.0, 1.0);
+        g = clamp(0.5 + (g - 0.5) * c, 0.0, 1.0);
+        b = clamp(0.5 + (b - 0.5) * c, 0.0, 1.0);
+    }
+
+    // Sharpening (unsharp mask using 4-connected neighbors)
+    if (params.sharpening != 0.0) {
+        int x = (int)gid.x;
+        int y = (int)gid.y;
+        if (x > 0 && x < params.width - 1 && y > 0 && y < params.height - 1) {
+            // Read neighbor values and apply same stretch pipeline
+            float amount = params.sharpening;
+            // For each channel, compute blur from stretched neighbors
+            for (int ch = 0; ch < (params.channelCount == 1 ? 1 : 3); ch++) {
+                int chOff = ch * planeSize;
+                if (params.channelCount == 1) chOff = 0;
+
+                float vn = data[chOff + (y-1) * params.width + x] / 65535.0;
+                float vs = data[chOff + (y+1) * params.width + x] / 65535.0;
+                float ve = data[chOff + y * params.width + (x+1)] / 65535.0;
+                float vw = data[chOff + y * params.width + (x-1)] / 65535.0;
+
+                // Stretch neighbors
+                vn = clamp((vn - c0) * rangeInv, 0.0, 1.0); vn = mtf(vn, mb);
+                vs = clamp((vs - c0) * rangeInv, 0.0, 1.0); vs = mtf(vs, mb);
+                ve = clamp((ve - c0) * rangeInv, 0.0, 1.0); ve = mtf(ve, mb);
+                vw = clamp((vw - c0) * rangeInv, 0.0, 1.0); vw = mtf(vw, mb);
+
+                // Apply dark + contrast to neighbors too
+                if (params.darkLevel > 0.0) {
+                    float dl = params.darkLevel;
+                    float inv2 = 1.0 / max(1.0 - dl, 0.001);
+                    vn = clamp((vn - dl) * inv2, 0.0, 1.0);
+                    vs = clamp((vs - dl) * inv2, 0.0, 1.0);
+                    ve = clamp((ve - dl) * inv2, 0.0, 1.0);
+                    vw = clamp((vw - dl) * inv2, 0.0, 1.0);
+                }
+                if (params.contrast != 0.0) {
+                    float cc = 1.0 + params.contrast;
+                    vn = clamp(0.5 + (vn - 0.5) * cc, 0.0, 1.0);
+                    vs = clamp(0.5 + (vs - 0.5) * cc, 0.0, 1.0);
+                    ve = clamp(0.5 + (ve - 0.5) * cc, 0.0, 1.0);
+                    vw = clamp(0.5 + (vw - 0.5) * cc, 0.0, 1.0);
+                }
+
+                float blur = (vn + vs + ve + vw) * 0.25;
+                if (ch == 0) r = clamp(r + amount * (r - blur), 0.0, 1.0);
+                else if (ch == 1) g = clamp(g + amount * (g - blur), 0.0, 1.0);
+                else b = clamp(b + amount * (b - blur), 0.0, 1.0);
+            }
+            // For mono, replicate
+            if (params.channelCount == 1) { g = r; b = r; }
+        }
+    }
+
+    output.write(float4(r, g, b, 1.0), gid);
+}
+
 // MARK: - Textured Quad Shaders (for fit-to-view rendering with zoom/pan)
 
 struct QuadVertexOut {

@@ -12,6 +12,9 @@ struct QuickStackProgressView: View {
     let nightMode: Bool
     var onDismiss: () -> Void
 
+    // Track stack start time to compute duration for benchmark
+    @State private var stackStartDate = Date()
+
     private var fg: Color { nightMode ? .red : .primary }
     private var fgDim: Color { nightMode ? .red.opacity(0.7) : .secondary }
     private var bg: Color { nightMode ? .black : Color(NSColor.windowBackgroundColor) }
@@ -143,9 +146,11 @@ struct QuickStackProgressView: View {
     private func openResultWindow() {
         guard engine.resultTexture != nil else { return }
 
+        let stackMs = Int(Date().timeIntervalSince(stackStartDate) * 1000)
         let resultView = StackResultView(
             engine: engine,
-            nightMode: nightMode
+            nightMode: nightMode,
+            stackTimeMs: stackMs
         )
 
         let hostingView = NSHostingView(rootView: resultView)
@@ -175,6 +180,7 @@ struct QuickStackProgressView: View {
 struct StackResultView: View {
     let engine: QuickStackEngine
     let nightMode: Bool
+    let stackTimeMs: Int
     @State private var stretchValue: Double = 0.25
     @State private var sharpening: Double = 0.0
     @State private var contrast: Double = 0.0
@@ -182,6 +188,7 @@ struct StackResultView: View {
     @State private var displayTexture: MTLTexture?
     @State private var savedMessage: String?
     @State private var isRendering: Bool = false
+    @StateObject private var benchmarkService = BenchmarkService()
     // Debounce timer to avoid re-rendering on every slider tick
     @State private var renderTask: Task<Void, Never>?
 
@@ -238,11 +245,30 @@ struct StackResultView: View {
             .padding(.vertical, 4)
             .background(nightMode ? Color(red: 0.06, green: 0, blue: 0) : Color(NSColor.underPageBackgroundColor))
 
-            // Row 2: Info + save
+            // Row 2: Share centered, info + save on sides
             HStack(spacing: 12) {
                 Text("\(engine.resultWidth)x\(engine.resultHeight) — Quick Stack")
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundColor(fgDim)
+
+                Spacer()
+
+                // Share & Compare benchmark button — centered and prominent
+                Button(action: { shareNormalBenchmark() }) {
+                    HStack(spacing: 4) {
+                        Image(systemName: benchmarkService.isUploading ? "arrow.triangle.2.circlepath" : "trophy")
+                            .font(.system(size: 12))
+                        Text("Share & Compare")
+                            .font(.system(size: 11, weight: .medium, design: .monospaced))
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.green)
+                .controlSize(.small)
+                .disabled(benchmarkService.isUploading || !BenchmarkConfig.isConfigured)
+                .help(BenchmarkConfig.isConfigured
+                      ? "Share your benchmark and see how you rank"
+                      : "Benchmark sharing not configured — see CLAUDE.md")
 
                 Spacer()
 
@@ -421,10 +447,30 @@ struct StackResultView: View {
             savedMessage = "Error: \(error.localizedDescription)"
         }
     }
+
+    // Upload benchmark and open leaderboard
+    private func shareNormalBenchmark() {
+        let entry = BenchmarkService.buildEntry(
+            engine: "normal",
+            stackTimeMs: stackTimeMs,
+            fileCount: engine.totalLayers,
+            imageWidth: engine.resultWidth,
+            imageHeight: engine.resultHeight
+        )
+        Task {
+            await benchmarkService.shareAndCompare(entry: entry)
+            BenchmarkLeaderboardWindowController.shared.show(
+                service: benchmarkService,
+                myMachineHash: MachineInfo.machineHash,
+                engine: "normal"
+            )
+        }
+    }
 }
 
 // Render float data to a BGRA8 texture with STF stretch + post-processing.
-// Uses vDSP vectorized math for ~5-10x speedup over scalar loops.
+// Uses Metal GPU compute for instant results (<16ms on any Apple Silicon).
+// CPU fallback only if Metal pipeline setup fails.
 // Post-process pipeline: stretch → dark level → contrast → sharpening (matches main app)
 private func renderFloatToTexture(
     data: [Float], width: Int, height: Int,
@@ -433,9 +479,8 @@ private func renderFloatToTexture(
     device: MTLDevice
 ) -> MTLTexture? {
     let planeSize = width * height
-    let n = vDSP_Length(planeSize)
 
-    // STF stats from subsampled data
+    // STF stats from subsampled data (cheap — ~50K samples on CPU)
     let sampleCount = min(50000, planeSize)
     let sampleStride = max(1, planeSize / sampleCount)
     var samples = [Float]()
@@ -461,187 +506,57 @@ private func renderFloatToTexture(
         mb = mNorm * (1 - targetBackground) / (mNorm * (1 - 2 * targetBackground) + targetBackground)
     }
 
-    // Vectorized MTF: (m-1)*x / ((2m-1)*x - m) with bounds at 0 and 1
-    func mtfVector(_ plane: inout [Float]) {
-        let mMinus1 = mb - 1.0
-        let twoMMinus1 = 2.0 * mb - 1.0
-        var negM = -mb
+    // GPU path: upload float data to MTLBuffer, run restretch_float kernel
+    let dataByteCount = data.count * MemoryLayout<Float>.size
+    guard let inputBuffer = data.withUnsafeBufferPointer({ ptr in
+        device.makeBuffer(bytes: ptr.baseAddress!, length: dataByteCount, options: .storageModeShared)
+    }) else { return nil }
 
-        // Numerator: (m-1) * x
-        var numerator = [Float](repeating: 0, count: plane.count)
-        var mm1 = mMinus1
-        vDSP_vsmul(plane, 1, &mm1, &numerator, 1, vDSP_Length(plane.count))
-
-        // Denominator: (2m-1)*x - m
-        var denominator = [Float](repeating: 0, count: plane.count)
-        var tmm1 = twoMMinus1
-        vDSP_vsmul(plane, 1, &tmm1, &denominator, 1, vDSP_Length(plane.count))
-        vDSP_vsadd(denominator, 1, &negM, &denominator, 1, vDSP_Length(plane.count))
-
-        // Avoid division by zero: replace tiny denominators
-        for i in 0..<plane.count {
-            if abs(denominator[i]) < 1e-10 { denominator[i] = 1e-10 }
-        }
-
-        // result = numerator / denominator
-        vDSP_vdiv(denominator, 1, numerator, 1, &plane, 1, vDSP_Length(plane.count))
-
-        // Clamp to [0, 1]
-        var lo: Float = 0, hi: Float = 1
-        vDSP_vclip(plane, 1, &lo, &hi, &plane, 1, vDSP_Length(plane.count))
-    }
-
-    // Step 1: STF stretch using vDSP vectorized ops
-    // Normalize: x = raw / 65535, then x = clamp((x - c0) / (1 - c0), 0, 1), then MTF
-    let invScale: Float = 1.0 / 65535.0
-    let rangeInv: Float = 1.0 / max(1.0 - c0, 0.001)
-    let numChannels = min(channelCount, 3)
-
-    // Allocate 3 planes (mono gets replicated)
-    var planes = [[Float]](repeating: [Float](repeating: 0, count: planeSize), count: 3)
-
-    for ch in 0..<numChannels {
-        let srcOff = ch * planeSize
-        // Scale to [0,1]
-        var scaled = invScale
-        vDSP_vsmul(Array(data[srcOff..<(srcOff + planeSize)]), 1, &scaled, &planes[ch], 1, n)
-        // Subtract c0
-        var negC0 = -c0
-        vDSP_vsadd(planes[ch], 1, &negC0, &planes[ch], 1, n)
-        // Multiply by 1/(1-c0)
-        var rInv = rangeInv
-        vDSP_vsmul(planes[ch], 1, &rInv, &planes[ch], 1, n)
-        // Clamp [0,1]
-        var lo: Float = 0, hi: Float = 1
-        vDSP_vclip(planes[ch], 1, &lo, &hi, &planes[ch], 1, n)
-        // Apply MTF
-        mtfVector(&planes[ch])
-    }
-
-    // Mono: replicate to all 3 channels
-    if channelCount == 1 {
-        planes[1] = planes[0]
-        planes[2] = planes[0]
-    }
-
-    // Step 2: Post-processing with vDSP (dark → contrast → sharpen)
-    if darkLevel > 0.001 {
-        var negDark = -darkLevel
-        var inv = 1.0 / max(1.0 - darkLevel, 0.001)
-        var lo: Float = 0, hi: Float = 1
-        for ch in 0..<3 {
-            vDSP_vsadd(planes[ch], 1, &negDark, &planes[ch], 1, n)
-            vDSP_vsmul(planes[ch], 1, &inv, &planes[ch], 1, n)
-            vDSP_vclip(planes[ch], 1, &lo, &hi, &planes[ch], 1, n)
-        }
-    }
-
-    if abs(contrast) > 0.001 {
-        let c = 1.0 + contrast
-        var negHalf: Float = -0.5
-        var half: Float = 0.5
-        var cMul = c
-        var lo: Float = 0, hi: Float = 1
-        for ch in 0..<3 {
-            vDSP_vsadd(planes[ch], 1, &negHalf, &planes[ch], 1, n)
-            vDSP_vsmul(planes[ch], 1, &cMul, &planes[ch], 1, n)
-            vDSP_vsadd(planes[ch], 1, &half, &planes[ch], 1, n)
-            vDSP_vclip(planes[ch], 1, &lo, &hi, &planes[ch], 1, n)
-        }
-    }
-
-    if abs(sharpening) > 0.001 {
-        // 3x3 unsharp mask using pointer-offset vDSP for vectorized speed
-        let innerStart = width        // skip first row
-        let innerCount = vDSP_Length(planeSize - 2 * width)
-
-        for ch in 0..<3 {
-            let original = planes[ch]
-            var blur = [Float](repeating: 0, count: planeSize)
-            var detail = [Float](repeating: 0, count: planeSize)
-
-            original.withUnsafeBufferPointer { origBuf in
-                let origPtr = origBuf.baseAddress!
-                blur.withUnsafeMutableBufferPointer { blurBuf in
-                    let blurPtr = blurBuf.baseAddress!
-                    // blur = top + bottom neighbors
-                    vDSP_vadd(origPtr, 1,
-                              origPtr + 2 * width, 1,
-                              blurPtr + innerStart, 1, innerCount)
-                    // + left neighbor
-                    var temp = [Float](repeating: 0, count: planeSize)
-                    temp.withUnsafeMutableBufferPointer { tmpBuf in
-                        vDSP_vadd(blurPtr + innerStart, 1,
-                                  origPtr + innerStart - 1, 1,
-                                  tmpBuf.baseAddress! + innerStart, 1, innerCount)
-                        // + right neighbor
-                        vDSP_vadd(tmpBuf.baseAddress! + innerStart, 1,
-                                  origPtr + innerStart + 1, 1,
-                                  blurPtr + innerStart, 1, innerCount)
-                    }
-                    // * 0.25 to get average
-                    var quarter: Float = 0.25
-                    vDSP_vsmul(blurPtr + innerStart, 1, &quarter,
-                               blurPtr + innerStart, 1, innerCount)
-
-                    // detail = original - blur
-                    detail.withUnsafeMutableBufferPointer { detBuf in
-                        vDSP_vsub(blurPtr + innerStart, 1,
-                                  origPtr + innerStart, 1,
-                                  detBuf.baseAddress! + innerStart, 1, innerCount)
-                        // result = original + sharpening * detail
-                        var sharpAmt = sharpening
-                        planes[ch].withUnsafeMutableBufferPointer { planeBuf in
-                            vDSP_vsma(detBuf.baseAddress! + innerStart, 1, &sharpAmt,
-                                      origPtr + innerStart, 1,
-                                      planeBuf.baseAddress! + innerStart, 1, innerCount)
-                        }
-                    }
-                }
-            }
-
-            // Preserve edge pixels (first/last row, first/last column)
-            for i in 0..<width { planes[ch][i] = original[i] }
-            for i in (planeSize - width)..<planeSize { planes[ch][i] = original[i] }
-            for y in 1..<(height - 1) {
-                planes[ch][y * width] = original[y * width]
-                planes[ch][y * width + width - 1] = original[y * width + width - 1]
-            }
-
-            var lo: Float = 0, hi: Float = 1
-            vDSP_vclip(planes[ch], 1, &lo, &hi, &planes[ch], 1, n)
-        }
-    }
-
-    // Step 3: Convert 3 float planes to interleaved BGRA8 using vDSP
-    var pixels = [UInt8](repeating: 255, count: planeSize * 4) // alpha = 255
-    var scaleTo255: Float = 255.0
-    var rScaled = [Float](repeating: 0, count: planeSize)
-    var gScaled = [Float](repeating: 0, count: planeSize)
-    var bScaled = [Float](repeating: 0, count: planeSize)
-    vDSP_vsmul(planes[0], 1, &scaleTo255, &rScaled, 1, n)
-    vDSP_vsmul(planes[1], 1, &scaleTo255, &gScaled, 1, n)
-    vDSP_vsmul(planes[2], 1, &scaleTo255, &bScaled, 1, n)
-
-    // Interleave to BGRA (still needs per-pixel write due to interleaving)
-    for idx in 0..<planeSize {
-        let outIdx = idx * 4
-        pixels[outIdx]     = UInt8(bScaled[idx])  // B
-        pixels[outIdx + 1] = UInt8(gScaled[idx])  // G
-        pixels[outIdx + 2] = UInt8(rScaled[idx])  // R
-        // alpha already 255
-    }
-
+    // Output texture
     let texDesc = MTLTextureDescriptor.texture2DDescriptor(
-        pixelFormat: .bgra8Unorm, width: width, height: height, mipmapped: false
+        pixelFormat: .rgba8Unorm, width: width, height: height, mipmapped: false
     )
-    texDesc.usage = [.shaderRead]
-    guard let tex = device.makeTexture(descriptor: texDesc) else { return nil }
-    tex.replace(
-        region: MTLRegion(origin: MTLOrigin(), size: MTLSize(width: width, height: height, depth: 1)),
-        mipmapLevel: 0, withBytes: pixels, bytesPerRow: width * 4
+    texDesc.usage = [.shaderRead, .shaderWrite]
+    guard let outputTex = device.makeTexture(descriptor: texDesc) else { return nil }
+
+    // Pack params struct (must match RestretchParams in Metal shader)
+    struct RestretchParams {
+        var c0: Float
+        var mb: Float
+        var darkLevel: Float
+        var contrast: Float
+        var sharpening: Float
+        var width: Int32
+        var height: Int32
+        var channelCount: Int32
+    }
+
+    var params = RestretchParams(
+        c0: c0, mb: mb,
+        darkLevel: darkLevel, contrast: contrast, sharpening: sharpening,
+        width: Int32(width), height: Int32(height), channelCount: Int32(channelCount)
     )
-    return tex
+
+    guard let library = device.makeDefaultLibrary(),
+          let function = library.makeFunction(name: "restretch_float"),
+          let pipeline = try? device.makeComputePipelineState(function: function),
+          let queue = device.makeCommandQueue(),
+          let cmdBuf = queue.makeCommandBuffer(),
+          let encoder = cmdBuf.makeComputeCommandEncoder() else { return nil }
+
+    encoder.setComputePipelineState(pipeline)
+    encoder.setBuffer(inputBuffer, offset: 0, index: 0)
+    encoder.setTexture(outputTex, index: 0)
+    encoder.setBytes(&params, length: MemoryLayout<RestretchParams>.size, index: 1)
+
+    let tg = MTLSize(width: 32, height: 32, depth: 1)
+    let grid = MTLSize(width: (width + 31) / 32, height: (height + 31) / 32, depth: 1)
+    encoder.dispatchThreadgroups(grid, threadsPerThreadgroup: tg)
+    encoder.endEncoding()
+    cmdBuf.commit()
+    cmdBuf.waitUntilCompleted()
+
+    return outputTex
 }
 
 // Small cross shape for marking detected stars in the mini preview
@@ -999,6 +914,9 @@ struct QuickStackV2ProgressView: View {
     let nightMode: Bool
     var onDismiss: () -> Void
 
+    // Track stack start time to compute duration for benchmark
+    @State private var stackStartDate = Date()
+
     private var fg: Color { nightMode ? .red : .primary }
     private var fgDim: Color { nightMode ? .red.opacity(0.7) : .secondary }
     private var bg: Color { nightMode ? .black : Color(NSColor.windowBackgroundColor) }
@@ -1120,7 +1038,8 @@ struct QuickStackV2ProgressView: View {
     private func openResultWindow() {
         guard engine.resultTexture != nil else { return }
 
-        let resultView = StackResultViewV2(engine: engine, nightMode: nightMode)
+        let stackMs = Int(Date().timeIntervalSince(stackStartDate) * 1000)
+        let resultView = StackResultViewV2(engine: engine, nightMode: nightMode, stackTimeMs: stackMs)
         let hostingView = NSHostingView(rootView: resultView)
         let maxDim: CGFloat = 1200
         let scale = min(maxDim / CGFloat(engine.resultWidth), maxDim / CGFloat(engine.resultHeight), 1.0)
@@ -1144,6 +1063,7 @@ struct QuickStackV2ProgressView: View {
 struct StackResultViewV2: View {
     let engine: QuickStackEngineV2
     let nightMode: Bool
+    let stackTimeMs: Int
     @State private var stretchValue: Double = 0.25
     @State private var sharpening: Double = 0.0
     @State private var contrast: Double = 0.0
@@ -1152,6 +1072,7 @@ struct StackResultViewV2: View {
     @State private var savedMessage: String?
     @State private var isRendering: Bool = false
     @State private var renderTask: Task<Void, Never>?
+    @StateObject private var benchmarkService = BenchmarkService()
 
     private var fgDim: Color { nightMode ? .red.opacity(0.7) : .secondary }
 
@@ -1206,7 +1127,28 @@ struct StackResultViewV2: View {
                 Text("\(engine.resultWidth)x\(engine.resultHeight) — LightspeedStacker")
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundColor(fgDim)
+
                 Spacer()
+
+                // Share & Compare benchmark button — centered and prominent
+                Button(action: { shareLightspeedBenchmark() }) {
+                    HStack(spacing: 4) {
+                        Image(systemName: benchmarkService.isUploading ? "arrow.triangle.2.circlepath" : "trophy")
+                            .font(.system(size: 12))
+                        Text("Share & Compare")
+                            .font(.system(size: 11, weight: .medium, design: .monospaced))
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.green)
+                .controlSize(.small)
+                .disabled(benchmarkService.isUploading || !BenchmarkConfig.isConfigured)
+                .help(BenchmarkConfig.isConfigured
+                      ? "Share your benchmark and see how you rank"
+                      : "Benchmark sharing not configured — see CLAUDE.md")
+
+                Spacer()
+
                 Button(action: saveAsPNG) {
                     HStack(spacing: 4) {
                         Image(systemName: "square.and.arrow.down")
@@ -1332,6 +1274,25 @@ struct StackResultViewV2: View {
             DispatchQueue.main.asyncAfter(deadline: .now() + 2) { savedMessage = nil }
         } catch {
             savedMessage = "Error: \(error.localizedDescription)"
+        }
+    }
+
+    // Upload benchmark and open leaderboard
+    private func shareLightspeedBenchmark() {
+        let entry = BenchmarkService.buildEntry(
+            engine: "lightspeed",
+            stackTimeMs: stackTimeMs,
+            fileCount: engine.totalLayers,
+            imageWidth: engine.resultWidth,
+            imageHeight: engine.resultHeight
+        )
+        Task {
+            await benchmarkService.shareAndCompare(entry: entry)
+            BenchmarkLeaderboardWindowController.shared.show(
+                service: benchmarkService,
+                myMachineHash: MachineInfo.machineHash,
+                engine: "lightspeed"
+            )
         }
     }
 }

@@ -83,6 +83,10 @@ class QuickStackEngine: ObservableObject {
             return
         }
 
+        // Cancel any previous run before resetting state
+        stackTask?.cancel()
+        stackTask = nil
+
         totalLayers = entries.count
         currentLayer = 0
         errorMessage = nil

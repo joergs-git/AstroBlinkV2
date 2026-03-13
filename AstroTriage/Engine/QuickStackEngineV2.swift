@@ -46,10 +46,10 @@ class QuickStackEngineV2: ObservableObject {
     private let warpPipeline: MTLComputePipelineState?
     private var stackTask: Task<Void, Never>?
 
-    // V2 tuning: fewer stars/triangles for preview quality (still accurate)
-    private let maxStars = 30               // V1: 50 (30 is plenty for matching)
-    private let triangleStarLimit = 10      // V1: 15 → C(10,3)=120 vs C(15,3)=455
-    private let subsampleFactor = 4
+    // V2 tuning: match V1 star/triangle counts for accuracy, use finer detection grid
+    private let maxStars = 50               // Same as V1 — more inliers for LS refinement
+    private let triangleStarLimit = 15      // C(15,3)=455 triangles — same as V1, hash keeps it fast
+    private let subsampleFactor = 2         // Half-res detection (was 4) — 4× finer star positions
     private let sigmaThreshold: Float = 5.0
 
     init?(device: MTLDevice) {
@@ -91,6 +91,10 @@ class QuickStackEngineV2: ObservableObject {
             phase = .failed
             return
         }
+
+        // Cancel any previous run before resetting state
+        stackTask?.cancel()
+        stackTask = nil
 
         totalLayers = entries.count
         currentLayer = 0
@@ -183,15 +187,22 @@ class QuickStackEngineV2: ObservableObject {
             return
         }
 
-        // Step 2: PARALLEL star detection (V2 optimization)
+        // Step 2: PARALLEL star detection + full-res centroid refinement
+        // Detect on subsample=2 of binned image, then refine on full binned resolution
+        // for sub-pixel accuracy in the coordinate space the warp kernel uses.
         phase = .detecting
         progress = 0.25
 
         let allStars: [[Star]] = await withTaskGroup(of: (Int, [Star]).self) { group in
             for (i, frame) in frames.enumerated() {
                 group.addTask { [self] in
-                    let stars = self.detectStars(in: frame.decoded)
-                    return (i, stars)
+                    // Coarse detection on subsampled data
+                    let coarse = self.detectStars(in: frame.decoded)
+                    // Refine centroids on full binned-resolution data (9×9 window)
+                    let refined = StarDetector.refinePositions(
+                        stars: coarse, in: frame.decoded, radius: 4
+                    )
+                    return (i, refined)
                 }
             }
             var results = Array(repeating: [Star](), count: frames.count)
@@ -516,6 +527,7 @@ class QuickStackEngineV2: ObservableObject {
     }
 
     // Hash-based matching: instead of O(N²) brute force, lookup candidate matches in O(1)
+    // After finding the best 3-point transform, refines it using least-squares on all inliers
     private nonisolated func matchTrianglesHashed(
         refIndex: [TriangleKey: [Int]], refTriangles: [Triangle], refStars: [Star],
         frameTriangles: [Triangle], frameStars: [Star]
@@ -562,18 +574,110 @@ class QuickStackEngineV2: ObservableObject {
                         if inliers > bestInliers {
                             bestInliers = inliers
                             bestTransform = transform
-
-                            // Early exit: if we found a great match, stop searching
-                            if inliers >= min(refStars.count, frameStars.count) / 2 {
-                                return bestInliers >= 3 ? bestTransform : nil
-                            }
                         }
                     }
                 }
             }
         }
 
-        return bestInliers >= 3 ? bestTransform : nil
+        guard bestInliers >= 3, let initial = bestTransform else { return nil }
+
+        // Two-pass least-squares refinement:
+        // Pass 1: collect inliers at 8px threshold, re-solve affine from all pairs
+        // Pass 2: use refined transform with tighter 4px threshold, re-solve again
+        // This converges to sub-pixel alignment accuracy
+        let pass1 = refineTransform(
+            initial: initial,
+            refStars: refStars, frameStars: frameStars,
+            threshold: 8.0
+        )
+        let pass2 = refineTransform(
+            initial: pass1 ?? initial,
+            refStars: refStars, frameStars: frameStars,
+            threshold: 4.0
+        )
+        return pass2 ?? pass1 ?? initial
+    }
+
+    // Least-squares affine refinement using all inlier star correspondences.
+    // Solves the overdetermined system via normal equations (AᵀA)x = Aᵀb
+    // for each of the two coordinate transforms (x' and y') independently.
+    private nonisolated func refineTransform(
+        initial: AffineTransform2D,
+        refStars: [Star], frameStars: [Star],
+        threshold: Float
+    ) -> AffineTransform2D? {
+        let threshSq = threshold * threshold
+
+        // Collect matched pairs: frame star → closest ref star under the initial transform
+        var srcPts: [(Float, Float)] = []
+        var dstPts: [(Float, Float)] = []
+
+        for fs in frameStars {
+            let (tx, ty) = initial.apply(fs.x, fs.y)
+            var bestDist: Float = .greatestFiniteMagnitude
+            var bestRef: (Float, Float) = (0, 0)
+            for rs in refStars {
+                let dx = tx - rs.x
+                let dy = ty - rs.y
+                let d = dx * dx + dy * dy
+                if d < bestDist {
+                    bestDist = d
+                    bestRef = (rs.x, rs.y)
+                }
+            }
+            if bestDist < threshSq {
+                srcPts.append((fs.x, fs.y))
+                dstPts.append(bestRef)
+            }
+        }
+
+        // Need at least 3 pairs for affine, but more is better
+        guard srcPts.count >= 4 else { return nil }
+
+        // Solve least-squares: for each destination coordinate (X, Y),
+        // minimize sum of (a*xi + b*yi + tx - Xi)² over all pairs.
+        // Normal equations: [sum(xi²)   sum(xi*yi) sum(xi)] [a ]   [sum(xi*Xi)]
+        //                   [sum(xi*yi) sum(yi²)   sum(yi)] [b ] = [sum(yi*Xi)]
+        //                   [sum(xi)    sum(yi)    N      ] [tx]   [sum(Xi)   ]
+
+        let n = Float(srcPts.count)
+        var sxx: Float = 0, syy: Float = 0, sxy: Float = 0
+        var sx: Float = 0, sy: Float = 0
+        var sxX: Float = 0, syX: Float = 0, sX: Float = 0
+        var sxY: Float = 0, syY: Float = 0, sY: Float = 0
+
+        for i in 0..<srcPts.count {
+            let (xi, yi) = srcPts[i]
+            let (Xi, Yi) = dstPts[i]
+            sxx += xi * xi;  syy += yi * yi;  sxy += xi * yi
+            sx  += xi;       sy  += yi
+            sxX += xi * Xi;  syX += yi * Xi;  sX  += Xi
+            sxY += xi * Yi;  syY += yi * Yi;  sY  += Yi
+        }
+
+        // Solve 3x3 system using Cramer's rule (same matrix for both X and Y targets)
+        let det = sxx * (syy * n - sy * sy)
+                - sxy * (sxy * n - sy * sx)
+                + sx  * (sxy * sy - syy * sx)
+        guard Swift.abs(det) > 1e-6 else { return nil }
+        let invDet = 1.0 / det
+
+        // Solve for (a, b, tx) mapping frame→ref X coordinates
+        let a  = ((syy * n - sy * sy) * sxX + (sy * sx - sxy * n) * syX + (sxy * sy - syy * sx) * sX) * invDet
+        let b  = ((sy * sx - sxy * n) * sxX + (sxx * n - sx * sx) * syX + (sxy * sx - sxx * sy) * sX) * invDet
+        let tx = ((sxy * sy - syy * sx) * sxX + (sxy * sx - sxx * sy) * syX + (sxx * syy - sxy * sxy) * sX) * invDet
+
+        // Solve for (c, d, ty) mapping frame→ref Y coordinates (same LHS matrix)
+        let c  = ((syy * n - sy * sy) * sxY + (sy * sx - sxy * n) * syY + (sxy * sy - syy * sx) * sY) * invDet
+        let d  = ((sy * sx - sxy * n) * sxY + (sxx * n - sx * sx) * syY + (sxy * sx - sxx * sy) * sY) * invDet
+        let ty = ((sxy * sy - syy * sx) * sxY + (sxy * sx - sxx * sy) * syY + (sxx * syy - sxy * sxy) * sY) * invDet
+
+        // Sanity: scale should be near 1.0
+        let scale = (a * a + c * c).squareRoot()
+        guard scale > 0.8 && scale < 1.2 else { return nil }
+
+        return AffineTransform2D(a: a, b: b, tx: tx, c: c, d: d, ty: ty)
     }
 
     // MARK: - Affine Transform

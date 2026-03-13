@@ -50,6 +50,12 @@ struct AstroBlinkV2App: App {
                     HelpWindowController.shared.showWindow(nil)
                 }
                 .keyboardShortcut("?", modifiers: .command)
+
+                Divider()
+
+                Button("What's New in v3.7.0") {
+                    ReleaseNotesWindowController.shared.show()
+                }
             }
         }
     }

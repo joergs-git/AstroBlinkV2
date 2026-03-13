@@ -26,9 +26,9 @@ class BenchmarkStatsWindowController: NSWindowController {
     }
 
     // Show the window with current benchmark data
-    func show(stats: BenchmarkStats) {
+    func show(stats: BenchmarkStats, sessionRootURL: URL? = nil) {
         statsRef = stats
-        let hostingView = NSHostingView(rootView: BenchmarkStatsContentView(stats: stats))
+        let hostingView = NSHostingView(rootView: BenchmarkStatsContentView(stats: stats, sessionRootURL: sessionRootURL))
         window?.contentView = hostingView
         showWindow(nil)
         window?.makeKeyAndOrderFront(nil)
@@ -38,7 +38,9 @@ class BenchmarkStatsWindowController: NSWindowController {
 // SwiftUI content for the benchmark stats window
 struct BenchmarkStatsContentView: View {
     @ObservedObject var stats: BenchmarkStats
+    let sessionRootURL: URL?
     @State private var memorySnapshot: BenchmarkStats.MemorySnapshot?
+    @StateObject private var benchmarkService = BenchmarkService()
 
     // Bar chart data derived from stats
     private var barItems: [(label: String, duration: Double, color: Color)] {
@@ -125,6 +127,31 @@ struct BenchmarkStatsContentView: View {
                 memorySection
             }
 
+            // Share & Compare button — uploads benchmarks and opens leaderboard
+            if stats.totalSessionDuration != nil || stats.quickStackDuration != nil {
+                Divider()
+
+                HStack {
+                    Spacer()
+
+                    Button(action: { shareBenchmarks() }) {
+                        HStack(spacing: 4) {
+                            Image(systemName: benchmarkService.isUploading ? "arrow.triangle.2.circlepath" : "trophy")
+                                .font(.system(size: 12))
+                            Text("Share & Compare")
+                                .font(.system(size: 12, weight: .medium, design: .monospaced))
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.green)
+                    .controlSize(.regular)
+                    .disabled(benchmarkService.isUploading || !BenchmarkConfig.isConfigured)
+                    .help("Share your benchmarks and see the community leaderboard")
+
+                    Spacer()
+                }
+            }
+
             Spacer(minLength: 4)
         }
         .padding(20)
@@ -135,6 +162,49 @@ struct BenchmarkStatsContentView: View {
         // Refresh memory snapshot periodically while visible
         .onReceive(Timer.publish(every: 2, on: .main, in: .common).autoconnect()) { _ in
             memorySnapshot = stats.captureMemorySnapshot()
+        }
+    }
+
+    // Upload all available benchmarks and open the leaderboard
+    private func shareBenchmarks() {
+        let sourceType = MachineInfo.sourceType(for: sessionRootURL)
+        var engine = "lightspeed"
+
+        Task {
+            // Upload stacking benchmark if available
+            if let stackDuration = stats.quickStackDuration {
+                engine = stats.quickStackEngine
+                let stackEntry = BenchmarkService.buildEntry(
+                    engine: engine,
+                    stackTimeMs: Int(stackDuration * 1000),
+                    fileCount: stats.quickStackFrameCount,
+                    imageWidth: stats.quickStackImageWidth,
+                    imageHeight: stats.quickStackImageHeight
+                )
+                await benchmarkService.shareAndCompare(entry: stackEntry)
+            }
+
+            // Upload session load benchmark if available
+            if let totalDuration = stats.totalSessionDuration {
+                let sessionEntry = BenchmarkService.buildSessionEntry(
+                    fileCount: stats.fileCount,
+                    totalSizeBytes: stats.totalFileSizeBytes,
+                    sourceType: sourceType,
+                    scanMs: Int((stats.fileLoadingDuration ?? 0) * 1000),
+                    firstImageMs: Int((stats.firstImageDuration ?? 0) * 1000),
+                    headerMs: Int((stats.headerEnrichDuration ?? 0) * 1000),
+                    cachingMs: Int((stats.cachingDuration ?? 0) * 1000),
+                    totalReadyMs: Int(totalDuration * 1000)
+                )
+                await benchmarkService.shareSessionBenchmark(entry: sessionEntry)
+            }
+
+            // Open leaderboard
+            BenchmarkLeaderboardWindowController.shared.show(
+                service: benchmarkService,
+                myMachineHash: MachineInfo.machineHash,
+                engine: engine
+            )
         }
     }
 

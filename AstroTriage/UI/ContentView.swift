@@ -58,7 +58,7 @@ struct ContentView: View {
             // Toolbar row — two lines: buttons on top, sliders below
             VStack(spacing: 2) {
                 // Row 1: Icon buttons + toggles + stats
-                HStack(spacing: 0) {
+                HStack(spacing: 4) {
                     sfToolbarButton("folder", "Open", "Open Folder (⌘O)") { viewModel.openFolder() }
                     sfToolbarButton("list.bullet.rectangle", "Inspector", "Header Inspector (I)") { viewModel.toggleHeaderInspector() }
                     sfToolbarButton("chart.bar", "Session", "Session Overview") {
@@ -88,6 +88,19 @@ struct ContentView: View {
                         .help("Lock STF — same stretch for all images (S)")
                     }
                     .frame(width: 90)
+
+                    // Auto Meridian toggle — rotates images across meridian flip
+                    VStack(spacing: 2) {
+                        Toggle("MeridianFlip", isOn: Binding(
+                            get: { viewModel.autoMeridianEnabled },
+                            set: { _ in viewModel.toggleAutoMeridian() }
+                        ))
+                        .toggleStyle(.switch)
+                        .controlSize(.mini)
+                        .tint(.purple)
+                        .help("Auto-rotate images across meridian flip for consistent orientation")
+                    }
+                    .frame(width: 120)
 
                     // Apply All toggle: bakes current settings into all cached previews
                     VStack(spacing: 2) {
@@ -182,6 +195,11 @@ struct ContentView: View {
 
                     Spacer()
 
+                    // Benchmark button — opens benchmark stats
+                    sfToolbarButton("gauge.with.dots.needle.67percent", "Benchmark", "Open Benchmark Stats") {
+                        NotificationCenter.default.post(name: .showBenchmarkStats, object: nil)
+                    }
+
                     // System stats — stacked vertically, readable size
                     if let stats = viewModel.systemStats {
                         VStack(alignment: .trailing, spacing: 1) {
@@ -214,17 +232,27 @@ struct ContentView: View {
                     sfToolbarButton("questionmark.circle", "Help", "Help (⌘?)") { HelpWindowController.shared.showWindow(nil) }
                     sfToolbarButton("info.circle", "About", "About") { AstroBlinkV2AppDelegate.showAboutPanel() }
                 }
+                .padding(.bottom, 2)
 
-                // Row 2: Reset button + all sliders in a single horizontal strip
+                // Thin separator between toolbar icons and image settings
+                Rectangle().fill(nightDivider).frame(height: 1)
+
+                // Row 2: Image settings — centered with the image frame below
                 HStack(spacing: 12) {
+                    Spacer()
+
                     // Reset all sliders to defaults
                     Button(action: {
                         viewModel.resetSlidersToDefaults()
                         sliderValue = Double(viewModel.stretchStrength)
                     }) {
-                        Image(systemName: "arrow.counterclockwise")
-                            .font(.system(size: 14, weight: .medium))
-                            .foregroundColor(nightFg)
+                        HStack(spacing: 3) {
+                            Image(systemName: "arrow.counterclockwise")
+                                .font(.system(size: 12, weight: .medium))
+                            Text("Reset")
+                                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                        }
+                        .foregroundColor(nightFg)
                     }
                     .buttonStyle(.plain)
                     .help("Reset all sliders to defaults")
@@ -252,22 +280,10 @@ struct ContentView: View {
                     ), range: 0.0...1.0, step: 0.01,
                         display: { String(format: "%.2f", $0) })
 
-                    // Auto Meridian toggle — always visible, rotates images across meridian flip
-                    VStack(spacing: 2) {
-                        Toggle("MeridianFlip", isOn: Binding(
-                            get: { viewModel.autoMeridianEnabled },
-                            set: { _ in viewModel.toggleAutoMeridian() }
-                        ))
-                        .toggleStyle(.switch)
-                        .controlSize(.mini)
-                        .tint(.purple)
-                        .help("Auto-rotate images across meridian flip for consistent orientation")
-                    }
-                    .frame(width: 120)
-
                     Spacer()
                 }
                 .padding(.horizontal, 8)
+                .padding(.top, 2)
             }
             .padding(.vertical, 4)
             .background(nightToolbarBg)
@@ -517,6 +533,14 @@ struct ContentView: View {
                                 .foregroundColor(nightFgDim)
                         }
 
+                        // Selection count (only when >1 highlighted)
+                        if viewModel.selectedTableIndices.count > 1 {
+                            statusDivider
+                            Text("\(viewModel.selectedTableIndices.count) selected")
+                                .font(.system(size: 11, design: .monospaced))
+                                .foregroundColor(nightFgDim)
+                        }
+
                         statusDivider
 
                         Text(viewModel.statusMessage)
@@ -556,7 +580,7 @@ struct ContentView: View {
             keyboardMonitor = KeyboardHandler.install(viewModel: viewModel)
         }
         .onReceive(NotificationCenter.default.publisher(for: .showBenchmarkStats)) { _ in
-            BenchmarkStatsWindowController.shared.show(stats: viewModel.benchmarkStats)
+            BenchmarkStatsWindowController.shared.show(stats: viewModel.benchmarkStats, sessionRootURL: viewModel.sessionRootURL)
         }
         .onReceive(NotificationCenter.default.publisher(for: .resetSettingsRequest)) { _ in
             let alert = NSAlert()

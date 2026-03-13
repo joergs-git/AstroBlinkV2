@@ -17,6 +17,9 @@ class BenchmarkStats: ObservableObject {
     var quickStackStartTime: Date?     // Quick Stack started
     var quickStackEndTime: Date?       // Quick Stack completed
     var quickStackFrameCount: Int = 0  // Number of frames stacked
+    var quickStackEngine: String = "lightspeed"  // "lightspeed" or "normal"
+    var quickStackImageWidth: Int = 0
+    var quickStackImageHeight: Int = 0
 
     // Session metadata
     @Published var fileCount: Int = 0
@@ -78,6 +81,9 @@ class BenchmarkStats: ObservableObject {
         quickStackStartTime = nil
         quickStackEndTime = nil
         quickStackFrameCount = 0
+        quickStackEngine = "lightspeed"
+        quickStackImageWidth = 0
+        quickStackImageHeight = 0
         fileCount = 0
         totalFileSizeBytes = 0
         isComplete = false
@@ -127,10 +133,13 @@ class BenchmarkStats: ObservableObject {
         isComplete = true
     }
 
-    func markQuickStackStart(frameCount: Int) {
+    func markQuickStackStart(frameCount: Int, engine: String = "lightspeed", imageWidth: Int = 0, imageHeight: Int = 0) {
         quickStackStartTime = Date()
         quickStackEndTime = nil
         quickStackFrameCount = frameCount
+        quickStackEngine = engine
+        quickStackImageWidth = imageWidth
+        quickStackImageHeight = imageHeight
     }
 
     func markQuickStackEnd() {

@@ -462,20 +462,22 @@ struct FileListView: NSViewRepresentable {
             viewModel.selectedTableIndices = selectedRows
 
             // Determine which row to display: for multi-select (shift+click/arrow),
-            // show the image at the cursor position (last added row in the selection).
+            // show the image at the cursor position (the row the user just navigated to).
             // For single select, show the selected row as before.
             let targetRow: Int
             if selectedRows.count == 1, let row = selectedRows.first {
                 targetRow = row
             } else if selectedRows.count > 1 {
-                // During shift+arrow, the cursor position is the newest edge of selection.
-                // NSTableView doesn't expose this directly, but we can infer it:
-                // compare the current selection to what the viewModel thinks is selected.
-                // The row furthest from the previous selection is the cursor position.
-                let prevRow = viewModel.selectedIndex
-                if let first = selectedRows.first, let last = selectedRows.last {
-                    // Show whichever end is further from the previous position
-                    targetRow = abs(last - prevRow) >= abs(first - prevRow) ? last : first
+                if !newlySelected.isEmpty, let newest = newlySelected.last {
+                    // Selection is growing — show the most recently added row
+                    targetRow = newest
+                } else if !deselected.isEmpty, let removed = deselected.max(),
+                          let first = selectedRows.first, let last = selectedRows.last {
+                    // Selection is shrinking (shift+arrow back toward anchor) —
+                    // show whichever selection end is closest to the removed row
+                    targetRow = abs(removed - last) < abs(removed - first) ? last : first
+                } else if let last = selectedRows.last {
+                    targetRow = last
                 } else {
                     return
                 }

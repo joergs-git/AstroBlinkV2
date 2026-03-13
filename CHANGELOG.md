@@ -4,6 +4,23 @@ All notable changes to AstroBlinkV2 will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.7.0] — 2026-03-13
+
+### Added
+- **Benchmark Sharing & Leaderboard**: Share your stacking and session load benchmarks anonymously with the community. See how your machine ranks against others. Powered by Supabase with privacy-first design (only hardware specs and timing shared, machine identity is a non-reversible SHA256 hash).
+- **Session Load Benchmarks**: New "Session Load" tab in the leaderboard — compare file scanning, first image display, header reading, and pre-caching performance across machines. Ranked by MB/s throughput, auto-detects local SSD vs network storage.
+- **Sortable Leaderboard Columns**: Click any column header to sort ascending/descending. Active sort column highlighted with chevron indicator. Secondary sort by primary metric on ties.
+- **Release Notes in Help Menu**: "What's New" menu item shows release notes for each version directly inside the app.
+- **Share & Compare Button**: Green prominent button in Quick Stack result windows and Benchmark Stats window. Uploads benchmark and opens the community leaderboard.
+- **Speedometer Toolbar Icon**: Quick access to Benchmark Stats from the main toolbar.
+- **Duplicate Prevention**: Identical benchmarks are detected before upload and silently skipped.
+
+### Changed
+- **Toolbar Layout**: Thin separator line between toolbar icons and image settings row. Image settings (stretch, sharp, contrast, dark) are now centered. MeridianFlip toggle moved to toolbar row 1 between Lock STF and Apply All.
+- **Reset Button**: Now shows icon + "Reset" label for clarity.
+- **Toolbar Spacing**: Slightly increased padding between main toolbar icons.
+- **Leaderboard Ranking**: Stacking benchmarks ranked by t/frame (seconds per frame) instead of absolute time for fair comparison across different frame counts. Added ms/MP/frame metric for cross-resolution comparison.
+
 ## [3.6.0] — 2026-03-12
 
 ### Added

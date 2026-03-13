@@ -122,6 +122,85 @@ enum StarDetector {
         return Array(stars.prefix(maxStars))
     }
 
+    /// Refine star positions using full-resolution weighted centroid.
+    /// Takes coarse-detected stars and re-centroids each one on the raw full-res data
+    /// using a larger window (radius pixels). This gives true sub-pixel accuracy.
+    /// Standard approach in professional astrometry (SExtractor, DAOPHOT).
+    ///
+    /// - Parameters:
+    ///   - stars: Coarsely detected stars (from detectStars)
+    ///   - image: Full-resolution decoded image
+    ///   - radius: Half-size of centroid window (default 4 → 9×9 window)
+    ///   - channel: Which channel to use
+    /// - Returns: Stars with refined positions
+    static func refinePositions(
+        stars: [DetectedStar],
+        in image: DecodedImage,
+        radius: Int = 4,
+        channel: Int = 0
+    ) -> [DetectedStar] {
+        let w = image.width
+        let h = image.height
+        let planeSize = w * h
+        let channelOffset = min(channel, image.channelCount - 1) * planeSize
+        let ptr = image.buffer.contents().bindMemory(to: UInt16.self, capacity: planeSize * image.channelCount)
+
+        // Compute local background from a quick subsample
+        let sampleStride = max(1, planeSize / 10000)
+        var bgSamples = [Float]()
+        bgSamples.reserveCapacity(10000)
+        for i in stride(from: 0, to: planeSize, by: sampleStride) {
+            bgSamples.append(Float(ptr[channelOffset + i]))
+        }
+        vDSP_vsort(&bgSamples, vDSP_Length(bgSamples.count), 1)
+        let bgMedian = bgSamples[bgSamples.count / 2]
+
+        var refined: [DetectedStar] = []
+        refined.reserveCapacity(stars.count)
+
+        for star in stars {
+            // Center of refinement window (round to nearest pixel)
+            let cx = Int(star.x + 0.5)
+            let cy = Int(star.y + 0.5)
+
+            // Bounds check
+            guard cx >= radius && cx < w - radius && cy >= radius && cy < h - radius else {
+                refined.append(star) // Keep original if too close to edge
+                continue
+            }
+
+            // Weighted centroid in (2*radius+1) × (2*radius+1) window on full-res data
+            var sumX: Float = 0, sumY: Float = 0, sumW: Float = 0
+            var peakVal: Float = 0
+
+            for dy in -radius...radius {
+                for dx in -radius...radius {
+                    let px = cx + dx
+                    let py = cy + dy
+                    let v = Float(ptr[channelOffset + py * w + px]) - bgMedian
+                    if v > 0 {
+                        sumX += Float(px) * v
+                        sumY += Float(py) * v
+                        sumW += v
+                        if v > peakVal { peakVal = v }
+                    }
+                }
+            }
+
+            if sumW > 0 {
+                refined.append(DetectedStar(
+                    x: sumX / sumW,
+                    y: sumY / sumW,
+                    brightness: peakVal
+                ))
+            } else {
+                refined.append(star)
+            }
+        }
+
+        return refined
+    }
+
     /// Compute background median and sigma from a decoded image (same algorithm as star detection).
     /// Used to pass threshold/median to GPU star detection kernel.
     ///

@@ -1354,7 +1354,12 @@ class TriageViewModel: ObservableObject {
         guard let engine = quickStackEngine else { return }
 
         showQuickStack = true
-        benchmarkStats.markQuickStackStart(frameCount: entries.count)
+        benchmarkStats.markQuickStackStart(
+            frameCount: entries.count,
+            engine: "normal",
+            imageWidth: entries.first?.width ?? 0,
+            imageHeight: entries.first?.height ?? 0
+        )
         engine.startStack(entries: entries, debayerEnabled: debayerEnabled)
     }
 
@@ -1405,7 +1410,12 @@ class TriageViewModel: ObservableObject {
         guard let engine = quickStackEngineV2 else { return }
 
         showQuickStackV2 = true
-        benchmarkStats.markQuickStackStart(frameCount: entries.count)
+        benchmarkStats.markQuickStackStart(
+            frameCount: entries.count,
+            engine: "lightspeed",
+            imageWidth: entries.first?.width ?? 0,
+            imageHeight: entries.first?.height ?? 0
+        )
         engine.startStack(entries: entries, debayerEnabled: debayerEnabled)
     }
 
