@@ -4,6 +4,27 @@ All notable changes to AstroBlinkV2 will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.10.0] — 2026-03-13
+
+### Added
+- **About / Splash Screen**: Custom About window replacing standard macOS panel. Shows app icon, version, social links, Tell a Friend share sheet, What's New button, and App Store link. Displays as splash on launch (auto-dismiss after 6s or click outside).
+- **Tell a Friend**: Native macOS share sheet for recommending AstroBlinkV2 — available in About window and Release Notes.
+
+### Changed
+- **Quality Scoring**: Cross-night comparison by default. Groups by filter + target + exposure only (removed night grouping). Consistently bad nights now score lower overall instead of being judged only within their own night.
+- **Toggle Order**: Toolbar toggles reordered to Apply All → Debayer → Lock STF → MeridianFlip for consistent left-to-right workflow.
+- **Benchmark Icon**: Light blue speedometer, positioned right of Night toggle.
+- **Leaderboard Chip Column**: Left-aligned header to match textual column content.
+- **Toolbar Cleanup**: Removed MEM/CPU system stats from toolbar row 1.
+
+### Fixed
+- **Star Column Empty**: `displayStarCount` now includes GPU-computed star count (`computedStarCount`), not just NINA-sourced `starCount`.
+- **Spacebar Marking**: Keyboard-highlighted rows now correctly toggle pre-delete marks. Works with multi-selection and filtered views (hideMarked, showOnlyMarked, search filter).
+- **Benchmark Total Ready Time**: `totalSessionDuration` is now a frozen stored value instead of a computed property. Stops counting once both caching and header enrichment complete.
+- **Lock STF Darkening**: Locking STF while showing a cached preview no longer causes images to go dark. Current image is decoded first to capture correct STF params.
+- **Stretch Slider + Lock STF**: Moving the stretch slider while STF is locked now recalculates STF params AND re-freezes the lock, so the change is visible.
+- **Reset Sliders**: Reset now restores `applyAllEnabled = true`, matching the exact state after initial folder load.
+
 ## [3.9.0] — 2026-03-13
 
 ### Added

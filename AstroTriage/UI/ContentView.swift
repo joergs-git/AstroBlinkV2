@@ -76,32 +76,6 @@ struct ContentView: View {
                     }
                     toolbarDivider
 
-                    // Lock STF toggle: freezes exact c0/mb from current image for all
-                    VStack(spacing: 2) {
-                        Toggle("Lock STF", isOn: Binding(
-                            get: { viewModel.isSTFLocked },
-                            set: { _ in viewModel.toggleLockSTF() }
-                        ))
-                        .toggleStyle(.switch)
-                        .controlSize(.mini)
-                        .tint(.orange)
-                        .help("Lock STF — same stretch for all images (S)")
-                    }
-                    .frame(width: 90)
-
-                    // Auto Meridian toggle — rotates images across meridian flip
-                    VStack(spacing: 2) {
-                        Toggle("MeridianFlip", isOn: Binding(
-                            get: { viewModel.autoMeridianEnabled },
-                            set: { _ in viewModel.toggleAutoMeridian() }
-                        ))
-                        .toggleStyle(.switch)
-                        .controlSize(.mini)
-                        .tint(.purple)
-                        .help("Auto-rotate images across meridian flip for consistent orientation")
-                    }
-                    .frame(width: 120)
-
                     // Apply All toggle: bakes current settings into all cached previews
                     VStack(spacing: 2) {
                         Toggle("Apply All", isOn: Binding(
@@ -129,6 +103,32 @@ struct ContentView: View {
                         }
                         .frame(width: 90)
                     }
+
+                    // Lock STF toggle: freezes exact c0/mb from current image for all
+                    VStack(spacing: 2) {
+                        Toggle("Lock STF", isOn: Binding(
+                            get: { viewModel.isSTFLocked },
+                            set: { _ in viewModel.toggleLockSTF() }
+                        ))
+                        .toggleStyle(.switch)
+                        .controlSize(.mini)
+                        .tint(.orange)
+                        .help("Lock STF — same stretch for all images (S)")
+                    }
+                    .frame(width: 90)
+
+                    // Auto Meridian toggle — rotates images across meridian flip
+                    VStack(spacing: 2) {
+                        Toggle("MeridianFlip", isOn: Binding(
+                            get: { viewModel.autoMeridianEnabled },
+                            set: { _ in viewModel.toggleAutoMeridian() }
+                        ))
+                        .toggleStyle(.switch)
+                        .controlSize(.mini)
+                        .tint(.purple)
+                        .help("Auto-rotate images across meridian flip for consistent orientation")
+                    }
+                    .frame(width: 120)
 
                     toolbarDivider
 
@@ -195,26 +195,7 @@ struct ContentView: View {
 
                     Spacer()
 
-                    // Benchmark button — opens benchmark stats
-                    sfToolbarButton("gauge.with.dots.needle.67percent", "Benchmark", "Open Benchmark Stats") {
-                        NotificationCenter.default.post(name: .showBenchmarkStats, object: nil)
-                    }
-
-                    // System stats — stacked vertically, readable size
-                    if let stats = viewModel.systemStats {
-                        VStack(alignment: .trailing, spacing: 1) {
-                            Text(stats.memory)
-                                .font(.system(size: 10, weight: .medium, design: .monospaced))
-                                .foregroundColor(nightFgDim)
-                            Text(stats.cpu)
-                                .font(.system(size: 10, weight: .medium, design: .monospaced))
-                                .foregroundColor(nightFgDim)
-                        }
-                        .help("App memory / CPU usage")
-                        .padding(.trailing, 4)
-                    }
-
-                    // Night mode toggle — right side near Help/About
+                    // Night mode toggle
                     VStack(spacing: 2) {
                         Toggle("Night", isOn: Binding(
                             get: { viewModel.nightMode },
@@ -226,6 +207,10 @@ struct ContentView: View {
                         .help("Toggle Night Mode (N)")
                     }
                     .frame(width: 80)
+
+                    sfToolbarButton("gauge.with.dots.needle.67percent", "Benchmark", "Open Benchmark Stats", iconColor: .cyan) {
+                        NotificationCenter.default.post(name: .showBenchmarkStats, object: nil)
+                    }
 
                     toolbarDivider
 
@@ -628,12 +613,12 @@ struct ContentView: View {
     }
 
     // SF Symbol toolbar button — monochrome, 24pt icons (50% bigger)
-    private func sfToolbarButton(_ symbol: String, _ label: String, _ tooltip: String, action: @escaping () -> Void) -> some View {
+    private func sfToolbarButton(_ symbol: String, _ label: String, _ tooltip: String, iconColor: Color? = nil, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             VStack(spacing: 2) {
                 Image(systemName: symbol)
                     .font(.system(size: 24, weight: .light))
-                    .foregroundColor(nightFg)
+                    .foregroundColor(iconColor ?? nightFg)
                 Spacer(minLength: 0)
                 Text(label)
                     .font(.system(size: 8, weight: .medium))

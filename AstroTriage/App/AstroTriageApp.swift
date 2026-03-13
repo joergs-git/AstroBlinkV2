@@ -1,5 +1,8 @@
-// v3.2.0
+// v3.10.0
 import SwiftUI
+
+// MARK: - App Store URL (update when published)
+let appStoreURL = "https://apps.apple.com/app/astroblinkv2/id6760241266?mt=12"
 
 @main
 struct AstroBlinkV2App: App {
@@ -53,7 +56,7 @@ struct AstroBlinkV2App: App {
 
                 Divider()
 
-                Button("What's New in v3.9.0") {
+                Button("What's New in v3.10.0") {
                     ReleaseNotesWindowController.shared.show()
                 }
             }
@@ -74,93 +77,203 @@ class AstroBlinkV2AppDelegate: NSObject, NSApplicationDelegate {
         SessionCache.cleanupAllCaches()
     }
 
-    // Click monitor for dismissing splash screen
-    private var splashClickMonitor: Any?
-
-    // Show splash screen (about panel) briefly on launch
+    // Show splash screen on launch
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Small delay so the main window appears first
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-            AstroBlinkV2AppDelegate.showAboutPanel()
+            AboutWindowController.shared.show(asSplash: true)
+        }
+    }
 
-            // Dismiss on any mouse click or key press anywhere
-            self.splashClickMonitor = NSEvent.addLocalMonitorForEvents(
+    static func showAboutPanel() {
+        AboutWindowController.shared.show(asSplash: false)
+    }
+}
+
+// MARK: - Custom About / Splash Window
+
+class AboutWindowController {
+    static let shared = AboutWindowController()
+    private var window: NSWindow?
+    private var splashClickMonitor: Any?
+    private var splashDismissed = false
+
+    func show(asSplash: Bool) {
+        // If already visible, bring to front
+        if let w = window, w.isVisible {
+            w.makeKeyAndOrderFront(nil)
+            return
+        }
+
+        splashDismissed = false
+        let hostingView = NSHostingView(rootView: AboutView(
+            dismissAction: { [weak self] in self?.close() }
+        ))
+        let win = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 360, height: 440),
+            styleMask: [.titled, .closable],
+            backing: .buffered,
+            defer: false
+        )
+        win.title = "About AstroBlinkV2"
+        win.contentView = hostingView
+        win.center()
+        win.isReleasedWhenClosed = false
+        win.isMovableByWindowBackground = true
+        win.makeKeyAndOrderFront(nil)
+        self.window = win
+
+        // Splash mode: auto-dismiss on click or after 6 seconds
+        if asSplash {
+            splashClickMonitor = NSEvent.addLocalMonitorForEvents(
                 matching: [.leftMouseDown, .rightMouseDown, .keyDown]
             ) { [weak self] event in
+                // Don't dismiss if clicking inside the about window (let buttons work)
+                if let aboutWin = self?.window,
+                   let eventWindow = event.window,
+                   eventWindow == aboutWin {
+                    return event
+                }
                 self?.dismissSplash()
                 return event
             }
-
-            // Auto-dismiss after 4 seconds if no interaction
-            DispatchQueue.main.asyncAfter(deadline: .now() + 4.0) { [weak self] in
+            DispatchQueue.main.asyncAfter(deadline: .now() + 6.0) { [weak self] in
                 self?.dismissSplash()
             }
         }
     }
 
     private func dismissSplash() {
-        // Remove click monitor
+        guard !splashDismissed else { return }
+        splashDismissed = true
         if let monitor = splashClickMonitor {
             NSEvent.removeMonitor(monitor)
             splashClickMonitor = nil
         }
-        // Close the about panel if it's still showing
-        for window in NSApp.windows where window.title == "About AstroBlinkV2" {
-            window.close()
-        }
+        window?.close()
     }
 
-    static func showAboutPanel() {
-        let credits = NSMutableAttributedString()
+    func close() {
+        if let monitor = splashClickMonitor {
+            NSEvent.removeMonitor(monitor)
+            splashClickMonitor = nil
+        }
+        window?.close()
+    }
+}
 
-        let normalAttrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 11),
-            .foregroundColor: NSColor.secondaryLabelColor
-        ]
-        let linkAttrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 11),
-            .foregroundColor: NSColor.linkColor,
-            .cursor: NSCursor.pointingHand
-        ]
+// MARK: - About View (SwiftUI)
 
-        credits.append(NSAttributedString(string: "by joergsflow\n", attributes: [
-            .font: NSFont.systemFont(ofSize: 12, weight: .medium),
-            .foregroundColor: NSColor.labelColor
-        ]))
-        credits.append(NSAttributedString(string: "joergsflow@gmail.com\n\n", attributes: normalAttrs))
+struct AboutView: View {
+    var dismissAction: (() -> Void)?
+    @State private var shareAnchor: NSPoint = .zero
 
-        let githubLink = NSMutableAttributedString(string: "GitHub", attributes: linkAttrs)
-        githubLink.addAttribute(.link, value: URL(string: "https://github.com/joergs-git/AstroBlinkV2")!, range: NSRange(location: 0, length: githubLink.length))
-        credits.append(githubLink)
-        credits.append(NSAttributedString(string: "  ·  ", attributes: normalAttrs))
+    private var version: String {
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
+    }
+    private var build: String {
+        Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?"
+    }
 
-        let instaLink = NSMutableAttributedString(string: "Instagram", attributes: linkAttrs)
-        instaLink.addAttribute(.link, value: URL(string: "https://www.instagram.com/joergsflow/")!, range: NSRange(location: 0, length: instaLink.length))
-        credits.append(instaLink)
-        credits.append(NSAttributedString(string: "  ·  ", attributes: normalAttrs))
+    var body: some View {
+        VStack(spacing: 12) {
+            // App icon
+            if let icon = NSApp.applicationIconImage {
+                Image(nsImage: icon)
+                    .resizable()
+                    .frame(width: 96, height: 96)
+            }
 
-        let astrobinLink = NSMutableAttributedString(string: "Astrobin", attributes: linkAttrs)
-        astrobinLink.addAttribute(.link, value: URL(string: "https://app.astrobin.com/u/joergsflow#gallery")!, range: NSRange(location: 0, length: astrobinLink.length))
-        credits.append(astrobinLink)
+            // App name and version
+            Text("AstroBlinkV2")
+                .font(.system(size: 22, weight: .bold))
+            Text("v\(version) (Build \(build))")
+                .font(.system(size: 12))
+                .foregroundColor(.secondary)
 
-        let italicDescriptor = NSFontDescriptor.preferredFontDescriptor(forTextStyle: .body).withSymbolicTraits(.italic)
-        let italicFont = NSFont(descriptor: italicDescriptor, size: 10) ?? NSFont.systemFont(ofSize: 10)
-        credits.append(NSAttributedString(string: "\n\nEnhanced and Inspired by PixInsight's Blink Tool", attributes: [
-            .font: italicFont,
-            .foregroundColor: NSColor.secondaryLabelColor
-        ]))
+            // Tagline
+            Text("Enhanced and Inspired by PixInsight's Blink Tool")
+                .font(.system(size: 11).italic())
+                .foregroundColor(.secondary)
 
-        // Center all text
-        let paragraphStyle = NSMutableParagraphStyle()
-        paragraphStyle.alignment = .center
-        credits.addAttribute(.paragraphStyle, value: paragraphStyle, range: NSRange(location: 0, length: credits.length))
+            Divider()
+                .padding(.horizontal, 20)
 
-        NSApp.orderFrontStandardAboutPanel(options: [
-            .applicationName: "AstroBlinkV2",
-            .applicationVersion: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?",
-            .version: "Build \(Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?")",
-            .credits: credits
-        ])
+            // Author and links
+            Text("by joergsflow")
+                .font(.system(size: 12, weight: .medium))
+
+            HStack(spacing: 16) {
+                linkButton("GitHub", url: "https://github.com/joergs-git/AstroBlinkV2")
+                linkButton("Instagram", url: "https://www.instagram.com/joergsflow/")
+                linkButton("AstroBin", url: "https://app.astrobin.com/u/joergsflow#gallery")
+            }
+            .font(.system(size: 11))
+
+            Divider()
+                .padding(.horizontal, 20)
+
+            // Action buttons — stacked vertically for readability
+            VStack(spacing: 8) {
+                Button(action: shareApp) {
+                    Label("Tell a Friend", systemImage: "square.and.arrow.up")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+
+                HStack(spacing: 10) {
+                    Button(action: {
+                        dismissAction?()
+                        ReleaseNotesWindowController.shared.show()
+                    }) {
+                        Label("What's New", systemImage: "sparkles")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+
+                    Button(action: {
+                        dismissAction?()
+                        if let url = URL(string: appStoreURL) {
+                            NSWorkspace.shared.open(url)
+                        }
+                    }) {
+                        Label("App Store", systemImage: "arrow.down.app")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                }
+            }
+            .font(.system(size: 12))
+            .padding(.top, 2)
+
+            Spacer()
+                .frame(height: 4)
+        }
+        .padding(.top, 16)
+        .padding(.bottom, 12)
+        .padding(.horizontal, 24)
+        .frame(width: 360)
+    }
+
+    private func linkButton(_ title: String, url: String) -> some View {
+        Button(title) {
+            if let link = URL(string: url) {
+                NSWorkspace.shared.open(link)
+            }
+        }
+        .buttonStyle(.link)
+    }
+
+    private func shareApp() {
+        let shareText = "Check out AstroBlinkV2 — a fast astrophotography image triage & stacking tool for macOS with GPU-accelerated auto-stretch, quality scoring, and LightspeedStacker!\n\n\(appStoreURL)"
+        let url = URL(string: appStoreURL)!
+        let picker = NSSharingServicePicker(items: [shareText, url])
+        // Show the share picker anchored to the key window
+        if let contentView = NSApp.keyWindow?.contentView {
+            let rect = NSRect(x: contentView.bounds.midX, y: contentView.bounds.midY, width: 1, height: 1)
+            picker.show(relativeTo: rect, of: contentView, preferredEdge: .minY)
+        }
     }
 }
 

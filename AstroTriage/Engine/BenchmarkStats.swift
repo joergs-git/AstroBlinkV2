@@ -58,13 +58,20 @@ class BenchmarkStats: ObservableObject {
         return end.timeIntervalSince(start)
     }
 
-    // f) Total session ready: from user action to everything cached and ready
-    var totalSessionDuration: Double? {
-        guard let start = sessionStartTime else { return nil }
-        // Use the latest of caching end or header end as "fully ready"
+    // f) Total session ready: frozen once both caching and header enrichment complete
+    private(set) var totalSessionDuration: Double?
+
+    // Called after caching or header enrichment ends to freeze the total once both are done
+    private func freezeTotalReadyIfComplete() {
+        guard totalSessionDuration == nil,
+              let start = sessionStartTime,
+              cachingEndTime != nil || !isComplete else { return }
+        // Wait until both are done (or only caching if no headers)
         let candidates = [cachingEndTime, headerEnrichEndTime].compactMap { $0 }
-        guard let latest = candidates.max() else { return nil }
-        return latest.timeIntervalSince(start)
+        guard let latest = candidates.max() else { return }
+        // Only freeze when caching is complete (the main gate)
+        guard isComplete else { return }
+        totalSessionDuration = latest.timeIntervalSince(start)
     }
 
     // MARK: - Recording helpers
@@ -84,6 +91,7 @@ class BenchmarkStats: ObservableObject {
         quickStackEngine = "lightspeed"
         quickStackImageWidth = 0
         quickStackImageHeight = 0
+        totalSessionDuration = nil
         fileCount = 0
         totalFileSizeBytes = 0
         isComplete = false
@@ -122,6 +130,7 @@ class BenchmarkStats: ObservableObject {
 
     func markHeaderEnrichEnd() {
         headerEnrichEndTime = Date()
+        freezeTotalReadyIfComplete()
     }
 
     func markCachingStart() {
@@ -131,6 +140,7 @@ class BenchmarkStats: ObservableObject {
     func markCachingEnd() {
         cachingEndTime = Date()
         isComplete = true
+        freezeTotalReadyIfComplete()
     }
 
     func markQuickStackStart(frameCount: Int, engine: String = "lightspeed", imageWidth: Int = 0, imageHeight: Int = 0) {

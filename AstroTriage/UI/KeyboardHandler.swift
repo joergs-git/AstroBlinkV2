@@ -63,10 +63,25 @@ struct KeyboardHandler {
                 Task { @MainActor in
                     if let tableView = findTableView() {
                         let selectedRows = tableView.selectedRowIndexes
-                        if selectedRows.count > 1 {
+                        guard !selectedRows.isEmpty else { return }
+
+                        // Map visible table rows to real image indices
+                        let isFiltered = viewModel.hideMarked || viewModel.showOnlyMarked || !viewModel.filterText.isEmpty
+                        if isFiltered {
+                            let visible = viewModel.visibleImages
+                            var realIndices = IndexSet()
+                            for row in selectedRows where row < visible.count {
+                                if let realIdx = viewModel.images.firstIndex(where: { $0.url == visible[row].url }) {
+                                    realIndices.insert(realIdx)
+                                }
+                            }
+                            if !realIndices.isEmpty {
+                                viewModel.togglePreDeleteForRows(realIndices)
+                            }
+                        } else if selectedRows.count > 1 {
                             viewModel.togglePreDeleteForRows(selectedRows)
-                        } else {
-                            viewModel.togglePreDelete()
+                        } else if let row = selectedRows.first, row < viewModel.images.count {
+                            viewModel.togglePreDelete(at: row)
                         }
                     } else {
                         viewModel.togglePreDelete()

@@ -2,7 +2,7 @@
 import Foundation
 
 // Three-level quality tier assigned per image relative to its group.
-// "Group" = same filter + object + night + exposure time (min 20 frames required).
+// "Group" = same filter + object + exposure time (min 20 frames required).
 // Score is always relative (z-score within group), never based on absolute thresholds.
 enum QualityTier: Int {
     case trash     = 0   // Statistically worse than group average (z < −1.0)
@@ -39,7 +39,7 @@ struct QualityEstimator {
     ///   Always available — from prefetch STF subsample:
     ///     noiseMAD (lower = better; reflects noise floor, cloud scatter, bad seeing)
     static func computeScores(for entries: [ImageEntry]) -> [URL: QualityTier] {
-        // Group images by (filter, object, night, exposure)
+        // Group images by (filter, object, exposure) — no night grouping so bad nights surface
         var groups: [GroupKey: [Int]] = [:]
         for (index, entry) in entries.enumerated() {
             let key = GroupKey(entry: entry)
@@ -159,18 +159,18 @@ struct QualityEstimator {
 // MARK: - Group key
 
 /// Identifies a comparable group of images for relative quality scoring.
-/// Groups are defined by: filter + object + observing night + exposure duration.
-/// "Observing night" uses the evening date — images after midnight belong to the previous evening.
+/// Groups are defined by: filter + object + exposure duration.
+/// Night is intentionally NOT a grouping dimension — cross-night comparison lets bad nights
+/// surface as trash rather than hiding them behind per-night relative scoring.
+/// Users can limit comparison scope via file selection if needed.
 private struct GroupKey: Hashable {
     let filter:   String   // Uppercase filter name, "" if unknown
     let object:   String   // Target object name, "" if unknown
-    let night:    String   // Observing night (evening date, YYYY-MM-DD), "" if unknown
     let exposure: Int      // Exposure time rounded to nearest second, 0 if unknown
 
     init(entry: ImageEntry) {
         filter   = (entry.filter   ?? "").uppercased().trimmingCharacters(in: .whitespaces)
         object   = (entry.target   ?? "").trimmingCharacters(in: .whitespaces)
-        night    = entry.observingNight ?? ""
         exposure = entry.exposure.map { Int($0.rounded()) } ?? 0
     }
 }

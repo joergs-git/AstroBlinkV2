@@ -1014,19 +1014,21 @@ class TriageViewModel: ObservableObject {
 
         // If renderer already has an image loaded (mono or debayered RGB),
         // recalculate STF from renderer's currentImage with new targetBackground.
-        // This correctly handles both mono and debayered color images.
         if let rendererImage = renderer?.currentImage, let mtkView = findMTKView(), let renderer = renderer {
             let stfParams = STFCalculator.calculate(from: rendererImage, targetBackground: value)
             renderer.setSTFParams(stfParams)
+            // If locked, update the locked params too so all images use the new stretch
+            if isSTFLocked { renderer.lockSTF() }
             mtkView.needsDisplay = true
             return
         }
 
-        // If showing a cached preview, need to decode raw data first
+        // If showing a cached preview, decode raw data so the slider change is visible
         guard let entry = selectedImage, let device = device else { return }
         let targetURL = entry.url
         let decodeURL = entry.decodingURL
         let bayerPattern = debayerEnabled ? entry.bayerPattern : nil
+        let locked = isSTFLocked
 
         currentDecodeTask?.cancel()
         currentDecodeTask = Task.detached(priority: .userInitiated) { [weak self] in
@@ -1037,7 +1039,13 @@ class TriageViewModel: ObservableObject {
                     self.currentDecodedImage = decoded
                     if let mtkView = self.findMTKView(), let renderer = self.renderer {
                         renderer.setImage(decoded, in: mtkView,
-                                          bayerPattern: bayerPattern, targetBackground: value)
+                                          bayerPattern: bayerPattern,
+                                          targetBackground: value)
+                        // If locked, update the locked params with new stretch
+                        if locked { renderer.lockSTF() }
+                        renderer.setPostProcessParams(
+                            sharpening: self.sharpening, contrast: self.contrast,
+                            darkLevel: self.darkLevel)
                     }
                 }
             }
@@ -1999,6 +2007,20 @@ class TriageViewModel: ObservableObject {
         guard let renderer = renderer else { return }
         isSTFLocked.toggle()
         if isSTFLocked {
+            // If showing a cached preview, currentSTFParams may be stale.
+            // Decode the current image to get correct STF params before locking.
+            if renderer.currentImage == nil, let entry = selectedImage, let device = device {
+                let decodeURL = entry.decodingURL
+                let bayerPattern = debayerEnabled ? entry.bayerPattern : nil
+                if case .success(let decoded) = ImageDecoder.decode(url: decodeURL, device: device) {
+                    currentDecodedImage = decoded
+                    if let mtkView = findMTKView() {
+                        renderer.setImage(decoded, in: mtkView,
+                                          bayerPattern: bayerPattern,
+                                          targetBackground: stretchStrength)
+                    }
+                }
+            }
             renderer.lockSTF()
             statusMessage = "STF Locked — same stretch for all images"
         } else {
@@ -2074,18 +2096,16 @@ class TriageViewModel: ObservableObject {
         // Update live display
         updatePostProcessParams()
 
-        // Re-cache if Apply All is active, or if applied settings were non-default
-        if applyAllEnabled || !cacheMatchesCurrentSettings {
-            applyAllEnabled = false
-            appliedStretch = stretchStrength
-            appliedSharpening = 0.0
-            appliedContrast = 0.0
-            appliedDarkLevel = 0.0
-            appliedLocked = false
-            prefetchCache?.invalidateAll()
-            statusMessage = "Resetting — re-caching with defaults..."
-            startFullPrefetch()
-        }
+        // Re-cache with defaults and re-enable Apply All (same state as initial folder load)
+        applyAllEnabled = true
+        appliedStretch = stretchStrength
+        appliedSharpening = 0.0
+        appliedContrast = 0.0
+        appliedDarkLevel = 0.0
+        appliedLocked = false
+        prefetchCache?.invalidateAll()
+        statusMessage = "Resetting — re-caching with defaults..."
+        startFullPrefetch()
 
         // Re-render current image with default stretch
         if let image = currentDecodedImage, let mtkView = findMTKView(), let renderer = renderer {

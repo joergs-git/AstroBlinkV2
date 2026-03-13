@@ -55,9 +55,7 @@ struct ImageEntry: Identifiable, Hashable {
     // Display helpers: prefer header/filename values, fall back to computed
     var displayHFR: Double? { hfr ?? computedHFR }
     var displayFWHM: Double? { fwhm ?? computedFWHM }
-    // Only show header/filename star count — computed count is an internal metric
-    // used for measurement, not meaningful to users as "detected stars"
-    var displayStarCount: Int? { starCount }
+    var displayStarCount: Int? { starCount ?? computedStarCount }
     var hfrIsComputed: Bool { hfr == nil && computedHFR != nil }
     var fwhmIsComputed: Bool { fwhm == nil && computedFWHM != nil }
     var starCountIsComputed: Bool { starCount == nil && computedStarCount != nil }

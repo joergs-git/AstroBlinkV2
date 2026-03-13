@@ -229,7 +229,7 @@ struct BenchmarkLeaderboardView: View {
                 stackHeader(.megapixels, width: SC.mp)
                 stackHeader(.msPerMP, width: SC.msPerMP)
                 Spacer().frame(width: SC.gap)
-                stackHeader(.chip, width: SC.chip)
+                stackHeader(.chip, width: SC.chip, alignment: .leading)
                 stackHeader(.cores, width: SC.cores)
                 stackHeader(.ram, width: SC.ram)
                 stackHeader(.version, width: SC.version)
@@ -254,7 +254,7 @@ struct BenchmarkLeaderboardView: View {
         }
     }
 
-    private func stackHeader(_ col: BenchmarkSortColumn, width: CGFloat) -> some View {
+    private func stackHeader(_ col: BenchmarkSortColumn, width: CGFloat, alignment: Alignment = .trailing) -> some View {
         Button(action: { service.toggleSort(col) }) {
             HStack(spacing: 2) {
                 Text(col.rawValue)
@@ -263,7 +263,7 @@ struct BenchmarkLeaderboardView: View {
                         .font(.system(size: 8, weight: .bold))
                 }
             }
-            .frame(width: width, alignment: .trailing)
+            .frame(width: width, alignment: alignment)
         }
         .buttonStyle(.plain)
         .foregroundColor(service.sortColumn == col ? .accentColor : .secondary)
@@ -352,7 +352,7 @@ struct BenchmarkLeaderboardView: View {
                 sessionHeader(.size, width: SL.size)
                 sessionHeader(.source, width: SL.source)
                 Spacer().frame(width: SL.gap)
-                sessionHeader(.chip, width: SL.chip)
+                sessionHeader(.chip, width: SL.chip, alignment: .leading)
                 sessionHeader(.ram, width: SL.ram)
                 sessionHeader(.date, width: SL.date)
                 Spacer()
@@ -375,7 +375,7 @@ struct BenchmarkLeaderboardView: View {
         }
     }
 
-    private func sessionHeader(_ col: SessionSortColumn, width: CGFloat) -> some View {
+    private func sessionHeader(_ col: SessionSortColumn, width: CGFloat, alignment: Alignment = .trailing) -> some View {
         Button(action: { service.toggleSessionSort(col) }) {
             HStack(spacing: 2) {
                 Text(col.rawValue)
@@ -384,7 +384,7 @@ struct BenchmarkLeaderboardView: View {
                         .font(.system(size: 8, weight: .bold))
                 }
             }
-            .frame(width: width, alignment: .trailing)
+            .frame(width: width, alignment: alignment)
         }
         .buttonStyle(.plain)
         .foregroundColor(service.sessionSortColumn == col ? .accentColor : .secondary)
