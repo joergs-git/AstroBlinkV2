@@ -57,29 +57,29 @@ struct ColumnDefinition {
         "date", "telescope", "binning", "offset"
     ]
 
-    // Case A: Single target, multi filter — filter groups the data, quality within each filter
-    // Sort: filter ASC → time DESC (chronological within each filter group)
+    // Case A: Single target, multi filter — filter+exp group, then quality
+    // Sort: filter ASC → exposure DESC → quality DESC → starCount DESC → fwhm ASC
     private static let singleTargetMultiFilter: [String] =
-        ["marked", "frameNumber", "filter", "quality", "starCount", "fwhm", "hfr", "snr",
-         "exposure", "nightDate", "time", "target"] + columnTail
+        ["marked", "frameNumber", "filter", "exposure", "quality", "starCount", "fwhm", "hfr", "snr",
+         "nightDate", "time", "target"] + columnTail
 
-    // Case B: Single target, single filter — all images are "the same", quality + time matter
-    // Sort: time DESC (chronological through the night)
+    // Case B: Single target, single filter — exposure groups, then quality + time
+    // Sort: exposure DESC → quality DESC → starCount DESC → fwhm ASC
     private static let singleTargetSingleFilter: [String] =
-        ["marked", "frameNumber", "quality", "starCount", "fwhm", "hfr", "snr",
-         "time", "exposure", "nightDate", "filter", "target"] + columnTail
+        ["marked", "frameNumber", "exposure", "quality", "starCount", "fwhm", "hfr", "snr",
+         "time", "nightDate", "filter", "target"] + columnTail
 
-    // Case C: Multi target, multi filter — target groups first, then filter within target
-    // Sort: target ASC → filter ASC → time DESC
+    // Case C: Multi target, multi filter — target+filter+exp group, then quality
+    // Sort: target ASC → filter ASC → exposure DESC → quality DESC → starCount DESC
     private static let multiTargetMultiFilter: [String] =
-        ["marked", "frameNumber", "target", "filter", "quality", "starCount", "fwhm", "hfr", "snr",
-         "exposure", "nightDate", "time"] + columnTail
+        ["marked", "frameNumber", "target", "filter", "exposure", "quality", "starCount", "fwhm", "hfr", "snr",
+         "nightDate", "time"] + columnTail
 
-    // Case D: Multi target, single filter — target groups, quality within each target
-    // Sort: target ASC → time DESC
+    // Case D: Multi target, single filter — target+exp group, then quality
+    // Sort: target ASC → exposure DESC → quality DESC → starCount DESC
     private static let multiTargetSingleFilter: [String] =
-        ["marked", "frameNumber", "target", "quality", "starCount", "fwhm", "hfr", "snr",
-         "time", "exposure", "nightDate", "filter"] + columnTail
+        ["marked", "frameNumber", "target", "exposure", "quality", "starCount", "fwhm", "hfr", "snr",
+         "time", "nightDate", "filter"] + columnTail
 
     /// Returns the recommended column order based on session composition
     static func recommendedColumnOrder(isMultiObject: Bool, isMultiFilter: Bool) -> [String] {

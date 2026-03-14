@@ -2276,10 +2276,11 @@ class TriageViewModel: ObservableObject {
     // (newest date first, highest SNR first, etc.), text columns ascending (A-Z).
     func applySortByColumnOrder(_ columnIdentifiers: [String]) {
         // Skip marked and frameNumber (sequence number, not a meaningful sort key)
+        // Use up to 5 sort keys to cover grouping columns (target, filter, exposure) + quality
         let sortColumns = Array(
             columnIdentifiers
                 .filter { $0 != "marked" && $0 != "frameNumber" }
-                .prefix(4)
+                .prefix(5)
         )
         let descriptors = sortColumns.map { colId in
             let ascending = !ColumnDefinition.isDefaultDescending(colId)
