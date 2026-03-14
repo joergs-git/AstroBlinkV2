@@ -23,10 +23,10 @@ struct ColumnDefinition {
         ColumnDefinition(identifier: "frameNumber", title: "#",         defaultWidth: 45,  minWidth: 35,  isDefaultVisible: true,  isHideable: true),
         ColumnDefinition(identifier: "filter",      title: "Filter",    defaultWidth: 50,  minWidth: 40,  isDefaultVisible: true,  isHideable: true),
         ColumnDefinition(identifier: "quality",     title: "Q",         defaultWidth: 28,  minWidth: 28,  isDefaultVisible: true,  isHideable: true),
-        ColumnDefinition(identifier: "snr",         title: "SNR",       defaultWidth: 50,  minWidth: 40,  isDefaultVisible: true,  isHideable: true),
+        ColumnDefinition(identifier: "starCount",   title: "Stars",     defaultWidth: 55,  minWidth: 40,  isDefaultVisible: true,  isHideable: true),
         ColumnDefinition(identifier: "fwhm",        title: "FWHM",      defaultWidth: 55,  minWidth: 40,  isDefaultVisible: true,  isHideable: true),
         ColumnDefinition(identifier: "hfr",         title: "HFR",       defaultWidth: 50,  minWidth: 40,  isDefaultVisible: true,  isHideable: true),
-        ColumnDefinition(identifier: "starCount",   title: "Stars",     defaultWidth: 55,  minWidth: 40,  isDefaultVisible: true,  isHideable: true),
+        ColumnDefinition(identifier: "snr",         title: "SNR",       defaultWidth: 50,  minWidth: 40,  isDefaultVisible: true,  isHideable: true),
         ColumnDefinition(identifier: "exposure",    title: "Exp",       defaultWidth: 50,  minWidth: 40,  isDefaultVisible: true,  isHideable: true),
         ColumnDefinition(identifier: "nightDate",   title: "Night",     defaultWidth: 85,  minWidth: 70,  isDefaultVisible: true,  isHideable: true),
         ColumnDefinition(identifier: "time",        title: "Time",      defaultWidth: 75,  minWidth: 60,  isDefaultVisible: true,  isHideable: true),
@@ -53,7 +53,7 @@ struct ColumnDefinition {
     // Preferred column order for single-object sessions (Object column is less important)
     // Quality metrics first, then exposure, then rest
     static let singleObjectColumnOrder: [String] = [
-        "marked", "frameNumber", "filter", "quality", "snr", "fwhm", "hfr", "starCount",
+        "marked", "frameNumber", "filter", "quality", "starCount", "fwhm", "hfr", "snr",
         "exposure", "nightDate", "time", "filename", "target", "frameType", "camera",
         "ambientTemp", "focuserTemp", "sensorTemp", "gain", "fileSize", "subfolder",
         "date", "telescope", "binning", "offset"
@@ -61,7 +61,7 @@ struct ColumnDefinition {
 
     // Preferred column order for multi-object sessions (Object column moves to front)
     static let multiObjectColumnOrder: [String] = [
-        "marked", "frameNumber", "target", "filter", "quality", "snr", "fwhm", "hfr", "starCount",
+        "marked", "frameNumber", "target", "filter", "quality", "starCount", "fwhm", "hfr", "snr",
         "exposure", "nightDate", "time", "filename", "frameType", "camera",
         "ambientTemp", "focuserTemp", "sensorTemp", "gain", "fileSize", "subfolder",
         "date", "telescope", "binning", "offset"
