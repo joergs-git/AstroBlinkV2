@@ -1,6 +1,7 @@
 // v2.2.0
 import SwiftUI
 import AppKit
+import UniformTypeIdentifiers
 
 // NSViewRepresentable wrapping NSTableView for high-performance file list
 // Supports multi-selection for bulk marking, column-order-based sorting,
@@ -319,11 +320,13 @@ struct FileListView: NSViewRepresentable {
 
             // Pick icon + color + tooltip based on tier
             let (symbolName, color, tooltip): (String?, NSColor?, String) = {
+                let zStr = entry.qualityZScore.map { String(format: " (z=%.2f)", $0) } ?? ""
                 switch entry.qualityTier {
-                case .good:      return ("checkmark.circle.fill", .systemGreen, "Above average quality (z > 0.5)")
-                case .uncertain: return ("minus.circle.fill",     .systemOrange, "Average quality (-1.0 ≤ z ≤ 0.5)")
-                case .trash:     return ("xmark.circle.fill",     .systemRed, "Below average quality (z < -1.0)")
-                case nil:        return (nil, nil, "No quality score — needs ≥\(QualityEstimator.minGroupSize) images per filter/object/night/exposure group")
+                case .excellent:  return ("circle.fill",              .systemGreen,  "Excellent — clearly above average\(zStr)")
+                case .good:       return ("circle.lefthalf.filled",   .systemGreen,  "Good — solid, near average\(zStr)")
+                case .borderline: return ("exclamationmark.circle",   .systemOrange, "Borderline — check visually\(zStr)")
+                case .trash:      return ("xmark.circle.fill",        .systemRed,    "Poor — garbage or worst\(zStr)")
+                case nil:         return (nil, nil, "No quality score — needs ≥\(QualityEstimator.minGroupSize) images per group")
                 }
             }()
 
@@ -575,6 +578,58 @@ struct FileListView: NSViewRepresentable {
 
             menu.addItem(NSMenuItem.separator())
 
+            // Show in Finder
+            let showInFinder = NSMenuItem(title: "Show in Finder", action: #selector(showInFinder(_:)), keyEquivalent: "")
+            showInFinder.target = self
+            showInFinder.representedObject = entry.url
+            menu.addItem(showInFinder)
+
+            // Open With submenu
+            let openWithMenu = NSMenu(title: "Open With...")
+            let fileURL = entry.url
+
+            // Get apps that can open this file type
+            if let uti = UTType(filenameExtension: fileURL.pathExtension) {
+                let appURLs = NSWorkspace.shared.urlsForApplications(toOpen: uti)
+                let sortedApps = appURLs
+                    .compactMap { url -> (name: String, url: URL)? in
+                        let name = url.deletingPathExtension().lastPathComponent
+                        return (name, url)
+                    }
+                    .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+
+                for app in sortedApps {
+                    let item = NSMenuItem(title: app.name, action: #selector(openWithApp(_:)), keyEquivalent: "")
+                    item.target = self
+                    item.representedObject = (fileURL, app.url)
+                    if let icon = NSWorkspace.shared.icon(forFile: app.url.path) as NSImage? {
+                        icon.size = NSSize(width: 16, height: 16)
+                        item.image = icon
+                    }
+                    openWithMenu.addItem(item)
+                }
+            }
+
+            if openWithMenu.items.isEmpty {
+                let noApps = NSMenuItem(title: "No compatible apps found", action: nil, keyEquivalent: "")
+                noApps.isEnabled = false
+                openWithMenu.addItem(noApps)
+            }
+
+            let openWithItem = NSMenuItem(title: "Open With...", action: nil, keyEquivalent: "")
+            openWithItem.submenu = openWithMenu
+            menu.addItem(openWithItem)
+
+            // Compare with Best (only if quality tier exists and is not excellent)
+            if let tier = entry.qualityTier, tier != .excellent {
+                let compareItem = NSMenuItem(title: "Compare with Best", action: #selector(compareWithBest(_:)), keyEquivalent: "")
+                compareItem.target = self
+                compareItem.tag = clickedRow
+                menu.addItem(compareItem)
+            }
+
+            menu.addItem(NSMenuItem.separator())
+
             // Mark/Unmark option
             let markTitle = entry.isMarkedForDeletion ? "Unmark" : "Mark for Deletion"
             let markItem = NSMenuItem(title: markTitle, action: #selector(toggleMarkFromMenu(_:)), keyEquivalent: "")
@@ -615,6 +670,52 @@ struct FileListView: NSViewRepresentable {
             guard let text = sender.representedObject as? String else { return }
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(text, forType: .string)
+        }
+
+        @objc private func compareWithBest(_ sender: NSMenuItem) {
+            let row = sender.tag
+            guard row >= 0, row < displayedImages.count else { return }
+            let entry = displayedImages[row]
+            Task { @MainActor in
+                guard let device = viewModel.renderer?.device else { return }
+                // Find the best image in the same group (target + filter + exposure)
+                let targetKey = (entry.target ?? "").trimmingCharacters(in: .whitespaces)
+                let filterKey = (entry.filter ?? "").uppercased().trimmingCharacters(in: .whitespaces)
+                let expKey = entry.exposure.map { Int($0.rounded()) } ?? 0
+
+                let groupImages = viewModel.images.filter { img in
+                    let t = (img.target ?? "").trimmingCharacters(in: .whitespaces)
+                    let f = (img.filter ?? "").uppercased().trimmingCharacters(in: .whitespaces)
+                    let e = img.exposure.map { Int($0.rounded()) } ?? 0
+                    return t == targetKey && f == filterKey && e == expKey
+                }
+
+                // Find the one with the highest quality tier (excellent > good > borderline > trash)
+                let best = groupImages.max { a, b in
+                    (a.qualityTier?.rawValue ?? -1) < (b.qualityTier?.rawValue ?? -1)
+                }
+
+                guard let bestEntry = best, bestEntry.url != entry.url else { return }
+
+                CompareWindowController.open(
+                    selectedEntry: entry,
+                    bestEntry: bestEntry,
+                    device: device,
+                    nightMode: viewModel.nightMode,
+                    debayerEnabled: viewModel.debayerEnabled
+                )
+            }
+        }
+
+        @objc private func showInFinder(_ sender: NSMenuItem) {
+            guard let url = sender.representedObject as? URL else { return }
+            NSWorkspace.shared.activateFileViewerSelecting([url])
+        }
+
+        @objc private func openWithApp(_ sender: NSMenuItem) {
+            guard let pair = sender.representedObject as? (URL, URL) else { return }
+            let (fileURL, appURL) = pair
+            NSWorkspace.shared.open([fileURL], withApplicationAt: appURL, configuration: NSWorkspace.OpenConfiguration())
         }
 
         @objc private func toggleMarkFromMenu(_ sender: NSMenuItem) {

@@ -140,7 +140,7 @@ struct ColumnDefinition {
         case "focuserTemp": return entry.focuserTemp
         case "ambientTemp": return entry.ambientTemp
         case "fileSize":    return entry.fileSize.map { Double($0) }
-        case "quality":     return entry.qualityTier.map { Double($0.rawValue) }
+        case "quality":     return entry.qualityZScore ?? entry.qualityTier.map { Double($0.rawValue) }
         case "snr":
             guard let med = entry.noiseMedian, let mad = entry.noiseMAD, mad > 0 else { return nil }
             return Double(med / mad)
@@ -177,7 +177,7 @@ struct ColumnDefinition {
     static func headerToolTip(for columnId: String) -> String? {
         switch columnId {
         case "quality":
-            return "Two-stage quality score within group (same filter + target + exposure).\nStage 1: Red if any metric is catastrophically bad (< 50% of group median).\nStage 2: Weighted z-scores of stars (2x), FWHM, HFR, noise.\nGreen = above average, Orange = below average, Red = garbage."
+            return "Four-tier quality score within group (same filter + target + exposure).\nStage 1: Red if any metric catastrophically bad (< 50% of group median).\nStage 2: Weighted z-scores of stars, FWHM, HFR, noise.\nFull green = excellent, half-green = good, orange = borderline, red = garbage."
         case "snr":
             return "Signal-to-Noise Ratio.\nComputed from median pixel value / noise MAD during auto-stretch.\nHigher = cleaner signal. Affected by exposure, light pollution, clouds."
         case "fwhm":

@@ -86,11 +86,12 @@ class AstroBlinkV2AppDelegate: NSObject, NSApplicationDelegate {
         SessionCache.cleanupAllCaches()
     }
 
-    // Show splash screen on launch
+    // Show splash screen on launch (unless user opted out)
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // Small delay so the main window appears first
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-            AboutWindowController.shared.show(asSplash: true)
+        if AppSettings.loadBool(for: .hideSplash) != true {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                AboutWindowController.shared.show(asSplash: true)
+            }
         }
     }
 
@@ -116,7 +117,8 @@ class AboutWindowController {
 
         splashDismissed = false
         let hostingView = NSHostingView(rootView: AboutView(
-            dismissAction: { [weak self] in self?.close() }
+            dismissAction: { [weak self] in self?.close() },
+            isSplash: asSplash
         ))
         let win = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 360, height: 440),
@@ -172,7 +174,9 @@ class AboutWindowController {
 
 struct AboutView: View {
     var dismissAction: (() -> Void)?
+    var isSplash: Bool = false
     @State private var shareAnchor: NSPoint = .zero
+    @State private var hideSplash: Bool = AppSettings.loadBool(for: .hideSplash) ?? false
 
     private var version: String {
         Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
@@ -252,6 +256,16 @@ struct AboutView: View {
             }
             .font(.system(size: 12))
             .padding(.top, 2)
+
+            if isSplash {
+                Toggle("Don't show on startup", isOn: $hideSplash)
+                    .toggleStyle(.checkbox)
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+                    .onChange(of: hideSplash) { newValue in
+                        AppSettings.saveBool(newValue, for: .hideSplash)
+                    }
+            }
 
             Spacer()
                 .frame(height: 4)

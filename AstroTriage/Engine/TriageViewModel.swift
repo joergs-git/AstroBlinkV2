@@ -994,7 +994,13 @@ class TriageViewModel: ObservableObject {
     func recomputeQualityScores() {
         let scores = QualityEstimator.computeScores(for: images)
         for index in images.indices {
-            images[index].qualityTier = scores[images[index].url]
+            if let result = scores[images[index].url] {
+                images[index].qualityTier = result.tier
+                images[index].qualityZScore = result.zScore
+            } else {
+                images[index].qualityTier = nil
+                images[index].qualityZScore = nil
+            }
         }
         // Notify table that quality column cells need redrawing
         needsTableRefresh = true
@@ -1007,7 +1013,7 @@ class TriageViewModel: ObservableObject {
     }
 
     /// Count distinct groups that produced at least one score
-    private func countGroups(_ scores: [URL: QualityTier]) -> Int {
+    private func countGroups(_ scores: [URL: (tier: QualityTier, zScore: Double)]) -> Int {
         // Use a set of GroupKey-equivalent tuples built from scored images
         var groups = Set<String>()
         for entry in images where scores[entry.url] != nil {
@@ -2420,7 +2426,10 @@ class TriageViewModel: ObservableObject {
         // Recompute quality scores (filter/exposure may have changed)
         let scores = QualityEstimator.computeScores(for: images)
         for i in images.indices {
-            images[i].qualityTier = scores[images[i].url]
+            if let result = scores[images[i].url] {
+                images[i].qualityTier = result.tier
+                images[i].qualityZScore = result.zScore
+            }
         }
 
         statusMessage = "Batch: \(result.succeeded) files modified"

@@ -62,16 +62,16 @@ final class QualityEstimatorTests: XCTestCase {
         XCTAssertFalse(scores.isEmpty, "Group of exactly minGroupSize should produce scores")
     }
 
-    func testIdenticalFramesAllUncertain() {
-        // 25 identical entries → z=0 for all → all should be .uncertain
-        // (z=0 falls between thresholdTrash=-1.0 and thresholdGood=0.5)
+    func testIdenticalFramesAllGood() {
+        // 25 identical entries → z=0 for all → all should be .good
+        // (z=0 falls between thresholdExcellent=0.5 and thresholdGood=-0.3)
         let entries = makeGroup(count: 25)
         let scores = QualityEstimator.computeScores(for: entries)
 
         XCTAssertEqual(scores.count, 25, "All 25 entries should receive a score")
         for entry in entries {
-            XCTAssertEqual(scores[entry.url], .uncertain,
-                           "Identical frames should all be .uncertain (z=0)")
+            XCTAssertEqual(scores[entry.url]?.tier, .good,
+                           "Identical frames should all be .good (z=0)")
         }
     }
 
@@ -82,19 +82,19 @@ final class QualityEstimatorTests: XCTestCase {
         entries.append(outlier)
 
         let scores = QualityEstimator.computeScores(for: entries)
-        XCTAssertEqual(scores[outlier.url], .trash,
+        XCTAssertEqual(scores[outlier.url]?.tier, .trash,
                        "A frame with dramatically worse metrics should be .trash")
     }
 
-    func testBestFrameDetectedAsGood() {
+    func testBestFrameDetectedAsExcellent() {
         // 24 frames with mediocre FWHM + 1 frame with excellent FWHM
         var entries = makeGroup(count: 24, fwhm: 5.0, hfr: 4.0, starCount: 200, noiseMAD: 0.02)
         let best = makeEntry(index: 99, fwhm: 1.5, hfr: 1.0, starCount: 800, noiseMAD: 0.005)
         entries.append(best)
 
         let scores = QualityEstimator.computeScores(for: entries)
-        XCTAssertEqual(scores[best.url], .good,
-                       "A frame with clearly superior metrics should be .good")
+        XCTAssertEqual(scores[best.url]?.tier, .excellent,
+                       "A frame with clearly superior metrics should be .excellent")
     }
 
     func testNarrowbandReducesStarWeight() {
@@ -108,8 +108,8 @@ final class QualityEstimatorTests: XCTestCase {
 
         let scores = QualityEstimator.computeScores(for: entries)
         // Despite having only 100 stars vs 500, the frame's excellent FWHM/HFR/noise
-        // should keep it at .good or at least .uncertain with reduced star weight
-        XCTAssertNotEqual(scores[entry.url], .trash,
+        // should keep it at .excellent or at least .good with reduced star weight
+        XCTAssertNotEqual(scores[entry.url]?.tier, .trash,
                           "Narrowband frame with low stars but good metrics should not be trash")
     }
 
@@ -129,12 +129,12 @@ final class QualityEstimatorTests: XCTestCase {
         let scores = QualityEstimator.computeScores(for: entries)
 
         // The H-outlier should be trash in its group
-        XCTAssertEqual(scores[hGroup[0].url], .trash,
+        XCTAssertEqual(scores[hGroup[0].url]?.tier, .trash,
                        "Outlier in H group should be trash")
 
-        // O-group frames should all be .uncertain (identical within group)
+        // O-group frames should all be .good (identical within group)
         for entry in oGroup {
-            XCTAssertEqual(scores[entry.url], .uncertain,
+            XCTAssertEqual(scores[entry.url]?.tier, .good,
                            "Identical O-group frames should all be uncertain")
         }
     }
@@ -156,8 +156,8 @@ final class QualityEstimatorTests: XCTestCase {
         entries.append(betterSeeing)
 
         let scores = QualityEstimator.computeScores(for: entries)
-        XCTAssertEqual(scores[betterSeeing.url], .good,
-                       "Lower FWHM/HFR (negated z) should result in .good tier")
+        XCTAssertEqual(scores[betterSeeing.url]?.tier, .excellent,
+                       "Lower FWHM/HFR (negated z) should result in .excellent tier")
     }
 
     func testMixedNilMetrics() {

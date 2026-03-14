@@ -1619,7 +1619,7 @@ enum ImagePreviewWindowController {
     }
 
     /// Bin 2x and convert uint16 → Float in one pass. Uses vDSP where possible.
-    private static func binAndConvert(image: DecodedImage) -> (data: [Float], width: Int, height: Int, channelCount: Int) {
+    static func binAndConvert(image: DecodedImage) -> (data: [Float], width: Int, height: Int, channelCount: Int) {
         let w = image.width, h = image.height, ch = image.channelCount
         let ptr = image.buffer.contents().bindMemory(to: UInt16.self, capacity: w * h * ch)
         let bw = w / 2, bh = h / 2
@@ -1682,7 +1682,7 @@ enum ImagePreviewWindowController {
         window.orderFront(nil)
     }
 
-    private static func debayerOnGPU(image: DecodedImage, pattern: String, device: MTLDevice) -> DecodedImage? {
+    static func debayerOnGPU(image: DecodedImage, pattern: String, device: MTLDevice) -> DecodedImage? {
         guard let pipeline = cachedDebayerPipeline,
               let queue = cachedQueue,
               let patternIndex = bayerMap[pattern.uppercased()] else { return nil }

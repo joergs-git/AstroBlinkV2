@@ -26,7 +26,20 @@ Nice side effect: Finally you have a native XISF and FITS Quicklook for macOS. (
 - **Hot/cold pixel rejection** — GPU cosmetic correction before stacking, using sigma-clipped 3x3 median.
 - **True star count** — Stars column shows actual total from GPU detection, not the capped measurement subset.
 - **Center-crop quality** — HFR, FWHM, noise measured from center 70% to exclude edge optical effects.
-- **Dynamic column order** — Auto-reorders for single vs multi-object sessions.
+- **Dynamic column order** — 4-case auto-reorder based on target/filter count.
+- **Compare with Best** — Right-click any non-excellent image to open a side-by-side comparison with the best frame from the same group. Synchronized zoom/pan.
+- **4-tier quality scoring** — Full green (excellent), half-green (good), orange (borderline), red (garbage). Two-stage detection: Stage 1 catches catastrophic outliers, Stage 2 does relative z-score ranking.
+- **Context menu** — "Open With..." (PixInsight, etc.), "Show in Finder", "Compare with Best"
+- **FITS special characters** — Files with brackets, parentheses in names now open correctly (uses cfitsio diskfile API).
+
+### Quality Scoring Icons
+
+| Icon | Tier | Meaning |
+|------|------|---------|
+| Full green circle | Excellent | Best frames — clearly above average |
+| Half-green circle | Good | Solid frames — near average, definitely keep |
+| Orange warning | Borderline | On the edge — worth checking visually |
+| Red X | Garbage | Catastrophic (Stage 1) or statistically worst |
 
 ---
 

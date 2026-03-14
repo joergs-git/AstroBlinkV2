@@ -59,6 +59,7 @@
 		F13B387686D2B2C88DC14937 /* SessionScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7D54DB9FE9BF17CD5203F2D /* SessionScanner.swift */; };
 		F1ABC93BE5D945B448028500 /* SessionCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72BFE1A73BD5AD652BD34CB8 /* SessionCache.swift */; };
 		F47A29B58D39DCB30BDB290A /* ImageViewerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED760805A7C9C85AB7BB391E /* ImageViewerView.swift */; };
+		F5831BE6789DBE653994543B /* CompareWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F4E0BFE3D430285CFC280C9 /* CompareWindow.swift */; };
 		F94F15A86ED041565AB8DB76 /* STFCalculator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 40D54AA4B026ABD4997C7758 /* STFCalculator.swift */; };
 		FC3F642ABDBB8C4DDD251162 /* BenchmarkLeaderboardWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96AD4E25EE11AD6039128785 /* BenchmarkLeaderboardWindow.swift */; };
 		FC52D331F7CBDD33BFA3B800 /* BatchRenameWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85A0D5497E7EBF43F03546F6 /* BatchRenameWindow.swift */; };
@@ -118,6 +119,7 @@
 		3E84C4C954C1B6E8C561713D /* ThumbnailProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThumbnailProvider.swift; sourceTree = "<group>"; };
 		40D54AA4B026ABD4997C7758 /* STFCalculator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = STFCalculator.swift; sourceTree = "<group>"; };
 		4B576ECA4D0080E5D97856E1 /* ImageDecoder */ = {isa = PBXFileReference; lastKnownFileType = folder; name = ImageDecoder; path = Packages/ImageDecoder; sourceTree = SOURCE_ROOT; };
+		4F4E0BFE3D430285CFC280C9 /* CompareWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompareWindow.swift; sourceTree = "<group>"; };
 		571C5A1575E51796C6AEABB1 /* AppSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSettings.swift; sourceTree = "<group>"; };
 		5D45AA5729C0A57A6C12C9C2 /* HeaderInspectorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HeaderInspectorView.swift; sourceTree = "<group>"; };
 		5D9A7A3939A213218612E649 /* QuickLookRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickLookRenderer.swift; sourceTree = "<group>"; };
@@ -320,6 +322,7 @@
 				85A0D5497E7EBF43F03546F6 /* BatchRenameWindow.swift */,
 				96AD4E25EE11AD6039128785 /* BenchmarkLeaderboardWindow.swift */,
 				1A5DA4A13F92A7266A8F0998 /* BenchmarkStatsWindow.swift */,
+				4F4E0BFE3D430285CFC280C9 /* CompareWindow.swift */,
 				24F8E2016E26D881862A1E76 /* ContentView.swift */,
 				B6D16C070C8599AC5C5A265B /* FileListView.swift */,
 				5D45AA5729C0A57A6C12C9C2 /* HeaderInspectorView.swift */,
@@ -546,6 +549,7 @@
 				D1C96F46237D0B999DA95C52 /* BenchmarkStats.swift in Sources */,
 				4E375B87AAA7578C60D7169E /* BenchmarkStatsWindow.swift in Sources */,
 				7E8C4EF0CF4108B17C2096A8 /* ColumnDefinition.swift in Sources */,
+				F5831BE6789DBE653994543B /* CompareWindow.swift in Sources */,
 				3AE8C59AED6435B5F41CA9AF /* ContentView.swift in Sources */,
 				FF242D8AC80D34562D5B296A /* DecodedImage.swift in Sources */,
 				1864DE963C0E5E7717212E46 /* FileListView.swift in Sources */,

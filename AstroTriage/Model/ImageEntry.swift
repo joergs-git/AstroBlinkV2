@@ -51,6 +51,8 @@ struct ImageEntry: Identifiable, Hashable {
     // Quality tier (computed after header enrichment via QualityEstimator)
     // nil = group too small (<20 frames) or metrics unavailable
     var qualityTier: QualityTier?
+    // Raw combined z-score for fine-grained sorting within the same quality tier
+    var qualityZScore: Double?
 
     // Display helpers: prefer header/filename values, fall back to computed
     var displayHFR: Double? { hfr ?? computedHFR }

@@ -128,7 +128,7 @@ extern "C" DecodeResult decode_fits(const char* path) {
     fitsfile* fptr = nullptr;
     int status = 0;
 
-    if (fits_open_file(&fptr, path, READONLY, &status)) {
+    if (fits_open_diskfile(&fptr, path, READONLY, &status)) {
         result.success = 0;
         fits_get_errstatus(status, result.error);
         return result;
@@ -242,7 +242,7 @@ extern "C" HeaderResult read_fits_headers(const char* path) {
     fitsfile* fptr = nullptr;
     int status = 0;
 
-    if (fits_open_file(&fptr, path, READONLY, &status)) {
+    if (fits_open_diskfile(&fptr, path, READONLY, &status)) {
         result.success = 0;
         fits_get_errstatus(status, result.error);
         return result;
@@ -305,7 +305,7 @@ extern "C" WriteResult write_fits_keyword(const char* path, const char* keyword,
     fitsfile* fptr = nullptr;
     int status = 0;
 
-    if (fits_open_file(&fptr, path, READWRITE, &status)) {
+    if (fits_open_diskfile(&fptr, path, READWRITE, &status)) {
         result.success = 0;
         fits_get_errstatus(status, result.error);
         return result;

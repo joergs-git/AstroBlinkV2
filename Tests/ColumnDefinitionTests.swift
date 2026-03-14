@@ -183,10 +183,21 @@ final class ColumnDefinitionTests: XCTestCase {
 
     func testQualityNumericValue() {
         var entry = ImageEntry(url: URL(fileURLWithPath: "/tmp/test.xisf"))
+
+        // With z-score: returns z-score for fine-grained sorting within tiers
+        entry.qualityTier = .excellent
+        entry.qualityZScore = 1.5
+        XCTAssertEqual(ColumnDefinition.numericValue(for: "quality", from: entry), 1.5)
+
+        // Without z-score: falls back to tier rawValue
+        entry.qualityZScore = nil
+        entry.qualityTier = .excellent
+        XCTAssertEqual(ColumnDefinition.numericValue(for: "quality", from: entry), 3.0)
+
         entry.qualityTier = .good
         XCTAssertEqual(ColumnDefinition.numericValue(for: "quality", from: entry), 2.0)
 
-        entry.qualityTier = .uncertain
+        entry.qualityTier = .borderline
         XCTAssertEqual(ColumnDefinition.numericValue(for: "quality", from: entry), 1.0)
 
         entry.qualityTier = .trash

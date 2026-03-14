@@ -1,13 +1,14 @@
 // v3.12.0
 import Foundation
 
-// Quality tier: two-stage detection.
-// Stage 1 ("garbage"): absolute outlier detection — any single metric catastrophically bad → red
-// Stage 2 ("relative"): weighted z-score comparison within group → green/orange/red
+// Four-tier quality system:
+// Stage 1 ("garbage"): absolute outlier → red (any single metric catastrophically bad)
+// Stage 2 ("relative"): weighted z-score within group → excellent/good/borderline/poor
 enum QualityTier: Int {
-    case trash     = 0   // Red: garbage (absolute outlier) or statistically worst
-    case uncertain = 1   // Orange: below average but not catastrophic
-    case good      = 2   // Green: above average
+    case trash      = 0   // Red X: catastrophic garbage (Stage 1) or statistically worst
+    case borderline = 1   // Orange: on the edge — worth visual inspection before keeping
+    case good       = 2   // Half-green: slightly below the best but definitely usable
+    case excellent  = 3   // Full green: clearly above average — best frames
 }
 
 // MARK: -
@@ -17,12 +18,11 @@ struct QualityEstimator {
     // Minimum group size to produce scores
     static let minGroupSize = 20
 
-    // Stage 2: z-score thresholds for relative classification
-    // Orange zone is intentionally wide — with 2x star weight, moderate differences
-    // in star count can push z-scores down significantly. Only truly poor combined
-    // scores should be red.
-    static let thresholdGood:  Double = 0.5
-    static let thresholdTrash: Double = -1.5
+    // Stage 2: z-score thresholds for 4-tier relative classification
+    static let thresholdExcellent: Double =  0.5   // Top tier: clearly above average
+    static let thresholdGood:      Double = -0.3   // Solid: near or slightly above average
+    static let thresholdBorderline: Double = -1.2  // Edge: below average, check visually
+    // Below borderline → trash (red) via Stage 2
 
     // Stage 1: absolute garbage detection thresholds (percentile of group)
     // If a metric is below this percentile of the group, it's garbage regardless of other metrics
@@ -36,14 +36,14 @@ struct QualityEstimator {
 
     // MARK: - Public API
 
-    static func computeScores(for entries: [ImageEntry]) -> [URL: QualityTier] {
+    static func computeScores(for entries: [ImageEntry]) -> [URL: (tier: QualityTier, zScore: Double)] {
         var groups: [GroupKey: [Int]] = [:]
         for (index, entry) in entries.enumerated() {
             let key = GroupKey(entry: entry)
             groups[key, default: []].append(index)
         }
 
-        var result: [URL: QualityTier] = [:]
+        var result: [URL: (tier: QualityTier, zScore: Double)] = [:]
 
         for (_, indices) in groups {
             guard indices.count >= minGroupSize else { continue }
@@ -129,7 +129,7 @@ struct QualityEstimator {
                 }
 
                 if isGarbage {
-                    result[entry.url] = .trash
+                    result[entry.url] = (tier: .trash, zScore: -99.0)
                     continue
                 }
 
@@ -159,15 +159,17 @@ struct QualityEstimator {
                 let combinedZ = zSum / wSum
 
                 let tier: QualityTier
-                if combinedZ > thresholdGood {
-                    tier = .good       // Green: above average
-                } else if combinedZ < thresholdTrash {
-                    tier = .trash      // Red: statistically worst
+                if combinedZ > thresholdExcellent {
+                    tier = .excellent    // Full green: clearly above average
+                } else if combinedZ > thresholdGood {
+                    tier = .good         // Half-green: solid, near average
+                } else if combinedZ > thresholdBorderline {
+                    tier = .borderline   // Orange: on the edge, check visually
                 } else {
-                    tier = .uncertain  // Orange: below average but not terrible
+                    tier = .trash        // Red: statistically worst
                 }
 
-                result[entry.url] = tier
+                result[entry.url] = (tier: tier, zScore: combinedZ)
             }
         }
 
