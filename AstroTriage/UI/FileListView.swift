@@ -114,15 +114,32 @@ struct FileListView: NSViewRepresentable {
         coordinator.displayedImages = isFiltered ? viewModel.visibleImages : viewModel.images
         coordinator.cachedURLs = Set(coordinator.displayedImages.filter { viewModel.isImageCached($0.url) }.map { $0.url })
         coordinator.rotatedURLs = Set(coordinator.displayedImages.filter { viewModel.shouldRotateForMeridian($0) }.map { $0.url })
+        coordinator.updateMetricRanges()
 
         guard let tableView = coordinator.tableView else { return }
 
         // Apply pending column reorder (triggered after header enrichment for single/multi-object)
-        // Also applies default sort based on the new column order
         if let newOrder = viewModel.pendingColumnOrder {
             viewModel.pendingColumnOrder = nil
             reorderTableColumns(tableView, to: newOrder)
             viewModel.applySortByColumnOrder(newOrder)
+            coordinator.displayedImages = isFiltered ? viewModel.visibleImages : viewModel.images
+            coordinator.updateMetricRanges()
+            tableView.reloadData()
+        }
+
+        // Re-sort after quality scores become available (once per session)
+        // Always uses recommended order for sort (not saved column layout — that's visual only)
+        if viewModel.needsQualityResort {
+            viewModel.needsQualityResort = false
+            let uniqueTargets = Set(viewModel.images.compactMap { $0.target?.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty })
+            let uniqueFilters = Set(viewModel.images.compactMap { $0.filter?.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty })
+            let order = ColumnDefinition.recommendedColumnOrder(
+                isMultiObject: uniqueTargets.count > 1, isMultiFilter: uniqueFilters.count > 1
+            )
+            viewModel.applySortByColumnOrder(order)
+            coordinator.displayedImages = isFiltered ? viewModel.visibleImages : viewModel.images
+            coordinator.updateMetricRanges()
             tableView.reloadData()
         }
 
@@ -146,13 +163,18 @@ struct FileListView: NSViewRepresentable {
             // Detect initial load (table was empty, now has rows) to grab keyboard focus
             let wasEmpty = currentCount == 0
 
+            // Re-snapshot images (sort may have changed order since top-of-function snapshot)
+            coordinator.displayedImages = isFiltered ? viewModel.visibleImages : viewModel.images
+            coordinator.updateMetricRanges()
+            let newCountRefreshed = coordinator.displayedImages.count
+
             // Preserve current multi-selection across reload
             let savedSelection = tableView.selectedRowIndexes
             tableView.reloadData()
             viewModel.needsTableRefresh = false
 
             // Restore saved selection if still valid
-            if !savedSelection.isEmpty && savedSelection.last! < newCount {
+            if !savedSelection.isEmpty && savedSelection.last! < newCountRefreshed {
                 tableView.selectRowIndexes(savedSelection, byExtendingSelection: false)
             }
 
@@ -225,6 +247,55 @@ struct FileListView: NSViewRepresentable {
         var cachedURLs: Set<URL> = []
         var rotatedURLs: Set<URL> = []
 
+        // Per-group min/max ranges for metric bar indicators
+        // Group key = "target|filter|exposure" (same grouping as quality scoring)
+        // Each group has its own min/max per metric column
+        private var groupMetricRanges: [String: [String: (min: Double, max: Double)]] = [:]
+        private static let barColumns: Set<String> = ["snr", "hfr", "fwhm", "starCount"]
+
+        private func groupKey(for entry: ImageEntry) -> String {
+            let t = (entry.target ?? "").trimmingCharacters(in: .whitespaces)
+            let f = (entry.filter ?? "").uppercased().trimmingCharacters(in: .whitespaces)
+            let e = entry.exposure.map { String(Int($0.rounded())) } ?? "0"
+            return "\(t)|\(f)|\(e)"
+        }
+
+        func updateMetricRanges() {
+            groupMetricRanges.removeAll()
+
+            // Group images
+            var groups: [String: [ImageEntry]] = [:]
+            for entry in displayedImages {
+                let key = groupKey(for: entry)
+                groups[key, default: []].append(entry)
+            }
+
+            // Compute min/max per metric per group
+            for (gKey, entries) in groups {
+                var ranges: [String: (min: Double, max: Double)] = [:]
+                for colId in Self.barColumns {
+                    let values = entries.compactMap { ColumnDefinition.numericValue(for: colId, from: $0) }
+                    guard let minV = values.min(), let maxV = values.max(), maxV > minV else { continue }
+                    ranges[colId] = (minV, maxV)
+                }
+                groupMetricRanges[gKey] = ranges
+            }
+        }
+
+        /// Returns 0.0–1.0 fraction for how good this value is within its group.
+        /// Higher fraction = better. Longer bar = better.
+        func metricFraction(colId: String, value: Double, entry: ImageEntry) -> CGFloat? {
+            let gKey = groupKey(for: entry)
+            guard let ranges = groupMetricRanges[gKey],
+                  let range = ranges[colId], range.max > range.min else { return nil }
+            let normalized = (value - range.min) / (range.max - range.min)
+            // fwhm and hfr: lower = better → invert so longer bar = better
+            if colId == "fwhm" || colId == "hfr" {
+                return CGFloat(1.0 - normalized)
+            }
+            return CGFloat(normalized)
+        }
+
         func numberOfRows(in tableView: NSTableView) -> Int {
             displayedImages.count
         }
@@ -252,7 +323,8 @@ struct FileListView: NSViewRepresentable {
 
             // Regular text column
             let value = ColumnDefinition.value(for: colId, from: entry)
-            let identifier = NSUserInterfaceItemIdentifier("Cell_\(colId)")
+            let isMetricCol = Self.barColumns.contains(colId)
+            let identifier = NSUserInterfaceItemIdentifier(isMetricCol ? "MetricCell_\(colId)" : "Cell_\(colId)")
             let cellView: NSTableCellView
 
             if let reused = tableView.makeView(withIdentifier: identifier, owner: self) as? NSTableCellView {
@@ -268,17 +340,53 @@ struct FileListView: NSViewRepresentable {
                 cellView.addSubview(textField)
                 cellView.textField = textField
 
-                NSLayoutConstraint.activate([
-                    textField.leadingAnchor.constraint(equalTo: cellView.leadingAnchor, constant: 2),
-                    textField.trailingAnchor.constraint(equalTo: cellView.trailingAnchor, constant: -2),
-                    textField.centerYAnchor.constraint(equalTo: cellView.centerYAnchor),
-                ])
+                if isMetricCol {
+                    // Add a tiny bar indicator below the text
+                    let bar = NSView()
+                    bar.translatesAutoresizingMaskIntoConstraints = false
+                    bar.identifier = NSUserInterfaceItemIdentifier("metricBar")
+                    bar.wantsLayer = true
+                    cellView.addSubview(bar)
+
+                    NSLayoutConstraint.activate([
+                        textField.leadingAnchor.constraint(equalTo: cellView.leadingAnchor, constant: 2),
+                        textField.trailingAnchor.constraint(equalTo: cellView.trailingAnchor, constant: -2),
+                        textField.topAnchor.constraint(equalTo: cellView.topAnchor, constant: 1),
+                        bar.leadingAnchor.constraint(equalTo: cellView.leadingAnchor, constant: 2),
+                        bar.bottomAnchor.constraint(equalTo: cellView.bottomAnchor, constant: -1),
+                        bar.heightAnchor.constraint(equalToConstant: 2),
+                    ])
+                } else {
+                    NSLayoutConstraint.activate([
+                        textField.leadingAnchor.constraint(equalTo: cellView.leadingAnchor, constant: 2),
+                        textField.trailingAnchor.constraint(equalTo: cellView.trailingAnchor, constant: -2),
+                        textField.centerYAnchor.constraint(equalTo: cellView.centerYAnchor),
+                    ])
+                }
             }
 
             cellView.textField?.stringValue = value
 
+            // Update metric bar: longer = better, red (bad) → green (good)
+            if isMetricCol, let numVal = ColumnDefinition.numericValue(for: colId, from: entry),
+               let fraction = metricFraction(colId: colId, value: numVal, entry: entry) {
+                let bar = cellView.subviews.first { $0.identifier?.rawValue == "metricBar" }
+                if let bar = bar {
+                    bar.constraints.filter { $0.firstAttribute == .width }.forEach { bar.removeConstraint($0) }
+                    let maxBarWidth = cellView.bounds.width > 0 ? cellView.bounds.width - 4 : 40
+                    bar.widthAnchor.constraint(equalToConstant: max(1, maxBarWidth * fraction)).isActive = true
+                    // Red (0%) → Orange (50%) → Green (100%)
+                    let hue: CGFloat = fraction * 0.33  // 0.0 = red, 0.17 = orange, 0.33 = green
+                    let color = NSColor(calibratedHue: hue, saturation: 0.75, brightness: 0.75, alpha: 0.85)
+                    bar.layer?.backgroundColor = color.cgColor
+                    bar.isHidden = false
+                }
+            } else {
+                let bar = cellView.subviews.first { $0.identifier?.rawValue == "metricBar" }
+                bar?.isHidden = true
+            }
+
             // Color logic: marked rows get red text, but use white when row is selected
-            // (fixes unreadable red-on-blue issue with macOS default selection highlight)
             let isSelected = tableView.selectedRowIndexes.contains(row)
             if isNight {
                 cellView.textField?.textColor = entry.isMarkedForDeletion

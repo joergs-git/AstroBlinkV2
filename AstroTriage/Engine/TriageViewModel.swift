@@ -72,6 +72,9 @@ class TriageViewModel: ObservableObject {
     // Recommended column order after header enrichment (set once per session load)
     // FileListView consumes and clears this after applying
     @Published var pendingColumnOrder: [String]?
+    // Tracks whether the initial quality-based re-sort is needed/done (once per session)
+    private var initialQualitySortDone = false
+    @Published var needsQualityResort = false
 
     // Hide marked images: when true, marked images are invisible in the list
     @Published var hideMarked: Bool = false
@@ -371,6 +374,33 @@ class TriageViewModel: ObservableObject {
         systemStats = SystemStats(memory: memGB, cpu: cpuStr)
     }
 
+    // MARK: - Compare with Best
+
+    func compareWithBest() {
+        guard let entry = selectedImage,
+              let tier = entry.qualityTier, tier != .excellent,
+              let device = renderer?.device else { return }
+
+        let targetKey = (entry.target ?? "").trimmingCharacters(in: .whitespaces)
+        let filterKey = (entry.filter ?? "").uppercased().trimmingCharacters(in: .whitespaces)
+        let expKey = entry.exposure.map { Int($0.rounded()) } ?? 0
+
+        let groupImages = images.filter { img in
+            let t = (img.target ?? "").trimmingCharacters(in: .whitespaces)
+            let f = (img.filter ?? "").uppercased().trimmingCharacters(in: .whitespaces)
+            let e = img.exposure.map { Int($0.rounded()) } ?? 0
+            return t == targetKey && f == filterKey && e == expKey
+        }
+
+        guard let best = groupImages.max(by: { ($0.qualityTier?.rawValue ?? -1) < ($1.qualityTier?.rawValue ?? -1) }),
+              best.url != entry.url else { return }
+
+        CompareWindowController.open(
+            selectedEntry: entry, bestEntry: best,
+            device: device, nightMode: nightMode, debayerEnabled: debayerEnabled
+        )
+    }
+
     // MARK: - Session Management
 
     func openFolder() {
@@ -476,6 +506,7 @@ class TriageViewModel: ObservableObject {
                 self.images = entries
                 self.isLoading = false
                 self.needsTableRefresh = true
+                self.initialQualitySortDone = false  // Reset for new session
 
                 if !entries.isEmpty {
                     self.selectImage(at: 0)
@@ -1004,6 +1035,14 @@ class TriageViewModel: ObservableObject {
         }
         // Notify table that quality column cells need redrawing
         needsTableRefresh = true
+
+        // Re-sort once after first precache completes and quality z-scores are available.
+        // Uses saved column order if available, otherwise recommended order.
+        let hasStarMetrics = images.contains { $0.computedStarCount != nil || $0.computedFWHM != nil }
+        if !initialQualitySortDone && hasStarMetrics {
+            initialQualitySortDone = true
+            needsQualityResort = true
+        }
 
         let scored = scores.count
         let total  = images.count
@@ -2236,9 +2275,10 @@ class TriageViewModel: ObservableObject {
     // Uses isDefaultDescending: numeric AND date/time columns sort descending by default
     // (newest date first, highest SNR first, etc.), text columns ascending (A-Z).
     func applySortByColumnOrder(_ columnIdentifiers: [String]) {
+        // Skip marked and frameNumber (sequence number, not a meaningful sort key)
         let sortColumns = Array(
             columnIdentifiers
-                .filter { $0 != "marked" }
+                .filter { $0 != "marked" && $0 != "frameNumber" }
                 .prefix(4)
         )
         let descriptors = sortColumns.map { colId in

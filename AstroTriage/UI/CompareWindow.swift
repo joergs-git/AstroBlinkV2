@@ -7,7 +7,7 @@ import MetalKit
 // MARK: - Shared zoom/pan state for synchronized views
 
 class SyncedZoomState: ObservableObject {
-    @Published var zoomScale: CGFloat = 1.0
+    @Published var zoomScale: CGFloat = 3.0   // Start at 300% zoom (centered)
     @Published var panOffset: CGPoint = .zero
 
     func reset() {

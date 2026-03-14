@@ -153,10 +153,13 @@ struct ColumnDefinition {
     // Date/time columns: newest first (lexicographic descending works for ISO-8601 format).
     static func isDefaultDescending(_ columnId: String) -> Bool {
         switch columnId {
-        case "frameNumber", "exposure", "hfr", "starCount", "sensorTemp",
-             "fwhm", "gain", "offset", "focuserTemp", "ambientTemp", "fileSize", "snr",
+        case "frameNumber", "exposure", "starCount", "sensorTemp",
+             "gain", "offset", "focuserTemp", "ambientTemp", "fileSize", "snr",
              "quality", "date", "nightDate", "time":
             return true
+        // fwhm and hfr: lower = better → default ascending (best first)
+        case "fwhm", "hfr":
+            return false
         default:
             return false
         }

@@ -157,6 +157,12 @@ struct KeyboardHandler {
             return true
         }
 
+        // C: Compare with Best (open side-by-side comparison with best frame in group)
+        if modifiers.isEmpty, chars == "c" {
+            Task { @MainActor in viewModel.compareWithBest() }
+            return true
+        }
+
         // S: Toggle Lock STF (freeze exact stretch params from current image)
         if modifiers.isEmpty, chars == "s" {
             Task { @MainActor in viewModel.toggleLockSTF() }
