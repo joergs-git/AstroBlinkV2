@@ -60,8 +60,12 @@ enum StarMetricsCalculator {
         let ptr = image.buffer.contents().bindMemory(to: UInt16.self, capacity: planeSize * image.channelCount)
         let totalDetected = stars.count
 
-        // Filter stars: skip edge, saturated, crowded
-        let filtered = filterStars(stars, width: w, height: h, ptr: ptr, channelOffset: channelOffset)
+        // Filter stars: center crop + skip edge, saturated, crowded
+        var filtered = filterStars(stars, width: w, height: h, ptr: ptr, channelOffset: channelOffset, useCenterCrop: true)
+        // Fallback: if center crop is too strict, retry with full frame
+        if filtered.count < minStars {
+            filtered = filterStars(stars, width: w, height: h, ptr: ptr, channelOffset: channelOffset, useCenterCrop: false)
+        }
         guard filtered.count >= minStars else { return nil }
 
         let toMeasure = Array(filtered.prefix(maxMeasuredStars))
@@ -133,20 +137,29 @@ enum StarMetricsCalculator {
         _ stars: [DetectedStar],
         width: Int, height: Int,
         ptr: UnsafeMutablePointer<UInt16>,
-        channelOffset: Int
+        channelOffset: Int,
+        useCenterCrop: Bool = true
     ) -> [DetectedStar] {
         var result: [DetectedStar] = []
 
-        // Center crop boundaries: only accept stars within center 70% of the frame
-        let cropMarginX = Float(width) * (1.0 - centerCropFraction) * 0.5
-        let cropMarginY = Float(height) * (1.0 - centerCropFraction) * 0.5
-        let minX = max(edgeMargin, cropMarginX)
-        let maxX = Float(width) - max(edgeMargin, cropMarginX)
-        let minY = max(edgeMargin, cropMarginY)
-        let maxY = Float(height) - max(edgeMargin, cropMarginY)
+        // Boundary limits
+        let minX: Float, maxX: Float, minY: Float, maxY: Float
+        if useCenterCrop {
+            let cropMarginX = Float(width) * (1.0 - centerCropFraction) * 0.5
+            let cropMarginY = Float(height) * (1.0 - centerCropFraction) * 0.5
+            minX = max(edgeMargin, cropMarginX)
+            maxX = Float(width) - max(edgeMargin, cropMarginX)
+            minY = max(edgeMargin, cropMarginY)
+            maxY = Float(height) - max(edgeMargin, cropMarginY)
+        } else {
+            minX = edgeMargin
+            maxX = Float(width) - edgeMargin
+            minY = edgeMargin
+            maxY = Float(height) - edgeMargin
+        }
 
         for star in stars {
-            // Skip stars outside center crop region
+            // Skip stars outside boundary region
             if star.x < minX || star.x >= maxX ||
                star.y < minY || star.y >= maxY {
                 continue

@@ -102,8 +102,8 @@ final class QualityEstimatorTests: XCTestCase {
         // Create a group where one frame has low star count but good FWHM/HFR/noise
         // With full star weight, it might be penalized. With reduced weight, it should be fine.
         var entries = makeGroup(count: 24, fwhm: 3.0, hfr: 2.0, starCount: 500, noiseMAD: 0.01, filter: "Ha")
-        // Frame with fewer stars but excellent seeing
-        let entry = makeEntry(index: 99, filter: "Ha", fwhm: 1.5, hfr: 1.0, starCount: 100, noiseMAD: 0.005)
+        // Frame with fewer stars but excellent seeing — 200/500 = 40%, above 25% NB garbage threshold
+        let entry = makeEntry(index: 99, filter: "Ha", fwhm: 1.5, hfr: 1.0, starCount: 200, noiseMAD: 0.005)
         entries.append(entry)
 
         let scores = QualityEstimator.computeScores(for: entries)

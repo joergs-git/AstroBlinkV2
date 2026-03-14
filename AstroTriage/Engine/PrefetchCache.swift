@@ -147,9 +147,13 @@ class PrefetchCache {
                                 stars: stars, fullResImage: imageForSTF, channel: channel,
                                 totalStarCount: totalStarCount
                             )
-                            if let metrics = metrics {
-                                Task { @MainActor in onStarMetrics(url, metrics) }
-                            }
+                            // Always report star count even if HFR/FWHM measurement failed
+                            // (not enough stars in center crop for measurement)
+                            let finalMetrics = metrics ?? StarMetrics(
+                                medianHFR: 0, medianFWHM: 0,
+                                measuredStarCount: 0, totalStarCount: totalStarCount
+                            )
+                            Task { @MainActor in onStarMetrics(url, finalMetrics) }
                         }
                     }
 

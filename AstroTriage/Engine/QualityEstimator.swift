@@ -1,45 +1,42 @@
-// v3.5.0
+// v3.12.0
 import Foundation
 
-// Three-level quality tier assigned per image relative to its group.
-// "Group" = same filter + object + exposure time (min 20 frames required).
-// Score is always relative (z-score within group), never based on absolute thresholds.
+// Quality tier: two-stage detection.
+// Stage 1 ("garbage"): absolute outlier detection — any single metric catastrophically bad → red
+// Stage 2 ("relative"): weighted z-score comparison within group → green/orange/red
 enum QualityTier: Int {
-    case trash     = 0   // Statistically worse than group average (z < −1.0)
-    case uncertain = 1   // Near group average (−1.0 ≤ z ≤ 0.5)
-    case good      = 2   // Statistically above average (z > 0.5)
+    case trash     = 0   // Red: garbage (absolute outlier) or statistically worst
+    case uncertain = 1   // Orange: below average but not catastrophic
+    case good      = 2   // Green: above average
 }
 
 // MARK: -
 
 struct QualityEstimator {
 
-    // Minimum group size to produce scores.
-    // Below this threshold, quality tier stays nil ("not enough data").
+    // Minimum group size to produce scores
     static let minGroupSize = 20
 
-    // Z-score thresholds for tier classification
+    // Stage 2: z-score thresholds for relative classification
+    // Orange zone is intentionally wide — with 2x star weight, moderate differences
+    // in star count can push z-scores down significantly. Only truly poor combined
+    // scores should be red.
     static let thresholdGood:  Double = 0.5
-    static let thresholdTrash: Double = -1.0
+    static let thresholdTrash: Double = -1.5
 
-    // Narrowband filter keywords: star count is suppressed by the bandpass → lower weight
+    // Stage 1: absolute garbage detection thresholds (percentile of group)
+    // If a metric is below this percentile of the group, it's garbage regardless of other metrics
+    static let garbagePercentile: Double = 0.10  // Bottom 10% is suspicious
+    static let garbageDropFactor: Double = 0.50  // Value < 50% of group median → definite garbage
+
+    // Narrowband filter keywords
     static let narrowbandKeywords = ["ha", "hα", "h-alpha", "halpha",
                                      "oiii", "o3", "sii", "s2",
                                      "hbeta", "hb", "nii", "n2"]
 
     // MARK: - Public API
 
-    /// Compute quality tiers for all images in `entries`.
-    /// Returns a mapping URL → QualityTier for images where a tier can be assigned.
-    /// Images in groups with < minGroupSize members receive no tier (not included in result).
-    ///
-    /// Metrics used (in order of availability):
-    ///   Tier 1 — from FITS/XISF headers or NINA filename tokens (if present):
-    ///     FWHM, HFR (lower = better), StarCount (higher = better)
-    ///   Always available — from prefetch STF subsample:
-    ///     noiseMAD (lower = better; reflects noise floor, cloud scatter, bad seeing)
     static func computeScores(for entries: [ImageEntry]) -> [URL: QualityTier] {
-        // Group images by (filter, object, exposure) — no night grouping so bad nights surface
         var groups: [GroupKey: [Int]] = [:]
         for (index, entry) in entries.enumerated() {
             let key = GroupKey(entry: entry)
@@ -53,17 +50,13 @@ struct QualityEstimator {
 
             let groupEntries = indices.map { entries[$0] }
 
-            // Determine star-count weight from filter name
             let filterName = (groupEntries.first?.filter ?? "").lowercased()
             let isNarrowband = narrowbandKeywords.contains(where: { filterName.contains($0) })
-            // Star count weighted 2x: primary quality indicator — clouds, fog, tracking
-            // issues all reduce star count dramatically. Narrowband still lower weight
-            // since bandpass naturally suppresses star visibility.
-            let starWeight: Double = isNarrowband ? 0.6 : 2.0
+            // Stage 1 already catches catastrophic star count drops (< 50% of median).
+            // Stage 2 only ranks remaining reasonable images — slight elevation is enough.
+            let starWeight: Double = isNarrowband ? 0.5 : 1.2
 
-            // Per-group source consistency: if ALL images have header-sourced values,
-            // use those. If ANY are missing, use computed values for the entire group.
-            // This avoids biased z-scores from mixing measurement methods with systematic offsets.
+            // Per-group source consistency
             let allHaveHeaderFWHM = groupEntries.allSatisfy { $0.fwhm != nil }
             let allHaveHeaderHFR = groupEntries.allSatisfy { $0.hfr != nil }
             let allHaveHeaderStars = groupEntries.allSatisfy { $0.starCount != nil }
@@ -78,53 +71,100 @@ struct QualityEstimator {
                 let count = allHaveHeaderStars ? entry.starCount : entry.computedStarCount
                 return count.map { Double($0) }
             }
+            let snrValues: [Double?] = groupEntries.map { entry in
+                guard let med = entry.noiseMedian, let mad = entry.noiseMAD, mad > 0 else { return nil }
+                return Double(med / mad)
+            }
 
+            // Compute group statistics for absolute garbage detection
+            let starsMedian = sortedMedian(starsValues)
+            let snrMedian = sortedMedian(snrValues)
+            let fwhmMedian = sortedMedian(fwhmValues)
+            let hfrMedian = sortedMedian(hfrValues)
+
+            // Z-scores for relative scoring
             let fwhmZscores  = zscores(values: fwhmValues)
             let hfrZscores   = zscores(values: hfrValues)
             let starsZscores = zscores(values: starsValues)
-
-            // noiseMAD from STF subsample — always available once prefetch has run.
-            // Lower noiseMAD = less noise scatter = better frame (clouds/bad seeing raise it).
             let noiseMadZscores = zscores(values: groupEntries.map { $0.noiseMAD.map { Double($0) } })
 
             for (localIdx, globalIdx) in indices.enumerated() {
                 let entry = entries[globalIdx]
 
-                // Collect available per-image weighted z-scores.
-                // FWHM, HFR, noiseMAD: lower = better → negate.
-                // StarCount: higher = better → keep sign.
+                // ── Stage 1: Absolute garbage detection ──
+                // Any single metric catastrophically bad → immediate red
+                var isGarbage = false
+
+                // Rule 1: No stars or near-zero stars → garbage
+                // (clouds, heavy fog, tracking failure, shutter issue)
+                // Narrowband: star count naturally varies more due to bandpass → relax threshold
+                if let stars = starsValues[localIdx], let median = starsMedian {
+                    let dropThreshold = isNarrowband ? garbageDropFactor * 0.5 : garbageDropFactor  // 25% for NB, 50% for broadband
+                    if stars < 1 || (median > 10 && stars < median * dropThreshold) {
+                        isGarbage = true
+                    }
+                }
+
+                // Rule 2: SNR catastrophically low compared to group
+                // (clouds passing, dew on lens, light leak)
+                if let snr = snrValues[localIdx], let median = snrMedian {
+                    if median > 5 && snr < median * garbageDropFactor {
+                        isGarbage = true
+                    }
+                }
+
+                // Rule 3: FWHM catastrophically high (severe tracking error, defocus)
+                // FWHM is "lower = better", so garbage = much higher than median
+                if let fwhm = fwhmValues[localIdx], let median = fwhmMedian {
+                    if median > 0 && fwhm > median * (1.0 / garbageDropFactor) {
+                        isGarbage = true
+                    }
+                }
+
+                // Rule 4: HFR catastrophically high (same logic as FWHM)
+                if let hfr = hfrValues[localIdx], let median = hfrMedian {
+                    if median > 0 && hfr > median * (1.0 / garbageDropFactor) {
+                        isGarbage = true
+                    }
+                }
+
+                if isGarbage {
+                    result[entry.url] = .trash
+                    continue
+                }
+
+                // ── Stage 2: Relative weighted z-score comparison ──
                 var zSum: Double = 0
                 var wSum: Double = 0
 
                 if let z = fwhmZscores[localIdx] {
-                    zSum += -z * 1.0
+                    zSum += -z * 1.0     // lower FWHM = better → negate
                     wSum += 1.0
                 }
                 if let z = hfrZscores[localIdx] {
-                    zSum += -z * 1.0
+                    zSum += -z * 1.0     // lower HFR = better → negate
                     wSum += 1.0
                 }
                 if let z = starsZscores[localIdx] {
-                    zSum += z * starWeight
+                    zSum += z * starWeight  // higher stars = better → keep sign
                     wSum += starWeight
                 }
                 if let z = noiseMadZscores[localIdx] {
-                    zSum += -z * 1.0
+                    zSum += -z * 1.0     // lower noise = better → negate
                     wSum += 1.0
                 }
 
-                // No metrics available for this image → skip
                 guard wSum > 0 else { continue }
 
                 let combinedZ = zSum / wSum
 
                 let tier: QualityTier
                 if combinedZ > thresholdGood {
-                    tier = .good
+                    tier = .good       // Green: above average
                 } else if combinedZ < thresholdTrash {
-                    tier = .trash
+                    tier = .trash      // Red: statistically worst
                 } else {
-                    tier = .uncertain
+                    tier = .uncertain  // Orange: below average but not terrible
                 }
 
                 result[entry.url] = tier
@@ -137,7 +177,6 @@ struct QualityEstimator {
     // MARK: - Private helpers
 
     /// Compute z-scores for an array of optional Doubles.
-    /// Returns an array parallel to `values`: nil where the input was nil, Double otherwise.
     private static func zscores(values: [Double?]) -> [Double?] {
         let present = values.compactMap { $0 }
         guard present.count >= 2 else {
@@ -157,19 +196,21 @@ struct QualityEstimator {
             return (v - mean) / std
         }
     }
+
+    /// Compute median of non-nil values
+    private static func sortedMedian(_ values: [Double?]) -> Double? {
+        let present = values.compactMap { $0 }.sorted()
+        guard !present.isEmpty else { return nil }
+        return present[present.count / 2]
+    }
 }
 
 // MARK: - Group key
 
-/// Identifies a comparable group of images for relative quality scoring.
-/// Groups are defined by: filter + object + exposure duration.
-/// Night is intentionally NOT a grouping dimension — cross-night comparison lets bad nights
-/// surface as trash rather than hiding them behind per-night relative scoring.
-/// Users can limit comparison scope via file selection if needed.
 private struct GroupKey: Hashable {
-    let filter:   String   // Uppercase filter name, "" if unknown
-    let object:   String   // Target object name, "" if unknown
-    let exposure: Int      // Exposure time rounded to nearest second, 0 if unknown
+    let filter:   String
+    let object:   String
+    let exposure: Int
 
     init(entry: ImageEntry) {
         filter   = (entry.filter   ?? "").uppercased().trimmingCharacters(in: .whitespaces)

@@ -709,8 +709,10 @@ class TriageViewModel: ObservableObject {
                 guard let self = self else { return }
                 // Store computed star metrics (always computed for per-group source consistency)
                 if let idx = self.images.firstIndex(where: { $0.url == url }) {
-                    self.images[idx].computedHFR = metrics.medianHFR
-                    self.images[idx].computedFWHM = metrics.medianFWHM
+                    // Only store HFR/FWHM if measurement succeeded (non-zero)
+                    if metrics.medianHFR > 0 { self.images[idx].computedHFR = metrics.medianHFR }
+                    if metrics.medianFWHM > 0 { self.images[idx].computedFWHM = metrics.medianFWHM }
+                    // Always store total star count
                     self.images[idx].computedStarCount = metrics.totalStarCount
                 }
             }
@@ -958,12 +960,16 @@ class TriageViewModel: ObservableObject {
                 self.recomputeQualityScores()
                 self.detectMeridianFlip()
 
-                // Auto-reorder columns based on single vs multi-object session
+                // Auto-reorder columns based on session composition (4 cases)
                 // Only if user hasn't manually set a column order
                 if AppSettings.loadStrings(for: .columnOrder) == nil {
                     let uniqueTargets = Set(self.images.compactMap { $0.target?.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty })
+                    let uniqueFilters = Set(self.images.compactMap { $0.filter?.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty })
                     let isMultiObject = uniqueTargets.count > 1
-                    self.pendingColumnOrder = ColumnDefinition.recommendedColumnOrder(isMultiObject: isMultiObject)
+                    let isMultiFilter = uniqueFilters.count > 1
+                    self.pendingColumnOrder = ColumnDefinition.recommendedColumnOrder(
+                        isMultiObject: isMultiObject, isMultiFilter: isMultiFilter
+                    )
                 }
                 // Update rotation for current image now that pier side data is available
                 self.updateMeridianRotation()

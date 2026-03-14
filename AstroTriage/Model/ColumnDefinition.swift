@@ -50,26 +50,44 @@ struct ColumnDefinition {
     // Default visible column identifiers (factory defaults)
     static let defaultVisibleColumnIds: [String] = allColumns.filter(\.isDefaultVisible).map(\.identifier)
 
-    // Preferred column order for single-object sessions (Object column is less important)
-    // Quality metrics first, then exposure, then rest
-    static let singleObjectColumnOrder: [String] = [
-        "marked", "frameNumber", "filter", "quality", "starCount", "fwhm", "hfr", "snr",
-        "exposure", "nightDate", "time", "filename", "target", "frameType", "camera",
+    // Column tail: shared columns that appear after the primary metrics
+    private static let columnTail: [String] = [
+        "filename", "frameType", "camera",
         "ambientTemp", "focuserTemp", "sensorTemp", "gain", "fileSize", "subfolder",
         "date", "telescope", "binning", "offset"
     ]
 
-    // Preferred column order for multi-object sessions (Object column moves to front)
-    static let multiObjectColumnOrder: [String] = [
-        "marked", "frameNumber", "target", "filter", "quality", "starCount", "fwhm", "hfr", "snr",
-        "exposure", "nightDate", "time", "filename", "frameType", "camera",
-        "ambientTemp", "focuserTemp", "sensorTemp", "gain", "fileSize", "subfolder",
-        "date", "telescope", "binning", "offset"
-    ]
+    // Case A: Single target, multi filter — filter groups the data, quality within each filter
+    // Sort: filter ASC → time DESC (chronological within each filter group)
+    private static let singleTargetMultiFilter: [String] =
+        ["marked", "frameNumber", "filter", "quality", "starCount", "fwhm", "hfr", "snr",
+         "exposure", "nightDate", "time", "target"] + columnTail
 
-    /// Returns the recommended column order based on whether the session has multiple objects
-    static func recommendedColumnOrder(isMultiObject: Bool) -> [String] {
-        isMultiObject ? multiObjectColumnOrder : singleObjectColumnOrder
+    // Case B: Single target, single filter — all images are "the same", quality + time matter
+    // Sort: time DESC (chronological through the night)
+    private static let singleTargetSingleFilter: [String] =
+        ["marked", "frameNumber", "quality", "starCount", "fwhm", "hfr", "snr",
+         "time", "exposure", "nightDate", "filter", "target"] + columnTail
+
+    // Case C: Multi target, multi filter — target groups first, then filter within target
+    // Sort: target ASC → filter ASC → time DESC
+    private static let multiTargetMultiFilter: [String] =
+        ["marked", "frameNumber", "target", "filter", "quality", "starCount", "fwhm", "hfr", "snr",
+         "exposure", "nightDate", "time"] + columnTail
+
+    // Case D: Multi target, single filter — target groups, quality within each target
+    // Sort: target ASC → time DESC
+    private static let multiTargetSingleFilter: [String] =
+        ["marked", "frameNumber", "target", "quality", "starCount", "fwhm", "hfr", "snr",
+         "time", "exposure", "nightDate", "filter"] + columnTail
+
+    /// Returns the recommended column order based on session composition
+    static func recommendedColumnOrder(isMultiObject: Bool, isMultiFilter: Bool) -> [String] {
+        if isMultiObject {
+            return isMultiFilter ? multiTargetMultiFilter : multiTargetSingleFilter
+        } else {
+            return isMultiFilter ? singleTargetMultiFilter : singleTargetSingleFilter
+        }
     }
 
     // Get the string value for a given column from an ImageEntry.
@@ -159,7 +177,7 @@ struct ColumnDefinition {
     static func headerToolTip(for columnId: String) -> String? {
         switch columnId {
         case "quality":
-            return "Relative quality score within group (same filter + target + exposure).\nBased on z-scores of FWHM, HFR, star count, and noise.\nMeasured from center 70% of image to exclude edge effects.\nGood (green) = above average, Trash (red) = below average."
+            return "Two-stage quality score within group (same filter + target + exposure).\nStage 1: Red if any metric is catastrophically bad (< 50% of group median).\nStage 2: Weighted z-scores of stars (2x), FWHM, HFR, noise.\nGreen = above average, Orange = below average, Red = garbage."
         case "snr":
             return "Signal-to-Noise Ratio.\nComputed from median pixel value / noise MAD during auto-stretch.\nHigher = cleaner signal. Affected by exposure, light pollution, clouds."
         case "fwhm":
