@@ -45,6 +45,7 @@ class QuickStackEngineV2: ObservableObject {
     private let bin2xPipeline: MTLComputePipelineState?
     private let warpPipeline: MTLComputePipelineState?
     private let debayerPipeline: MTLComputePipelineState?
+    private let cosmeticPipeline: MTLComputePipelineState?
     private var stackTask: Task<Void, Never>?
 
     // V2 tuning: match V1 star/triangle counts for accuracy, use finer detection grid
@@ -61,6 +62,7 @@ class QuickStackEngineV2: ObservableObject {
         guard let library = device.makeDefaultLibrary() else {
             self.bin2xPipeline = nil
             self.warpPipeline = nil
+            self.cosmeticPipeline = nil
             return nil
         }
 
@@ -84,6 +86,13 @@ class QuickStackEngineV2: ObservableObject {
             self.debayerPipeline = pipe
         } else {
             self.debayerPipeline = nil
+        }
+
+        if let cosmeticFunc = library.makeFunction(name: "cosmetic_correction"),
+           let pipe = try? device.makeComputePipelineState(function: cosmeticFunc) {
+            self.cosmeticPipeline = pipe
+        } else {
+            self.cosmeticPipeline = nil
         }
     }
 
@@ -184,6 +193,34 @@ class QuickStackEngineV2: ObservableObject {
         return DecodedImage(buffer: outputBuffer, width: image.width, height: image.height, channelCount: 3)
     }
 
+    // MARK: - GPU Cosmetic Correction (hot/cold pixel rejection)
+
+    private func gpuCosmeticCorrection(_ image: DecodedImage) -> DecodedImage? {
+        guard let pipeline = cosmeticPipeline else { return nil }
+
+        let totalBytes = image.width * image.height * image.channelCount * MemoryLayout<UInt16>.size
+        guard let outBuffer = device.makeBuffer(length: totalBytes, options: .storageModeShared),
+              let cmdBuf = commandQueue.makeCommandBuffer(),
+              let encoder = cmdBuf.makeComputeCommandEncoder() else { return nil }
+
+        // Pack CosmeticParams struct (matches Metal side: 3 ints)
+        var params = (Int32(image.width), Int32(image.height), Int32(image.channelCount))
+
+        encoder.setComputePipelineState(pipeline)
+        encoder.setBuffer(image.buffer, offset: 0, index: 0)
+        encoder.setBuffer(outBuffer, offset: 0, index: 1)
+        encoder.setBytes(&params, length: MemoryLayout.size(ofValue: params), index: 2)
+
+        let tg = MTLSize(width: 32, height: 32, depth: 1)
+        let grid = MTLSize(width: (image.width + 31) / 32, height: (image.height + 31) / 32, depth: 1)
+        encoder.dispatchThreadgroups(grid, threadsPerThreadgroup: tg)
+        encoder.endEncoding()
+        cmdBuf.commit()
+        cmdBuf.waitUntilCompleted()
+
+        return DecodedImage(buffer: outBuffer, width: image.width, height: image.height, channelCount: image.channelCount)
+    }
+
     // MARK: - Main Pipeline
 
     private func runStack(entries: [ImageEntry], debayerEnabled: Bool) async {
@@ -202,8 +239,10 @@ class QuickStackEngineV2: ObservableObject {
 
             switch result {
             case .success(let decoded):
+                // Cosmetic correction: reject hot/cold pixels before any further processing
+                let corrected = gpuCosmeticCorrection(decoded) ?? decoded
                 // Debayer OSC images before binning (CFA mono → RGB)
-                var processed = decoded
+                var processed = corrected
                 if debayerEnabled, let pattern = entry.bayerPattern, decoded.channelCount == 1 {
                     if let debayered = gpuDebayer(decoded, pattern: pattern) {
                         processed = debayered

@@ -188,6 +188,8 @@ struct StackResultView: View {
     @State private var saturation: Double = 1.0
     @State private var linkedStretch: Bool = false
     @State private var denoise: Double = 0.0
+    @State private var deconvolve: Double = 0.0
+    @State private var useRL: Bool = false
     @State private var displayTexture: MTLTexture?
     @State private var savedMessage: String?
     @State private var isRendering: Bool = false
@@ -237,15 +239,20 @@ struct StackResultView: View {
 
                 resultSlider("Stretch", value: $stretchValue, range: 0.0...1.0, step: 0.01,
                              display: "\(Int(stretchValue / 1.0 * 100))%")
+                    .help("STF auto-stretch target background level.\n0% = linear (no stretch), 25% = default, higher = brighter.")
                 resultSlider("Sharp", value: $sharpening, range: -4.0...4.0, step: 0.1,
                              display: String(format: "%+.1f", sharpening))
+                    .help("Unsharp mask sharpening.\nNegative = blur, 0 = off, positive = sharpen.")
                 resultSlider("Contrast", value: $contrast, range: -2.0...2.0, step: 0.05,
                              display: String(format: "%+.1f", contrast))
+                    .help("Contrast adjustment around midpoint.\nNegative = flatten, 0 = off, positive = increase.")
                 resultSlider("Dark", value: $darkLevel, range: 0.0...1.0, step: 0.01,
                              display: String(format: "%.2f", darkLevel))
+                    .help("Dark level / shadows clip.\nRaises the black point to clip faint background.")
                 if engine.resultChannelCount > 1 {
                     resultSlider("Color", value: $saturation, range: 0.0...3.0, step: 0.05,
                                  display: String(format: "%.1f", saturation))
+                        .help("Color saturation.\n0 = monochrome, 1.0 = natural, >1 = boosted.")
                     Toggle("Linked", isOn: $linkedStretch)
                         .toggleStyle(.switch).controlSize(.mini)
                         .font(.system(size: 10, design: .monospaced))
@@ -255,6 +262,17 @@ struct StackResultView: View {
                 }
                 resultSlider("Denoise", value: $denoise, range: 0.0...2.0, step: 0.02,
                              display: denoise < 0.01 ? "Off" : String(format: "%.0f%%", denoise * 100))
+                    .help("Two-pass GPU denoise: bilateral (pixel noise) + chrominance (color patches).\n0 = off, 100%+ = aggressive.")
+                resultSlider("Deconv", value: $deconvolve, range: 0.0...2.0, step: 0.02,
+                             display: deconvolve < 0.01 ? "Off" : String(format: "%.1f", deconvolve))
+                    .help("Deconvolution sharpening to recover detail.\nUSM = multi-scale unsharp mask, RL = Richardson-Lucy iterative.")
+                Toggle(useRL ? "RL" : "USM", isOn: $useRL)
+                    .toggleStyle(.switch).controlSize(.mini)
+                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                    .foregroundColor(useRL ? .orange : .secondary)
+                    .help("USM = Multi-scale Unsharp Mask (fast).\nRL = Richardson-Lucy deconvolution (better quality, slower).")
+                    .onChange(of: useRL) { _ in scheduleRender() }
+                    .frame(width: 52)
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
@@ -297,6 +315,7 @@ struct StackResultView: View {
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
+                .help("Export current view as PNG file")
 
                 if let msg = savedMessage {
                     Text(msg)
@@ -332,7 +351,7 @@ struct StackResultView: View {
     }
 
     private func resetSliders() {
-        stretchValue = 0.25; sharpening = 0.0; contrast = 0.0; darkLevel = 0.0; saturation = 1.0; linkedStretch = false; denoise = 0.0
+        stretchValue = 0.25; sharpening = 0.0; contrast = 0.0; darkLevel = 0.0; saturation = 1.0; linkedStretch = false; denoise = 0.0; deconvolve = 0.0; useRL = false
         scheduleRender()
     }
 
@@ -364,6 +383,8 @@ struct StackResultView: View {
         let sat = Float(saturation)
         let linked = linkedStretch
         let dn = Float(denoise)
+        let dc = Float(deconvolve)
+        let rl = useRL
         let dev = engine.device
 
         let tex = await Task.detached(priority: .userInitiated) {
@@ -371,7 +392,7 @@ struct StackResultView: View {
                 data: floatData, width: w, height: h,
                 channelCount: ch, targetBackground: target,
                 sharpening: sharp, contrast: cont, darkLevel: dark,
-                saturation: sat, linkedStretch: linked, denoise: dn, device: dev
+                saturation: sat, linkedStretch: linked, denoise: dn, deconvolve: dc, useRL: rl, device: dev
             )
         }.value
 
@@ -436,11 +457,12 @@ struct StackResultView: View {
                      from: MTLRegion(origin: MTLOrigin(), size: MTLSize(width: w, height: h, depth: 1)),
                      mipmapLevel: 0)
 
-        // Convert BGRA to RGBA for CGImage
-        for i in stride(from: 0, to: pixels.count, by: 4) {
-            let b = pixels[i]
-            pixels[i] = pixels[i + 2]
-            pixels[i + 2] = b
+        // Swap B↔R only for BGRA textures (engine.resultTexture).
+        // renderFloatToTexture output is RGBA — no swap needed.
+        if tex.pixelFormat == .bgra8Unorm {
+            for i in stride(from: 0, to: pixels.count, by: 4) {
+                let b = pixels[i]; pixels[i] = pixels[i + 2]; pixels[i + 2] = b
+            }
         }
 
         let colorSpace = CGColorSpaceCreateDeviceRGB()
@@ -492,7 +514,7 @@ func renderFloatToTexture(
     channelCount: Int, targetBackground: Float,
     sharpening: Float = 0, contrast: Float = 0, darkLevel: Float = 0,
     saturation: Float = 1.0, linkedStretch: Bool = false,
-    denoise: Float = 0,
+    denoise: Float = 0, deconvolve: Float = 0, useRL: Bool = false,
     precomputedSTF: [STFParams]? = nil,
     device: MTLDevice
 ) -> MTLTexture? {
@@ -526,10 +548,12 @@ func renderFloatToTexture(
         return (c0, mb)
     }
 
-    // Use precomputed STF params (from full-res data) when available,
-    // otherwise compute from the (potentially binned) float data
+    // Use precomputed STF params (from full-res data) only when stretch slider
+    // is at default (0.25). When user adjusts stretch, recompute with new target.
+    let usePrecomputed = precomputedSTF != nil && abs(targetBackground - 0.25) < 0.01
+
     let stfR: (c0: Float, mb: Float)
-    if let pre = precomputedSTF, !pre.isEmpty {
+    if usePrecomputed, let pre = precomputedSTF, !pre.isEmpty {
         stfR = (pre[0].c0, pre[0].mb)
     } else {
         stfR = computeSTF(channelOffset: 0)
@@ -548,7 +572,7 @@ func renderFloatToTexture(
     } else {
         c0 = stfR.c0
         mb = stfR.mb
-        if let pre = precomputedSTF, pre.count >= 3 {
+        if usePrecomputed, let pre = precomputedSTF, pre.count >= 3 {
             stfG = (pre[1].c0, pre[1].mb)
             stfB = (pre[2].c0, pre[2].mb)
         } else {
@@ -615,77 +639,152 @@ func renderFloatToTexture(
     cmdBuf.commit()
     cmdBuf.waitUntilCompleted()
 
-    // Two-pass denoise: (1) bilateral on luminance+color, (2) chrominance-only blur
-    // Pass 1 removes pixel noise, pass 2 removes color patches (green/magenta)
-    if denoise > 0.01 {
-        // Clamp effective strength to [0,1] for shader (slider goes to 2.0)
-        let effectiveStrength = min(denoise, 1.0)
-
-        guard let denoiseFunc = library.makeFunction(name: "bilateral_denoise"),
-              let denoisePipeline = try? device.makeComputePipelineState(function: denoiseFunc),
-              let chromaFunc = library.makeFunction(name: "chroma_denoise"),
-              let chromaPipeline = try? device.makeComputePipelineState(function: chromaFunc) else {
-            return outputTex
-        }
-
-        let texDesc2 = MTLTextureDescriptor.texture2DDescriptor(
-            pixelFormat: .rgba8Unorm, width: width, height: height, mipmapped: false
-        )
-        texDesc2.usage = [.shaderRead, .shaderWrite]
-        guard let texA = device.makeTexture(descriptor: texDesc2),
-              let texB = device.makeTexture(descriptor: texDesc2) else { return outputTex }
-
-        struct DenoiseParams {
-            var strength: Float
-            var width: Int32
-            var height: Int32
-            var radius: Int32
-        }
-
-        // Pass 1: Bilateral denoise (pixel noise)
-        // Adaptive radius: 3 for light, 5 for medium, 7 for heavy
-        let lumRadius: Int32 = denoise > 1.0 ? 7 : (denoise > 0.5 ? 5 : 3)
-        var lumParams = DenoiseParams(
-            strength: effectiveStrength,
-            width: Int32(width), height: Int32(height),
-            radius: lumRadius
-        )
-
-        guard let cmdBuf2 = queue.makeCommandBuffer(),
-              let enc2 = cmdBuf2.makeComputeCommandEncoder() else { return outputTex }
-        enc2.setComputePipelineState(denoisePipeline)
-        enc2.setTexture(outputTex, index: 0)
-        enc2.setTexture(texA, index: 1)
-        enc2.setBytes(&lumParams, length: MemoryLayout<DenoiseParams>.size, index: 0)
-        enc2.dispatchThreadgroups(grid, threadsPerThreadgroup: tg)
-        enc2.endEncoding()
-        cmdBuf2.commit()
-        cmdBuf2.waitUntilCompleted()
-
-        // Pass 2: Chrominance denoise (color patches — green/magenta noise)
-        let chromaStrength = min(denoise * 1.5, 1.0)  // More aggressive on chroma
-        let chromaRadius: Int32 = denoise > 1.0 ? 7 : 5
-        var chromaParams = DenoiseParams(
-            strength: chromaStrength,
-            width: Int32(width), height: Int32(height),
-            radius: chromaRadius
-        )
-
-        guard let cmdBuf3 = queue.makeCommandBuffer(),
-              let enc3 = cmdBuf3.makeComputeCommandEncoder() else { return texA }
-        enc3.setComputePipelineState(chromaPipeline)
-        enc3.setTexture(texA, index: 0)
-        enc3.setTexture(texB, index: 1)
-        enc3.setBytes(&chromaParams, length: MemoryLayout<DenoiseParams>.size, index: 0)
-        enc3.dispatchThreadgroups(grid, threadsPerThreadgroup: tg)
-        enc3.endEncoding()
-        cmdBuf3.commit()
-        cmdBuf3.waitUntilCompleted()
-
-        return texB
+    // Helper: create a scratch texture matching output dimensions
+    func makeScratchTex() -> MTLTexture? {
+        let td = MTLTextureDescriptor.texture2DDescriptor(
+            pixelFormat: .rgba8Unorm, width: width, height: height, mipmapped: false)
+        td.usage = [.shaderRead, .shaderWrite]
+        return device.makeTexture(descriptor: td)
     }
 
-    return outputTex
+    var currentResult: MTLTexture = outputTex
+
+    // ── Pass A: Two-pass denoise (bilateral + chrominance) ──
+    if denoise > 0.01 {
+        let effectiveStrength = min(denoise, 1.0)
+
+        struct DenoiseParams {
+            var strength: Float; var width: Int32; var height: Int32; var radius: Int32
+        }
+
+        if let denoiseFunc = library.makeFunction(name: "bilateral_denoise"),
+           let denoisePipe = try? device.makeComputePipelineState(function: denoiseFunc),
+           let chromaFunc = library.makeFunction(name: "chroma_denoise"),
+           let chromaPipe = try? device.makeComputePipelineState(function: chromaFunc),
+           let texA = makeScratchTex(), let texB = makeScratchTex() {
+
+            // Bilateral (pixel noise)
+            let lumRadius: Int32 = denoise > 1.0 ? 7 : (denoise > 0.5 ? 5 : 3)
+            var p1 = DenoiseParams(strength: effectiveStrength,
+                                   width: Int32(width), height: Int32(height), radius: lumRadius)
+            if let cb = queue.makeCommandBuffer(), let e = cb.makeComputeCommandEncoder() {
+                e.setComputePipelineState(denoisePipe)
+                e.setTexture(currentResult, index: 0); e.setTexture(texA, index: 1)
+                e.setBytes(&p1, length: MemoryLayout<DenoiseParams>.size, index: 0)
+                e.dispatchThreadgroups(grid, threadsPerThreadgroup: tg); e.endEncoding()
+                cb.commit(); cb.waitUntilCompleted()
+            }
+
+            // Chrominance (color patches)
+            let chromaRadius: Int32 = denoise > 1.0 ? 7 : 5
+            var p2 = DenoiseParams(strength: min(denoise * 1.5, 1.0),
+                                   width: Int32(width), height: Int32(height), radius: chromaRadius)
+            if let cb = queue.makeCommandBuffer(), let e = cb.makeComputeCommandEncoder() {
+                e.setComputePipelineState(chromaPipe)
+                e.setTexture(texA, index: 0); e.setTexture(texB, index: 1)
+                e.setBytes(&p2, length: MemoryLayout<DenoiseParams>.size, index: 0)
+                e.dispatchThreadgroups(grid, threadsPerThreadgroup: tg); e.endEncoding()
+                cb.commit(); cb.waitUntilCompleted()
+            }
+            currentResult = texB
+        }
+    }
+
+    // ── Pass B: Deconvolution (USM or Richardson-Lucy) ──
+    if deconvolve > 0.01 {
+        if useRL {
+            // Richardson-Lucy iterative deconvolution
+            // PSF sigma scales with slider: 0.8–2.0 pixels (typical seeing blur)
+            // Iterations scale: 5–20 based on strength
+            struct RLParams {
+                var psfSigma: Float; var psfRadius: Int32; var width: Int32; var height: Int32
+            }
+
+            let psfSigma: Float = 0.8 + deconvolve * 0.6  // 0.8–2.0
+            let psfRadius = Int32(ceil(3.0 * psfSigma))
+            let iterations = min(20, max(5, Int(deconvolve * 10)))
+
+            if let ratioFunc = library.makeFunction(name: "rl_compute_ratio"),
+               let ratioPipe = try? device.makeComputePipelineState(function: ratioFunc),
+               let updateFunc = library.makeFunction(name: "rl_update_estimate"),
+               let updatePipe = try? device.makeComputePipelineState(function: updateFunc),
+               let ratioTex = makeScratchTex(),
+               let estA = makeScratchTex(), let estB = makeScratchTex() {
+
+                var rlp = RLParams(psfSigma: psfSigma, psfRadius: psfRadius,
+                                   width: Int32(width), height: Int32(height))
+
+                // Copy current result to initial estimate
+                if let cb = queue.makeCommandBuffer(), let enc = cb.makeBlitCommandEncoder() {
+                    enc.copy(from: currentResult, to: estA)
+                    enc.endEncoding(); cb.commit(); cb.waitUntilCompleted()
+                }
+
+                let observed = currentResult
+                var curEst = estA
+                var newEst = estB
+
+                for _ in 0..<iterations {
+                    // Step 1: ratio = observed / convolve(estimate, PSF)
+                    if let cb = queue.makeCommandBuffer(), let e = cb.makeComputeCommandEncoder() {
+                        e.setComputePipelineState(ratioPipe)
+                        e.setTexture(observed, index: 0)
+                        e.setTexture(curEst, index: 1)
+                        e.setTexture(ratioTex, index: 2)
+                        e.setBytes(&rlp, length: MemoryLayout<RLParams>.size, index: 0)
+                        e.dispatchThreadgroups(grid, threadsPerThreadgroup: tg); e.endEncoding()
+                        cb.commit(); cb.waitUntilCompleted()
+                    }
+                    // Step 2: estimate *= convolve(ratio, PSF)
+                    if let cb = queue.makeCommandBuffer(), let e = cb.makeComputeCommandEncoder() {
+                        e.setComputePipelineState(updatePipe)
+                        e.setTexture(curEst, index: 0)
+                        e.setTexture(ratioTex, index: 1)
+                        e.setTexture(newEst, index: 2)
+                        e.setBytes(&rlp, length: MemoryLayout<RLParams>.size, index: 0)
+                        e.dispatchThreadgroups(grid, threadsPerThreadgroup: tg); e.endEncoding()
+                        cb.commit(); cb.waitUntilCompleted()
+                    }
+                    swap(&curEst, &newEst)
+                }
+                currentResult = curEst
+            }
+        } else {
+            // Multi-scale unsharp mask (fast approximation)
+            struct SharpenParams {
+                var amount: Float; var radius: Float; var width: Int32; var height: Int32
+            }
+
+            if let sharpFunc = library.makeFunction(name: "unsharp_mask_lum"),
+               let sharpPipe = try? device.makeComputePipelineState(function: sharpFunc),
+               let pingTex = makeScratchTex(), let pongTex = makeScratchTex() {
+
+                let scales: [(radius: Float, factor: Float)] = [
+                    (1.5, 1.0), (3.0, 0.6), (5.0, 0.3)
+                ]
+                var src = currentResult
+                var dst = pingTex
+
+                for (i, scale) in scales.enumerated() {
+                    var sp = SharpenParams(amount: deconvolve * scale.factor, radius: scale.radius,
+                                           width: Int32(width), height: Int32(height))
+                    if let cb = queue.makeCommandBuffer(), let e = cb.makeComputeCommandEncoder() {
+                        e.setComputePipelineState(sharpPipe)
+                        e.setTexture(src, index: 0); e.setTexture(dst, index: 1)
+                        e.setBytes(&sp, length: MemoryLayout<SharpenParams>.size, index: 0)
+                        e.dispatchThreadgroups(grid, threadsPerThreadgroup: tg); e.endEncoding()
+                        cb.commit(); cb.waitUntilCompleted()
+                    }
+                    if i < scales.count - 1 {
+                        src = dst; dst = (src === pingTex) ? pongTex : pingTex
+                    }
+                }
+                currentResult = dst
+            }
+        }
+    }
+
+    return currentResult
 }
 
 // Small cross shape for marking detected stars in the mini preview
@@ -1200,6 +1299,8 @@ struct StackResultViewV2: View {
     @State private var saturation: Double = 1.0
     @State private var linkedStretch: Bool = false
     @State private var denoise: Double = 0.0
+    @State private var deconvolve: Double = 0.0
+    @State private var useRL: Bool = false
     @State private var displayTexture: MTLTexture?
     @State private var savedMessage: String?
     @State private var isRendering: Bool = false
@@ -1244,15 +1345,20 @@ struct StackResultViewV2: View {
 
                 resultSlider("Stretch", value: $stretchValue, range: 0.0...1.0, step: 0.01,
                              display: "\(Int(stretchValue * 100))%")
+                    .help("STF auto-stretch target background level.\n0% = linear (no stretch), 25% = default, higher = brighter.")
                 resultSlider("Sharp", value: $sharpening, range: -4.0...4.0, step: 0.1,
                              display: String(format: "%+.1f", sharpening))
+                    .help("Unsharp mask sharpening.\nNegative = blur, 0 = off, positive = sharpen.")
                 resultSlider("Contrast", value: $contrast, range: -2.0...2.0, step: 0.05,
                              display: String(format: "%+.1f", contrast))
+                    .help("Contrast adjustment around midpoint.\nNegative = flatten, 0 = off, positive = increase.")
                 resultSlider("Dark", value: $darkLevel, range: 0.0...1.0, step: 0.01,
                              display: String(format: "%.2f", darkLevel))
+                    .help("Dark level / shadows clip.\nRaises the black point to clip faint background.")
                 if engine.resultChannelCount > 1 {
                     resultSlider("Color", value: $saturation, range: 0.0...3.0, step: 0.05,
                                  display: String(format: "%.1f", saturation))
+                        .help("Color saturation.\n0 = monochrome, 1.0 = natural, >1 = boosted.")
                     Toggle("Linked", isOn: $linkedStretch)
                         .toggleStyle(.switch).controlSize(.mini)
                         .font(.system(size: 10, design: .monospaced))
@@ -1262,6 +1368,17 @@ struct StackResultViewV2: View {
                 }
                 resultSlider("Denoise", value: $denoise, range: 0.0...2.0, step: 0.02,
                              display: denoise < 0.01 ? "Off" : String(format: "%.0f%%", denoise * 100))
+                    .help("Two-pass GPU denoise: bilateral (pixel noise) + chrominance (color patches).\n0 = off, 100%+ = aggressive.")
+                resultSlider("Deconv", value: $deconvolve, range: 0.0...2.0, step: 0.02,
+                             display: deconvolve < 0.01 ? "Off" : String(format: "%.1f", deconvolve))
+                    .help("Deconvolution sharpening to recover detail.\nUSM = multi-scale unsharp mask, RL = Richardson-Lucy iterative.")
+                Toggle(useRL ? "RL" : "USM", isOn: $useRL)
+                    .toggleStyle(.switch).controlSize(.mini)
+                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                    .foregroundColor(useRL ? .orange : .secondary)
+                    .help("USM = Multi-scale Unsharp Mask (fast).\nRL = Richardson-Lucy deconvolution (better quality, slower).")
+                    .onChange(of: useRL) { _ in scheduleRender() }
+                    .frame(width: 52)
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
@@ -1303,6 +1420,7 @@ struct StackResultViewV2: View {
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
+                .help("Export current view as PNG file")
                 if let msg = savedMessage {
                     Text(msg)
                         .font(.system(size: 10, design: .monospaced))
@@ -1336,7 +1454,7 @@ struct StackResultViewV2: View {
     }
 
     private func resetSliders() {
-        stretchValue = 0.25; sharpening = 0.0; contrast = 0.0; darkLevel = 0.0; saturation = 1.0; linkedStretch = false; denoise = 0.0
+        stretchValue = 0.25; sharpening = 0.0; contrast = 0.0; darkLevel = 0.0; saturation = 1.0; linkedStretch = false; denoise = 0.0; deconvolve = 0.0; useRL = false
         scheduleRender()
     }
 
@@ -1358,13 +1476,15 @@ struct StackResultViewV2: View {
         let cont = Float(contrast), dark = Float(darkLevel), sat = Float(saturation)
         let linked = linkedStretch
         let dn = Float(denoise)
+        let dc = Float(deconvolve)
+        let rl = useRL
         let dev = engine.device
 
         let tex = await Task.detached(priority: .userInitiated) {
             renderFloatToTexture(data: floatData, width: w, height: h,
                                 channelCount: ch, targetBackground: target,
                                 sharpening: sharp, contrast: cont, darkLevel: dark,
-                                saturation: sat, linkedStretch: linked, denoise: dn, device: dev)
+                                saturation: sat, linkedStretch: linked, denoise: dn, deconvolve: dc, useRL: rl, device: dev)
         }.value
 
         displayTexture = tex
@@ -1403,8 +1523,10 @@ struct StackResultViewV2: View {
         tex.getBytes(&pixels, bytesPerRow: w * 4,
                      from: MTLRegion(origin: MTLOrigin(), size: MTLSize(width: w, height: h, depth: 1)),
                      mipmapLevel: 0)
-        for i in stride(from: 0, to: pixels.count, by: 4) {
-            let b = pixels[i]; pixels[i] = pixels[i + 2]; pixels[i + 2] = b
+        if tex.pixelFormat == .bgra8Unorm {
+            for i in stride(from: 0, to: pixels.count, by: 4) {
+                let b = pixels[i]; pixels[i] = pixels[i + 2]; pixels[i + 2] = b
+            }
         }
         let colorSpace = CGColorSpaceCreateDeviceRGB()
         guard let context = CGContext(data: &pixels, width: w, height: h,
@@ -1603,6 +1725,8 @@ struct ImagePreviewView: View {
     @State private var saturation: Double = 1.0
     @State private var linkedStretch: Bool = false
     @State private var denoise: Double = 0.0
+    @State private var deconvolve: Double = 0.0
+    @State private var useRL: Bool = false
     @State private var displayTexture: MTLTexture?
     @State private var savedMessage: String?
     @State private var isRendering: Bool = false
@@ -1637,15 +1761,20 @@ struct ImagePreviewView: View {
 
                 resultSlider("Stretch", value: $stretchValue, range: 0.0...1.0, step: 0.01,
                              display: "\(Int(stretchValue * 100))%")
+                    .help("STF auto-stretch target background level.\n0% = linear (no stretch), 25% = default, higher = brighter.")
                 resultSlider("Sharp", value: $sharpening, range: -4.0...4.0, step: 0.1,
                              display: String(format: "%+.1f", sharpening))
+                    .help("Unsharp mask sharpening.\nNegative = blur, 0 = off, positive = sharpen.")
                 resultSlider("Contrast", value: $contrast, range: -2.0...2.0, step: 0.05,
                              display: String(format: "%+.1f", contrast))
+                    .help("Contrast adjustment around midpoint.\nNegative = flatten, 0 = off, positive = increase.")
                 resultSlider("Dark", value: $darkLevel, range: 0.0...1.0, step: 0.01,
                              display: String(format: "%.2f", darkLevel))
+                    .help("Dark level / shadows clip.\nRaises the black point to clip faint background.")
                 if channelCount > 1 {
                     resultSlider("Color", value: $saturation, range: 0.0...3.0, step: 0.05,
                                  display: String(format: "%.1f", saturation))
+                        .help("Color saturation.\n0 = monochrome, 1.0 = natural, >1 = boosted.")
                     Toggle("Linked", isOn: $linkedStretch)
                         .toggleStyle(.switch).controlSize(.mini)
                         .font(.system(size: 10, design: .monospaced))
@@ -1655,6 +1784,17 @@ struct ImagePreviewView: View {
                 }
                 resultSlider("Denoise", value: $denoise, range: 0.0...2.0, step: 0.02,
                              display: denoise < 0.01 ? "Off" : String(format: "%.0f%%", denoise * 100))
+                    .help("Two-pass GPU denoise: bilateral (pixel noise) + chrominance (color patches).\n0 = off, 100%+ = aggressive.")
+                resultSlider("Deconv", value: $deconvolve, range: 0.0...2.0, step: 0.02,
+                             display: deconvolve < 0.01 ? "Off" : String(format: "%.1f", deconvolve))
+                    .help("Deconvolution sharpening to recover detail.\nUSM = multi-scale unsharp mask, RL = Richardson-Lucy iterative.")
+                Toggle(useRL ? "RL" : "USM", isOn: $useRL)
+                    .toggleStyle(.switch).controlSize(.mini)
+                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                    .foregroundColor(useRL ? .orange : .secondary)
+                    .help("USM = Multi-scale Unsharp Mask (fast).\nRL = Richardson-Lucy deconvolution (better quality, slower).")
+                    .onChange(of: useRL) { _ in scheduleRender() }
+                    .frame(width: 52)
             }
             .padding(.horizontal, 8).padding(.vertical, 4)
             .background(nightMode ? Color(red: 0.06, green: 0, blue: 0) : Color(NSColor.underPageBackgroundColor))
@@ -1670,6 +1810,7 @@ struct ImagePreviewView: View {
                     }
                 }
                 .buttonStyle(.bordered).controlSize(.small)
+                .help("Export current view as PNG file")
                 if let msg = savedMessage {
                     Text(msg).font(.system(size: 10, design: .monospaced)).foregroundColor(.green)
                 }
@@ -1695,7 +1836,7 @@ struct ImagePreviewView: View {
     }
 
     private func resetSliders() {
-        stretchValue = 0.25; sharpening = 0.0; contrast = 0.0; darkLevel = 0.0; saturation = 1.0; linkedStretch = false; denoise = 0.0
+        stretchValue = 0.25; sharpening = 0.0; contrast = 0.0; darkLevel = 0.0; saturation = 1.0; linkedStretch = false; denoise = 0.0; deconvolve = 0.0; useRL = false
         scheduleRender()
     }
 
@@ -1716,6 +1857,8 @@ struct ImagePreviewView: View {
         let cont = Float(contrast), dark = Float(darkLevel), sat = Float(saturation)
         let linked = linkedStretch
         let dn = Float(denoise)
+        let dc = Float(deconvolve)
+        let rl = useRL
         let dev = device, data = floatData
         let preSTF = stfParams
 
@@ -1723,7 +1866,7 @@ struct ImagePreviewView: View {
             renderFloatToTexture(data: data, width: w, height: h,
                                 channelCount: ch, targetBackground: target,
                                 sharpening: sharp, contrast: cont, darkLevel: dark,
-                                saturation: sat, linkedStretch: linked, denoise: dn,
+                                saturation: sat, linkedStretch: linked, denoise: dn, deconvolve: dc, useRL: rl,
                                 precomputedSTF: preSTF, device: dev)
         }.value
 
@@ -1744,9 +1887,7 @@ struct ImagePreviewView: View {
         tex.getBytes(&pixels, bytesPerRow: w * 4,
                      from: MTLRegion(origin: MTLOrigin(), size: MTLSize(width: w, height: h, depth: 1)),
                      mipmapLevel: 0)
-        for i in stride(from: 0, to: pixels.count, by: 4) {
-            let b = pixels[i]; pixels[i] = pixels[i + 2]; pixels[i + 2] = b
-        }
+        // displayTexture is always RGBA (from renderFloatToTexture) — no swap needed
         let colorSpace = CGColorSpaceCreateDeviceRGB()
         guard let context = CGContext(data: &pixels, width: w, height: h,
                                        bitsPerComponent: 8, bytesPerRow: w * 4,

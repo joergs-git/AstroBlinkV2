@@ -655,6 +655,276 @@ kernel void chroma_denoise(
     output.write(float4(clamp(rr, 0.0, 1.0), clamp(gg, 0.0, 1.0), clamp(bb, 0.0, 1.0), 1.0), gid);
 }
 
+// ==========================================================================
+// Multi-Scale Unsharp Mask — iterative sharpening at multiple spatial scales.
+// Approximates deconvolution by progressively enhancing fine and medium detail.
+// Each pass: output = input + amount * (input - gaussian_blur(input, radius))
+// Operates on luminance only to avoid color artifacts, preserves chrominance.
+// ==========================================================================
+
+struct SharpenParams {
+    float amount;       // Sharpening strength per iteration
+    float radius;       // Gaussian blur radius for this scale
+    int width;
+    int height;
+};
+
+kernel void unsharp_mask_lum(
+    texture2d<float, access::read>  input  [[texture(0)]],
+    texture2d<float, access::write> output [[texture(1)]],
+    constant SharpenParams& params [[buffer(0)]],
+    uint2 gid [[thread_position_in_grid]])
+{
+    if ((int)gid.x >= params.width || (int)gid.y >= params.height) return;
+
+    float4 center = input.read(gid);
+
+    // RGB → luminance + chrominance
+    float lumCenter = 0.2126 * center.r + 0.7152 * center.g + 0.0722 * center.b;
+
+    // Gaussian blur on luminance only
+    int r = int(ceil(params.radius));
+    float sigma = params.radius * 0.5;
+    float invSigma2 = -0.5 / (sigma * sigma);
+    float sumLum = 0.0, sumW = 0.0;
+
+    for (int dy = -r; dy <= r; dy++) {
+        for (int dx = -r; dx <= r; dx++) {
+            int nx = clamp((int)gid.x + dx, 0, params.width - 1);
+            int ny = clamp((int)gid.y + dy, 0, params.height - 1);
+
+            float dist2 = float(dx * dx + dy * dy);
+            float w = exp(dist2 * invSigma2);
+
+            float4 n = input.read(uint2(nx, ny));
+            float nLum = 0.2126 * n.r + 0.7152 * n.g + 0.0722 * n.b;
+
+            sumLum += nLum * w;
+            sumW += w;
+        }
+    }
+
+    float blurLum = sumW > 0.0 ? sumLum / sumW : lumCenter;
+
+    // Unsharp mask on luminance: enhance detail
+    float detail = lumCenter - blurLum;
+    float newLum = clamp(lumCenter + params.amount * detail, 0.0, 1.0);
+
+    // Apply luminance change to RGB (preserves chrominance ratios)
+    float scale = lumCenter > 0.001 ? newLum / lumCenter : 1.0;
+    float3 result = clamp(center.rgb * scale, 0.0, 1.0);
+
+    output.write(float4(result, 1.0), gid);
+}
+
+// ==========================================================================
+// Richardson-Lucy Deconvolution — iterative ML deconvolution with Gaussian PSF.
+// Each iteration: estimate *= convolve(observed / convolve(estimate, PSF), PSF)
+// For symmetric Gaussian PSF, the transposed PSF equals the PSF itself.
+// Operates on luminance only to preserve color and avoid chromatic artifacts.
+// ==========================================================================
+
+struct RLParams {
+    float psfSigma;     // Gaussian PSF sigma (pixels)
+    int psfRadius;      // Kernel half-size (ceil(3*sigma))
+    int width;
+    int height;
+};
+
+// Step 1: Compute blurred estimate (convolve estimate luminance with Gaussian PSF)
+// and ratio = observed_lum / blurred_lum
+// Output: ratio texture (float luminance ratio per pixel)
+kernel void rl_compute_ratio(
+    texture2d<float, access::read>  observed  [[texture(0)]],  // Original stretched image
+    texture2d<float, access::read>  estimate  [[texture(1)]],  // Current estimate
+    texture2d<float, access::write> ratio_out [[texture(2)]],  // Output: ratio
+    constant RLParams& params [[buffer(0)]],
+    uint2 gid [[thread_position_in_grid]])
+{
+    if ((int)gid.x >= params.width || (int)gid.y >= params.height) return;
+
+    // Observed luminance
+    float4 obs = observed.read(gid);
+    float obsLum = 0.2126 * obs.r + 0.7152 * obs.g + 0.0722 * obs.b;
+
+    // Blur estimate luminance with Gaussian PSF
+    int r = params.psfRadius;
+    float sigma = params.psfSigma;
+    float invSigma2 = -0.5 / (sigma * sigma);
+    float sumLum = 0.0, sumW = 0.0;
+
+    for (int dy = -r; dy <= r; dy++) {
+        for (int dx = -r; dx <= r; dx++) {
+            int nx = clamp((int)gid.x + dx, 0, params.width - 1);
+            int ny = clamp((int)gid.y + dy, 0, params.height - 1);
+            float w = exp(float(dx*dx + dy*dy) * invSigma2);
+            float4 e = estimate.read(uint2(nx, ny));
+            float eLum = 0.2126 * e.r + 0.7152 * e.g + 0.0722 * e.b;
+            sumLum += eLum * w;
+            sumW += w;
+        }
+    }
+
+    float blurLum = sumW > 0.0 ? sumLum / sumW : 0.001;
+    float rat = obsLum / max(blurLum, 0.001);
+
+    ratio_out.write(float4(rat, 0, 0, 1), gid);
+}
+
+// Step 2: Convolve ratio with PSF and multiply into estimate
+// correction = convolve(ratio, PSF)
+// new_estimate = old_estimate * correction (applied to RGB via luminance scaling)
+kernel void rl_update_estimate(
+    texture2d<float, access::read>  old_estimate [[texture(0)]],
+    texture2d<float, access::read>  ratio_tex    [[texture(1)]],
+    texture2d<float, access::write> new_estimate [[texture(2)]],
+    constant RLParams& params [[buffer(0)]],
+    uint2 gid [[thread_position_in_grid]])
+{
+    if ((int)gid.x >= params.width || (int)gid.y >= params.height) return;
+
+    int r = params.psfRadius;
+    float sigma = params.psfSigma;
+    float invSigma2 = -0.5 / (sigma * sigma);
+
+    // Convolve ratio with PSF
+    float sumRat = 0.0, sumW = 0.0;
+    for (int dy = -r; dy <= r; dy++) {
+        for (int dx = -r; dx <= r; dx++) {
+            int nx = clamp((int)gid.x + dx, 0, params.width - 1);
+            int ny = clamp((int)gid.y + dy, 0, params.height - 1);
+            float w = exp(float(dx*dx + dy*dy) * invSigma2);
+            float rat = ratio_tex.read(uint2(nx, ny)).r;
+            sumRat += rat * w;
+            sumW += w;
+        }
+    }
+
+    float correction = sumW > 0.0 ? sumRat / sumW : 1.0;
+
+    // Apply correction to RGB via luminance scaling
+    float4 old = old_estimate.read(gid);
+    float oldLum = 0.2126 * old.r + 0.7152 * old.g + 0.0722 * old.b;
+    float newLum = clamp(oldLum * correction, 0.0, 1.0);
+    float scale = oldLum > 0.001 ? newLum / oldLum : 1.0;
+    float3 result = clamp(old.rgb * scale, 0.0, 1.0);
+
+    new_estimate.write(float4(result, 1.0), gid);
+}
+
+// ==========================================================================
+// Cosmetic Correction — hot/cold pixel rejection via sigma-clipped median
+// For each pixel, computes the median and MAD of its 3x3 neighborhood.
+// If the pixel deviates more than 5 * 1.4826 * MAD from the median,
+// it is replaced with the median. Works on planar uint16 data.
+// ==========================================================================
+
+struct CosmeticParams {
+    int width;
+    int height;
+    int channelCount;
+};
+
+kernel void cosmetic_correction(
+    device const uint16_t* input [[buffer(0)]],
+    device uint16_t* output [[buffer(1)]],
+    constant CosmeticParams& params [[buffer(2)]],
+    uint2 gid [[thread_position_in_grid]])
+{
+    int w = params.width;
+    int h = params.height;
+    if ((int)gid.x >= w || (int)gid.y >= h) return;
+
+    int x = (int)gid.x;
+    int y = (int)gid.y;
+    int planeSize = w * h;
+
+    for (int ch = 0; ch < params.channelCount; ch++) {
+        int chOff = ch * planeSize;
+        int centerIdx = chOff + y * w + x;
+        float centerVal = float(input[centerIdx]);
+
+        // Gather 3x3 neighborhood (8 neighbors), clamped to edge
+        float neighbors[8];
+        int ni = 0;
+        for (int dy = -1; dy <= 1; dy++) {
+            for (int dx = -1; dx <= 1; dx++) {
+                if (dx == 0 && dy == 0) continue;
+                int nx = clamp(x + dx, 0, w - 1);
+                int ny = clamp(y + dy, 0, h - 1);
+                neighbors[ni++] = float(input[chOff + ny * w + nx]);
+            }
+        }
+
+        // Sort 8 neighbors to find median (network sort for 8 elements)
+        #define SWAP(a, b) { float tmp = min(a, b); b = max(a, b); a = tmp; }
+        SWAP(neighbors[0], neighbors[1]);
+        SWAP(neighbors[2], neighbors[3]);
+        SWAP(neighbors[4], neighbors[5]);
+        SWAP(neighbors[6], neighbors[7]);
+        SWAP(neighbors[0], neighbors[2]);
+        SWAP(neighbors[1], neighbors[3]);
+        SWAP(neighbors[4], neighbors[6]);
+        SWAP(neighbors[5], neighbors[7]);
+        SWAP(neighbors[1], neighbors[2]);
+        SWAP(neighbors[5], neighbors[6]);
+        SWAP(neighbors[0], neighbors[4]);
+        SWAP(neighbors[1], neighbors[5]);
+        SWAP(neighbors[2], neighbors[6]);
+        SWAP(neighbors[3], neighbors[7]);
+        SWAP(neighbors[2], neighbors[4]);
+        SWAP(neighbors[3], neighbors[5]);
+        SWAP(neighbors[1], neighbors[2]);
+        SWAP(neighbors[3], neighbors[4]);
+        SWAP(neighbors[5], neighbors[6]);
+        #undef SWAP
+
+        // Median of 8 values = average of elements [3] and [4]
+        float median = (neighbors[3] + neighbors[4]) * 0.5;
+
+        // MAD = median of absolute deviations from the median
+        float devs[8];
+        for (int i = 0; i < 8; i++) {
+            devs[i] = abs(neighbors[i] - median);
+        }
+
+        // Sort deviations for MAD (reuse same sorting network)
+        #define SWAP(a, b) { float tmp = min(a, b); b = max(a, b); a = tmp; }
+        SWAP(devs[0], devs[1]);
+        SWAP(devs[2], devs[3]);
+        SWAP(devs[4], devs[5]);
+        SWAP(devs[6], devs[7]);
+        SWAP(devs[0], devs[2]);
+        SWAP(devs[1], devs[3]);
+        SWAP(devs[4], devs[6]);
+        SWAP(devs[5], devs[7]);
+        SWAP(devs[1], devs[2]);
+        SWAP(devs[5], devs[6]);
+        SWAP(devs[0], devs[4]);
+        SWAP(devs[1], devs[5]);
+        SWAP(devs[2], devs[6]);
+        SWAP(devs[3], devs[7]);
+        SWAP(devs[2], devs[4]);
+        SWAP(devs[3], devs[5]);
+        SWAP(devs[1], devs[2]);
+        SWAP(devs[3], devs[4]);
+        SWAP(devs[5], devs[6]);
+        #undef SWAP
+
+        float mad = (devs[3] + devs[4]) * 0.5;
+
+        // Sigma-clipped rejection: 5 * 1.4826 * MAD
+        float threshold = 5.0 * 1.4826 * mad;
+
+        // Replace hot/cold pixel with median if it exceeds threshold
+        if (abs(centerVal - median) > threshold) {
+            output[centerIdx] = (uint16_t)clamp(median, 0.0f, 65535.0f);
+        } else {
+            output[centerIdx] = input[centerIdx];
+        }
+    }
+}
+
 // MARK: - Textured Quad Shaders (for fit-to-view rendering with zoom/pan)
 
 struct QuadVertexOut {

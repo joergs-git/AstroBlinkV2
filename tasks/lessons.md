@@ -102,6 +102,18 @@
 - **Rule:** When target name ≠ product name, set PRODUCT_MODULE_NAME explicitly on the main target. Set DEVELOPMENT_TEAM on test target. Set TEST_HOST to actual product name. Put test target in scheme `test:` section only (not `build:`).
 - **Applies to:** project.yml test target config, any XcodeGen project with PRODUCT_NAME override
 
+## [2026-03-14] — vDSP_vsadd: use [scalar] not &scalar
+- **Mistake:** Used `var negMed = -median; vDSP_vsadd(devs, 1, &negMed, ...)` — passing pointer to a scalar instead of array literal
+- **Root cause:** vDSP_vsadd's scalar parameter expects `UnsafePointer<Float>` which works with both `&var` and `[literal]`, but `&var` on stack can be optimized away, giving undefined behavior in some contexts
+- **Rule:** Always use `[scalar]` array literal syntax for vDSP scalar parameters: `vDSP_vsadd(arr, 1, [negMedian], &out, 1, count)`. Match STFCalculator.swift pattern.
+- **Applies to:** Any vDSP call with scalar parameter (vsadd, vsmul, etc.)
+
+## [2026-03-14] — Metal texture RGBA vs BGRA in PNG export
+- **Mistake:** Assumed all textures were BGRA and always swapped R/B channels in saveAsPNG
+- **Root cause:** restretch_float shader writes float4(r,g,b,1) into .rgba8Unorm textures, but stacking engine uses .bgra8Unorm for result textures
+- **Rule:** Check `tex.pixelFormat == .bgra8Unorm` before swapping channels. Only swap for BGRA textures.
+- **Applies to:** Any PNG/image export from Metal textures
+
 ## [2026-03-13] — Calibration filter: substring matching causes false positives on target names
 - **Mistake:** `isCalibration()` used `filename.lowercased().contains("dark")` which falsely excluded targets like "Dark Nebula" and "Flat Rock Galaxy"
 - **Root cause:** Substring matching on full filenames doesn't distinguish between calibration frame types and target names containing calibration keywords

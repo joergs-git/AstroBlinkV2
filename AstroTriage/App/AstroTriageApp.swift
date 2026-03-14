@@ -1,4 +1,4 @@
-// v3.10.0
+// v3.12.0
 import SwiftUI
 
 // MARK: - App Store URL (update when published)
@@ -65,7 +65,7 @@ struct AstroBlinkV2App: App {
 
                 Divider()
 
-                Button("What's New in v3.10.0") {
+                Button("What's New in v3.12.0") {
                     ReleaseNotesWindowController.shared.show()
                 }
             }

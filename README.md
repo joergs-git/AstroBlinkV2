@@ -16,6 +16,20 @@ Nice side effect: Finally you have a native XISF and FITS Quicklook for macOS. (
 
 ---
 
+## What's New in v3.12.0
+
+### Image Preview, GPU Denoise & Deconvolution
+- **Double-click preview** — Open any image in a floating window with stretch, sharpening, contrast, saturation, denoise, and deconvolution controls. Compare multiple images side by side.
+- **GPU bilateral denoise** — Two-pass noise reduction: bilateral filter for pixel noise + chrominance denoise in YCbCr to eliminate green/magenta patches. 0-200% slider.
+- **Richardson-Lucy deconvolution** — GPU-accelerated iterative ML deconvolution with Gaussian PSF. Toggle between RL and multi-scale USM.
+- **OSC color stacking** — Color camera images debayered before stacking for full-color results. Color saturation slider for OSC images.
+- **Hot/cold pixel rejection** — GPU cosmetic correction before stacking, using sigma-clipped 3x3 median.
+- **True star count** — Stars column shows actual total from GPU detection, not the capped measurement subset.
+- **Center-crop quality** — HFR, FWHM, noise measured from center 70% to exclude edge optical effects.
+- **Dynamic column order** — Auto-reorders for single vs multi-object sessions.
+
+---
+
 ## What's New in v3.9.0
 
 ### Anti-Moiré & Leaderboard Polish

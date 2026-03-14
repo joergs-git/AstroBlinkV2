@@ -4,6 +4,32 @@ All notable changes to AstroBlinkV2 will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.12.0] — 2026-03-14
+
+### Added
+- **Double-Click Image Preview**: Open any image in a floating window with Stretch, Sharp, Contrast, Dark, Color, Denoise, and Deconvolution sliders. Multiple windows for side-by-side comparison.
+- **GPU Bilateral Denoise**: Two-pass noise reduction — bilateral filter (pixel noise) + chrominance denoise in YCbCr (color patches). 0-200% slider.
+- **Richardson-Lucy Deconvolution**: Iterative GPU deconvolution with Gaussian PSF. Toggle between RL and multi-scale Unsharp Mask (USM). 5-20 iterations.
+- **OSC Debayer in Stacking**: Color camera images debayered (GPU bilinear) before stacking — full-color stacked results.
+- **Hot/Cold Pixel Rejection**: GPU cosmetic correction before stacking — sigma-clipped median detects and replaces hot/cold pixels.
+- **Color Saturation Slider**: 0-3x saturation control in all result windows (RGB images only).
+- **Leaderboard Latest Badge**: Most recent personal entry highlighted with bold fonts and green "LATEST" badge.
+
+### Changed
+- **True Star Count**: Stars column shows actual total detected stars (GPU atomic counter), not capped at 50.
+- **Dynamic Column Order**: Auto-reorder columns based on single vs multi-object sessions after header enrichment.
+- **Center-Crop Quality (70%)**: HFR, FWHM, noise stats measured from center 70% of image — excludes edge optical effects.
+- **Per-Channel STF Stretch**: Unlinked per-channel c0/mb with Linked toggle. Precomputed from full-res data via STFCalculator.
+- **Benchmark Icon**: Medium dark green speedometer icon.
+- **Benchmark Default Tab**: Session Load tab shown by default when no stacking data.
+- **File List Auto-Focus**: Keyboard focus set to file list after initial load for immediate arrow key navigation.
+
+### Fixed
+- **PNG Export Colors**: Correct RGBA/BGRA handling — red channel no longer swapped with blue.
+- **vDSP STF Bug**: Fixed vDSP_vsadd API misuse (&scalar vs [scalar]) that corrupted MAD computation in preview STF.
+- **Splash Dismiss**: Splash screen dismisses on any click (inside or outside window).
+- **Stretch Slider**: Precomputed STF params only used at default 25% — slider adjustments now recompute correctly.
+
 ## [3.10.0] — 2026-03-13
 
 ### Added

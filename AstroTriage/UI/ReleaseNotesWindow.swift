@@ -34,6 +34,20 @@ class ReleaseNotesWindowController {
 // MARK: - Release notes data (shared between view and copy)
 
 private let allReleases: [(version: String, date: String, items: [(ReleaseNotesView.ChangeType, String, String)])] = [
+    ("3.12.0", "March 14, 2026", [
+        (.added, "Double-Click Image Preview", "Double-click any image in the file list to open it in a floating window with Stretch, Sharpen, Contrast, Dark Level, Color, Denoise, and Deconvolution controls. Open multiple images for side-by-side comparison."),
+        (.added, "GPU Bilateral Denoise", "Two-pass noise reduction: bilateral filter for pixel noise + chrominance denoise in YCbCr space to remove green/magenta color patches. Slider 0-200%."),
+        (.added, "Richardson-Lucy Deconvolution", "Iterative ML deconvolution with Gaussian PSF for recovering star and nebula detail. Toggle between RL and multi-scale USM. GPU-accelerated, 5-20 iterations."),
+        (.added, "OSC Debayer in Stacking", "Color camera (OSC) images are now debayered before stacking, producing full-color stacked results instead of monochrome."),
+        (.added, "Hot/Cold Pixel Rejection", "GPU-based cosmetic correction before stacking: detects and replaces hot/cold pixels using 3x3 median + sigma-clipped MAD threshold."),
+        (.added, "Color Saturation Slider", "Adjustable color saturation (0-3x) in all result windows. Only appears for RGB/OSC images."),
+        (.changed, "True Star Count", "Stars column now shows the actual total number of detected stars (not capped at 50). GPU atomic counter reads the true count."),
+        (.changed, "Dynamic Column Order", "Columns auto-reorder based on session content: single-object sessions prioritize quality metrics, multi-object sessions move Object column to front."),
+        (.changed, "Center-Crop Quality", "HFR, FWHM, and noise measurements use center 70% of image, excluding edge stars affected by optical aberrations, vignetting, and dithering."),
+        (.changed, "Per-Channel STF Stretch", "Unlinked stretch with per-channel shadow clip and midtone balance. Linked toggle available. Fixed vDSP bug that caused color casts."),
+        (.fixed, "PNG Export Colors", "Save PNG now correctly handles RGBA vs BGRA textures — red channel no longer swapped with blue."),
+        (.fixed, "Splash Dismiss", "Splash screen now dismisses on any click, including inside the splash window."),
+    ]),
     ("3.10.0", "March 13, 2026", [
         (.added, "About / Splash Screen", "Custom About window with app info, social links, Tell a Friend share sheet, What's New, and App Store buttons. Shows as splash on launch."),
         (.added, "Tell a Friend", "Share AstroBlinkV2 via native macOS share sheet — available in About window and Release Notes."),
