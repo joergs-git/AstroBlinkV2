@@ -69,6 +69,10 @@ class TriageViewModel: ObservableObject {
     // Triggers a table reload in updateNSView (for checkbox/mark changes)
     @Published var needsTableRefresh: Bool = false
 
+    // Recommended column order after header enrichment (set once per session load)
+    // FileListView consumes and clears this after applying
+    @Published var pendingColumnOrder: [String]?
+
     // Hide marked images: when true, marked images are invisible in the list
     @Published var hideMarked: Bool = false
 
@@ -707,7 +711,7 @@ class TriageViewModel: ObservableObject {
                 if let idx = self.images.firstIndex(where: { $0.url == url }) {
                     self.images[idx].computedHFR = metrics.medianHFR
                     self.images[idx].computedFWHM = metrics.medianFWHM
-                    self.images[idx].computedStarCount = metrics.measuredStarCount
+                    self.images[idx].computedStarCount = metrics.totalStarCount
                 }
             }
         )
@@ -953,6 +957,14 @@ class TriageViewModel: ObservableObject {
                 // Compute relative quality scores now that all header metadata is available
                 self.recomputeQualityScores()
                 self.detectMeridianFlip()
+
+                // Auto-reorder columns based on single vs multi-object session
+                // Only if user hasn't manually set a column order
+                if AppSettings.loadStrings(for: .columnOrder) == nil {
+                    let uniqueTargets = Set(self.images.compactMap { $0.target?.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty })
+                    let isMultiObject = uniqueTargets.count > 1
+                    self.pendingColumnOrder = ColumnDefinition.recommendedColumnOrder(isMultiObject: isMultiObject)
+                }
                 // Update rotation for current image now that pier side data is available
                 self.updateMeridianRotation()
 

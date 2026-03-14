@@ -208,7 +208,7 @@ struct ContentView: View {
                     }
                     .frame(width: 80)
 
-                    sfToolbarButton("gauge.with.dots.needle.67percent", "Benchmark", "Session load & stacking performance stats.\nCompare with community leaderboard.", iconColor: .cyan) {
+                    sfToolbarButton("gauge.with.dots.needle.67percent", "Benchmark", "Session load & stacking performance stats.\nCompare with community leaderboard.", iconColor: Color(red: 0.2, green: 0.55, blue: 0.2)) {
                         NotificationCenter.default.post(name: .showBenchmarkStats, object: nil)
                     }
 

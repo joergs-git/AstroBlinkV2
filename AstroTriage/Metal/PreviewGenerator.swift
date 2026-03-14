@@ -293,6 +293,9 @@ class PreviewGenerator {
     // Maximum candidates the GPU kernel can emit (capped by atomic counter)
     private static let maxGPUCandidates = 512
 
+    /// True total star count from last detection (before truncation to 50)
+    private(set) var lastTotalStarCount: Int = 0
+
     /// Detect stars on a binned uint16 buffer using the GPU `detect_stars_binned` kernel.
     /// Returns detected stars in full-resolution coordinates (scaled ×2 from binned).
     ///
@@ -366,8 +369,9 @@ class PreviewGenerator {
         commandBuffer.commit()
         commandBuffer.waitUntilCompleted()
 
-        // Read back candidates
-        let count = min(Int(counterBuffer.contents().load(as: UInt32.self)), maxCandidates)
+        // Read back candidates — raw counter may exceed maxCandidates (true total star count)
+        let rawCount = Int(counterBuffer.contents().load(as: UInt32.self))
+        let count = min(rawCount, maxCandidates)
         guard count > 0 else { return [] }
 
         let candidatePtr = candidateBuffer.contents()
@@ -389,6 +393,7 @@ class PreviewGenerator {
 
         // Sort by brightness (brightest first) and cap at 50
         stars.sort()
+        lastTotalStarCount = rawCount  // True total from GPU atomic counter (not capped)
         return Array(stars.prefix(50))
     }
 
@@ -402,7 +407,9 @@ class PreviewGenerator {
     func detectStarsFromImage(_ image: DecodedImage, channel: Int = 0) -> [DetectedStar] {
         guard let bin2xPipeline = bin2xPipeline, starDetectPipeline != nil else {
             // GPU not available, fall back to CPU
-            return StarDetector.detectStars(in: image, maxStars: 50, subsampleFactor: 4, channel: channel)
+            let result = StarDetector.detectStarsWithTotalCount(in: image, maxStars: 50, subsampleFactor: 4, channel: channel)
+            lastTotalStarCount = result.totalCount
+            return result.stars
         }
 
         // Compute threshold on CPU from 5% subsample (~2ms)
@@ -424,7 +431,9 @@ class PreviewGenerator {
         guard let binnedBuffer = device.makeBuffer(length: binnedBytes, options: .storageModeShared),
               let commandBuffer = commandQueue.makeCommandBuffer(),
               let encoder = commandBuffer.makeComputeCommandEncoder() else {
-            return StarDetector.detectStars(in: image, maxStars: 50, subsampleFactor: 4, channel: channel)
+            let result = StarDetector.detectStarsWithTotalCount(in: image, maxStars: 50, subsampleFactor: 4, channel: channel)
+            lastTotalStarCount = result.totalCount
+            return result.stars
         }
 
         encoder.setComputePipelineState(bin2xPipeline)

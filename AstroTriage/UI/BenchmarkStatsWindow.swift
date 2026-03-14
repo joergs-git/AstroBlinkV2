@@ -199,11 +199,13 @@ struct BenchmarkStatsContentView: View {
                 await benchmarkService.shareSessionBenchmark(entry: sessionEntry)
             }
 
-            // Open leaderboard
+            // Open leaderboard — prefer session load tab when no stacking was done
+            let noStackData = stats.quickStackDuration == nil
             BenchmarkLeaderboardWindowController.shared.show(
                 service: benchmarkService,
                 myMachineHash: MachineInfo.machineHash,
-                engine: engine
+                engine: engine,
+                preferSessionTab: noStackData
             )
         }
     }

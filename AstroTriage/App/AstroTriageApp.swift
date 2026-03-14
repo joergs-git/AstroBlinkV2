@@ -137,12 +137,9 @@ class AboutWindowController {
             splashClickMonitor = NSEvent.addLocalMonitorForEvents(
                 matching: [.leftMouseDown, .rightMouseDown, .keyDown]
             ) { [weak self] event in
-                // Don't dismiss if clicking inside the about window (let buttons work)
-                if let aboutWin = self?.window,
-                   let eventWindow = event.window,
-                   eventWindow == aboutWin {
-                    return event
-                }
+                // Dismiss splash on any click or key press, anywhere.
+                // Button/link click handlers fire before this monitor,
+                // so links still work — splash just closes after.
                 self?.dismissSplash()
                 return event
             }

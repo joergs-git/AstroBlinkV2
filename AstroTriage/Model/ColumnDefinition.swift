@@ -11,11 +11,11 @@ struct ColumnDefinition {
     let isHideable: Bool
 
     // All available columns in default display order.
-    // Order (v3.6.0): marked, #, filter, quality, snr, fwhm, hfr, date, time,
-    //                 object, filename, type, camera, exp, ambtemp, foctemp, temp, gain,
-    //                 size, stars, subfolder
-    //                 (hidden: telescope, binning, offset)
-    // Quality metrics (Q, SNR, FWHM, HFR) grouped together right after Filter for quick scanning.
+    // Order: marked, #, filter, quality, snr, fwhm, hfr, stars, exp, date, time,
+    //        object, filename, type, camera, ambtemp, foctemp, temp, gain,
+    //        size, subfolder
+    //        (hidden: telescope, binning, offset)
+    // Quality metrics (Q, SNR, FWHM, HFR, Stars) grouped together right after Filter for quick scanning.
     // Filename is intentionally after data columns — NINA filenames already encode
     // date/time/filter/etc., so putting it first makes other columns redundant for sorting.
     static let allColumns: [ColumnDefinition] = [
@@ -26,19 +26,19 @@ struct ColumnDefinition {
         ColumnDefinition(identifier: "snr",         title: "SNR",       defaultWidth: 50,  minWidth: 40,  isDefaultVisible: true,  isHideable: true),
         ColumnDefinition(identifier: "fwhm",        title: "FWHM",      defaultWidth: 55,  minWidth: 40,  isDefaultVisible: true,  isHideable: true),
         ColumnDefinition(identifier: "hfr",         title: "HFR",       defaultWidth: 50,  minWidth: 40,  isDefaultVisible: true,  isHideable: true),
+        ColumnDefinition(identifier: "starCount",   title: "Stars",     defaultWidth: 55,  minWidth: 40,  isDefaultVisible: true,  isHideable: true),
+        ColumnDefinition(identifier: "exposure",    title: "Exp",       defaultWidth: 50,  minWidth: 40,  isDefaultVisible: true,  isHideable: true),
         ColumnDefinition(identifier: "nightDate",   title: "Night",     defaultWidth: 85,  minWidth: 70,  isDefaultVisible: true,  isHideable: true),
         ColumnDefinition(identifier: "time",        title: "Time",      defaultWidth: 75,  minWidth: 60,  isDefaultVisible: true,  isHideable: true),
         ColumnDefinition(identifier: "target",      title: "Object",    defaultWidth: 120, minWidth: 60,  isDefaultVisible: true,  isHideable: true),
         ColumnDefinition(identifier: "filename",    title: "Filename",  defaultWidth: 280, minWidth: 100, isDefaultVisible: true,  isHideable: false),
         ColumnDefinition(identifier: "frameType",   title: "Type",      defaultWidth: 50,  minWidth: 40,  isDefaultVisible: true,  isHideable: true),
         ColumnDefinition(identifier: "camera",      title: "Camera",    defaultWidth: 120, minWidth: 80,  isDefaultVisible: true,  isHideable: true),
-        ColumnDefinition(identifier: "exposure",    title: "Exp",       defaultWidth: 50,  minWidth: 40,  isDefaultVisible: true,  isHideable: true),
         ColumnDefinition(identifier: "ambientTemp", title: "Amb°C",     defaultWidth: 55,  minWidth: 40,  isDefaultVisible: true,  isHideable: true),
         ColumnDefinition(identifier: "focuserTemp", title: "Foc°C",     defaultWidth: 55,  minWidth: 40,  isDefaultVisible: true,  isHideable: true),
         ColumnDefinition(identifier: "sensorTemp",  title: "Temp",      defaultWidth: 55,  minWidth: 40,  isDefaultVisible: true,  isHideable: true),
         ColumnDefinition(identifier: "gain",        title: "Gain",      defaultWidth: 45,  minWidth: 35,  isDefaultVisible: true,  isHideable: true),
         ColumnDefinition(identifier: "fileSize",    title: "Size",      defaultWidth: 70,  minWidth: 50,  isDefaultVisible: true,  isHideable: true),
-        ColumnDefinition(identifier: "starCount",   title: "Stars",     defaultWidth: 50,  minWidth: 40,  isDefaultVisible: true,  isHideable: true),
         ColumnDefinition(identifier: "subfolder",   title: "Subfolder", defaultWidth: 80,  minWidth: 50,  isDefaultVisible: true,  isHideable: true),
         // Hidden-by-default columns
         ColumnDefinition(identifier: "date",        title: "Date",      defaultWidth: 85,  minWidth: 70,  isDefaultVisible: false, isHideable: true),
@@ -49,6 +49,28 @@ struct ColumnDefinition {
 
     // Default visible column identifiers (factory defaults)
     static let defaultVisibleColumnIds: [String] = allColumns.filter(\.isDefaultVisible).map(\.identifier)
+
+    // Preferred column order for single-object sessions (Object column is less important)
+    // Quality metrics first, then exposure, then rest
+    static let singleObjectColumnOrder: [String] = [
+        "marked", "frameNumber", "filter", "quality", "snr", "fwhm", "hfr", "starCount",
+        "exposure", "nightDate", "time", "filename", "target", "frameType", "camera",
+        "ambientTemp", "focuserTemp", "sensorTemp", "gain", "fileSize", "subfolder",
+        "date", "telescope", "binning", "offset"
+    ]
+
+    // Preferred column order for multi-object sessions (Object column moves to front)
+    static let multiObjectColumnOrder: [String] = [
+        "marked", "frameNumber", "target", "filter", "quality", "snr", "fwhm", "hfr", "starCount",
+        "exposure", "nightDate", "time", "filename", "frameType", "camera",
+        "ambientTemp", "focuserTemp", "sensorTemp", "gain", "fileSize", "subfolder",
+        "date", "telescope", "binning", "offset"
+    ]
+
+    /// Returns the recommended column order based on whether the session has multiple objects
+    static func recommendedColumnOrder(isMultiObject: Bool) -> [String] {
+        isMultiObject ? multiObjectColumnOrder : singleObjectColumnOrder
+    }
 
     // Get the string value for a given column from an ImageEntry.
     // The "quality" column returns "" — its cell is rendered as an SF Symbol icon, not text.
@@ -137,7 +159,7 @@ struct ColumnDefinition {
     static func headerToolTip(for columnId: String) -> String? {
         switch columnId {
         case "quality":
-            return "Relative quality score within group (same filter + target + exposure).\nBased on z-scores of FWHM, HFR, star count, and noise.\nGood (green) = above average, Trash (red) = below average."
+            return "Relative quality score within group (same filter + target + exposure).\nBased on z-scores of FWHM, HFR, star count, and noise.\nMeasured from center 70% of image to exclude edge effects.\nGood (green) = above average, Trash (red) = below average."
         case "snr":
             return "Signal-to-Noise Ratio.\nComputed from median pixel value / noise MAD during auto-stretch.\nHigher = cleaner signal. Affected by exposure, light pollution, clouds."
         case "fwhm":
@@ -145,7 +167,7 @@ struct ColumnDefinition {
         case "hfr":
             return "Half-Flux Radius of stars.\nFrom NINA filename token, CSV, or GPU star detection.\nLower = tighter stars = better focus."
         case "starCount":
-            return "Number of detected stars.\nFrom NINA filename token, CSV, or GPU star detection.\nFewer stars may indicate clouds, fog, or tracking issues."
+            return "Total number of stars detected in the image.\nFrom NINA filename token, CSV, or GPU star detection.\nFewer stars may indicate clouds, fog, or tracking issues."
         case "filter":
             return "Active filter during capture.\nRead from FITS/XISF FILTER header keyword.\nCommon: L (Luminance), R/G/B, H (Ha), O (OIII), S (SII)."
         case "nightDate":

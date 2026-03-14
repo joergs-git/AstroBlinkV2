@@ -141,9 +141,11 @@ class PrefetchCache {
                     if let onStarMetrics = onStarMetrics {
                         let channel = imageForSTF.channelCount == 3 ? 1 : 0  // Green for OSC
                         let stars = generator?.detectStarsFromImage(imageForSTF, channel: channel) ?? []
+                        let totalStarCount = generator?.lastTotalStarCount ?? stars.count
                         if !stars.isEmpty {
                             let metrics = StarMetricsCalculator.measure(
-                                stars: stars, fullResImage: imageForSTF, channel: channel
+                                stars: stars, fullResImage: imageForSTF, channel: channel,
+                                totalStarCount: totalStarCount
                             )
                             if let metrics = metrics {
                                 Task { @MainActor in onStarMetrics(url, metrics) }

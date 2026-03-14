@@ -60,6 +60,8 @@ struct FileListView: NSViewRepresentable {
 
         tableView.delegate = context.coordinator
         tableView.dataSource = context.coordinator
+        tableView.doubleAction = #selector(Coordinator.tableViewDoubleClick(_:))
+        tableView.target = context.coordinator
 
         // Right-click context menu
         let menu = NSMenu()
@@ -114,6 +116,15 @@ struct FileListView: NSViewRepresentable {
 
         guard let tableView = coordinator.tableView else { return }
 
+        // Apply pending column reorder (triggered after header enrichment for single/multi-object)
+        // Also applies default sort based on the new column order
+        if let newOrder = viewModel.pendingColumnOrder {
+            viewModel.pendingColumnOrder = nil
+            reorderTableColumns(tableView, to: newOrder)
+            viewModel.applySortByColumnOrder(newOrder)
+            tableView.reloadData()
+        }
+
         // Apply night mode to table background
         if viewModel.nightMode {
             tableView.backgroundColor = .black
@@ -131,6 +142,9 @@ struct FileListView: NSViewRepresentable {
         let currentCount = tableView.numberOfRows
 
         if currentCount != newCount || viewModel.needsTableRefresh || nightModeChanged {
+            // Detect initial load (table was empty, now has rows) to grab keyboard focus
+            let wasEmpty = currentCount == 0
+
             // Preserve current multi-selection across reload
             let savedSelection = tableView.selectedRowIndexes
             tableView.reloadData()
@@ -139,6 +153,11 @@ struct FileListView: NSViewRepresentable {
             // Restore saved selection if still valid
             if !savedSelection.isEmpty && savedSelection.last! < newCount {
                 tableView.selectRowIndexes(savedSelection, byExtendingSelection: false)
+            }
+
+            // After first load, make file list the first responder for arrow key navigation
+            if wasEmpty && newCount > 0 {
+                tableView.window?.makeFirstResponder(tableView)
             }
         }
 
@@ -162,6 +181,28 @@ struct FileListView: NSViewRepresentable {
                         // Only scroll when selection actually changes (avoids jump during cache refreshes)
                         tableView.scrollRowToVisible(desiredIndex)
                     }
+                }
+            }
+        }
+    }
+
+    // Reorder existing table columns to match the given order (without adding/removing columns)
+    private func reorderTableColumns(_ tableView: NSTableView, to order: [String]) {
+        let currentIds = tableView.tableColumns.map { $0.identifier.rawValue }
+        // Build a position map from the desired order
+        var positionMap: [String: Int] = [:]
+        for (i, id) in order.enumerated() {
+            positionMap[id] = i
+        }
+        // Sort current column indices by desired position
+        let sortedIds = currentIds.sorted { a, b in
+            (positionMap[a] ?? Int.max) < (positionMap[b] ?? Int.max)
+        }
+        // Move columns to their new positions
+        for (targetIndex, id) in sortedIds.enumerated() {
+            if let currentIndex = tableView.tableColumns.firstIndex(where: { $0.identifier.rawValue == id }) {
+                if currentIndex != targetIndex {
+                    tableView.moveColumn(currentIndex, toColumn: targetIndex)
                 }
             }
         }
@@ -552,6 +593,22 @@ struct FileListView: NSViewRepresentable {
             guard let text = sender.representedObject as? String else { return }
             NSPasteboard.general.clearContents()
             NSPasteboard.general.setString(text, forType: .string)
+        }
+
+        // Double-click: open image in a floating preview window with stretch controls
+        @objc func tableViewDoubleClick(_ sender: NSTableView) {
+            let row = sender.clickedRow
+            guard row >= 0, row < displayedImages.count else { return }
+            let entry = displayedImages[row]
+            Task { @MainActor in
+                guard let device = viewModel.renderer?.device else { return }
+                ImagePreviewWindowController.open(
+                    entry: entry,
+                    device: device,
+                    nightMode: viewModel.nightMode,
+                    debayerEnabled: viewModel.debayerEnabled
+                )
+            }
         }
 
         @objc private func copyFullPath(_ sender: NSMenuItem) {

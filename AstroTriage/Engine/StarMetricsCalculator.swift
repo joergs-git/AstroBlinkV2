@@ -11,7 +11,8 @@ import Metal
 struct StarMetrics {
     let medianHFR: Double       // Half-flux radius in pixels (median of measured stars)
     let medianFWHM: Double      // Full width at half maximum in pixels
-    let measuredStarCount: Int  // Total number of stars detected (before filtering)
+    let measuredStarCount: Int  // Stars used for HFR/FWHM measurement (capped subset)
+    let totalStarCount: Int     // True total number of stars detected in the image
 }
 
 enum StarMetricsCalculator {
@@ -31,6 +32,10 @@ enum StarMetricsCalculator {
     private static let crowdingDistance: Float = 15.0
     // Minimum distance from image edge (full-res pixels)
     private static let edgeMargin: Float = 12.0
+    // Center crop fraction for quality measurement: only use stars within this
+    // fraction of the image (centered). Excludes edge stars affected by optical
+    // aberrations, vignetting, dithering shifts, and tilt.
+    private static let centerCropFraction: Float = 0.70
     // Gaussian fit: minimum pixels above background required for valid fit
     private static let minFitPixels = 8
 
@@ -44,7 +49,8 @@ enum StarMetricsCalculator {
     static func measure(
         stars: [DetectedStar],
         fullResImage image: DecodedImage,
-        channel: Int = 0
+        channel: Int = 0,
+        totalStarCount: Int? = nil
     ) -> StarMetrics? {
         let w = image.width
         let h = image.height
@@ -112,13 +118,16 @@ enum StarMetricsCalculator {
         return StarMetrics(
             medianHFR: medianHFR,
             medianFWHM: medianFWHM,
-            measuredStarCount: totalDetected
+            measuredStarCount: totalDetected,
+            totalStarCount: totalStarCount ?? totalDetected
         )
     }
 
     // MARK: - Star Filtering
 
-    /// Filter stars: skip saturated, edge, and crowded stars.
+    /// Filter stars: skip saturated, edge, crowded, and stars outside center crop.
+    /// Center crop (70%) excludes stars affected by optical aberrations, vignetting,
+    /// dithering shifts, and tilt — giving more consistent quality measurements.
     /// Returns filtered stars sorted by brightness (brightest first).
     private static func filterStars(
         _ stars: [DetectedStar],
@@ -128,10 +137,18 @@ enum StarMetricsCalculator {
     ) -> [DetectedStar] {
         var result: [DetectedStar] = []
 
+        // Center crop boundaries: only accept stars within center 70% of the frame
+        let cropMarginX = Float(width) * (1.0 - centerCropFraction) * 0.5
+        let cropMarginY = Float(height) * (1.0 - centerCropFraction) * 0.5
+        let minX = max(edgeMargin, cropMarginX)
+        let maxX = Float(width) - max(edgeMargin, cropMarginX)
+        let minY = max(edgeMargin, cropMarginY)
+        let maxY = Float(height) - max(edgeMargin, cropMarginY)
+
         for star in stars {
-            // Skip edge stars
-            if star.x < edgeMargin || star.x >= Float(width) - edgeMargin ||
-               star.y < edgeMargin || star.y >= Float(height) - edgeMargin {
+            // Skip stars outside center crop region
+            if star.x < minX || star.x >= maxX ||
+               star.y < minY || star.y >= maxY {
                 continue
             }
 

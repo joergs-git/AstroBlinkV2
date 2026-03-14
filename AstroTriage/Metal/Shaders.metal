@@ -395,14 +395,19 @@ kernel void detect_stars_binned(
 // ==========================================================================
 
 struct RestretchParams {
-    float c0;           // STF shadows clipping point
-    float mb;           // STF midtone balance
+    float c0;           // STF shadows clipping point (channel 0 / mono / linked)
+    float mb;           // STF midtone balance (channel 0 / mono / linked)
     float darkLevel;    // 0–1, shadows clip
     float contrast;     // -2 to 2
     float sharpening;   // -4 to 4
     int width;
     int height;
     int channelCount;
+    float saturation;   // 0–3, 1.0 = neutral, <1 desaturate, >1 boost color
+    float c0_g;         // Per-channel STF for unlinked RGB stretch
+    float mb_g;
+    float c0_b;
+    float mb_b;
 };
 
 kernel void restretch_float(
@@ -430,9 +435,16 @@ kernel void restretch_float(
         r = data[idx] / 65535.0;
         g = data[planeSize + idx] / 65535.0;
         b = data[2 * planeSize + idx] / 65535.0;
+        // Per-channel (unlinked) STF stretch for proper RGB color balance
+        float c0_g = params.c0_g;
+        float c0_b = params.c0_b;
+        float mb_g = params.mb_g;
+        float mb_b = params.mb_b;
         r = clamp((r - c0) * rangeInv, 0.0, 1.0); r = mtf(r, mb);
-        g = clamp((g - c0) * rangeInv, 0.0, 1.0); g = mtf(g, mb);
-        b = clamp((b - c0) * rangeInv, 0.0, 1.0); b = mtf(b, mb);
+        float rangeInvG = 1.0 / max(1.0 - c0_g, 0.001);
+        g = clamp((g - c0_g) * rangeInvG, 0.0, 1.0); g = mtf(g, mb_g);
+        float rangeInvB = 1.0 / max(1.0 - c0_b, 0.001);
+        b = clamp((b - c0_b) * rangeInvB, 0.0, 1.0); b = mtf(b, mb_b);
     }
 
     // Dark level
@@ -469,11 +481,15 @@ kernel void restretch_float(
                 float ve = data[chOff + y * params.width + (x+1)] / 65535.0;
                 float vw = data[chOff + y * params.width + (x-1)] / 65535.0;
 
-                // Stretch neighbors
-                vn = clamp((vn - c0) * rangeInv, 0.0, 1.0); vn = mtf(vn, mb);
-                vs = clamp((vs - c0) * rangeInv, 0.0, 1.0); vs = mtf(vs, mb);
-                ve = clamp((ve - c0) * rangeInv, 0.0, 1.0); ve = mtf(ve, mb);
-                vw = clamp((vw - c0) * rangeInv, 0.0, 1.0); vw = mtf(vw, mb);
+                // Stretch neighbors (per-channel for RGB)
+                float ch_c0 = (ch == 0) ? c0 : (ch == 1) ? params.c0_g : params.c0_b;
+                float ch_mb = (ch == 0) ? mb : (ch == 1) ? params.mb_g : params.mb_b;
+                float ch_rangeInv = 1.0 / max(1.0 - ch_c0, 0.001);
+                if (params.channelCount == 1) { ch_c0 = c0; ch_mb = mb; ch_rangeInv = rangeInv; }
+                vn = clamp((vn - ch_c0) * ch_rangeInv, 0.0, 1.0); vn = mtf(vn, ch_mb);
+                vs = clamp((vs - ch_c0) * ch_rangeInv, 0.0, 1.0); vs = mtf(vs, ch_mb);
+                ve = clamp((ve - ch_c0) * ch_rangeInv, 0.0, 1.0); ve = mtf(ve, ch_mb);
+                vw = clamp((vw - ch_c0) * ch_rangeInv, 0.0, 1.0); vw = mtf(vw, ch_mb);
 
                 // Apply dark + contrast to neighbors too
                 if (params.darkLevel > 0.0) {
@@ -502,7 +518,141 @@ kernel void restretch_float(
         }
     }
 
+    // Saturation (only for RGB; mono has no color to saturate)
+    if (params.channelCount > 1 && params.saturation != 1.0) {
+        float lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+        float s = params.saturation;
+        r = clamp(lum + s * (r - lum), 0.0, 1.0);
+        g = clamp(lum + s * (g - lum), 0.0, 1.0);
+        b = clamp(lum + s * (b - lum), 0.0, 1.0);
+    }
+
     output.write(float4(r, g, b, 1.0), gid);
+}
+
+// ==========================================================================
+// Bilateral Denoise — edge-preserving noise reduction on RGBA8 texture
+// Spatial Gaussian + intensity Gaussian → smooths noise, preserves edges/stars
+// Single-pass, runs on the stretched output texture
+// ==========================================================================
+
+struct DenoiseParams {
+    float strength;     // 0–1, controls intensity sigma (0 = off, 1 = aggressive)
+    int width;
+    int height;
+    int radius;         // Kernel radius (typically 3–5)
+};
+
+kernel void bilateral_denoise(
+    texture2d<float, access::read>  input  [[texture(0)]],
+    texture2d<float, access::write> output [[texture(1)]],
+    constant DenoiseParams& params [[buffer(0)]],
+    uint2 gid [[thread_position_in_grid]])
+{
+    if ((int)gid.x >= params.width || (int)gid.y >= params.height) return;
+
+    float4 center = input.read(gid);
+    int r = params.radius;
+
+    // Spatial sigma scales with radius; intensity sigma scales with strength
+    float sigmaSpatial = float(r) * 0.5;
+    float sigmaIntensity = 0.02 + params.strength * 0.15;  // 0.02–0.17 range
+
+    float invSpatial2 = -0.5 / (sigmaSpatial * sigmaSpatial);
+    float invIntensity2 = -0.5 / (sigmaIntensity * sigmaIntensity);
+
+    float3 sumColor = float3(0.0);
+    float sumWeight = 0.0;
+
+    for (int dy = -r; dy <= r; dy++) {
+        for (int dx = -r; dx <= r; dx++) {
+            int nx = (int)gid.x + dx;
+            int ny = (int)gid.y + dy;
+
+            // Clamp to image bounds
+            nx = clamp(nx, 0, params.width - 1);
+            ny = clamp(ny, 0, params.height - 1);
+
+            float4 neighbor = input.read(uint2(nx, ny));
+
+            // Spatial weight (Gaussian distance)
+            float dist2 = float(dx * dx + dy * dy);
+            float ws = exp(dist2 * invSpatial2);
+
+            // Intensity weight (Gaussian color difference)
+            float3 diff = neighbor.rgb - center.rgb;
+            float colorDist2 = dot(diff, diff);
+            float wi = exp(colorDist2 * invIntensity2);
+
+            float w = ws * wi;
+            sumColor += neighbor.rgb * w;
+            sumWeight += w;
+        }
+    }
+
+    float3 result = sumWeight > 0.0 ? sumColor / sumWeight : center.rgb;
+    output.write(float4(result, 1.0), gid);
+}
+
+// ==========================================================================
+// Chrominance Denoise — removes color noise (green/magenta patches) while
+// preserving luminance detail. Works in YCbCr space: blurs only Cb/Cr
+// with a spatial Gaussian, keeps Y (brightness) untouched.
+// ==========================================================================
+
+kernel void chroma_denoise(
+    texture2d<float, access::read>  input  [[texture(0)]],
+    texture2d<float, access::write> output [[texture(1)]],
+    constant DenoiseParams& params [[buffer(0)]],
+    uint2 gid [[thread_position_in_grid]])
+{
+    if ((int)gid.x >= params.width || (int)gid.y >= params.height) return;
+
+    float4 center = input.read(gid);
+
+    // RGB → YCbCr (Rec.709)
+    float Y  =  0.2126 * center.r + 0.7152 * center.g + 0.0722 * center.b;
+    float Cb = -0.1146 * center.r - 0.3854 * center.g + 0.5000 * center.b;
+    float Cr =  0.5000 * center.r - 0.4542 * center.g - 0.0458 * center.b;
+
+    // Gaussian blur on Cb/Cr only (larger radius than luminance denoise)
+    int r = params.radius + 2;  // Wider kernel for color noise
+    float sigma = float(r) * 0.6;
+    float invSigma2 = -0.5 / (sigma * sigma);
+
+    float sumCb = 0.0, sumCr = 0.0, sumW = 0.0;
+
+    for (int dy = -r; dy <= r; dy++) {
+        for (int dx = -r; dx <= r; dx++) {
+            int nx = clamp((int)gid.x + dx, 0, params.width - 1);
+            int ny = clamp((int)gid.y + dy, 0, params.height - 1);
+            float4 n = input.read(uint2(nx, ny));
+
+            float dist2 = float(dx * dx + dy * dy);
+            float w = exp(dist2 * invSigma2);
+
+            float nCb = -0.1146 * n.r - 0.3854 * n.g + 0.5000 * n.b;
+            float nCr =  0.5000 * n.r - 0.4542 * n.g - 0.0458 * n.b;
+
+            sumCb += nCb * w;
+            sumCr += nCr * w;
+            sumW += w;
+        }
+    }
+
+    // Blended chrominance (mix original and blurred based on strength)
+    float s = params.strength;
+    float blurCb = sumW > 0.0 ? sumCb / sumW : Cb;
+    float blurCr = sumW > 0.0 ? sumCr / sumW : Cr;
+    Cb = mix(Cb, blurCb, s);
+    Cr = mix(Cr, blurCr, s);
+
+    // YCbCr → RGB
+    float rr = Y + 1.5748 * Cr;
+    float gg = Y - 0.1873 * Cb - 0.4681 * Cr;
+    float bb = Y + 1.8556 * Cb;
+
+    output.write(float4(clamp(rr, 0.0, 1.0), clamp(gg, 0.0, 1.0), clamp(bb, 0.0, 1.0), 1.0), gid);
 }
 
 // MARK: - Textured Quad Shaders (for fit-to-view rendering with zoom/pan)

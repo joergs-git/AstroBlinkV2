@@ -10,7 +10,7 @@ class BenchmarkLeaderboardWindowController {
     static let shared = BenchmarkLeaderboardWindowController()
     private var window: NSWindow?
 
-    func show(service: BenchmarkService, myMachineHash: String, engine: String) {
+    func show(service: BenchmarkService, myMachineHash: String, engine: String, preferSessionTab: Bool = false) {
         // Reuse or create window
         if let w = window, w.isVisible {
             w.makeKeyAndOrderFront(nil)
@@ -20,7 +20,8 @@ class BenchmarkLeaderboardWindowController {
         let view = BenchmarkLeaderboardView(
             service: service,
             myMachineHash: myMachineHash,
-            engine: engine
+            engine: engine,
+            preferSessionTab: preferSessionTab
         )
 
         let hostingView = NSHostingView(rootView: view)
@@ -97,8 +98,33 @@ struct BenchmarkLeaderboardView: View {
     @ObservedObject var service: BenchmarkService
     let myMachineHash: String
     let engine: String
+    let preferSessionTab: Bool
 
     @State private var selectedTab: LeaderboardTab = .stacking
+
+    init(service: BenchmarkService, myMachineHash: String, engine: String, preferSessionTab: Bool = false) {
+        self.service = service
+        self.myMachineHash = myMachineHash
+        self.engine = engine
+        self.preferSessionTab = preferSessionTab
+        _selectedTab = State(initialValue: preferSessionTab ? .sessionLoad : .stacking)
+    }
+
+    // ID of the latest personal stacking entry (most recent by created_at)
+    private var latestMyStackingId: String? {
+        service.leaderboard
+            .filter { $0.machine_hash == myMachineHash }
+            .sorted { ($0.created_at ?? "") > ($1.created_at ?? "") }
+            .first?.id
+    }
+
+    // ID of the latest personal session load entry
+    private var latestMySessionId: String? {
+        service.sessionLeaderboard
+            .filter { $0.machine_hash == myMachineHash }
+            .sorted { ($0.created_at ?? "") > ($1.created_at ?? "") }
+            .first?.id
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -247,7 +273,8 @@ struct BenchmarkLeaderboardView: View {
             ScrollView {
                 LazyVStack(spacing: 0) {
                     ForEach(Array(service.sortedLeaderboard.enumerated()), id: \.element.id) { index, entry in
-                        stackingRow(rank: index + 1, entry: entry, isMe: entry.machine_hash == myMachineHash)
+                        let isMe = entry.machine_hash == myMachineHash
+                        stackingRow(rank: index + 1, entry: entry, isMe: isMe, isLatestMe: entry.id == latestMyStackingId)
                     }
                 }
             }
@@ -269,11 +296,12 @@ struct BenchmarkLeaderboardView: View {
         .foregroundColor(service.sortColumn == col ? .accentColor : .secondary)
     }
 
-    private func stackingRow(rank: Int, entry: BenchmarkEntry, isMe: Bool) -> some View {
-        HStack(spacing: SC.pad) {
+    private func stackingRow(rank: Int, entry: BenchmarkEntry, isMe: Bool, isLatestMe: Bool = false) -> some View {
+        let font = isLatestMe ? cellFontBold : cellFont
+        return HStack(spacing: SC.pad) {
             rankBadge(rank)
                 .frame(width: SC.rank, alignment: .center)
-                .font(.system(size: 12, weight: rank <= 3 ? .bold : .regular, design: .monospaced))
+                .font(.system(size: 12, weight: rank <= 3 || isLatestMe ? .bold : .regular, design: .monospaced))
 
             Text(String(format: "%.2fs", entry.timePerFrame))
                 .frame(width: SC.tPerFrame, alignment: .trailing)
@@ -281,45 +309,45 @@ struct BenchmarkLeaderboardView: View {
                 .foregroundColor(isMe ? .blue : .primary)
             Text(entry.formattedTime)
                 .frame(width: SC.totalTime, alignment: .trailing)
-                .font(cellFont)
-                .foregroundColor(.secondary)
+                .font(font)
+                .foregroundColor(isLatestMe ? .primary : .secondary)
             Text("\(entry.file_count)")
                 .frame(width: SC.frames, alignment: .trailing)
-                .font(cellFont)
+                .font(font)
             Text(String(format: "%.1f", entry.image_megapixels))
                 .frame(width: SC.mp, alignment: .trailing)
-                .font(cellFont)
-                .foregroundColor(.secondary)
+                .font(font)
+                .foregroundColor(isLatestMe ? .primary : .secondary)
             Text(String(format: "%.0f", entry.msPerMPPerFrame))
                 .frame(width: SC.msPerMP, alignment: .trailing)
-                .font(cellFont)
-                .foregroundColor(.secondary)
+                .font(font)
+                .foregroundColor(isLatestMe ? .primary : .secondary)
 
             Spacer().frame(width: SC.gap)
 
             Text(entry.chip_name.replacingOccurrences(of: "Apple ", with: ""))
                 .frame(width: SC.chip, alignment: .leading)
-                .font(cellFont)
+                .font(font)
                 .lineLimit(1)
             Text("\(entry.cpu_cores)")
                 .frame(width: SC.cores, alignment: .trailing)
-                .font(cellFont)
-                .foregroundColor(.secondary)
+                .font(font)
+                .foregroundColor(isLatestMe ? .primary : .secondary)
             Text("\(entry.ram_gb)G")
                 .frame(width: SC.ram, alignment: .trailing)
-                .font(cellFont)
-                .foregroundColor(.secondary)
+                .font(font)
+                .foregroundColor(isLatestMe ? .primary : .secondary)
             Text(entry.app_version)
                 .frame(width: SC.version, alignment: .trailing)
-                .font(cellFont)
-                .foregroundColor(.secondary)
+                .font(font)
+                .foregroundColor(isLatestMe ? .primary : .secondary)
             Text(entry.formattedDateTime)
                 .frame(width: SC.date, alignment: .trailing)
-                .font(dateFont)
-                .foregroundColor(.secondary)
+                .font(isLatestMe ? .system(size: 10, weight: .medium, design: .monospaced) : dateFont)
+                .foregroundColor(isLatestMe ? .primary : .secondary)
 
             Spacer()
-            youBadge(isMe)
+            youBadge(isMe, isLatest: isLatestMe)
         }
         .padding(.horizontal, 14).padding(.vertical, 5)
         .background(rowBackground(rank: rank, isMe: isMe))
@@ -368,7 +396,8 @@ struct BenchmarkLeaderboardView: View {
             ScrollView {
                 LazyVStack(spacing: 0) {
                     ForEach(Array(service.sortedSessionLeaderboard.enumerated()), id: \.element.id) { index, entry in
-                        sessionRow(rank: index + 1, entry: entry, isMe: entry.machine_hash == myMachineHash)
+                        let isMe = entry.machine_hash == myMachineHash
+                        sessionRow(rank: index + 1, entry: entry, isMe: isMe, isLatestMe: entry.id == latestMySessionId)
                     }
                 }
             }
@@ -390,11 +419,12 @@ struct BenchmarkLeaderboardView: View {
         .foregroundColor(service.sessionSortColumn == col ? .accentColor : .secondary)
     }
 
-    private func sessionRow(rank: Int, entry: SessionBenchmarkEntry, isMe: Bool) -> some View {
-        HStack(spacing: SL.pad) {
+    private func sessionRow(rank: Int, entry: SessionBenchmarkEntry, isMe: Bool, isLatestMe: Bool = false) -> some View {
+        let font = isLatestMe ? cellFontBold : cellFont
+        return HStack(spacing: SL.pad) {
             rankBadge(rank)
                 .frame(width: SL.rank, alignment: .center)
-                .font(.system(size: 12, weight: rank <= 3 ? .bold : .regular, design: .monospaced))
+                .font(.system(size: 12, weight: rank <= 3 || isLatestMe ? .bold : .regular, design: .monospaced))
 
             Text(String(format: "%.0f", entry.throughputMBs))
                 .frame(width: SL.throughput, alignment: .trailing)
@@ -403,37 +433,37 @@ struct BenchmarkLeaderboardView: View {
 
             Text(entry.formattedTotalTime)
                 .frame(width: SL.totalTime, alignment: .trailing)
-                .font(cellFont)
-                .foregroundColor(.secondary)
+                .font(font)
+                .foregroundColor(isLatestMe ? .primary : .secondary)
 
             Text(formatMs(entry.scan_ms))
                 .frame(width: SL.scan, alignment: .trailing)
-                .font(cellFont)
-                .foregroundColor(.secondary)
+                .font(font)
+                .foregroundColor(isLatestMe ? .primary : .secondary)
 
             Text(formatMs(entry.first_image_ms))
                 .frame(width: SL.firstImg, alignment: .trailing)
-                .font(cellFont)
-                .foregroundColor(.secondary)
+                .font(font)
+                .foregroundColor(isLatestMe ? .primary : .secondary)
 
             Text(formatMs(entry.header_ms))
                 .frame(width: SL.headers, alignment: .trailing)
-                .font(cellFont)
-                .foregroundColor(.secondary)
+                .font(font)
+                .foregroundColor(isLatestMe ? .primary : .secondary)
 
             Text(formatMs(entry.caching_ms))
                 .frame(width: SL.cache, alignment: .trailing)
-                .font(cellFont)
-                .foregroundColor(.secondary)
+                .font(font)
+                .foregroundColor(isLatestMe ? .primary : .secondary)
 
             Text("\(entry.file_count)")
                 .frame(width: SL.files, alignment: .trailing)
-                .font(cellFont)
+                .font(font)
 
             Text(entry.formattedSize)
                 .frame(width: SL.size, alignment: .trailing)
-                .font(cellFont)
-                .foregroundColor(.secondary)
+                .font(font)
+                .foregroundColor(isLatestMe ? .primary : .secondary)
 
             Text(entry.source_type == "local" ? "SSD" : entry.source_type == "network" ? "Net" : "?")
                 .frame(width: SL.source, alignment: .trailing)
@@ -444,21 +474,21 @@ struct BenchmarkLeaderboardView: View {
 
             Text(entry.chip_name.replacingOccurrences(of: "Apple ", with: ""))
                 .frame(width: SL.chip, alignment: .leading)
-                .font(cellFont)
+                .font(font)
                 .lineLimit(1)
 
             Text("\(entry.ram_gb)G")
                 .frame(width: SL.ram, alignment: .trailing)
-                .font(cellFont)
-                .foregroundColor(.secondary)
+                .font(font)
+                .foregroundColor(isLatestMe ? .primary : .secondary)
 
             Text(entry.formattedDateTime)
                 .frame(width: SL.date, alignment: .trailing)
-                .font(dateFont)
-                .foregroundColor(.secondary)
+                .font(isLatestMe ? .system(size: 10, weight: .medium, design: .monospaced) : dateFont)
+                .foregroundColor(isLatestMe ? .primary : .secondary)
 
             Spacer()
-            youBadge(isMe)
+            youBadge(isMe, isLatest: isLatestMe)
         }
         .padding(.horizontal, 14).padding(.vertical, 5)
         .background(rowBackground(rank: rank, isMe: isMe))
@@ -488,14 +518,14 @@ struct BenchmarkLeaderboardView: View {
     }
 
     @ViewBuilder
-    private func youBadge(_ isMe: Bool) -> some View {
+    private func youBadge(_ isMe: Bool, isLatest: Bool = false) -> some View {
         if isMe {
-            Text("YOU")
+            Text(isLatest ? "LATEST" : "YOU")
                 .font(.system(size: 9, weight: .bold, design: .monospaced))
                 .foregroundColor(.white)
                 .padding(.horizontal, 5)
                 .padding(.vertical, 1)
-                .background(Capsule().fill(Color.blue))
+                .background(Capsule().fill(isLatest ? Color.green : Color.blue))
         }
     }
 

@@ -39,6 +39,18 @@ enum StarDetector {
         sigmaThreshold: Float = 5.0,
         channel: Int = 0
     ) -> [DetectedStar] {
+        detectStarsWithTotalCount(in: image, maxStars: maxStars, subsampleFactor: subsampleFactor, sigmaThreshold: sigmaThreshold, channel: channel).stars
+    }
+
+    /// Detect stars and return both the top N stars and the total count before truncation.
+    /// The totalCount is the true number of stars detected in the image (not capped by maxStars).
+    static func detectStarsWithTotalCount(
+        in image: DecodedImage,
+        maxStars: Int = 50,
+        subsampleFactor: Int = 4,
+        sigmaThreshold: Float = 5.0,
+        channel: Int = 0
+    ) -> (stars: [DetectedStar], totalCount: Int) {
         let w = image.width
         let h = image.height
         let planeSize = w * h
@@ -47,7 +59,7 @@ enum StarDetector {
 
         let subW = w / subsampleFactor
         let subH = h / subsampleFactor
-        guard subW > 10, subH > 10 else { return [] }
+        guard subW > 10, subH > 10 else { return ([], 0) }
 
         // Build subsampled float array from selected channel
         var subData = [Float](repeating: 0, count: subW * subH)
@@ -71,7 +83,7 @@ enum StarDetector {
         let mad = deviations[deviations.count / 2]
         let sigma = 1.4826 * mad
 
-        guard sigma > 0 else { return [] }
+        guard sigma > 0 else { return ([], 0) }
         let threshold = median + sigmaThreshold * sigma
 
         // Find local maxima above threshold
@@ -119,7 +131,8 @@ enum StarDetector {
         }
 
         stars.sort()
-        return Array(stars.prefix(maxStars))
+        let totalCount = stars.count
+        return (Array(stars.prefix(maxStars)), totalCount)
     }
 
     /// Refine star positions using full-resolution weighted centroid.

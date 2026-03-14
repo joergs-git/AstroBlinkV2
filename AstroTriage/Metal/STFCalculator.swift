@@ -122,24 +122,41 @@ struct STFCalculator {
         let normalizedMAD: Float // Noise estimator [0,1] (1.4826 * MAD)
     }
 
+    // Center crop fraction for noise measurement: only sample from center 70%
+    // to exclude edge effects (vignetting, dithering, optical aberrations)
+    private static let noiseCropFraction: Float = 0.70
+
     static func measureNoise(from image: DecodedImage) -> NoiseStats {
         let ptr = image.buffer.contents().bindMemory(
             to: UInt16.self,
             capacity: image.pixelCount
         )
-        let planeSize = image.width * image.height
+        let w = image.width
+        let h = image.height
 
-        // Use first channel (mono: only channel; OSC debayered: red; represents noise level)
-        let sampleCount = max(1000, Int(Float(planeSize) * sampleFraction))
-        let stride = max(1, planeSize / sampleCount)
+        // Center crop boundaries
+        let cropMarginX = Int(Float(w) * (1.0 - noiseCropFraction) * 0.5)
+        let cropMarginY = Int(Float(h) * (1.0 - noiseCropFraction) * 0.5)
+        let cropX0 = cropMarginX
+        let cropY0 = cropMarginY
+        let cropW = w - 2 * cropMarginX
+        let cropH = h - 2 * cropMarginY
+        let cropSize = cropW * cropH
+
+        // Use first channel, sample from center crop region
+        let sampleCount = max(1000, Int(Float(cropSize) * sampleFraction))
+        let sampleStride = max(1, cropSize / sampleCount)
 
         var samples = [Float]()
         samples.reserveCapacity(sampleCount)
 
         var i = 0
-        while i < planeSize {
-            samples.append(Float(ptr[i]) / 65535.0)
-            i += stride
+        while i < cropSize {
+            let localY = i / cropW
+            let localX = i % cropW
+            let globalIdx = (cropY0 + localY) * w + (cropX0 + localX)
+            samples.append(Float(ptr[globalIdx]) / 65535.0)
+            i += sampleStride
         }
 
         let n = samples.count

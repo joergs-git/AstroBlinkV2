@@ -44,6 +44,7 @@ class QuickStackEngineV2: ObservableObject {
     private let commandQueue: MTLCommandQueue
     private let bin2xPipeline: MTLComputePipelineState?
     private let warpPipeline: MTLComputePipelineState?
+    private let debayerPipeline: MTLComputePipelineState?
     private var stackTask: Task<Void, Never>?
 
     // V2 tuning: match V1 star/triangle counts for accuracy, use finer detection grid
@@ -76,6 +77,13 @@ class QuickStackEngineV2: ObservableObject {
             self.warpPipeline = pipe
         } else {
             self.warpPipeline = nil
+        }
+
+        if let debayerFunc = library.makeFunction(name: "debayer_bilinear"),
+           let pipe = try? device.makeComputePipelineState(function: debayerFunc) {
+            self.debayerPipeline = pipe
+        } else {
+            self.debayerPipeline = nil
         }
     }
 
@@ -143,6 +151,39 @@ class QuickStackEngineV2: ObservableObject {
         return DecodedImage(buffer: outBuffer, width: dstW, height: dstH, channelCount: ch)
     }
 
+    // MARK: - GPU Debayer (bilinear interpolation, CFA → RGB)
+
+    private static let bayerPatternMap: [String: Int] = [
+        "RGGB": 0, "GRBG": 1, "GBRG": 2, "BGGR": 3
+    ]
+
+    private func gpuDebayer(_ image: DecodedImage, pattern: String) -> DecodedImage? {
+        guard let pipeline = debayerPipeline,
+              image.channelCount == 1,
+              let patternIndex = Self.bayerPatternMap[pattern.uppercased()] else { return nil }
+
+        let outputSize = image.width * image.height * 3 * MemoryLayout<UInt16>.size
+        guard let outputBuffer = device.makeBuffer(length: outputSize, options: .storageModeShared),
+              let cmdBuf = commandQueue.makeCommandBuffer(),
+              let encoder = cmdBuf.makeComputeCommandEncoder() else { return nil }
+
+        encoder.setComputePipelineState(pipeline)
+        encoder.setBuffer(image.buffer, offset: 0, index: 0)
+        encoder.setBuffer(outputBuffer, offset: 0, index: 1)
+        var w = Int32(image.width), h = Int32(image.height), pat = Int32(patternIndex)
+        encoder.setBytes(&w, length: 4, index: 2)
+        encoder.setBytes(&h, length: 4, index: 3)
+        encoder.setBytes(&pat, length: 4, index: 4)
+        let tg = MTLSize(width: 32, height: 32, depth: 1)
+        let grid = MTLSize(width: (image.width + 31) / 32, height: (image.height + 31) / 32, depth: 1)
+        encoder.dispatchThreadgroups(grid, threadsPerThreadgroup: tg)
+        encoder.endEncoding()
+        cmdBuf.commit()
+        cmdBuf.waitUntilCompleted()
+
+        return DecodedImage(buffer: outputBuffer, width: image.width, height: image.height, channelCount: 3)
+    }
+
     // MARK: - Main Pipeline
 
     private func runStack(entries: [ImageEntry], debayerEnabled: Bool) async {
@@ -161,7 +202,14 @@ class QuickStackEngineV2: ObservableObject {
 
             switch result {
             case .success(let decoded):
-                let binned = gpuBin2x(decoded) ?? decoded
+                // Debayer OSC images before binning (CFA mono → RGB)
+                var processed = decoded
+                if debayerEnabled, let pattern = entry.bayerPattern, decoded.channelCount == 1 {
+                    if let debayered = gpuDebayer(decoded, pattern: pattern) {
+                        processed = debayered
+                    }
+                }
+                let binned = gpuBin2x(processed) ?? processed
                 frames.append((binned, entry))
             case .failure(let error):
                 errorMessage = "Decode error: \(error.localizedDescription)"

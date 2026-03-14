@@ -185,6 +185,9 @@ struct StackResultView: View {
     @State private var sharpening: Double = 0.0
     @State private var contrast: Double = 0.0
     @State private var darkLevel: Double = 0.0
+    @State private var saturation: Double = 1.0
+    @State private var linkedStretch: Bool = false
+    @State private var denoise: Double = 0.0
     @State private var displayTexture: MTLTexture?
     @State private var savedMessage: String?
     @State private var isRendering: Bool = false
@@ -240,6 +243,18 @@ struct StackResultView: View {
                              display: String(format: "%+.1f", contrast))
                 resultSlider("Dark", value: $darkLevel, range: 0.0...1.0, step: 0.01,
                              display: String(format: "%.2f", darkLevel))
+                if engine.resultChannelCount > 1 {
+                    resultSlider("Color", value: $saturation, range: 0.0...3.0, step: 0.05,
+                                 display: String(format: "%.1f", saturation))
+                    Toggle("Linked", isOn: $linkedStretch)
+                        .toggleStyle(.switch).controlSize(.mini)
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundColor(nightMode ? .red.opacity(0.7) : .secondary)
+                        .help("OFF = Balanced: per-channel background clip + shared midtone (best white balance).\nON = Linked: identical stretch for all channels (raw color ratios).")
+                        .onChange(of: linkedStretch) { _ in scheduleRender() }
+                }
+                resultSlider("Denoise", value: $denoise, range: 0.0...2.0, step: 0.02,
+                             display: denoise < 0.01 ? "Off" : String(format: "%.0f%%", denoise * 100))
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
@@ -317,10 +332,7 @@ struct StackResultView: View {
     }
 
     private func resetSliders() {
-        stretchValue = 0.25
-        sharpening = 0.0
-        contrast = 0.0
-        darkLevel = 0.0
+        stretchValue = 0.25; sharpening = 0.0; contrast = 0.0; darkLevel = 0.0; saturation = 1.0; linkedStretch = false; denoise = 0.0
         scheduleRender()
     }
 
@@ -349,6 +361,9 @@ struct StackResultView: View {
         let sharp = Float(sharpening)
         let cont = Float(contrast)
         let dark = Float(darkLevel)
+        let sat = Float(saturation)
+        let linked = linkedStretch
+        let dn = Float(denoise)
         let dev = engine.device
 
         let tex = await Task.detached(priority: .userInitiated) {
@@ -356,7 +371,7 @@ struct StackResultView: View {
                 data: floatData, width: w, height: h,
                 channelCount: ch, targetBackground: target,
                 sharpening: sharp, contrast: cont, darkLevel: dark,
-                device: dev
+                saturation: sat, linkedStretch: linked, denoise: dn, device: dev
             )
         }.value
 
@@ -472,38 +487,74 @@ struct StackResultView: View {
 // Uses Metal GPU compute for instant results (<16ms on any Apple Silicon).
 // CPU fallback only if Metal pipeline setup fails.
 // Post-process pipeline: stretch → dark level → contrast → sharpening (matches main app)
-private func renderFloatToTexture(
+func renderFloatToTexture(
     data: [Float], width: Int, height: Int,
     channelCount: Int, targetBackground: Float,
     sharpening: Float = 0, contrast: Float = 0, darkLevel: Float = 0,
+    saturation: Float = 1.0, linkedStretch: Bool = false,
+    denoise: Float = 0,
+    precomputedSTF: [STFParams]? = nil,
     device: MTLDevice
 ) -> MTLTexture? {
     let planeSize = width * height
 
-    // STF stats from subsampled data (cheap — ~50K samples on CPU)
-    let sampleCount = min(50000, planeSize)
-    let sampleStride = max(1, planeSize / sampleCount)
-    var samples = [Float]()
-    samples.reserveCapacity(sampleCount)
-    for i in stride(from: 0, to: planeSize, by: sampleStride) {
-        samples.append(data[i] / 65535.0)
+    // Compute STF params per channel (matches STFCalculator: 5% subsample)
+    func computeSTF(channelOffset: Int) -> (c0: Float, mb: Float) {
+        let sampleCount = max(1000, Int(Float(planeSize) * 0.05))
+        let sampleStride = max(1, planeSize / sampleCount)
+        var samples = [Float]()
+        samples.reserveCapacity(sampleCount)
+        for i in stride(from: 0, to: planeSize, by: sampleStride) {
+            samples.append(data[channelOffset + i] / 65535.0)
+        }
+        vDSP_vsort(&samples, vDSP_Length(samples.count), 1)
+        let median = samples[samples.count / 2]
+        var devs = samples
+        let negMed = -median
+        vDSP_vsadd(devs, 1, [negMed], &devs, 1, vDSP_Length(devs.count))
+        vDSP_vabs(devs, 1, &devs, 1, vDSP_Length(devs.count))
+        vDSP_vsort(&devs, vDSP_Length(devs.count), 1)
+        let mad = 1.4826 * devs[devs.count / 2]
+        let c0 = max(Float(0.0), min(Float(1.0), median + (-1.25) * mad))
+        let mb: Float
+        if targetBackground <= 0.001 {
+            mb = 0.5
+        } else {
+            let mNorm = max(Float(0.001), min(Float(0.999), (median - c0) / max(1.0 - c0, 0.001)))
+            mb = mNorm * (1 - targetBackground) / (mNorm * (1 - 2 * targetBackground) + targetBackground)
+        }
+        return (c0, mb)
     }
-    vDSP_vsort(&samples, vDSP_Length(samples.count), 1)
-    let median = samples[samples.count / 2]
-    var devs = samples
-    var negMed = -median
-    vDSP_vsadd(devs, 1, &negMed, &devs, 1, vDSP_Length(devs.count))
-    vDSP_vabs(devs, 1, &devs, 1, vDSP_Length(devs.count))
-    vDSP_vsort(&devs, vDSP_Length(devs.count), 1)
-    let mad = 1.4826 * devs[devs.count / 2]
-    let c0 = max(0.0, min(1.0, median + (-1.25) * mad))
 
-    let mb: Float
-    if targetBackground <= 0.001 {
-        mb = 0.5
+    // Use precomputed STF params (from full-res data) when available,
+    // otherwise compute from the (potentially binned) float data
+    let stfR: (c0: Float, mb: Float)
+    if let pre = precomputedSTF, !pre.isEmpty {
+        stfR = (pre[0].c0, pre[0].mb)
     } else {
-        let mNorm = max(0.001, min(0.999, (median - c0) / max(1.0 - c0, 0.001)))
-        mb = mNorm * (1 - targetBackground) / (mNorm * (1 - 2 * targetBackground) + targetBackground)
+        stfR = computeSTF(channelOffset: 0)
+    }
+
+    let c0: Float
+    let mb: Float
+    let stfG: (c0: Float, mb: Float)
+    let stfB: (c0: Float, mb: Float)
+
+    if linkedStretch || channelCount < 3 {
+        c0 = stfR.c0
+        mb = stfR.mb
+        stfG = stfR
+        stfB = stfR
+    } else {
+        c0 = stfR.c0
+        mb = stfR.mb
+        if let pre = precomputedSTF, pre.count >= 3 {
+            stfG = (pre[1].c0, pre[1].mb)
+            stfB = (pre[2].c0, pre[2].mb)
+        } else {
+            stfG = computeSTF(channelOffset: planeSize)
+            stfB = computeSTF(channelOffset: 2 * planeSize)
+        }
     }
 
     // GPU path: upload float data to MTLBuffer, run restretch_float kernel
@@ -529,12 +580,20 @@ private func renderFloatToTexture(
         var width: Int32
         var height: Int32
         var channelCount: Int32
+        var saturation: Float
+        var c0_g: Float
+        var mb_g: Float
+        var c0_b: Float
+        var mb_b: Float
     }
 
     var params = RestretchParams(
         c0: c0, mb: mb,
         darkLevel: darkLevel, contrast: contrast, sharpening: sharpening,
-        width: Int32(width), height: Int32(height), channelCount: Int32(channelCount)
+        width: Int32(width), height: Int32(height), channelCount: Int32(channelCount),
+        saturation: saturation,
+        c0_g: stfG.c0, mb_g: stfG.mb,
+        c0_b: stfB.c0, mb_b: stfB.mb
     )
 
     guard let library = device.makeDefaultLibrary(),
@@ -555,6 +614,76 @@ private func renderFloatToTexture(
     encoder.endEncoding()
     cmdBuf.commit()
     cmdBuf.waitUntilCompleted()
+
+    // Two-pass denoise: (1) bilateral on luminance+color, (2) chrominance-only blur
+    // Pass 1 removes pixel noise, pass 2 removes color patches (green/magenta)
+    if denoise > 0.01 {
+        // Clamp effective strength to [0,1] for shader (slider goes to 2.0)
+        let effectiveStrength = min(denoise, 1.0)
+
+        guard let denoiseFunc = library.makeFunction(name: "bilateral_denoise"),
+              let denoisePipeline = try? device.makeComputePipelineState(function: denoiseFunc),
+              let chromaFunc = library.makeFunction(name: "chroma_denoise"),
+              let chromaPipeline = try? device.makeComputePipelineState(function: chromaFunc) else {
+            return outputTex
+        }
+
+        let texDesc2 = MTLTextureDescriptor.texture2DDescriptor(
+            pixelFormat: .rgba8Unorm, width: width, height: height, mipmapped: false
+        )
+        texDesc2.usage = [.shaderRead, .shaderWrite]
+        guard let texA = device.makeTexture(descriptor: texDesc2),
+              let texB = device.makeTexture(descriptor: texDesc2) else { return outputTex }
+
+        struct DenoiseParams {
+            var strength: Float
+            var width: Int32
+            var height: Int32
+            var radius: Int32
+        }
+
+        // Pass 1: Bilateral denoise (pixel noise)
+        // Adaptive radius: 3 for light, 5 for medium, 7 for heavy
+        let lumRadius: Int32 = denoise > 1.0 ? 7 : (denoise > 0.5 ? 5 : 3)
+        var lumParams = DenoiseParams(
+            strength: effectiveStrength,
+            width: Int32(width), height: Int32(height),
+            radius: lumRadius
+        )
+
+        guard let cmdBuf2 = queue.makeCommandBuffer(),
+              let enc2 = cmdBuf2.makeComputeCommandEncoder() else { return outputTex }
+        enc2.setComputePipelineState(denoisePipeline)
+        enc2.setTexture(outputTex, index: 0)
+        enc2.setTexture(texA, index: 1)
+        enc2.setBytes(&lumParams, length: MemoryLayout<DenoiseParams>.size, index: 0)
+        enc2.dispatchThreadgroups(grid, threadsPerThreadgroup: tg)
+        enc2.endEncoding()
+        cmdBuf2.commit()
+        cmdBuf2.waitUntilCompleted()
+
+        // Pass 2: Chrominance denoise (color patches — green/magenta noise)
+        let chromaStrength = min(denoise * 1.5, 1.0)  // More aggressive on chroma
+        let chromaRadius: Int32 = denoise > 1.0 ? 7 : 5
+        var chromaParams = DenoiseParams(
+            strength: chromaStrength,
+            width: Int32(width), height: Int32(height),
+            radius: chromaRadius
+        )
+
+        guard let cmdBuf3 = queue.makeCommandBuffer(),
+              let enc3 = cmdBuf3.makeComputeCommandEncoder() else { return texA }
+        enc3.setComputePipelineState(chromaPipeline)
+        enc3.setTexture(texA, index: 0)
+        enc3.setTexture(texB, index: 1)
+        enc3.setBytes(&chromaParams, length: MemoryLayout<DenoiseParams>.size, index: 0)
+        enc3.dispatchThreadgroups(grid, threadsPerThreadgroup: tg)
+        enc3.endEncoding()
+        cmdBuf3.commit()
+        cmdBuf3.waitUntilCompleted()
+
+        return texB
+    }
 
     return outputTex
 }
@@ -1068,6 +1197,9 @@ struct StackResultViewV2: View {
     @State private var sharpening: Double = 0.0
     @State private var contrast: Double = 0.0
     @State private var darkLevel: Double = 0.0
+    @State private var saturation: Double = 1.0
+    @State private var linkedStretch: Bool = false
+    @State private var denoise: Double = 0.0
     @State private var displayTexture: MTLTexture?
     @State private var savedMessage: String?
     @State private var isRendering: Bool = false
@@ -1118,6 +1250,18 @@ struct StackResultViewV2: View {
                              display: String(format: "%+.1f", contrast))
                 resultSlider("Dark", value: $darkLevel, range: 0.0...1.0, step: 0.01,
                              display: String(format: "%.2f", darkLevel))
+                if engine.resultChannelCount > 1 {
+                    resultSlider("Color", value: $saturation, range: 0.0...3.0, step: 0.05,
+                                 display: String(format: "%.1f", saturation))
+                    Toggle("Linked", isOn: $linkedStretch)
+                        .toggleStyle(.switch).controlSize(.mini)
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundColor(nightMode ? .red.opacity(0.7) : .secondary)
+                        .help("OFF = Balanced: per-channel background clip + shared midtone (best white balance).\nON = Linked: identical stretch for all channels (raw color ratios).")
+                        .onChange(of: linkedStretch) { _ in scheduleRender() }
+                }
+                resultSlider("Denoise", value: $denoise, range: 0.0...2.0, step: 0.02,
+                             display: denoise < 0.01 ? "Off" : String(format: "%.0f%%", denoise * 100))
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
@@ -1192,7 +1336,7 @@ struct StackResultViewV2: View {
     }
 
     private func resetSliders() {
-        stretchValue = 0.25; sharpening = 0.0; contrast = 0.0; darkLevel = 0.0
+        stretchValue = 0.25; sharpening = 0.0; contrast = 0.0; darkLevel = 0.0; saturation = 1.0; linkedStretch = false; denoise = 0.0
         scheduleRender()
     }
 
@@ -1211,14 +1355,16 @@ struct StackResultViewV2: View {
         guard let floatData = engine.resultFloatData else { isRendering = false; return }
         let w = engine.resultWidth, h = engine.resultHeight, ch = engine.resultChannelCount
         let target = Float(stretchValue), sharp = Float(sharpening)
-        let cont = Float(contrast), dark = Float(darkLevel)
+        let cont = Float(contrast), dark = Float(darkLevel), sat = Float(saturation)
+        let linked = linkedStretch
+        let dn = Float(denoise)
         let dev = engine.device
 
         let tex = await Task.detached(priority: .userInitiated) {
             renderFloatToTexture(data: floatData, width: w, height: h,
                                 channelCount: ch, targetBackground: target,
                                 sharpening: sharp, contrast: cont, darkLevel: dark,
-                                device: dev)
+                                saturation: sat, linkedStretch: linked, denoise: dn, device: dev)
         }.value
 
         displayTexture = tex
@@ -1293,6 +1439,328 @@ struct StackResultViewV2: View {
                 myMachineHash: MachineInfo.machineHash,
                 engine: "lightspeed"
             )
+        }
+    }
+}
+
+// MARK: - Image Preview Window (double-click from file list)
+
+/// Opens a single image in a floating window with stretch/contrast/saturation controls.
+/// Reuses the same rendering pipeline as the stacking result window.
+enum ImagePreviewWindowController {
+
+    // Cached GPU resources for debayer (avoid recreating pipeline every time)
+    private static var cachedDebayerPipeline: MTLComputePipelineState?
+    private static var cachedQueue: MTLCommandQueue?
+    private static let bayerMap: [String: Int] = ["RGGB": 0, "GRBG": 1, "GBRG": 2, "BGGR": 3]
+
+    static func open(entry: ImageEntry, device: MTLDevice, nightMode: Bool, debayerEnabled: Bool) {
+        let url = entry.decodingURL
+        let bayerPattern = debayerEnabled ? entry.bayerPattern : nil
+
+        // Ensure GPU resources are cached
+        if cachedDebayerPipeline == nil {
+            if let library = device.makeDefaultLibrary(),
+               let function = library.makeFunction(name: "debayer_bilinear"),
+               let pipeline = try? device.makeComputePipelineState(function: function) {
+                cachedDebayerPipeline = pipeline
+            }
+        }
+        if cachedQueue == nil { cachedQueue = device.makeCommandQueue() }
+
+        Task.detached(priority: .userInitiated) {
+            let decodeResult = ImageDecoder.decode(url: url, device: device)
+            guard case .success(let decoded) = decodeResult else { return }
+
+            // Debayer OSC if needed (uses cached pipeline — fast)
+            var image = decoded
+            if let pattern = bayerPattern, decoded.channelCount == 1 {
+                if let debayered = debayerOnGPU(image: decoded, pattern: pattern, device: device) {
+                    image = debayered
+                }
+            }
+
+            // Compute STF from full-res data (matches main window exactly)
+            let stfParams = STFCalculator.calculate(from: image)
+
+            // Bin 2x + convert to float for display
+            let result = binAndConvert(image: image)
+
+            await MainActor.run {
+                showWindow(floatData: result.data, width: result.width, height: result.height,
+                          channelCount: result.channelCount, stfParams: stfParams,
+                          filename: entry.filename, nightMode: nightMode, device: device)
+            }
+        }
+    }
+
+    /// Bin 2x and convert uint16 → Float in one pass. Uses vDSP where possible.
+    private static func binAndConvert(image: DecodedImage) -> (data: [Float], width: Int, height: Int, channelCount: Int) {
+        let w = image.width, h = image.height, ch = image.channelCount
+        let ptr = image.buffer.contents().bindMemory(to: UInt16.self, capacity: w * h * ch)
+        let bw = w / 2, bh = h / 2
+        guard bw > 0, bh > 0 else {
+            let total = w * h * ch
+            var floatData = [Float](repeating: 0, count: total)
+            vDSP_vfltu16(ptr, 1, &floatData, 1, vDSP_Length(total))
+            return (floatData, w, h, ch)
+        }
+
+        let binnedPlane = bw * bh
+        var floatData = [Float](repeating: 0, count: binnedPlane * ch)
+
+        // Parallel bin per channel for speed
+        DispatchQueue.concurrentPerform(iterations: ch) { c in
+            let srcOff = c * w * h
+            let dstOff = c * binnedPlane
+            for by in 0..<bh {
+                let sy = by * 2
+                let srcRow0 = srcOff + sy * w
+                let srcRow1 = srcOff + (sy + 1) * w
+                for bx in 0..<bw {
+                    let sx = bx * 2
+                    let v = Float(ptr[srcRow0 + sx]) + Float(ptr[srcRow0 + sx + 1]) +
+                            Float(ptr[srcRow1 + sx]) + Float(ptr[srcRow1 + sx + 1])
+                    floatData[dstOff + by * bw + bx] = v * 0.25
+                }
+            }
+        }
+        return (floatData, bw, bh, ch)
+    }
+
+    @MainActor
+    private static func showWindow(floatData: [Float], width: Int, height: Int, channelCount: Int,
+                                    stfParams: [STFParams]? = nil,
+                                    filename: String, nightMode: Bool, device: MTLDevice) {
+        let view = ImagePreviewView(
+            floatData: floatData,
+            width: width, height: height, channelCount: channelCount,
+            stfParams: stfParams,
+            filename: filename, nightMode: nightMode, device: device
+        )
+        let hostingView = NSHostingView(rootView: view)
+
+        // Fixed window size matching typical stacking result window
+        let winW: CGFloat = 900
+        let winH: CGFloat = 700
+
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: winW, height: winH),
+            styleMask: [.titled, .closable, .resizable, .miniaturizable],
+            backing: .buffered,
+            defer: false
+        )
+        window.title = filename
+        window.contentView = hostingView
+        window.minSize = NSSize(width: 500, height: 400)
+        window.center()
+        window.isReleasedWhenClosed = false
+        window.orderFront(nil)
+    }
+
+    private static func debayerOnGPU(image: DecodedImage, pattern: String, device: MTLDevice) -> DecodedImage? {
+        guard let pipeline = cachedDebayerPipeline,
+              let queue = cachedQueue,
+              let patternIndex = bayerMap[pattern.uppercased()] else { return nil }
+
+        let outputSize = image.width * image.height * 3 * MemoryLayout<UInt16>.size
+        guard let outputBuffer = device.makeBuffer(length: outputSize, options: .storageModeShared),
+              let cmdBuf = queue.makeCommandBuffer(),
+              let encoder = cmdBuf.makeComputeCommandEncoder() else { return nil }
+
+        encoder.setComputePipelineState(pipeline)
+        encoder.setBuffer(image.buffer, offset: 0, index: 0)
+        encoder.setBuffer(outputBuffer, offset: 0, index: 1)
+        var w = Int32(image.width), h = Int32(image.height), pat = Int32(patternIndex)
+        encoder.setBytes(&w, length: 4, index: 2)
+        encoder.setBytes(&h, length: 4, index: 3)
+        encoder.setBytes(&pat, length: 4, index: 4)
+        let tg = MTLSize(width: 32, height: 32, depth: 1)
+        let grid = MTLSize(width: (image.width + 31) / 32, height: (image.height + 31) / 32, depth: 1)
+        encoder.dispatchThreadgroups(grid, threadsPerThreadgroup: tg)
+        encoder.endEncoding()
+        cmdBuf.commit()
+        cmdBuf.waitUntilCompleted()
+
+        return DecodedImage(buffer: outputBuffer, width: image.width, height: image.height, channelCount: 3)
+    }
+}
+
+struct ImagePreviewView: View {
+    let floatData: [Float]
+    let width: Int
+    let height: Int
+    let channelCount: Int
+    let stfParams: [STFParams]?  // Pre-computed from full-res data (matches main window)
+    let filename: String
+    let nightMode: Bool
+    let device: MTLDevice
+
+    @State private var stretchValue: Double = 0.25
+    @State private var sharpening: Double = 0.0
+    @State private var contrast: Double = 0.0
+    @State private var darkLevel: Double = 0.0
+    @State private var saturation: Double = 1.0
+    @State private var linkedStretch: Bool = false
+    @State private var denoise: Double = 0.0
+    @State private var displayTexture: MTLTexture?
+    @State private var savedMessage: String?
+    @State private var isRendering: Bool = false
+    @State private var renderTask: Task<Void, Never>?
+
+    private var fgDim: Color { nightMode ? .red.opacity(0.7) : .secondary }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ZStack {
+                Color.black // Ensures the image area always takes space
+                if let tex = displayTexture {
+                    ZoomableMetalTextureView(texture: tex)
+                }
+                if isRendering {
+                    VStack { Spacer(); HStack { Spacer()
+                        ProgressView().progressViewStyle(.circular).scaleEffect(1.2)
+                            .tint(nightMode ? .red : .blue).padding(12)
+                            .background(Color.black.opacity(0.6)).cornerRadius(10)
+                        Spacer() }; Spacer()
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .layoutPriority(1)
+
+            HStack(spacing: 10) {
+                Button(action: resetSliders) {
+                    Image(systemName: "arrow.counterclockwise").font(.system(size: 12, weight: .medium))
+                }
+                .buttonStyle(.plain).foregroundColor(nightMode ? .red : .primary).help("Reset all sliders")
+
+                resultSlider("Stretch", value: $stretchValue, range: 0.0...1.0, step: 0.01,
+                             display: "\(Int(stretchValue * 100))%")
+                resultSlider("Sharp", value: $sharpening, range: -4.0...4.0, step: 0.1,
+                             display: String(format: "%+.1f", sharpening))
+                resultSlider("Contrast", value: $contrast, range: -2.0...2.0, step: 0.05,
+                             display: String(format: "%+.1f", contrast))
+                resultSlider("Dark", value: $darkLevel, range: 0.0...1.0, step: 0.01,
+                             display: String(format: "%.2f", darkLevel))
+                if channelCount > 1 {
+                    resultSlider("Color", value: $saturation, range: 0.0...3.0, step: 0.05,
+                                 display: String(format: "%.1f", saturation))
+                    Toggle("Linked", isOn: $linkedStretch)
+                        .toggleStyle(.switch).controlSize(.mini)
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundColor(fgDim)
+                        .help("OFF = Balanced: per-channel background clip + shared midtone (best white balance).\nON = Linked: identical stretch for all channels (raw color ratios).")
+                        .onChange(of: linkedStretch) { _ in scheduleRender() }
+                }
+                resultSlider("Denoise", value: $denoise, range: 0.0...2.0, step: 0.02,
+                             display: denoise < 0.01 ? "Off" : String(format: "%.0f%%", denoise * 100))
+            }
+            .padding(.horizontal, 8).padding(.vertical, 4)
+            .background(nightMode ? Color(red: 0.06, green: 0, blue: 0) : Color(NSColor.underPageBackgroundColor))
+
+            HStack(spacing: 12) {
+                Text("\(width)x\(height) — \(filename)")
+                    .font(.system(size: 11, design: .monospaced)).foregroundColor(fgDim)
+                Spacer()
+                Button(action: saveAsPNG) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "square.and.arrow.down").font(.system(size: 12))
+                        Text("Save PNG").font(.system(size: 11, weight: .medium, design: .monospaced))
+                    }
+                }
+                .buttonStyle(.bordered).controlSize(.small)
+                if let msg = savedMessage {
+                    Text(msg).font(.system(size: 10, design: .monospaced)).foregroundColor(.green)
+                }
+            }
+            .padding(.horizontal, 8).padding(.vertical, 4)
+            .background(nightMode ? Color.black : Color(NSColor.windowBackgroundColor))
+        }
+        .background(Color.black)
+        .onAppear { scheduleRender() }
+    }
+
+    private func resultSlider(_ label: String, value: Binding<Double>,
+                               range: ClosedRange<Double>, step: Double, display: String) -> some View {
+        HStack(spacing: 3) {
+            Text(label).font(.system(size: 10, design: .monospaced)).foregroundColor(fgDim)
+                .frame(width: 48, alignment: .trailing)
+            Slider(value: value, in: range, step: step)
+                .frame(minWidth: 60, maxWidth: 100)
+                .onChange(of: value.wrappedValue) { _ in scheduleRender() }
+            Text(display).font(.system(size: 10, design: .monospaced)).foregroundColor(fgDim)
+                .frame(width: 32, alignment: .leading)
+        }
+    }
+
+    private func resetSliders() {
+        stretchValue = 0.25; sharpening = 0.0; contrast = 0.0; darkLevel = 0.0; saturation = 1.0; linkedStretch = false; denoise = 0.0
+        scheduleRender()
+    }
+
+    private func scheduleRender() {
+        renderTask?.cancel()
+        isRendering = true
+        renderTask = Task {
+            try? await Task.sleep(nanoseconds: 50_000_000)
+            guard !Task.isCancelled else { return }
+            await restretch()
+        }
+    }
+
+    @MainActor
+    private func restretch() async {
+        let w = width, h = height, ch = channelCount
+        let target = Float(stretchValue), sharp = Float(sharpening)
+        let cont = Float(contrast), dark = Float(darkLevel), sat = Float(saturation)
+        let linked = linkedStretch
+        let dn = Float(denoise)
+        let dev = device, data = floatData
+        let preSTF = stfParams
+
+        let tex = await Task.detached(priority: .userInitiated) {
+            renderFloatToTexture(data: data, width: w, height: h,
+                                channelCount: ch, targetBackground: target,
+                                sharpening: sharp, contrast: cont, darkLevel: dark,
+                                saturation: sat, linkedStretch: linked, denoise: dn,
+                                precomputedSTF: preSTF, device: dev)
+        }.value
+
+        displayTexture = tex
+        isRendering = false
+    }
+
+    private func saveAsPNG() {
+        guard let tex = displayTexture else { return }
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.png]
+        let baseName = (filename as NSString).deletingPathExtension
+        panel.nameFieldStringValue = "\(baseName)_preview.png"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+
+        let w = tex.width, h = tex.height
+        var pixels = [UInt8](repeating: 0, count: w * h * 4)
+        tex.getBytes(&pixels, bytesPerRow: w * 4,
+                     from: MTLRegion(origin: MTLOrigin(), size: MTLSize(width: w, height: h, depth: 1)),
+                     mipmapLevel: 0)
+        for i in stride(from: 0, to: pixels.count, by: 4) {
+            let b = pixels[i]; pixels[i] = pixels[i + 2]; pixels[i + 2] = b
+        }
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        guard let context = CGContext(data: &pixels, width: w, height: h,
+                                       bitsPerComponent: 8, bytesPerRow: w * 4,
+                                       space: colorSpace,
+                                       bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue),
+              let cgImage = context.makeImage() else { return }
+        let rep = NSBitmapImageRep(cgImage: cgImage)
+        guard let pngData = rep.representation(using: .png, properties: [:]) else { return }
+        do {
+            try pngData.write(to: url)
+            savedMessage = "Saved!"
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { savedMessage = nil }
+        } catch {
+            savedMessage = "Error: \(error.localizedDescription)"
         }
     }
 }
