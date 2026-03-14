@@ -114,6 +114,18 @@
 - **Rule:** Check `tex.pixelFormat == .bgra8Unorm` before swapping channels. Only swap for BGRA textures.
 - **Applies to:** Any PNG/image export from Metal textures
 
+## [2026-03-14] — Initial sort blocked by saved UserDefaults column order
+- **Mistake:** Quality-based re-sort after precache was guarded by `AppSettings.columnOrder == nil` — if user ever manually dragged a column, the sort never fired
+- **Root cause:** Saved column order (visual layout) and sort key derivation were conflated. Column positions should be independent of sort logic.
+- **Rule:** Sort keys should always use the recommended column order (based on session type), not saved visual layout. Saved order only controls column positions.
+- **Applies to:** Any feature that auto-sorts after async data becomes available, plus timing of @Published snapshots in updateNSView
+
+## [2026-03-14] — NSTableView cell bounds.width is 0 on first layout
+- **Mistake:** Used `cellView.bounds.width` to compute metric bar width — returns 0 before first layout pass, causing bars to "grow" when selected
+- **Root cause:** NSTableCellView bounds aren't set until the view is laid out. First render has zero bounds.
+- **Rule:** Use proportional constraints (`widthAnchor.constraint(equalTo: parent.widthAnchor, multiplier:)`) instead of fixed widths based on bounds.
+- **Applies to:** Any NSTableView cell with dynamic-width subviews
+
 ## [2026-03-13] — Calibration filter: substring matching causes false positives on target names
 - **Mistake:** `isCalibration()` used `filename.lowercased().contains("dark")` which falsely excluded targets like "Dark Nebula" and "Flat Rock Galaxy"
 - **Root cause:** Substring matching on full filenames doesn't distinguish between calibration frame types and target names containing calibration keywords
