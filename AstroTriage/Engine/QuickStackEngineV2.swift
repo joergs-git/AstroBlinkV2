@@ -243,8 +243,8 @@ class QuickStackEngineV2: ObservableObject {
                 let corrected = gpuCosmeticCorrection(decoded) ?? decoded
                 // Debayer OSC images before binning (CFA mono → RGB)
                 var processed = corrected
-                if debayerEnabled, let pattern = entry.bayerPattern, decoded.channelCount == 1 {
-                    if let debayered = gpuDebayer(decoded, pattern: pattern) {
+                if debayerEnabled, let pattern = entry.bayerPattern, corrected.channelCount == 1 {
+                    if let debayered = gpuDebayer(corrected, pattern: pattern) {
                         processed = debayered
                     }
                 }

@@ -158,7 +158,7 @@ struct QuickStackProgressView: View {
         // Size the window to fit the image at a reasonable scale
         let maxDim: CGFloat = 1200
         let scale = min(maxDim / CGFloat(engine.resultWidth), maxDim / CGFloat(engine.resultHeight), 1.0)
-        let winW = CGFloat(engine.resultWidth) * scale + 40
+        let winW = max(1100, CGFloat(engine.resultWidth) * scale + 40)
         let winH = CGFloat(engine.resultHeight) * scale + 80
 
         let window = NSWindow(
@@ -167,6 +167,7 @@ struct QuickStackProgressView: View {
             backing: .buffered,
             defer: false
         )
+        window.minSize = NSSize(width: 900, height: 400)
         window.title = "Quick Stack Result — \(engine.resultWidth)x\(engine.resultHeight)"
         window.contentView = hostingView
         window.center()
@@ -1271,7 +1272,7 @@ struct QuickStackV2ProgressView: View {
         let hostingView = NSHostingView(rootView: resultView)
         let maxDim: CGFloat = 1200
         let scale = min(maxDim / CGFloat(engine.resultWidth), maxDim / CGFloat(engine.resultHeight), 1.0)
-        let winW = CGFloat(engine.resultWidth) * scale + 40
+        let winW = max(1100, CGFloat(engine.resultWidth) * scale + 40)
         let winH = CGFloat(engine.resultHeight) * scale + 80
 
         let window = NSWindow(
@@ -1280,6 +1281,7 @@ struct QuickStackV2ProgressView: View {
             backing: .buffered,
             defer: false
         )
+        window.minSize = NSSize(width: 900, height: 400)
         window.title = "LightspeedStacker Result — \(engine.resultWidth)x\(engine.resultHeight)"
         window.contentView = hostingView
         window.center()
@@ -1663,7 +1665,7 @@ enum ImagePreviewWindowController {
         let hostingView = NSHostingView(rootView: view)
 
         // Fixed window size matching typical stacking result window
-        let winW: CGFloat = 900
+        let winW: CGFloat = 1100
         let winH: CGFloat = 700
 
         let window = NSWindow(
