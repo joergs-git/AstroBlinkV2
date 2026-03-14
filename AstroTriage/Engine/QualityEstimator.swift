@@ -56,7 +56,10 @@ struct QualityEstimator {
             // Determine star-count weight from filter name
             let filterName = (groupEntries.first?.filter ?? "").lowercased()
             let isNarrowband = narrowbandKeywords.contains(where: { filterName.contains($0) })
-            let starWeight: Double = isNarrowband ? 0.3 : 1.0
+            // Star count weighted 2x: primary quality indicator — clouds, fog, tracking
+            // issues all reduce star count dramatically. Narrowband still lower weight
+            // since bandpass naturally suppresses star visibility.
+            let starWeight: Double = isNarrowband ? 0.6 : 2.0
 
             // Per-group source consistency: if ALL images have header-sourced values,
             // use those. If ANY are missing, use computed values for the entire group.
