@@ -34,6 +34,17 @@ class ReleaseNotesWindowController {
 // MARK: - Release notes data (shared between view and copy)
 
 private let allReleases: [(version: String, date: String, items: [(ReleaseNotesView.ChangeType, String, String)])] = [
+    ("3.13.0", "March 14, 2026", [
+        (.added, "Help: Background Tab", "Comprehensive FAQ-style documentation covering quality scoring, metric bars, smart sorting, STF stretching, debayering, denoise, deconvolution, and triage tips."),
+        (.added, "4-Tier Quality Icons", "Full green (excellent), half-green (good), orange (borderline), red (garbage). Z-score shown on hover. Fine-grained sorting within tiers."),
+        (.added, "Compare with Best (C key)", "Side-by-side synchronized zoom/pan comparison with the best frame from the same group. Opens at 300% zoom. ESC to close."),
+        (.added, "Metric Bar Indicators", "Tiny red-to-green bars below Stars/FWHM/HFR/SNR show per-group relative ranking at a glance."),
+        (.added, "Context Menu", "Right-click: Open With... (PixInsight etc.), Show in Finder, Compare with Best, Copy paths."),
+        (.changed, "Smart Column Sorting", "4-case auto-sort by session type with exposure as grouping element. Fires once after precache completes."),
+        (.changed, "Quality Scoring", "Two-stage detection: Stage 1 catches garbage (< 50% of median), pitch-black frames. Stage 2 ranks by weighted z-score. Star weight 1.2x."),
+        (.fixed, "FITS Special Characters", "Files with brackets/parentheses in names now open correctly (cfitsio diskfile API)."),
+        (.fixed, "Initial Sort Timing", "Sort now applies correctly after first precache, using recommended column order regardless of saved layout."),
+    ]),
     ("3.12.0", "March 14, 2026", [
         (.added, "Double-Click Image Preview", "Double-click any image in the file list to open it in a floating window with Stretch, Sharpen, Contrast, Dark Level, Color, Denoise, and Deconvolution controls. Open multiple images for side-by-side comparison."),
         (.added, "GPU Bilateral Denoise", "Two-pass noise reduction: bilateral filter for pixel noise + chrominance denoise in YCbCr space to remove green/magenta color patches. Slider 0-200%."),

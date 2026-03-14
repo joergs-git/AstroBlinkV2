@@ -1,4 +1,4 @@
-// v3.12.0
+// v3.13.0
 import SwiftUI
 
 // MARK: - App Store URL (update when published)
@@ -65,7 +65,7 @@ struct AstroBlinkV2App: App {
 
                 Divider()
 
-                Button("What's New in v3.12.0") {
+                Button("What's New in v3.13.0") {
                     ReleaseNotesWindowController.shared.show()
                 }
             }
@@ -318,23 +318,61 @@ class HelpWindowController: NSWindowController {
 
     init() {
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 520, height: 720),
+            contentRect: NSRect(x: 0, y: 0, width: 640, height: 800),
             styleMask: [.titled, .closable, .resizable],
             backing: .buffered,
             defer: false
         )
         let appVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
-        window.title = "AstroBlinkV2 v\(appVersion) — Quick Reference"
+        window.title = "AstroBlinkV2 v\(appVersion) — Help"
         window.center()
         window.isReleasedWhenClosed = false
+        window.minSize = NSSize(width: 500, height: 500)
         super.init(window: window)
 
-        let hostingView = NSHostingView(rootView: HelpContentView())
+        let hostingView = NSHostingView(rootView: HelpTabView())
         window.contentView = hostingView
     }
 
     required init?(coder: NSCoder) {
         fatalError("init(coder:) not implemented")
+    }
+}
+
+// Two-tab help view: Usage (shortcuts & features) + Background (how & why)
+enum HelpTab: String, CaseIterable {
+    case usage = "Usage"
+    case background = "Background"
+}
+
+struct HelpTabView: View {
+    @State private var selectedTab: HelpTab = .usage
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // Tab picker
+            HStack {
+                Picker("", selection: $selectedTab) {
+                    ForEach(HelpTab.allCases, id: \.self) { tab in
+                        Text(tab.rawValue).tag(tab)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .frame(width: 240)
+            }
+            .padding(.vertical, 8)
+            .frame(maxWidth: .infinity)
+            .background(Color(NSColor.controlBackgroundColor))
+
+            Divider()
+
+            switch selectedTab {
+            case .usage:
+                HelpContentView()
+            case .background:
+                HelpBackgroundView()
+            }
+        }
     }
 }
 
@@ -386,7 +424,8 @@ struct HelpContentView: View {
                 shortcutRow("S", "Toggle Lock STF (freeze stretch params from current image)")
                 shortcutRow("D", "Toggle debayer for OSC (one-shot-color) images")
                 shortcutRow("N", "Toggle night mode (red-on-black for dark-adapted vision)")
-                shortcutRow("Double-click", "Reset zoom to fit-to-view")
+                shortcutRow("C", "Compare with Best — side-by-side with best frame in group")
+                shortcutRow("Double-click row", "Open image in floating preview with stretch/denoise/deconv")
                 shortcutRow("Cmd + O", "Open folder containing FITS/XISF images")
 
                 Divider()
@@ -458,7 +497,9 @@ struct HelpContentView: View {
                 featureRow("Drag column to reorder", "Column order = sort priority (left to right)")
                 featureRow("Shift/Cmd + click rows", "Multi-select for bulk marking")
                 featureRow("Checkbox / Space", "Mark files for pre-deletion")
-                featureRow("Right-click row", "Copy filename, path, or full path")
+                featureRow("Right-click row", "Copy, Show in Finder, Open With..., Compare with Best")
+                featureRow("Double-click row", "Open image preview with stretch/denoise/deconv controls")
+                featureRow("Metric bars", "Tiny colored bars below Stars/FWHM/HFR/SNR values show relative ranking within group")
 
                 Divider()
 
@@ -583,5 +624,328 @@ struct HelpContentView: View {
                 .font(.system(size: 12))
                 .foregroundColor(.secondary)
         }
+    }
+}
+
+// MARK: - Background Tab (How & Why)
+
+struct HelpBackgroundView: View {
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                VStack(spacing: 4) {
+                    Text("Background & FAQ")
+                        .font(.system(size: 28, weight: .bold))
+                    Text("How things work and why they matter")
+                        .font(.system(size: 14))
+                        .foregroundColor(.secondary)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.bottom, 8)
+
+                Divider()
+
+                // Quality Scoring
+                faqSection("Quality Scoring — The 4-Tier System",
+                    """
+                    AstroBlinkV2 automatically scores every image relative to its group (same target + filter + exposure). \
+                    This means a 30s Ha sub is only compared to other 30s Ha subs — never to 180s Luminance frames.
+
+                    The scoring uses two stages:
+                    """)
+
+                faqItem("Stage 1 — Garbage Detection",
+                    """
+                    Before any statistics, obvious failures are flagged red immediately. If any single metric \
+                    drops below 50% of the group median, the image is garbage — regardless of how the other \
+                    metrics look. For example: 200 stars when the group median is 4000 means something went \
+                    very wrong (clouds, tracking failure, dew).
+                    """)
+
+                faqItem("Stage 2 — Relative Ranking",
+                    """
+                    Images that pass Stage 1 are ranked by a weighted z-score combining multiple metrics. \
+                    The z-score tells you how many standard deviations each metric is from the group average.
+                    """)
+
+                qualityIconRow("circle.fill", .systemGreen, "Excellent (z > 0.5)",
+                    "Best frames — clearly above average in the combined score. Keep these.")
+                qualityIconRow("circle.lefthalf.filled", .systemGreen, "Good (-0.3 to 0.5)",
+                    "Solid frames — near average. Definitely usable, keep unless you have plenty.")
+                qualityIconRow("exclamationmark.circle", .systemOrange, "Borderline (-1.2 to -0.3)",
+                    "Below average — worth a quick visual check. May still be usable.")
+                qualityIconRow("xmark.circle.fill", .systemRed, "Trash (< -1.2 or Stage 1)",
+                    "Either catastrophically bad (Stage 1) or statistically worst in group.")
+
+                Text("Hover over any quality icon to see its exact z-score for fine-grained comparison.")
+                    .font(.system(size: 11)).foregroundColor(.secondary).italic()
+
+                Divider()
+
+                // Metric Bars
+                faqSection("Metric Bar Indicators",
+                    """
+                    The tiny colored bars below Stars, FWHM, HFR, and SNR values show at a glance how each \
+                    image ranks within its group. Longer bar = better. Color goes from red (worst) through \
+                    orange to green (best).
+                    """)
+
+                faqItem("Why per-group?",
+                    """
+                    Bars are scoped to each target + filter + exposure group. Ha images typically have \
+                    fewer stars than Luminance — comparing them globally would make all Ha bars tiny red. \
+                    Per-group bars show you the relative ranking within apples-to-apples comparisons.
+                    """)
+
+                Divider()
+
+                // What the metrics mean
+                faqSection("Understanding the Metrics",
+                    """
+                    Each metric captures a different aspect of image quality. Together they paint a complete \
+                    picture of whether a sub is worth stacking.
+                    """)
+
+                faqItem("Stars — How many stars were detected",
+                    """
+                    The total star count from GPU detection. Fewer stars than usual often indicates clouds, \
+                    fog, high humidity, or tracking issues that smeared stars below the detection threshold. \
+                    A sudden drop in star count is the most reliable single indicator of a problem. \
+                    Weight in quality score: 1.2x (slightly elevated).
+                    """)
+
+                faqItem("FWHM — Full Width at Half Maximum",
+                    """
+                    Measures how wide star profiles are (in pixels). Lower FWHM = sharper stars = better seeing \
+                    and focus. FWHM is affected by atmospheric turbulence (seeing), focus accuracy, and tracking. \
+                    Measured from the center 70% of the image to exclude edge optical effects (coma, tilt). \
+                    Sorted ascending by default (lowest = best first).
+                    """)
+
+                faqItem("HFR — Half-Flux Radius",
+                    """
+                    Similar to FWHM but measures the radius containing half the total flux of a star. \
+                    More robust against non-Gaussian star profiles. Lower = tighter stars = better focus. \
+                    Also measured from center 70% crop. HFR from NINA filename tokens or CSV takes priority \
+                    over GPU-computed values for consistency.
+                    """)
+
+                faqItem("SNR — Signal-to-Noise Ratio",
+                    """
+                    Computed as median pixel value / noise (MAD). Higher SNR = cleaner signal. \
+                    Low SNR frames have more noise scatter — caused by clouds, light pollution, \
+                    short exposures, or high ambient temperature increasing sensor noise. \
+                    Measured from center 70% crop to avoid edge vignetting effects.
+                    """)
+
+                faqItem("How they relate",
+                    """
+                    A good sub has: many stars (clear sky), low FWHM (good seeing/focus), \
+                    low HFR (tight stars), and high SNR (clean signal). If stars are low but FWHM is fine, \
+                    it's probably thin clouds. If FWHM is high but stars are normal, it's likely poor seeing \
+                    or focus drift. If SNR drops while stars and FWHM stay normal, it could be increasing \
+                    light pollution or dew forming on the optics.
+                    """)
+
+                Divider()
+
+                // Smart Column Sorting
+                faqSection("Smart Column Sorting",
+                    """
+                    When you open a session, AstroBlinkV2 detects the session type and automatically sorts \
+                    the file list for optimal triage. The sort fires once after the initial precache completes \
+                    (when all quality scores are available).
+                    """)
+
+                faqItem("Case A: Single Target, Multiple Filters",
+                    """
+                    Most common setup (e.g. NGC 2024 with L, R, G, B, Ha). \
+                    Sort: Filter → Exposure → Quality → Stars → FWHM. \
+                    Groups all L subs together sorted by quality, then all Ha subs, etc. \
+                    This lets you quickly mark the worst subs in each filter.
+                    """)
+
+                faqItem("Case B: Single Target, Single Filter",
+                    """
+                    Pure integration run (e.g. 90x 180s Luminance on M31). \
+                    Sort: Exposure → Quality → Stars → FWHM → HFR. \
+                    Since all images are the same filter, quality is the primary differentiator. \
+                    Best subs at top, worst at bottom.
+                    """)
+
+                faqItem("Case C: Multiple Targets, Multiple Filters",
+                    """
+                    Mosaic or multi-target session (e.g. NGC 2024 LRGB + M42 Ha/OIII). \
+                    Sort: Target → Filter → Exposure → Quality → Stars. \
+                    Groups by object first, then filter within each object.
+                    """)
+
+                faqItem("Case D: Multiple Targets, Single Filter",
+                    """
+                    Survey session (e.g. many targets all in Luminance). \
+                    Sort: Target → Exposure → Quality → Stars → FWHM. \
+                    Groups by target, quality ranking within each.
+                    """)
+
+                Divider()
+
+                // STF Stretching
+                faqSection("STF Auto-Stretch — How It Works",
+                    """
+                    Raw astro data is linear — all detail is crammed into the bottom 1% of the brightness \
+                    range, making images appear nearly black. The Screen Transfer Function (STF) applies a \
+                    non-linear stretch to make detail visible without modifying the original file.
+                    """)
+
+                faqItem("The Algorithm",
+                    """
+                    Based on PixInsight's AutoSTF by Juan Conejero. For each channel: \
+                    (1) Subsample 5% of pixels for statistics. \
+                    (2) Compute median and MAD (median absolute deviation). \
+                    (3) Shadow clip: c0 = median + (-1.25) × MAD. \
+                    (4) Midtone balance: mb computed from target background level (default 25%). \
+                    (5) Apply Midtones Transfer Function per pixel on GPU. \
+                    Entire process takes < 8ms on Apple Silicon for a 50MP image.
+                    """)
+
+                faqItem("Per-Channel (Unlinked) Stretch",
+                    """
+                    For color (OSC) images, each R/G/B channel gets independent c0 and mb values. \
+                    This compensates for the Bayer pattern's green bias (2x green pixels) and produces \
+                    neutral-looking previews. The Linked toggle applies identical stretch to all channels, \
+                    which preserves raw color ratios but may show a green cast.
+                    """)
+
+                Divider()
+
+                // Debayering
+                faqSection("OSC Debayering",
+                    """
+                    One-shot-color cameras use a Bayer color filter array (CFA) where each pixel only \
+                    captures one color (R, G, or B). Debayering interpolates the missing colors to produce \
+                    a full RGB image. AstroBlinkV2 uses GPU-accelerated bilinear interpolation.
+                    """)
+
+                faqItem("When to use debayer",
+                    """
+                    Toggle debayer ON (D key) when you want to see color previews of OSC data. \
+                    Leave it OFF for faster caching when you only need to check star quality and tracking. \
+                    Debayer state is remembered across sessions.
+                    """)
+
+                Divider()
+
+                // Image Preview & Post-Processing
+                faqSection("Image Preview & Post-Processing",
+                    """
+                    Double-click any image to open it in a floating window with real-time GPU controls:
+                    """)
+
+                faqItem("Denoise (0–200%)",
+                    """
+                    Two-pass GPU noise reduction. Pass 1: bilateral filter preserves edges while smoothing \
+                    pixel noise. Pass 2: chrominance denoise in YCbCr color space removes green/magenta \
+                    color patches without affecting luminance detail.
+                    """)
+
+                faqItem("Deconvolution (USM / RL)",
+                    """
+                    USM: Multi-scale unsharp mask at 3 spatial scales (1.5, 3.0, 5.0 pixel radii). \
+                    Fast (~15ms) but approximate. \
+                    RL: Richardson-Lucy iterative deconvolution with Gaussian PSF. True maximum-likelihood \
+                    deconvolution, 5–20 iterations. Better quality, slower (~30–60ms). \
+                    Both operate on luminance only to prevent color fringing.
+                    """)
+
+                faqItem("Compare with Best (C key)",
+                    """
+                    Opens a side-by-side comparison window showing the best-quality frame from the same \
+                    group (target + filter + exposure) next to the selected frame. Zoom and pan are \
+                    synchronized — drag in one image to zoom, both follow. Opens at 300% zoom for \
+                    immediate detail inspection. Press ESC to close.
+                    """)
+
+                Divider()
+
+                // Stacking
+                faqSection("Quick Stack & LightspeedStacker",
+                    """
+                    Built-in GPU-accelerated stacking for quick preview of your integration result. \
+                    Not a replacement for dedicated stacking software, but useful for checking session \
+                    quality and sharing quick previews. Includes hot/cold pixel rejection before stacking.
+                    """)
+
+                Divider()
+
+                // Tips
+                faqSection("Tips for Efficient Triage",
+                    """
+                    1. Open folder → wait for precache to complete (quality scores appear). \
+                    2. Scroll through the sorted list — red/orange icons at top need attention. \
+                    3. Press C on borderline images to compare with the group's best. \
+                    4. Space to mark bad ones, then Cmd+⌫ to move to PRE-DELETE. \
+                    5. Use filter search (e.g. filter:Ha) to focus on one filter at a time. \
+                    6. Check the Session Overview for per-filter integration totals.
+                    """)
+
+                Divider()
+
+                VStack(spacing: 4) {
+                    Text("by joergsflow")
+                        .font(.system(size: 12, weight: .medium))
+                    Text("© 2026 joergsflow. All rights reserved.")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.top, 4)
+
+                Spacer(minLength: 16)
+            }
+            .padding(24)
+            .textSelection(.enabled)
+        }
+    }
+
+    private func faqSection(_ title: String, _ intro: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(.system(size: 15, weight: .semibold))
+            Text(intro)
+                .font(.system(size: 12))
+                .foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func faqItem(_ question: String, _ answer: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(question)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundColor(.accentColor)
+            Text(answer)
+                .font(.system(size: 12))
+                .foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.leading, 12)
+    }
+
+    private func qualityIconRow(_ symbol: String, _ color: NSColor, _ title: String, _ description: String) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: symbol)
+                .foregroundColor(Color(color))
+                .font(.system(size: 14))
+                .frame(width: 20)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.system(size: 12, weight: .medium))
+                Text(description)
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(.leading, 12)
     }
 }

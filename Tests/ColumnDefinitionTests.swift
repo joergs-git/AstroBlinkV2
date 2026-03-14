@@ -141,14 +141,17 @@ final class ColumnDefinitionTests: XCTestCase {
     // MARK: - Default Descending
 
     func testIsDefaultDescendingNumericColumns() {
-        // All numeric columns should be default descending
-        let numericColumns = ["frameNumber", "exposure", "hfr", "starCount", "sensorTemp",
-                              "fwhm", "gain", "offset", "focuserTemp", "ambientTemp",
+        // Most numeric columns should be default descending (highest first)
+        let descendingColumns = ["frameNumber", "exposure", "starCount", "sensorTemp",
+                              "gain", "offset", "focuserTemp", "ambientTemp",
                               "fileSize", "snr", "quality"]
-        for col in numericColumns {
+        for col in descendingColumns {
             XCTAssertTrue(ColumnDefinition.isDefaultDescending(col),
                           "\(col) should be default descending")
         }
+        // FWHM and HFR: lower = better → default ascending
+        XCTAssertFalse(ColumnDefinition.isDefaultDescending("fwhm"), "fwhm should be ascending (lower=better)")
+        XCTAssertFalse(ColumnDefinition.isDefaultDescending("hfr"), "hfr should be ascending (lower=better)")
     }
 
     func testIsDefaultDescendingTextColumns() {

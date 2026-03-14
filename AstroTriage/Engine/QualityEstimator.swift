@@ -95,6 +95,14 @@ struct QualityEstimator {
                 // Any single metric catastrophically bad → immediate red
                 var isGarbage = false
 
+                // Rule 0: Pitch black / no data — no stars AND no noise stats
+                // (camera failure, shutter stuck, completely overcast, corrupt file)
+                let hasNoStars = starsValues[localIdx] == nil || starsValues[localIdx] == 0
+                let hasNoNoise = entry.noiseMAD == nil || entry.noiseMAD == 0
+                if hasNoStars && hasNoNoise {
+                    isGarbage = true
+                }
+
                 // Rule 1: No stars or near-zero stars → garbage
                 // (clouds, heavy fog, tracking failure, shutter issue)
                 // Narrowband: star count naturally varies more due to bandpass → relax threshold

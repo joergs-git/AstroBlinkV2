@@ -16,6 +16,18 @@ Nice side effect: Finally you have a native XISF and FITS Quicklook for macOS. (
 
 ---
 
+## What's New in v3.13.0
+
+### Help Overhaul, Quality Scoring & Compare Tool
+- **Two-tab help** — Usage (shortcuts & features) + Background (comprehensive FAQ covering quality scoring, metrics, sorting, stretching, debayering, denoise, deconvolution, and triage workflow tips).
+- **4-tier quality icons** — Full green (excellent), half-green (good), orange (borderline), red (garbage). Z-score on hover for fine-grained comparison.
+- **Compare with Best (C key)** — Side-by-side with synchronized zoom/pan against the best frame in the same group. Opens maximized at 300% zoom.
+- **Metric bars** — Red-to-green bars below Stars/FWHM/HFR/SNR, scoped per target+filter+exposure group.
+- **Pitch-black detection** — Frames with no stars and no noise data auto-flagged as garbage.
+- **Smart 4-case sorting** — Auto-sort by session type with exposure as grouping element.
+
+---
+
 ## What's New in v3.12.0
 
 ### Image Preview, GPU Denoise & Deconvolution

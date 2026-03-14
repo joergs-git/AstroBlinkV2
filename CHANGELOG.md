@@ -4,6 +4,27 @@ All notable changes to AstroBlinkV2 will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [3.13.0] — 2026-03-14
+
+### Added
+- **Help: Background Tab** — Comprehensive FAQ-style documentation covering quality scoring (4-tier system with z-scores), metric bars, smart 4-case column sorting, STF stretching algorithm, debayering, denoise, deconvolution, triage tips.
+- **4-Tier Quality Icons** — Full green (excellent), half-green (good), orange (borderline), red (garbage). Z-score shown on hover. Fine-grained sorting within tiers via raw z-score.
+- **Compare with Best (C key)** — Side-by-side comparison with synchronized zoom/pan against the best frame in group. Opens maximized at 300% zoom. ESC to close.
+- **Metric Bar Indicators** — Per-group red-to-green bars below Stars, FWHM, HFR, SNR values showing relative ranking within the same target+filter+exposure group.
+- **Context Menu Enhancements** — Open With... (PixInsight, etc.), Show in Finder, Compare with Best.
+- **Pitch-Black Frame Detection** — Frames with no stars and no noise data (camera failure, shutter stuck) marked as garbage.
+- **Splash "Don't show on startup"** — Checkbox to suppress splash screen on launch.
+
+### Changed
+- **Smart Column Sorting** — 4-case auto-sort by session type with exposure as grouping element. Sort fires once after initial precache using recommended order (not saved layout).
+- **Quality Scoring Refinements** — Two-stage detection, star weight 1.2x, narrowband 25% garbage threshold, FWHM/HFR sort ascending.
+
+### Fixed
+- **FITS Special Characters** — `fits_open_diskfile` replaces `fits_open_file` for bracket/parenthesis support.
+- **Initial Sort Timing** — Sort correctly fires after first precache completes, regardless of saved UserDefaults column order.
+- **PNG Export Colors** — RGBA vs BGRA pixel format check prevents R/B channel swap.
+- **vDSP STF Bug** — Fixed `vDSP_vsadd` scalar parameter misuse in preview STF computation.
+
 ## [3.12.0] — 2026-03-14
 
 ### Added
