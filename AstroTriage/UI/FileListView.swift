@@ -372,11 +372,13 @@ struct FileListView: NSViewRepresentable {
                let fraction = metricFraction(colId: colId, value: numVal, entry: entry) {
                 let bar = cellView.subviews.first { $0.identifier?.rawValue == "metricBar" }
                 if let bar = bar {
+                    // Remove old width constraint and use proportional width relative to cell
+                    // (avoids stale bounds.width=0 on first layout causing bars to "grow" on selection)
                     bar.constraints.filter { $0.firstAttribute == .width }.forEach { bar.removeConstraint($0) }
-                    let maxBarWidth = cellView.bounds.width > 0 ? cellView.bounds.width - 4 : 40
-                    bar.widthAnchor.constraint(equalToConstant: max(1, maxBarWidth * fraction)).isActive = true
+                    let widthConstraint = bar.widthAnchor.constraint(equalTo: cellView.widthAnchor, multiplier: max(0.02, fraction), constant: -4 * fraction)
+                    widthConstraint.isActive = true
                     // Red (0%) → Orange (50%) → Green (100%)
-                    let hue: CGFloat = fraction * 0.33  // 0.0 = red, 0.17 = orange, 0.33 = green
+                    let hue: CGFloat = fraction * 0.33
                     let color = NSColor(calibratedHue: hue, saturation: 0.75, brightness: 0.75, alpha: 0.85)
                     bar.layer?.backgroundColor = color.cgColor
                     bar.isHidden = false

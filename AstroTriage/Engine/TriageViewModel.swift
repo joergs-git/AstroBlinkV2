@@ -421,12 +421,26 @@ class TriageViewModel: ObservableObject {
         let urls = panel.urls
         guard !urls.isEmpty else { return }
 
-        // Check if user selected a single directory
-        var isDir: ObjCBool = false
-        if urls.count == 1, FileManager.default.fileExists(atPath: urls[0].path, isDirectory: &isDir), isDir.boolValue {
-            loadSession(url: urls[0])
+        // Separate directories and files
+        var directories: [URL] = []
+        var files: [URL] = []
+        for url in urls {
+            var isDir: ObjCBool = false
+            if FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir), isDir.boolValue {
+                directories.append(url)
+            } else {
+                files.append(url)
+            }
+        }
+
+        if directories.count == 1 && files.isEmpty {
+            // Single directory — standard folder scan
+            loadSession(url: directories[0])
+        } else if directories.count > 1 {
+            // Multiple directories — merge into one session
+            loadMultipleFolders(urls: directories)
         } else {
-            // User selected individual files — load them directly
+            // Individual files (or mix of files + dirs — treat dirs as files)
             loadFiles(urls: urls)
         }
     }
@@ -524,6 +538,70 @@ class TriageViewModel: ObservableObject {
                 self.enrichWithHeaders()
                 // Give table focus so keyboard navigation works immediately
                 self.focusTableAfterDelay()
+            }
+        }
+    }
+
+    // Load multiple folders as a merged session
+    func loadMultipleFolders(urls: [URL]) {
+        guard !urls.isEmpty else { return }
+
+        benchmarkStats.markSessionStart()
+        isLoading = true
+        isCaching = false
+        cacheProgress = 0
+        cachingStopped = false
+        loadingPhase = .scanning
+
+        // Use parent of first folder as session root
+        let rootURL = urls[0].deletingLastPathComponent()
+
+        if let prev = accessedURL {
+            prev.stopAccessingSecurityScopedResource()
+            accessedURL = nil
+        }
+
+        // Access each folder
+        var accessedURLs: [URL] = []
+        for url in urls {
+            if url.startAccessingSecurityScopedResource() {
+                accessedURLs.append(url)
+            }
+        }
+        sessionRootURL = rootURL
+        accessedURL = urls[0]  // Keep first one for PRE-DELETE operations
+        prefetchCache?.clear()
+
+        let folderNames = urls.map { $0.lastPathComponent }.joined(separator: ", ")
+        statusMessage = "Scanning \(urls.count) folders: \(folderNames)..."
+
+        Task.detached(priority: .userInitiated) { [weak self] in
+            var allEntries: [ImageEntry] = []
+            for url in urls {
+                let entries = SessionScanner.scan(rootURL: url)
+                allEntries.append(contentsOf: entries)
+            }
+
+            allEntries.sort { ($0.dateTime ?? "") < ($1.dateTime ?? "") }
+
+            await MainActor.run {
+                guard let self = self else { return }
+                self.benchmarkStats.markScanComplete(fileCount: allEntries.count, totalBytes: allEntries.reduce(Int64(0)) { $0 + ($1.fileSize ?? 0) })
+                self.images = allEntries
+                self.isLoading = false
+                self.needsTableRefresh = true
+                self.initialQualitySortDone = false
+
+                if !allEntries.isEmpty {
+                    self.selectImage(at: 0)
+                }
+
+                self.sessionOverviewModel.updateStats(from: allEntries)
+                self.showSessionOverview = true
+                self.showInspector = true
+                self.applyAllEnabled = true
+
+                self.checkMemoryBudgetAndCache(for: allEntries)
             }
         }
     }

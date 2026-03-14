@@ -16,7 +16,7 @@ enum QualityTier: Int {
 struct QualityEstimator {
 
     // Minimum group size to produce scores
-    static let minGroupSize = 20
+    static let minGroupSize = 10
 
     // Stage 2: z-score thresholds for 4-tier relative classification
     static let thresholdExcellent: Double =  0.5   // Top tier: clearly above average
