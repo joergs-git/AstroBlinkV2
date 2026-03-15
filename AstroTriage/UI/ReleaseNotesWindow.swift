@@ -34,6 +34,19 @@ class ReleaseNotesWindowController {
 // MARK: - Release notes data (shared between view and copy)
 
 private let allReleases: [(version: String, date: String, items: [(ReleaseNotesView.ChangeType, String, String)])] = [
+    ("4.0.0", "March 15, 2026", [
+        (.added, "Star Eccentricity Detection", "2D image moment analysis (SExtractor method) detects star elongation from tracking errors. Eccentricity > 0.6 = immediate trash. Weight 1.5x in quality scoring (highest)."),
+        (.added, "SNR Contribution Score", "Shows how much each frame adds to a weighted stack relative to the best frame: (SNR_i/SNR_best)^2. Hidden for trash frames to avoid misleading display."),
+        (.added, "Per-Metric Quality Tooltip", "Hover quality icon for per-metric z-score breakdown (Stars, FWHM, HFR, Noise, Ecc) with arrows, SNR contribution %, and bold KEEP/DELETE recommendation."),
+        (.added, "Orange Gradient Icons", "Borderline tier split into 4 visual sub-levels from light amber (nearly good) to deep orange (nearly trash)."),
+        (.added, "Live SNR Retention Bar", "Status bar shows real-time SNR retention % as you mark frames. Green (>95%) to red (<80%). Updates on every Space toggle."),
+        (.added, "Deletion Impact Summary", "Pre-delete dialog shows integration time lost, SNR impact %, and quality tier breakdown before moving files."),
+        (.added, "Smart Keep/Delete Recommendations", "Research-backed labels: round stars = always KEEP (even with worse seeing). Elongated = DELETE. Based on stacking SNR physics."),
+        (.changed, "Compare with Best", "Now picks the truly best frame by z-score, not an arbitrary one from the same quality tier."),
+        (.changed, "Quality Sort", "Re-applies after every quality recomputation (not just initial load). Sort persists after Reset."),
+        (.fixed, "Metric Bar Scroll Bug", "Fixed constraint accumulation causing cell values to disappear after scrolling. Proportional width constraints now properly removed on reuse."),
+        (.fixed, "Stretch Slider Sync", "Slider initial value now loads from saved settings instead of hardcoded 0.25."),
+    ]),
     ("3.13.0", "March 14, 2026", [
         (.added, "Help: Background Tab", "Comprehensive FAQ-style documentation covering quality scoring, metric bars, smart sorting, STF stretching, debayering, denoise, deconvolution, and triage tips."),
         (.added, "4-Tier Quality Icons", "Full green (excellent), half-green (good), orange (borderline), red (garbage). Z-score shown on hover. Fine-grained sorting within tiers."),

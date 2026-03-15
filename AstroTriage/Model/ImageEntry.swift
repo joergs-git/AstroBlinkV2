@@ -1,4 +1,4 @@
-// v3.2.0
+// v4.0.0
 import Foundation
 
 // Core data model representing a single astro image in the session
@@ -47,12 +47,17 @@ struct ImageEntry: Identifiable, Hashable {
     var computedHFR: Double?        // HFR measured from image data (pixels)
     var computedFWHM: Double?       // FWHM measured from image data (pixels)
     var computedStarCount: Int?     // Number of stars measured
+    var computedEccentricity: Double?  // Median star eccentricity [0..1] from 2D image moments
 
-    // Quality tier (computed after header enrichment via QualityEstimator)
-    // nil = group too small (<20 frames) or metrics unavailable
-    var qualityTier: QualityTier?
-    // Raw combined z-score for fine-grained sorting within the same quality tier
-    var qualityZScore: Double?
+    // Quality breakdown (computed after header enrichment via QualityEstimator)
+    // nil = group too small (<10 frames) or metrics unavailable
+    // Contains: tier, combined z-score, per-metric z-scores, SNR contribution,
+    // cached SNR², garbage reason, and recommendation label.
+    var qualityBreakdown: QualityBreakdown?
+
+    // Convenience accessors
+    var qualityTier: QualityTier? { qualityBreakdown?.tier }
+    var qualityZScore: Double? { qualityBreakdown?.combinedZScore }
 
     // Display helpers: prefer header/filename values, fall back to computed
     var displayHFR: Double? { hfr ?? computedHFR }

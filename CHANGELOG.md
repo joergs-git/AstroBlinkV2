@@ -4,6 +4,29 @@ All notable changes to AstroBlinkV2 will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [4.0.0] — 2026-03-15
+
+### Added
+- **Star Eccentricity Detection** — 2D image moment analysis (SExtractor/DAOPHOT method) detects star elongation from tracking errors, wind shake, mount issues. Eccentricity > 0.6 = immediate trash. Weight 1.5x in quality scoring (highest — elongation can't be fixed by stacking).
+- **SNR Contribution Score** — New "Contrib" column shows how much each frame adds to a weighted stack: `(SNR_i / SNR_best)^2 × 100%`. Hidden for trash frames. Placed next to Q column for quick assessment.
+- **Per-Metric Quality Tooltip** — Hover any quality icon for z-score breakdown per metric (Stars, FWHM, HFR, Noise, Ecc) with arrows, SNR contribution %, and bold KEEP/DELETE recommendation based on stacking physics.
+- **Orange Gradient Icons** — Borderline tier split into 4 visual sub-levels: light amber (nearly good) to deep orange (nearly trash), using hollow/filled exclamation marks.
+- **Live SNR Retention Bar** — Status bar health bar showing real-time SNR retention % as you mark frames. Green (>95%) → Yellow (90-95%) → Orange (80-90%) → Red (<80%). Per-group breakdown on hover.
+- **Deletion Impact Summary** — Enhanced pre-delete dialog shows integration time lost, SNR impact %, and quality tier breakdown before moving files.
+- **Smart Keep/Delete Recommendations** — Research-backed labels: round stars = always KEEP (even with worse seeing). Elongated = DELETE. Based on Svalgaard comparison tests and stacking SNR physics.
+- **Ecc column** — Visible by default after SNR. Shows median star eccentricity [0..1] with metric bar (lower = better).
+
+### Changed
+- **Compare with Best** — Now picks the truly best frame by continuous z-score, not an arbitrary one from the same quality tier.
+- **Quality Sort** — Re-applies after every quality recomputation (not just initial load). Sort persists correctly after Reset.
+- **QualityBreakdown struct** — Replaces old `(tier, zScore)` tuple. Pre-computes per-metric z-scores, SNR contribution, cached SNR^2, garbage reason, and recommendation label.
+- **Status bar** — Removed pixel dimension/RGB info and filter display. Added SNR retention bar.
+
+### Fixed
+- **Metric bar scroll bug** — Fixed constraint accumulation causing all cell values to disappear after repeated scrolling. Proportional width constraints now properly removed from parent view on cell reuse.
+- **Stretch slider sync** — Slider initial value now loads from saved UserDefaults instead of hardcoded 0.25.
+- **compareWithBest selection** — Used `qualityTier.rawValue` (0-3 enum) instead of continuous z-score, picking arbitrary frames among same-tier images.
+
 ## [3.13.0] — 2026-03-14
 
 ### Added

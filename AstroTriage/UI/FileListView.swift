@@ -251,7 +251,7 @@ struct FileListView: NSViewRepresentable {
         // Group key = "target|filter|exposure" (same grouping as quality scoring)
         // Each group has its own min/max per metric column
         private var groupMetricRanges: [String: [String: (min: Double, max: Double)]] = [:]
-        private static let barColumns: Set<String> = ["snr", "hfr", "fwhm", "starCount"]
+        private static let barColumns: Set<String> = ["snr", "hfr", "fwhm", "starCount", "snrContrib", "eccentricity"]
 
         private func groupKey(for entry: ImageEntry) -> String {
             let t = (entry.target ?? "").trimmingCharacters(in: .whitespaces)
@@ -289,8 +289,8 @@ struct FileListView: NSViewRepresentable {
             guard let ranges = groupMetricRanges[gKey],
                   let range = ranges[colId], range.max > range.min else { return nil }
             let normalized = (value - range.min) / (range.max - range.min)
-            // fwhm and hfr: lower = better → invert so longer bar = better
-            if colId == "fwhm" || colId == "hfr" {
+            // fwhm, hfr, eccentricity: lower = better → invert so longer bar = better
+            if colId == "fwhm" || colId == "hfr" || colId == "eccentricity" {
                 return CGFloat(1.0 - normalized)
             }
             return CGFloat(normalized)
@@ -372,9 +372,14 @@ struct FileListView: NSViewRepresentable {
                let fraction = metricFraction(colId: colId, value: numVal, entry: entry) {
                 let bar = cellView.subviews.first { $0.identifier?.rawValue == "metricBar" }
                 if let bar = bar {
-                    // Remove old width constraint and use proportional width relative to cell
-                    // (avoids stale bounds.width=0 on first layout causing bars to "grow" on selection)
-                    bar.constraints.filter { $0.firstAttribute == .width }.forEach { bar.removeConstraint($0) }
+                    // Remove old proportional width constraint before adding new one.
+                    // The constraint bar.width = cellView.width * multiplier is owned by
+                    // cellView (common ancestor), NOT by bar — so bar.constraints won't find it.
+                    for c in cellView.constraints where c.firstAttribute == .width {
+                        if c.firstItem === bar || c.secondItem === bar {
+                            c.isActive = false
+                        }
+                    }
                     let widthConstraint = bar.widthAnchor.constraint(equalTo: cellView.widthAnchor, multiplier: max(0.02, fraction), constant: -4 * fraction)
                     widthConstraint.isActive = true
                     // Red (0%) → Orange (50%) → Green (100%)
@@ -385,7 +390,15 @@ struct FileListView: NSViewRepresentable {
                 }
             } else {
                 let bar = cellView.subviews.first { $0.identifier?.rawValue == "metricBar" }
-                bar?.isHidden = true
+                if let bar = bar {
+                    // Also clean up stale constraints when hiding the bar
+                    for c in cellView.constraints where c.firstAttribute == .width {
+                        if c.firstItem === bar || c.secondItem === bar {
+                            c.isActive = false
+                        }
+                    }
+                    bar.isHidden = true
+                }
             }
 
             // Color logic: marked rows get red text, but use white when row is selected
@@ -428,15 +441,23 @@ struct FileListView: NSViewRepresentable {
                 cellView = cell
             }
 
-            // Pick icon + color + tooltip based on tier
+            // Pick icon + color + tooltip based on tier + severity
             let (symbolName, color, tooltip): (String?, NSColor?, String) = {
-                let zStr = entry.qualityZScore.map { String(format: " (z=%.2f)", $0) } ?? ""
-                switch entry.qualityTier {
-                case .excellent:  return ("circle.fill",              .systemGreen,  "Excellent — clearly above average\(zStr)")
-                case .good:       return ("circle.lefthalf.filled",   .systemGreen,  "Good — solid, near average\(zStr)")
-                case .borderline: return ("exclamationmark.circle",   .systemOrange, "Borderline — check visually\(zStr)")
-                case .trash:      return ("xmark.circle.fill",        .systemRed,    "Poor — garbage or worst\(zStr)")
-                case nil:         return (nil, nil, "No quality score — needs ≥\(QualityEstimator.minGroupSize) images per group")
+                guard let bd = entry.qualityBreakdown else {
+                    return (nil, nil, "No quality score — needs ≥\(QualityEstimator.minGroupSize) images per group")
+                }
+                let richTooltip = Self.qualityTooltip(for: bd)
+                switch bd.tier {
+                case .excellent:
+                    return ("circle.fill", .systemGreen, richTooltip)
+                case .good:
+                    return ("circle.lefthalf.filled", .systemGreen, richTooltip)
+                case .borderline:
+                    // Orange gradient: 4 sub-tiers from light amber to deep orange
+                    let (icon, tint) = Self.borderlineIconAndColor(severity: bd.borderlineSeverity)
+                    return (icon, tint, richTooltip)
+                case .trash:
+                    return ("xmark.circle.fill", .systemRed, richTooltip)
                 }
             }()
 
@@ -452,6 +473,101 @@ struct FileListView: NSViewRepresentable {
             }
 
             return cellView
+        }
+
+        // Orange gradient icon and color for borderline sub-tiers.
+        // 4 levels from light amber (nearly good) to deep orange (nearly trash).
+        private static func borderlineIconAndColor(severity: Int) -> (String, NSColor) {
+            switch severity {
+            case 0:  // Nearly good — lightest
+                return ("exclamationmark.circle", NSColor(calibratedHue: 0.12, saturation: 0.55, brightness: 0.95, alpha: 1.0))
+            case 1:  // Middle borderline — standard orange
+                return ("exclamationmark.circle", .systemOrange)
+            case 2:  // Leaning trash — filled, deeper orange
+                return ("exclamationmark.circle.fill", NSColor(calibratedHue: 0.06, saturation: 0.80, brightness: 0.90, alpha: 1.0))
+            default: // Nearly trash — filled, dark orange
+                return ("exclamationmark.circle.fill", NSColor(calibratedHue: 0.03, saturation: 0.90, brightness: 0.85, alpha: 1.0))
+            }
+        }
+
+        // Rich multi-line quality tooltip with per-metric z-score breakdown,
+        // SNR contribution, and smart recommendation label.
+        /// Convert plain ASCII to Unicode Mathematical Bold (U+1D400 range).
+        /// Works in plain-text NSTableView tooltips — no attributed strings needed.
+        private static func boldText(_ text: String) -> String {
+            text.unicodeScalars.map { scalar -> String in
+                let v = scalar.value
+                if v >= 0x41 && v <= 0x5A {       // A-Z → 𝐀-𝐙
+                    return String(UnicodeScalar(v - 0x41 + 0x1D400)!)
+                } else if v >= 0x61 && v <= 0x7A { // a-z → 𝐚-𝐳
+                    return String(UnicodeScalar(v - 0x61 + 0x1D41A)!)
+                }
+                return String(scalar)
+            }.joined()
+        }
+
+        private static func qualityTooltip(for bd: QualityBreakdown) -> String {
+            let tierName: String = {
+                switch bd.tier {
+                case .excellent:  return boldText("Excellent")
+                case .good:       return boldText("Good")
+                case .borderline: return boldText("Borderline")
+                case .trash:      return boldText("Poor")
+                }
+            }()
+
+            var lines = ["\(tierName) (z = \(String(format: "%.2f", bd.combinedZScore)))"]
+
+            if let reason = bd.garbageReason {
+                lines.append("  Reason: \(reason.rawValue)")
+            } else {
+                // Per-metric z-score breakdown
+                // fwhm/hfr/noise: raw z is positive when worse (higher value = worse)
+                // Display convention: positive = above avg (good for stars), negative = below avg
+                // For FWHM/HFR/noise we invert the display so positive = good
+                func metricLine(_ name: String, _ z: Double?, lowerIsBetter: Bool) -> String? {
+                    guard let z = z else { return nil }
+                    let displayZ = lowerIsBetter ? -z : z
+                    let arrow = displayZ < -0.5 ? " \u{2193}" : (displayZ > 0.5 ? " \u{2191}" : "")
+                    let label: String
+                    if displayZ < -1.0 {
+                        label = "(dragging down)"
+                    } else if displayZ < -0.5 {
+                        label = "(below avg)"
+                    } else if displayZ > 1.0 {
+                        label = "(well above avg)"
+                    } else if displayZ > 0.5 {
+                        label = "(above avg)"
+                    } else {
+                        label = "(normal)"
+                    }
+                    let padded = name.padding(toLength: 6, withPad: " ", startingAt: 0)
+                    return "  \(padded) \(String(format: "%+.1f", displayZ))\u{03C3} \(label)\(arrow)"
+                }
+
+                if let l = metricLine("Stars", bd.starsZ, lowerIsBetter: false) { lines.append(l) }
+                if let l = metricLine("FWHM", bd.fwhmZ, lowerIsBetter: true) { lines.append(l) }
+                if let l = metricLine("HFR", bd.hfrZ, lowerIsBetter: true) { lines.append(l) }
+                if let l = metricLine("Noise", bd.noiseZ, lowerIsBetter: true) { lines.append(l) }
+                if let l = metricLine("Ecc", bd.eccZ, lowerIsBetter: true) { lines.append(l) }
+            }
+
+            if let contrib = bd.snrContribution {
+                lines.append("  SNR contribution: \(String(format: "%.0f", contrib))%")
+            }
+
+            let recommendation = bd.recommendationLabel
+            if !recommendation.isEmpty {
+                lines.append("")
+                // Bold the key action words (DELETE, KEEP, REVIEW)
+                let boldRec = recommendation
+                    .replacingOccurrences(of: "DELETE", with: boldText("DELETE"))
+                    .replacingOccurrences(of: "KEEP", with: boldText("KEEP"))
+                    .replacingOccurrences(of: "REVIEW", with: boldText("REVIEW"))
+                lines.append("\u{2192} \(boldRec)")
+            }
+
+            return lines.joined(separator: "\n")
         }
 
         // Filename cell with tiny cache indicator checkmark

@@ -4,15 +4,31 @@
 
 Blink, mark, stack - triage your astro XISF, FITS subs in seconds. GPU-stretched viewer with QuickStack,QuickLook, and fastest keyboard post processing workflow on macOS.
 
-AstroBlinkV2 lets you blink through hundreds of FITS and XISF sub-exposures in seconds, mark the bad ones, and move them out of the way — without ever permanently deleting a single file. Inspired by PixInsight's Blink, built from the ground up for Apple Silicon. 
+AstroBlinkV2 lets you blink through hundreds of FITS and XISF sub-exposures in seconds, mark the bad ones, and move them out of the way — without ever permanently deleting a single file. Inspired by PixInsight's Blink, built from the ground up for Apple Silicon.
 
-Nice side effect: Finally you have a native XISF and FITS Quicklook for macOS. (press Spacebar shows a quick preview of the image). Was missing that for long ! :-) 
+Super lightweight (~5 MB app size), yet high performance — Metal GPU compute for real-time auto-stretch, star detection, and eccentricity analysis. No Electron, no bloat. Pure native Swift + Metal, engineered for Apple Silicon with zero-copy GPU buffers and concurrent decode pipelines. Loads 500+ subs in seconds on M-series Macs.
+
+Nice side effect: Finally you have a native XISF and FITS Quicklook for macOS. (press Spacebar shows a quick preview of the image). Was missing that for long ! :-)
 
 ![macOS](https://img.shields.io/badge/macOS-13%2B-blue) ![Apple Silicon](https://img.shields.io/badge/Apple%20Silicon-optimized-green) ![License](https://img.shields.io/badge/license-MIT-green)
 
 ---
 
 ![AstroBlinkV2 — Main View with Header Inspector and Session Overview](AstroBlinkV2_screenshot2.png)
+
+---
+
+## What's New in v4.0.0
+
+### Smart Culling: Eccentricity, SNR Contribution & Live Impact Analysis
+
+- **Star eccentricity detection** — 2D image moment analysis (same method as SExtractor) detects star elongation from tracking errors, wind shake, and mount issues. Eccentricity > 0.6 = automatic trash. Highest weight (1.5x) in quality scoring — because elongation is the one defect stacking can't fix.
+- **SNR contribution score** — New "Contrib" column shows how much each frame adds to a weighted stack: `(SNR/SNR_best)^2`. 100% = best frame, 49% = 70% of best SNR. Hidden for trash frames.
+- **Per-metric quality tooltip** — Hover any quality icon for detailed z-score breakdown per metric (Stars, FWHM, HFR, Noise, Ecc) with arrows, SNR contribution %, and **KEEP/DELETE** recommendation.
+- **Orange gradient icons** — Borderline tier split into 4 visual sub-levels from light amber (nearly good) to deep orange (nearly trash).
+- **Live SNR retention bar** — Status bar health bar updates in real-time as you mark frames. Shows exact SNR impact of your triage decisions.
+- **Deletion impact dialog** — Before moving to PRE-DELETE: integration time lost, SNR impact %, quality tier breakdown.
+- **Research-backed recommendations** — Based on Svalgaard comparison tests: round stars = always KEEP (even with worse seeing). FWHM of final stack barely changes. Only elongated stars should be deleted.
 
 ---
 
@@ -499,7 +515,7 @@ The stacked result is meant to give you a quick visual impression of your sessio
 
 ## License
 
-This project is licensed under the **GNU General Public License v3.0** — see [LICENSE](LICENSE) for details.
+This project is licensed under the **MIT License** — see [LICENSE](LICENSE) for details.
 
 libxisf is licensed under GPLv3. cfitsio is licensed under the NASA Open Source Agreement.
 

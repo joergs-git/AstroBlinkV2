@@ -1,7 +1,7 @@
-// v3.12.0
+// v4.0.0
 import Foundation
 
-// Four-tier quality system:
+// Four-tier quality system with sub-tiers for borderline:
 // Stage 1 ("garbage"): absolute outlier → red (any single metric catastrophically bad)
 // Stage 2 ("relative"): weighted z-score within group → excellent/good/borderline/poor
 enum QualityTier: Int {
@@ -9,6 +9,98 @@ enum QualityTier: Int {
     case borderline = 1   // Orange: on the edge — worth visual inspection before keeping
     case good       = 2   // Half-green: slightly below the best but definitely usable
     case excellent  = 3   // Full green: clearly above average — best frames
+}
+
+// Stage 1 garbage reason — explains WHY a frame was immediately flagged as trash
+enum GarbageReason: String, Hashable {
+    case noData       = "no signal detected"
+    case noStars      = "zero/near-zero stars"
+    case lowSNR       = "SNR catastrophically low"
+    case highFWHM     = "severe defocus/tracking"
+    case highHFR      = "severe defocus"
+    case elongated    = "star trailing/elongation"
+}
+
+// Full quality breakdown per image — replaces the old (tier, zScore) tuple.
+// Pre-computes everything needed for tooltips and live SNR retention bar.
+struct QualityBreakdown: Hashable {
+    let tier: QualityTier
+    let combinedZScore: Double
+
+    // Per-metric z-scores (nil = metric not available for this image)
+    let starsZ: Double?
+    let fwhmZ: Double?
+    let hfrZ: Double?
+    let noiseZ: Double?
+    let eccZ: Double?       // Eccentricity z-score (higher = more elongated = worse)
+
+    // SNR contribution: (SNR_i / SNR_best)^2 as percentage [0..100]
+    // Shows how much this frame adds to a weighted stack relative to the best frame.
+    let snrContribution: Double?
+
+    // Cached SNR^2 for live SNR retention bar (avoids recomputation on every Space toggle)
+    let snrSquared: Double?
+
+    // Garbage reason (nil if not Stage 1 garbage)
+    let garbageReason: GarbageReason?
+
+    // Smart recommendation label based on per-metric analysis
+    // Smart recommendation based on per-metric analysis and eccentricity.
+    // Research shows: round stars = always keep (even with worse FWHM/noise).
+    // FWHM of final stack barely changes when including softer-but-round frames.
+    // Eccentricity is the one hard boundary — elongated stars can't be fixed by stacking.
+    var recommendationLabel: String {
+        if let reason = garbageReason {
+            return "DELETE — \(reason.rawValue)"
+        }
+
+        guard tier == .borderline else { return "" }
+
+        // Check eccentricity first — the critical differentiator
+        let hasHighEcc = (eccZ ?? 0) > 1.5  // Significantly more elongated than group average
+        if hasHighEcc {
+            return "REVIEW — stars may be elongated"
+        }
+
+        // Stars are round (or eccentricity not available) — safe to keep
+        let hasBadStars = (starsZ ?? 0) < -1.0
+        let hasBadFWHM = (fwhmZ ?? 0) > 1.0       // fwhm z is raw (not negated) — higher = worse
+        let hasBadNoise = (noiseZ ?? 0) > 1.0
+
+        let badCount = [hasBadStars, hasBadFWHM, hasBadNoise].filter { $0 }.count
+
+        if badCount == 0 {
+            return "KEEP — useful for SNR"
+        }
+
+        if hasBadNoise && !hasBadFWHM {
+            return "KEEP — noisy but round stars, adds integration"
+        }
+
+        if hasBadFWHM {
+            // Softer seeing but round stars — research shows final stack FWHM barely changes
+            return "KEEP — softer seeing, round stars still add SNR"
+        }
+
+        if hasBadStars && !hasBadFWHM && !hasBadNoise {
+            return "KEEP — fewer stars but quality OK"
+        }
+
+        return "KEEP — round stars contribute to stack"
+    }
+
+    // Borderline severity for orange gradient icons (0-3, 0 = nearly good, 3 = nearly trash)
+    // Only meaningful when tier == .borderline
+    var borderlineSeverity: Int {
+        guard tier == .borderline else { return 0 }
+        // Range is thresholdGood (-0.3) to thresholdBorderline (-1.2), span = 0.9
+        // Split into 4 equal sub-tiers of 0.225 each
+        let z = combinedZScore
+        if z > -0.525 { return 0 }       // Nearly good
+        if z > -0.75  { return 1 }       // Middle borderline
+        if z > -0.975 { return 2 }       // Leaning towards trash
+        return 3                          // Nearly trash
+    }
 }
 
 // MARK: -
@@ -36,14 +128,14 @@ struct QualityEstimator {
 
     // MARK: - Public API
 
-    static func computeScores(for entries: [ImageEntry]) -> [URL: (tier: QualityTier, zScore: Double)] {
+    static func computeScores(for entries: [ImageEntry]) -> [URL: QualityBreakdown] {
         var groups: [GroupKey: [Int]] = [:]
         for (index, entry) in entries.enumerated() {
             let key = GroupKey(entry: entry)
             groups[key, default: []].append(index)
         }
 
-        var result: [URL: (tier: QualityTier, zScore: Double)] = [:]
+        var result: [URL: QualityBreakdown] = [:]
 
         for (_, indices) in groups {
             guard indices.count >= minGroupSize else { continue }
@@ -76,6 +168,10 @@ struct QualityEstimator {
                 return Double(med / mad)
             }
 
+            // SNR contribution: find best SNR in group for relative scoring
+            let validSNRs = snrValues.compactMap { $0 }
+            let snrBest = validSNRs.max() ?? 0
+
             // Compute group statistics for absolute garbage detection
             let starsMedian = sortedMedian(starsValues)
             let snrMedian = sortedMedian(snrValues)
@@ -87,57 +183,82 @@ struct QualityEstimator {
             let hfrZscores   = zscores(values: hfrValues)
             let starsZscores = zscores(values: starsValues)
             let noiseMadZscores = zscores(values: groupEntries.map { $0.noiseMAD.map { Double($0) } })
+            let eccZscores   = zscores(values: groupEntries.map { $0.computedEccentricity })
 
             for (localIdx, globalIdx) in indices.enumerated() {
                 let entry = entries[globalIdx]
 
+                // Compute SNR² for this frame (cached for live retention bar)
+                let snr = snrValues[localIdx]
+                let snrSq = snr.map { $0 * $0 }
+
+                // SNR contribution relative to best
+                let contribution: Double? = {
+                    guard let s = snr, snrBest > 0 else { return nil }
+                    return (s / snrBest) * (s / snrBest) * 100.0
+                }()
+
                 // ── Stage 1: Absolute garbage detection ──
                 // Any single metric catastrophically bad → immediate red
-                var isGarbage = false
+                var garbageReason: GarbageReason? = nil
 
                 // Rule 0: Pitch black / no data — no stars AND no noise stats
-                // (camera failure, shutter stuck, completely overcast, corrupt file)
                 let hasNoStars = starsValues[localIdx] == nil || starsValues[localIdx] == 0
                 let hasNoNoise = entry.noiseMAD == nil || entry.noiseMAD == 0
                 if hasNoStars && hasNoNoise {
-                    isGarbage = true
+                    garbageReason = .noData
                 }
 
                 // Rule 1: No stars or near-zero stars → garbage
-                // (clouds, heavy fog, tracking failure, shutter issue)
-                // Narrowband: star count naturally varies more due to bandpass → relax threshold
-                if let stars = starsValues[localIdx], let median = starsMedian {
-                    let dropThreshold = isNarrowband ? garbageDropFactor * 0.5 : garbageDropFactor  // 25% for NB, 50% for broadband
+                if garbageReason == nil, let stars = starsValues[localIdx], let median = starsMedian {
+                    let dropThreshold = isNarrowband ? garbageDropFactor * 0.5 : garbageDropFactor
                     if stars < 1 || (median > 10 && stars < median * dropThreshold) {
-                        isGarbage = true
+                        garbageReason = .noStars
                     }
                 }
 
                 // Rule 2: SNR catastrophically low compared to group
-                // (clouds passing, dew on lens, light leak)
-                if let snr = snrValues[localIdx], let median = snrMedian {
-                    if median > 5 && snr < median * garbageDropFactor {
-                        isGarbage = true
+                if garbageReason == nil, let snrVal = snrValues[localIdx], let median = snrMedian {
+                    if median > 5 && snrVal < median * garbageDropFactor {
+                        garbageReason = .lowSNR
                     }
                 }
 
                 // Rule 3: FWHM catastrophically high (severe tracking error, defocus)
-                // FWHM is "lower = better", so garbage = much higher than median
-                if let fwhm = fwhmValues[localIdx], let median = fwhmMedian {
+                if garbageReason == nil, let fwhm = fwhmValues[localIdx], let median = fwhmMedian {
                     if median > 0 && fwhm > median * (1.0 / garbageDropFactor) {
-                        isGarbage = true
+                        garbageReason = .highFWHM
                     }
                 }
 
-                // Rule 4: HFR catastrophically high (same logic as FWHM)
-                if let hfr = hfrValues[localIdx], let median = hfrMedian {
+                // Rule 4: HFR catastrophically high
+                if garbageReason == nil, let hfr = hfrValues[localIdx], let median = hfrMedian {
                     if median > 0 && hfr > median * (1.0 / garbageDropFactor) {
-                        isGarbage = true
+                        garbageReason = .highHFR
                     }
                 }
 
-                if isGarbage {
-                    result[entry.url] = (tier: .trash, zScore: -99.0)
+                // Rule 5: Star elongation — tracking failure, wind shake
+                if garbageReason == nil, let ecc = entry.computedEccentricity, ecc > 0.6 {
+                    garbageReason = .elongated
+                }
+
+                if garbageReason != nil {
+                    // Don't show SNR contribution for Stage 1 garbage — their signal is
+                    // irrelevant since they'd ruin the stack (elongation, no stars, etc.).
+                    // Showing "100%" next to a red X is misleading.
+                    result[entry.url] = QualityBreakdown(
+                        tier: .trash,
+                        combinedZScore: -99.0,
+                        starsZ: starsZscores[localIdx],
+                        fwhmZ: fwhmZscores[localIdx],
+                        hfrZ: hfrZscores[localIdx],
+                        noiseZ: noiseMadZscores[localIdx],
+                        eccZ: eccZscores[localIdx],
+                        snrContribution: nil,
+                        snrSquared: snrSq,
+                        garbageReason: garbageReason
+                    )
                     continue
                 }
 
@@ -161,6 +282,10 @@ struct QualityEstimator {
                     zSum += -z * 1.0     // lower noise = better → negate
                     wSum += 1.0
                 }
+                if let z = eccZscores[localIdx] {
+                    zSum += -z * 1.5     // lower eccentricity = better → negate, weight 1.5x
+                    wSum += 1.5          // Highest weight: elongation can't be fixed by stacking
+                }
 
                 guard wSum > 0 else { continue }
 
@@ -168,16 +293,30 @@ struct QualityEstimator {
 
                 let tier: QualityTier
                 if combinedZ > thresholdExcellent {
-                    tier = .excellent    // Full green: clearly above average
+                    tier = .excellent
                 } else if combinedZ > thresholdGood {
-                    tier = .good         // Half-green: solid, near average
+                    tier = .good
                 } else if combinedZ > thresholdBorderline {
-                    tier = .borderline   // Orange: on the edge, check visually
+                    tier = .borderline
                 } else {
-                    tier = .trash        // Red: statistically worst
+                    tier = .trash
                 }
 
-                result[entry.url] = (tier: tier, zScore: combinedZ)
+                // Hide SNR contribution for trash tier — misleading to show high % on garbage frames
+                let displayContrib = tier == .trash ? nil : contribution
+
+                result[entry.url] = QualityBreakdown(
+                    tier: tier,
+                    combinedZScore: combinedZ,
+                    starsZ: starsZscores[localIdx],
+                    fwhmZ: fwhmZscores[localIdx],
+                    hfrZ: hfrZscores[localIdx],
+                    noiseZ: noiseMadZscores[localIdx],
+                    eccZ: eccZscores[localIdx],
+                    snrContribution: displayContrib,
+                    snrSquared: snrSq,
+                    garbageReason: nil
+                )
             }
         }
 

@@ -1,5 +1,29 @@
 # Lessons Learned
 
+## [2026-03-15] — NSTableView metric bar constraint accumulation
+- **Mistake:** Used `bar.constraints.filter { ... }` to remove old width constraints before adding new ones on cell reuse
+- **Root cause:** The proportional width constraint `bar.widthAnchor = cellView.widthAnchor * multiplier` is owned by the common ancestor (`cellView`), not by `bar`. So `bar.constraints` never found it. Constraints accumulated on each cell reuse until layout collapsed.
+- **Rule:** For cross-view constraints (involving two sibling views or parent-child), search `parentView.constraints` for the constraint, not `childView.constraints`. Use `c.firstItem === bar || c.secondItem === bar` to find the right one.
+- **Applies to:** NSTableView cell reuse with proportional/cross-view constraints
+
+## [2026-03-15] — compareWithBest picked arbitrary frame from same tier
+- **Mistake:** Used `qualityTier.rawValue` (0-3 enum) to find "best" frame. Among 20+ excellent frames, picked whichever `.max` returned.
+- **Root cause:** `.max(by:)` on equal values returns arbitrary result. Need continuous z-score for fine-grained comparison.
+- **Rule:** Always use `qualityZScore` (continuous Double) for "best" selection, not `qualityTier.rawValue` (discrete Int).
+- **Applies to:** compareWithBest, any "find best in group" logic
+
+## [2026-03-15] — Quality sort must re-apply after every recomputation
+- **Mistake:** Used `initialQualitySortDone` flag to fire sort only once. After Reset + re-cache, quality scores changed but array was not re-sorted.
+- **Root cause:** Quality scores update in-place on each `recomputeQualityScores()` call, but the sort only fired on the initial load.
+- **Rule:** Set `needsQualityResort = true` whenever quality scores are recomputed with valid star metrics, not just on first load.
+- **Applies to:** TriageViewModel.recomputeQualityScores(), any re-cache scenario
+
+## [2026-03-15] — SNR contribution misleading for trash frames
+- **Mistake:** Showed "100% contribution" next to red X trash icon (frame had high SNR but was elongated)
+- **Root cause:** SNR contribution measures noise floor only, not star quality. A frame with excellent SNR can still be trash due to elongation.
+- **Rule:** Hide SNR contribution for trash-tier frames — their signal is irrelevant since they'd ruin the stack.
+- **Applies to:** QualityEstimator.computeScores(), QualityBreakdown.snrContribution
+
 ## [2026-03-07] — cfitsio HAVE_NET_SERVICES must NOT be defined
 - **Mistake:** Defined `HAVE_NET_SERVICES` as `0` in Package.swift, thinking `#ifdef` checks value
 - **Root cause:** cfitsio uses `#ifdef HAVE_NET_SERVICES` (checks existence, not value). With the macro defined (even as 0), the root://, http://, ftp://, https:// drivers were compiled in. The `root_init()` callback returns -1 (XRootD not installed), causing `fits_init_cfitsio()` to bail BEFORE setting `need_to_initialize = 0`. Every subsequent `fits_open_file` re-triggered init, adding ~12 more drivers each time until overflow.

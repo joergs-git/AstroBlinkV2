@@ -1,4 +1,4 @@
-// v3.13.0
+// v4.0.0
 import SwiftUI
 
 // MARK: - App Store URL (update when published)
@@ -65,7 +65,7 @@ struct AstroBlinkV2App: App {
 
                 Divider()
 
-                Button("What's New in v3.13.0") {
+                Button("What's New in v4.0.0") {
                     ReleaseNotesWindowController.shared.show()
                 }
             }
@@ -656,16 +656,17 @@ struct HelpBackgroundView: View {
 
                 faqItem("Stage 1 — Garbage Detection",
                     """
-                    Before any statistics, obvious failures are flagged red immediately. If any single metric \
-                    drops below 50% of the group median, the image is garbage — regardless of how the other \
-                    metrics look. For example: 200 stars when the group median is 4000 means something went \
-                    very wrong (clouds, tracking failure, dew).
+                    Before any statistics, obvious failures are flagged red immediately: star count < 50% \
+                    of group median, SNR < 50%, FWHM > 2x median, or star eccentricity > 0.6 (trailing). \
+                    Any single catastrophic metric = immediate red, regardless of other metrics.
                     """)
 
                 faqItem("Stage 2 — Relative Ranking",
                     """
-                    Images that pass Stage 1 are ranked by a weighted z-score combining multiple metrics. \
-                    The z-score tells you how many standard deviations each metric is from the group average.
+                    Images that pass Stage 1 are ranked by a weighted z-score combining Stars (1.2x), \
+                    FWHM (1.0x), HFR (1.0x), Noise (1.0x), and Eccentricity (1.5x — highest weight, \
+                    because elongation can't be fixed by stacking). The z-score tells you how many \
+                    standard deviations each metric is from the group average.
                     """)
 
                 qualityIconRow("circle.fill", .systemGreen, "Excellent (z > 0.5)",
@@ -673,11 +674,11 @@ struct HelpBackgroundView: View {
                 qualityIconRow("circle.lefthalf.filled", .systemGreen, "Good (-0.3 to 0.5)",
                     "Solid frames — near average. Definitely usable, keep unless you have plenty.")
                 qualityIconRow("exclamationmark.circle", .systemOrange, "Borderline (-1.2 to -0.3)",
-                    "Below average — worth a quick visual check. May still be usable.")
+                    "Below average — 4 orange gradient levels from light (nearly good) to deep (nearly trash). Hover for per-metric breakdown and SNR contribution.")
                 qualityIconRow("xmark.circle.fill", .systemRed, "Trash (< -1.2 or Stage 1)",
-                    "Either catastrophically bad (Stage 1) or statistically worst in group.")
+                    "Either catastrophically bad (Stage 1) or statistically worst in group. Hover for reason.")
 
-                Text("Hover over any quality icon to see its exact z-score for fine-grained comparison.")
+                Text("Hover over any quality icon to see per-metric z-scores, SNR contribution %, and a keep/delete recommendation.")
                     .font(.system(size: 11)).foregroundColor(.secondary).italic()
 
                 Divider()
@@ -695,6 +696,52 @@ struct HelpBackgroundView: View {
                     Bars are scoped to each target + filter + exposure group. Ha images typically have \
                     fewer stars than Luminance — comparing them globally would make all Ha bars tiny red. \
                     Per-group bars show you the relative ranking within apples-to-apples comparisons.
+                    """)
+
+                Divider()
+
+                // Eccentricity & SNR Contribution
+                faqSection("Star Eccentricity (Ecc)",
+                    """
+                    Eccentricity measures star shape using 2D image moments (the same method used by \
+                    SExtractor and DAOPHOT in professional astronomy). It ranges from 0.0 (perfect circle) \
+                    to 1.0 (extreme elongation). Values above 0.5 indicate clear elongation from tracking \
+                    errors, wind shake, or mount issues. Above 0.6 = automatic trash.
+                    """)
+
+                faqItem("Why eccentricity matters most",
+                    """
+                    Eccentricity has the highest quality weight (1.5x) because elongated stars are the one \
+                    defect that stacking cannot fix. Noise, FWHM variations, and star count differences are \
+                    all handled by sigma clipping and weighted stacking. But elongated stars create systematic \
+                    artifacts that persist in the final stack.
+                    """)
+
+                Divider()
+
+                faqSection("SNR Contribution (Contrib)",
+                    """
+                    Shows how much each frame contributes to a weighted stack relative to the best frame \
+                    in its group. Based on the stacking formula: contribution = (SNR_i / SNR_best)^2. \
+                    A frame with 70% of the best SNR still contributes 49% to the stack. \
+                    Hidden for trash frames (their signal is irrelevant due to fatal flaws).
+                    """)
+
+                faqItem("When to keep borderline frames",
+                    """
+                    Research shows: round stars = always keep. Stacking SNR improves with the square root \
+                    of frame count. Removing 20 of 100 frames loses ~11% SNR. Tests by multiple astrophotographers \
+                    confirm that including soft-but-round frames barely affects final FWHM while significantly \
+                    boosting SNR. The keep/delete recommendation in the quality tooltip reflects this: \
+                    frames with round stars get KEEP, only elongated stars get DELETE.
+                    """)
+
+                faqItem("Live SNR Retention Bar",
+                    """
+                    The status bar shows a real-time health bar as you mark frames for deletion. \
+                    Green (>95%) = safe, cutting mostly garbage. Yellow (90-95%) = moderate impact. \
+                    Orange (80-90%) = significant loss. Red (<80%) = cutting too deep. \
+                    Hover for per-group breakdown showing exactly which filter groups are affected.
                     """)
 
                 Divider()

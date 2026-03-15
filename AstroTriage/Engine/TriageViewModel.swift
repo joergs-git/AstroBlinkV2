@@ -72,8 +72,6 @@ class TriageViewModel: ObservableObject {
     // Recommended column order after header enrichment (set once per session load)
     // FileListView consumes and clears this after applying
     @Published var pendingColumnOrder: [String]?
-    // Tracks whether the initial quality-based re-sort is needed/done (once per session)
-    private var initialQualitySortDone = false
     @Published var needsQualityResort = false
 
     // Hide marked images: when true, marked images are invisible in the list
@@ -85,6 +83,12 @@ class TriageViewModel: ObservableObject {
 
     // Skip marked images during arrow-key navigation
     @Published var skipMarked: Bool = false
+
+    // Live SNR retention: percentage of total stack SNR retained after removing marked frames.
+    // 100% = nothing marked, decreases as frames are marked. Updated on every mark toggle.
+    @Published var snrRetention: Double = 100.0
+    // Tooltip detail for the SNR retention bar (per-group breakdown)
+    @Published var snrRetentionDetail: String = ""
 
     // Spotlight-style search: filters file list in real time
     // Supports plain text (searches all columns) or "column:value" syntax (e.g. "filter:Ha", "fwhm:>4")
@@ -392,7 +396,8 @@ class TriageViewModel: ObservableObject {
             return t == targetKey && f == filterKey && e == expKey
         }
 
-        guard let best = groupImages.max(by: { ($0.qualityTier?.rawValue ?? -1) < ($1.qualityTier?.rawValue ?? -1) }),
+        // Use qualityZScore for fine-grained "best" selection (not just tier enum)
+        guard let best = groupImages.max(by: { ($0.qualityZScore ?? -100) < ($1.qualityZScore ?? -100) }),
               best.url != entry.url else { return }
 
         CompareWindowController.open(
@@ -520,7 +525,7 @@ class TriageViewModel: ObservableObject {
                 self.images = entries
                 self.isLoading = false
                 self.needsTableRefresh = true
-                self.initialQualitySortDone = false  // Reset for new session
+                self.needsQualityResort = false  // Reset for new session
 
                 if !entries.isEmpty {
                     self.selectImage(at: 0)
@@ -590,7 +595,7 @@ class TriageViewModel: ObservableObject {
                 self.images = allEntries
                 self.isLoading = false
                 self.needsTableRefresh = true
-                self.initialQualitySortDone = false
+                self.needsQualityResort = false
 
                 if !allEntries.isEmpty {
                     self.selectImage(at: 0)
@@ -823,6 +828,8 @@ class TriageViewModel: ObservableObject {
                     if metrics.medianFWHM > 0 { self.images[idx].computedFWHM = metrics.medianFWHM }
                     // Always store total star count
                     self.images[idx].computedStarCount = metrics.totalStarCount
+                    // Store eccentricity from 2D image moments (nil if < 5 stars measured)
+                    self.images[idx].computedEccentricity = metrics.medianEccentricity
                 }
             }
         )
@@ -1103,22 +1110,15 @@ class TriageViewModel: ObservableObject {
     func recomputeQualityScores() {
         let scores = QualityEstimator.computeScores(for: images)
         for index in images.indices {
-            if let result = scores[images[index].url] {
-                images[index].qualityTier = result.tier
-                images[index].qualityZScore = result.zScore
-            } else {
-                images[index].qualityTier = nil
-                images[index].qualityZScore = nil
-            }
+            images[index].qualityBreakdown = scores[images[index].url]
         }
         // Notify table that quality column cells need redrawing
         needsTableRefresh = true
 
-        // Re-sort once after first precache completes and quality z-scores are available.
-        // Uses saved column order if available, otherwise recommended order.
+        // Re-sort whenever quality z-scores are available (initial load + after re-cache).
+        // Quality scores change when noise stats/star metrics update, so the sort must be reapplied.
         let hasStarMetrics = images.contains { $0.computedStarCount != nil || $0.computedFWHM != nil }
-        if !initialQualitySortDone && hasStarMetrics {
-            initialQualitySortDone = true
+        if hasStarMetrics && !scores.isEmpty {
             needsQualityResort = true
         }
 
@@ -1130,7 +1130,7 @@ class TriageViewModel: ObservableObject {
     }
 
     /// Count distinct groups that produced at least one score
-    private func countGroups(_ scores: [URL: (tier: QualityTier, zScore: Double)]) -> Int {
+    private func countGroups(_ scores: [URL: QualityBreakdown]) -> Int {
         // Use a set of GroupKey-equivalent tuples built from scored images
         var groups = Set<String>()
         for entry in images where scores[entry.url] != nil {
@@ -1141,6 +1141,96 @@ class TriageViewModel: ObservableObject {
             groups.insert("\(filter)|\(object)|\(night)|\(exp)")
         }
         return groups.count
+    }
+
+    // MARK: - Live SNR Retention
+
+    /// Recompute SNR retention after mark/unmark toggles.
+    /// Uses cached snrSquared from QualityBreakdown for O(N) performance.
+    /// Falls back to simple frame count ratio when noise stats are unavailable.
+    func recomputeSNRRetention() {
+        // Group images by filter+target+exposure (same grouping as QualityEstimator)
+        struct GroupKey: Hashable {
+            let filter: String; let target: String; let exposure: Int
+        }
+
+        var groups: [GroupKey: (totalSNRSq: Double, retainedSNRSq: Double, total: Int, marked: Int)] = [:]
+        var fallbackTotal = 0
+        var fallbackRetained = 0
+        var hasSNRData = false
+
+        for entry in images {
+            let key = GroupKey(
+                filter: (entry.filter ?? "").uppercased().trimmingCharacters(in: .whitespaces),
+                target: (entry.target ?? "").trimmingCharacters(in: .whitespaces),
+                exposure: entry.exposure.map { Int($0.rounded()) } ?? 0
+            )
+
+            var g = groups[key, default: (0, 0, 0, 0)]
+            g.total += 1
+            if entry.isMarkedForDeletion { g.marked += 1 }
+
+            if let snrSq = entry.qualityBreakdown?.snrSquared {
+                hasSNRData = true
+                g.totalSNRSq += snrSq
+                if !entry.isMarkedForDeletion {
+                    g.retainedSNRSq += snrSq
+                }
+            }
+            groups[key] = g
+
+            fallbackTotal += 1
+            if !entry.isMarkedForDeletion { fallbackRetained += 1 }
+        }
+
+        if hasSNRData {
+            // Weighted average retention across groups (weighted by total SNR²)
+            var weightedRetention = 0.0
+            var totalWeight = 0.0
+            var detailLines: [String] = []
+
+            for (key, g) in groups.sorted(by: { $0.key.filter < $1.key.filter }) {
+                guard g.totalSNRSq > 0 else { continue }
+                let retention = (g.retainedSNRSq / g.totalSNRSq).squareRoot() * 100.0
+                weightedRetention += retention * g.totalSNRSq
+                totalWeight += g.totalSNRSq
+
+                if g.marked > 0 {
+                    let filterLabel = key.filter.isEmpty ? "All" : key.filter
+                    detailLines.append("  \(filterLabel): \(String(format: "%.1f", retention))% (\(g.marked) of \(g.total) marked)")
+                }
+            }
+
+            let overall = totalWeight > 0 ? weightedRetention / totalWeight : 100.0
+            snrRetention = overall
+
+            if detailLines.isEmpty {
+                snrRetentionDetail = "SNR Retention: 100%\nNo frames marked for deletion."
+            } else {
+                let lossPercent = 100.0 - overall
+                let markedCount = images.filter { $0.isMarkedForDeletion }.count
+                let totalExposure = images.reduce(0.0) { $0 + ($1.exposure ?? 0) }
+                let markedExposure = images.filter { $0.isMarkedForDeletion }.reduce(0.0) { $0 + ($1.exposure ?? 0) }
+                let integrationLoss = totalExposure > 0 ? markedExposure / totalExposure * 100.0 : 0
+                let integrationStr = markedExposure >= 3600 ? String(format: "%.1fh", markedExposure / 3600) : String(format: "%.0fm", markedExposure / 60)
+                let totalStr = totalExposure >= 3600 ? String(format: "%.1fh", totalExposure / 3600) : String(format: "%.0fm", totalExposure / 60)
+
+                var tooltip = "SNR Retention: \(String(format: "%.1f", overall))%\n"
+                tooltip += detailLines.joined(separator: "\n")
+                tooltip += "\n\nRemoving \(markedCount) frames loses \(String(format: "%.1f", lossPercent))% SNR"
+                tooltip += "\nwhile removing \(integrationStr) of \(totalStr) total (\(String(format: "%.0f", integrationLoss))% integration)."
+                if lossPercent < integrationLoss * 0.5 {
+                    tooltip += "\n→ Good trade-off: mostly cutting low-quality frames."
+                } else if lossPercent > integrationLoss * 0.9 {
+                    tooltip += "\n→ Caution: cutting nearly as much SNR as integration time."
+                }
+                snrRetentionDetail = tooltip
+            }
+        } else {
+            // Fallback: simple frame count ratio
+            snrRetention = fallbackTotal > 0 ? Double(fallbackRetained) / Double(fallbackTotal) * 100.0 : 100.0
+            snrRetentionDetail = "SNR Retention: \(String(format: "%.1f", snrRetention))%\n(Estimated from frame count — noise stats not yet available)"
+        }
     }
 
     // MARK: - Stretch Strength (current image only)
@@ -1765,6 +1855,7 @@ class TriageViewModel: ObservableObject {
         }
         needsTableRefresh = true
         statusMessage = "Marked \(count) filtered images"
+        recomputeSNRRetention()
     }
 
     // Unmark all currently filtered/visible images
@@ -1780,6 +1871,7 @@ class TriageViewModel: ObservableObject {
         }
         needsTableRefresh = true
         statusMessage = "Unmarked \(count) images"
+        recomputeSNRRetention()
     }
 
     // MARK: - Skip/Hide Marked
@@ -1826,6 +1918,7 @@ class TriageViewModel: ObservableObject {
         let marked = images[index].isMarkedForDeletion
         statusMessage = marked ? "Marked for deletion" : "Unmarked"
         needsTableRefresh = true
+        recomputeSNRRetention()
     }
 
     func togglePreDeleteForRows(_ rows: IndexSet) {
@@ -1841,6 +1934,7 @@ class TriageViewModel: ObservableObject {
 
         statusMessage = anyUnmarked ? "Marked \(count) for deletion" : "Unmarked \(count)"
         needsTableRefresh = true
+        recomputeSNRRetention()
     }
 
     // MARK: - Move Marked to PRE-DELETE Folder
@@ -1869,10 +1963,47 @@ class TriageViewModel: ObservableObject {
             return
         }
 
-        // Show confirmation dialog
+        // Build deletion impact summary for the confirmation dialog
+        var infoText = ""
+        let totalExposure = images.reduce(0.0) { $0 + ($1.exposure ?? 0) }
+        let markedExposure = markedImages.reduce(0.0) { $0 + ($1.exposure ?? 0) }
+
+        if totalExposure > 0 {
+            let integrationLoss = markedExposure / totalExposure * 100.0
+            let markedStr = markedExposure >= 3600 ? String(format: "%.1fh", markedExposure / 3600) : String(format: "%.0fm", markedExposure / 60)
+            let totalStr = totalExposure >= 3600 ? String(format: "%.1fh", totalExposure / 3600) : String(format: "%.0fm", totalExposure / 60)
+            infoText += "Integration lost: \(markedStr) of \(totalStr) total (-\(String(format: "%.0f", integrationLoss))%)\n"
+        }
+
+        // SNR impact from live retention bar
+        let snrLoss = 100.0 - snrRetention
+        if snrLoss > 0.05 {
+            infoText += "Estimated SNR impact: -\(String(format: "%.1f", snrLoss))%\n"
+        }
+
+        // Breakdown by quality tier
+        let trashCount = markedImages.filter { $0.qualityTier == .trash }.count
+        let borderlineCount = markedImages.filter { $0.qualityTier == .borderline }.count
+        let goodCount = markedImages.filter { $0.qualityTier == .good }.count
+        let excellentCount = markedImages.filter { $0.qualityTier == .excellent }.count
+        let unscoredCount = markedImages.filter { $0.qualityTier == nil }.count
+
+        var breakdown: [String] = []
+        if trashCount > 0 { breakdown.append("\(trashCount)× trash") }
+        if borderlineCount > 0 { breakdown.append("\(borderlineCount)× borderline") }
+        if goodCount > 0 { breakdown.append("\(goodCount)× good") }
+        if excellentCount > 0 { breakdown.append("\(excellentCount)× excellent") }
+        if unscoredCount > 0 { breakdown.append("\(unscoredCount)× unscored") }
+        if !breakdown.isEmpty {
+            infoText += "Breakdown: \(breakdown.joined(separator: ", "))\n"
+        }
+
+        infoText += "\nFiles will be moved to \"PRE-DELETE\" — not permanently deleted. Undo with Cmd+Z."
+
+        // Show confirmation dialog with impact summary
         let alert = NSAlert()
-        alert.messageText = "Move \(markedImages.count) marked images?"
-        alert.informativeText = "Files will be moved to a \"PRE-DELETE\" folder inside the session directory. No files will be permanently deleted. You can undo this action."
+        alert.messageText = "Move \(markedImages.count) marked images to PRE-DELETE?"
+        alert.informativeText = infoText
         alert.alertStyle = .warning
         alert.addButton(withTitle: "Move to PRE-DELETE")
         alert.addButton(withTitle: "Cancel")
@@ -2028,6 +2159,7 @@ class TriageViewModel: ObservableObject {
         }
 
         sessionOverviewModel.updateStats(from: images)
+        recomputeSNRRetention()
         let remaining = preDeleteUndoStack.count
         if remaining > 0 {
             statusMessage = "Restored \(restoredCount) files — \(remaining) more undo(s) available"
@@ -2406,8 +2538,8 @@ class TriageViewModel: ObservableObject {
             }
 
             statusMessage = isCaching
-                ? "Pre-caching \(cachingCount)/\(cachingTotal)... | \(preview.originalWidth)x\(preview.originalHeight)"
-                : "\(preview.originalWidth)x\(preview.originalHeight) \(preview.channelCount == 1 ? "mono" : "RGB")"
+                ? "Pre-caching \(cachingCount)/\(cachingTotal)..."
+                : ""
             return
         }
 
@@ -2453,15 +2585,7 @@ class TriageViewModel: ObservableObject {
                         self.benchmarkStats.markFirstImageDisplayed()
                     }
 
-                    // Status: dimensions + channel info + debayer state (for OSC images)
-                    let rawCh = decoded.channelCount == 1 ? "mono" : "RGB\(decoded.channelCount)ch"
-                    let debayerInfo: String
-                    if let pat = self.selectedImage?.bayerPattern {
-                        debayerInfo = self.debayerEnabled ? " | debayer ON (\(pat))" : " | debayer OFF (\(pat))"
-                    } else {
-                        debayerInfo = ""
-                    }
-                    self.statusMessage = "\(decoded.width)x\(decoded.height) \(rawCh)\(debayerInfo)"
+                    self.statusMessage = ""
 
                 case .failure(let error):
                     self.currentDecodedImage = nil
@@ -2545,10 +2669,7 @@ class TriageViewModel: ObservableObject {
         // Recompute quality scores (filter/exposure may have changed)
         let scores = QualityEstimator.computeScores(for: images)
         for i in images.indices {
-            if let result = scores[images[i].url] {
-                images[i].qualityTier = result.tier
-                images[i].qualityZScore = result.zScore
-            }
+            images[i].qualityBreakdown = scores[images[i].url]
         }
 
         statusMessage = "Batch: \(result.succeeded) files modified"

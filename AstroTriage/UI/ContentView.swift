@@ -8,7 +8,7 @@ struct ContentView: View {
     @StateObject private var viewModel = TriageViewModel()
     @State private var renderer: MetalRenderer?
     @State private var keyboardMonitor: Any?
-    @State private var sliderValue: Double = 0.25  // Local slider state, synced on navigation
+    @State private var sliderValue: Double = Double(AppSettings.loadFloat(for: .stretchStrength) ?? STFCalculator.defaultTargetBackground)
 
     // Night mode colors
     private var nightFg: Color { viewModel.nightMode ? .red : Color(NSColor.labelColor) }
@@ -501,14 +501,7 @@ struct ContentView: View {
 
                         Spacer()
 
-                        // RIGHT SIDE: filter, cache/file stats, status
-                        if let image = viewModel.selectedImage,
-                           let filter = image.filter {
-                            statusDivider
-                            Text(filter)
-                                .font(.system(size: 11, weight: .medium, design: .monospaced))
-                                .foregroundColor(nightFgDim)
-                        }
+                        // RIGHT SIDE: cache/file stats, SNR retention, status
 
                         // Cache and file size info
                         if !viewModel.images.isEmpty {
@@ -524,6 +517,13 @@ struct ContentView: View {
                             Text("\(viewModel.selectedTableIndices.count) selected")
                                 .font(.system(size: 11, design: .monospaced))
                                 .foregroundColor(nightFgDim)
+                        }
+
+                        // Live SNR retention bar — shows when frames are marked
+                        if viewModel.snrRetention < 99.95 && !viewModel.images.isEmpty {
+                            statusDivider
+                            SNRRetentionBarView(retention: viewModel.snrRetention, isNightMode: viewModel.nightMode)
+                                .help(viewModel.snrRetentionDetail)
                         }
 
                         statusDivider
@@ -692,6 +692,56 @@ struct ContentView: View {
                 .font(.system(size: 9, weight: .medium, design: .monospaced))
                 .foregroundColor(nightFg)
                 .frame(width: 34, alignment: .leading)
+        }
+    }
+}
+
+// MARK: - SNR Retention Bar
+
+/// Compact "health bar" showing how much stack SNR is retained after marking frames for deletion.
+/// Green (>95%) → Yellow (90-95%) → Orange (80-90%) → Red (<80%).
+struct SNRRetentionBarView: View {
+    let retention: Double
+    let isNightMode: Bool
+
+    private var barColor: Color {
+        if isNightMode {
+            // Night mode: use red-shifted colors to preserve dark adaptation
+            if retention > 95 { return Color(red: 0.3, green: 0.0, blue: 0.0) }
+            if retention > 90 { return Color(red: 0.4, green: 0.0, blue: 0.0) }
+            if retention > 80 { return Color(red: 0.5, green: 0.0, blue: 0.0) }
+            return Color(red: 0.6, green: 0.0, blue: 0.0)
+        }
+        if retention > 95 { return .green }
+        if retention > 90 { return .yellow }
+        if retention > 80 { return .orange }
+        return .red
+    }
+
+    private var textColor: Color {
+        isNightMode ? Color.red.opacity(0.8) : .secondary
+    }
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Text("SNR")
+                .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                .foregroundColor(textColor)
+
+            // Bar background + fill
+            ZStack(alignment: .leading) {
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(Color.gray.opacity(isNightMode ? 0.15 : 0.2))
+                    .frame(width: 60, height: 8)
+
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(barColor)
+                    .frame(width: CGFloat(max(0, min(retention, 100)) / 100.0) * 60, height: 8)
+            }
+
+            Text(String(format: "%.1f%%", retention))
+                .font(.system(size: 9, weight: .medium, design: .monospaced))
+                .foregroundColor(textColor)
         }
     }
 }

@@ -1,4 +1,4 @@
-// v3.6.0 — Computed HFR & FWHM from detected star positions
+// v4.0.0 — Computed HFR, FWHM & Eccentricity from detected star positions
 // Measures Half-Flux Radius and Full Width at Half Maximum for quality scoring.
 // Operates on full-resolution uint16 data using small patches around each star.
 // FWHM uses linearized Gaussian fit (ln(brightness) vs dist² → sigma → 2.355σ).
@@ -7,12 +7,13 @@
 import Foundation
 import Metal
 
-// Per-image star metrics: median HFR, FWHM, and star count
+// Per-image star metrics: median HFR, FWHM, eccentricity, and star count
 struct StarMetrics {
     let medianHFR: Double       // Half-flux radius in pixels (median of measured stars)
     let medianFWHM: Double      // Full width at half maximum in pixels
     let measuredStarCount: Int  // Stars used for HFR/FWHM measurement (capped subset)
     let totalStarCount: Int     // True total number of stars detected in the image
+    let medianEccentricity: Double?  // Median star eccentricity [0..1], nil if < 5 measured
 }
 
 enum StarMetricsCalculator {
@@ -72,6 +73,7 @@ enum StarMetricsCalculator {
 
         var hfrValues: [Double] = []
         var fwhmValues: [Double] = []
+        var eccValues: [Double] = []
 
         for star in toMeasure {
             let cx = Int(star.x.rounded())
@@ -108,6 +110,14 @@ enum StarMetricsCalculator {
                     fwhmValues.append(fwhm)
                 }
             }
+
+            // Compute eccentricity via 2D image moments (same pixel data, near-zero extra cost)
+            if let ecc = computeEccentricity(
+                ptr: ptr, channelOffset: channelOffset, width: w,
+                cx: star.x, cy: star.y, radius: apertureRadius, background: bg
+            ) {
+                eccValues.append(ecc)
+            }
         }
 
         guard hfrValues.count >= minStars, fwhmValues.count >= minStars else { return nil }
@@ -119,11 +129,21 @@ enum StarMetricsCalculator {
         let medianHFR = hfrValues[hfrValues.count / 2]
         let medianFWHM = fwhmValues[fwhmValues.count / 2]
 
+        // Eccentricity requires more stars for reliable median (5 minimum)
+        let medianEcc: Double?
+        if eccValues.count >= 5 {
+            eccValues.sort()
+            medianEcc = eccValues[eccValues.count / 2]
+        } else {
+            medianEcc = nil
+        }
+
         return StarMetrics(
             medianHFR: medianHFR,
             medianFWHM: medianFWHM,
             measuredStarCount: totalDetected,
-            totalStarCount: totalStarCount ?? totalDetected
+            totalStarCount: totalStarCount ?? totalDetected,
+            medianEccentricity: medianEcc
         )
     }
 
@@ -387,5 +407,85 @@ enum StarMetricsCalculator {
         let fwhm = 2.3548 * sigma
 
         return fwhm
+    }
+
+    // MARK: - Eccentricity (2D Image Moments)
+
+    /// Compute star eccentricity using weighted second-order image moments.
+    /// Same method as SExtractor/DAOPHOT — O(n) per star, no iteration.
+    /// eccentricity = sqrt(1 - b²/a²) where a,b are eigenvalues of the covariance matrix.
+    /// Returns [0..1]: 0 = perfect circle, >0.5 = clearly elongated, >0.7 = trailing.
+    private static func computeEccentricity(
+        ptr: UnsafeMutablePointer<UInt16>,
+        channelOffset: Int,
+        width: Int,
+        cx: Float, cy: Float,
+        radius: Float,
+        background: Float
+    ) -> Double? {
+        let intCx = Int(cx.rounded())
+        let intCy = Int(cy.rounded())
+        let fitRadius = min(radius, 5.0)
+        let fitRadiusSq = fitRadius * fitRadius
+        let fitR = Int(fitRadius)
+
+        // Weighted second-order moments
+        var sumI: Double = 0
+        var sumIxx: Double = 0
+        var sumIyy: Double = 0
+        var sumIxy: Double = 0
+
+        for dy in -fitR...fitR {
+            for dx in -fitR...fitR {
+                let distSq = Float(dx * dx + dy * dy)
+                if distSq > fitRadiusSq { continue }
+
+                let px = intCx + dx
+                let py = intCy + dy
+                let val = Float(ptr[channelOffset + py * width + px]) - background
+
+                if val > 0 {
+                    let intensity = Double(val)
+                    let ddx = Double(dx)
+                    let ddy = Double(dy)
+
+                    sumI += intensity
+                    sumIxx += intensity * ddx * ddx
+                    sumIyy += intensity * ddy * ddy
+                    sumIxy += intensity * ddx * ddy
+                }
+            }
+        }
+
+        guard sumI > 0 else { return nil }
+
+        // Second-order moments (covariance matrix elements)
+        let mxx = sumIxx / sumI
+        let myy = sumIyy / sumI
+        let mxy = sumIxy / sumI
+
+        // Eigenvalues of [[mxx, mxy], [mxy, myy]]
+        let trace = mxx + myy
+        let det = mxx * myy - mxy * mxy
+
+        guard det > 0, trace > 0 else { return nil }
+
+        let discriminant = trace * trace - 4.0 * det
+        guard discriminant >= 0 else { return nil }
+
+        let sqrtDisc = discriminant.squareRoot()
+        let lambda1 = (trace + sqrtDisc) * 0.5  // Semi-major² (larger eigenvalue)
+        let lambda2 = (trace - sqrtDisc) * 0.5  // Semi-minor² (smaller eigenvalue)
+
+        guard lambda1 > 0, lambda2 >= 0 else { return nil }
+
+        // Eccentricity = sqrt(1 - b²/a²) = sqrt(1 - lambda2/lambda1)
+        let ratio = lambda2 / lambda1
+        let eccentricity = (1.0 - ratio).squareRoot()
+
+        // Sanity check: eccentricity should be in [0, 1)
+        guard eccentricity >= 0, eccentricity < 1.0 else { return nil }
+
+        return eccentricity
     }
 }

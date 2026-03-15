@@ -1,4 +1,4 @@
-// v3.5.0
+// v4.0.0
 import Foundation
 
 // Table column metadata for NSTableView configuration
@@ -23,10 +23,12 @@ struct ColumnDefinition {
         ColumnDefinition(identifier: "frameNumber", title: "#",         defaultWidth: 45,  minWidth: 35,  isDefaultVisible: true,  isHideable: true),
         ColumnDefinition(identifier: "filter",      title: "Filter",    defaultWidth: 50,  minWidth: 40,  isDefaultVisible: true,  isHideable: true),
         ColumnDefinition(identifier: "quality",     title: "Q",         defaultWidth: 28,  minWidth: 28,  isDefaultVisible: true,  isHideable: true),
+        ColumnDefinition(identifier: "snrContrib",  title: "Contrib",  defaultWidth: 55,  minWidth: 40,  isDefaultVisible: true,  isHideable: true),
         ColumnDefinition(identifier: "starCount",   title: "Stars",     defaultWidth: 55,  minWidth: 40,  isDefaultVisible: true,  isHideable: true),
         ColumnDefinition(identifier: "fwhm",        title: "FWHM",      defaultWidth: 55,  minWidth: 40,  isDefaultVisible: true,  isHideable: true),
         ColumnDefinition(identifier: "hfr",         title: "HFR",       defaultWidth: 50,  minWidth: 40,  isDefaultVisible: true,  isHideable: true),
         ColumnDefinition(identifier: "snr",         title: "SNR",       defaultWidth: 50,  minWidth: 40,  isDefaultVisible: true,  isHideable: true),
+        ColumnDefinition(identifier: "eccentricity", title: "Ecc",     defaultWidth: 45,  minWidth: 35,  isDefaultVisible: true,  isHideable: true),
         ColumnDefinition(identifier: "exposure",    title: "Exp",       defaultWidth: 50,  minWidth: 40,  isDefaultVisible: true,  isHideable: true),
         ColumnDefinition(identifier: "nightDate",   title: "Night",     defaultWidth: 85,  minWidth: 70,  isDefaultVisible: true,  isHideable: true),
         ColumnDefinition(identifier: "time",        title: "Time",      defaultWidth: 75,  minWidth: 60,  isDefaultVisible: true,  isHideable: true),
@@ -60,25 +62,25 @@ struct ColumnDefinition {
     // Case A: Single target, multi filter — filter+exp group, then quality
     // Sort: filter ASC → exposure DESC → quality DESC → starCount DESC → fwhm ASC
     private static let singleTargetMultiFilter: [String] =
-        ["marked", "frameNumber", "filter", "exposure", "quality", "starCount", "fwhm", "hfr", "snr",
+        ["marked", "frameNumber", "filter", "exposure", "quality", "snrContrib", "starCount", "fwhm", "hfr", "snr", "eccentricity",
          "nightDate", "time", "target"] + columnTail
 
     // Case B: Single target, single filter — exposure groups, then quality + time
     // Sort: exposure DESC → quality DESC → starCount DESC → fwhm ASC
     private static let singleTargetSingleFilter: [String] =
-        ["marked", "frameNumber", "exposure", "quality", "starCount", "fwhm", "hfr", "snr",
+        ["marked", "frameNumber", "exposure", "quality", "snrContrib", "starCount", "fwhm", "hfr", "snr", "eccentricity",
          "time", "nightDate", "filter", "target"] + columnTail
 
     // Case C: Multi target, multi filter — target+filter+exp group, then quality
     // Sort: target ASC → filter ASC → exposure DESC → quality DESC → starCount DESC
     private static let multiTargetMultiFilter: [String] =
-        ["marked", "frameNumber", "target", "filter", "exposure", "quality", "starCount", "fwhm", "hfr", "snr",
+        ["marked", "frameNumber", "target", "filter", "exposure", "quality", "snrContrib", "starCount", "fwhm", "hfr", "snr", "eccentricity",
          "nightDate", "time"] + columnTail
 
     // Case D: Multi target, single filter — target+exp group, then quality
     // Sort: target ASC → exposure DESC → quality DESC → starCount DESC
     private static let multiTargetSingleFilter: [String] =
-        ["marked", "frameNumber", "target", "exposure", "quality", "starCount", "fwhm", "hfr", "snr",
+        ["marked", "frameNumber", "target", "exposure", "quality", "snrContrib", "starCount", "fwhm", "hfr", "snr", "eccentricity",
          "time", "nightDate", "filter"] + columnTail
 
     /// Returns the recommended column order based on session composition
@@ -122,6 +124,10 @@ struct ColumnDefinition {
             guard let med = entry.noiseMedian, let mad = entry.noiseMAD, mad > 0 else { return "" }
             let snr = med / mad
             return String(format: "%.0f", snr)
+        case "snrContrib":
+            return entry.qualityBreakdown?.snrContribution.map { String(format: "%.0f%%", $0) } ?? ""
+        case "eccentricity":
+            return entry.computedEccentricity.map { String(format: "%.2f", $0) } ?? ""
         default:            return ""
         }
     }
@@ -144,6 +150,8 @@ struct ColumnDefinition {
         case "snr":
             guard let med = entry.noiseMedian, let mad = entry.noiseMAD, mad > 0 else { return nil }
             return Double(med / mad)
+        case "snrContrib":  return entry.qualityBreakdown?.snrContribution
+        case "eccentricity": return entry.computedEccentricity
         default:            return nil
         }
     }
@@ -155,7 +163,7 @@ struct ColumnDefinition {
         switch columnId {
         case "frameNumber", "exposure", "starCount", "sensorTemp",
              "gain", "offset", "focuserTemp", "ambientTemp", "fileSize", "snr",
-             "quality", "date", "nightDate", "time":
+             "quality", "snrContrib", "date", "nightDate", "time":
             return true
         // fwhm and hfr: lower = better → default ascending (best first)
         case "fwhm", "hfr":
@@ -169,7 +177,7 @@ struct ColumnDefinition {
     static func isNumericColumn(_ columnId: String) -> Bool {
         switch columnId {
         case "frameNumber", "exposure", "hfr", "starCount", "sensorTemp",
-             "fwhm", "gain", "offset", "focuserTemp", "ambientTemp", "fileSize", "snr", "quality":
+             "fwhm", "gain", "offset", "focuserTemp", "ambientTemp", "fileSize", "snr", "quality", "snrContrib", "eccentricity":
             return true
         default:
             return false
@@ -180,7 +188,11 @@ struct ColumnDefinition {
     static func headerToolTip(for columnId: String) -> String? {
         switch columnId {
         case "quality":
-            return "Four-tier quality score within group (same filter + target + exposure).\nStage 1: Red if any metric catastrophically bad (< 50% of group median).\nStage 2: Weighted z-scores of stars, FWHM, HFR, noise.\nFull green = excellent, half-green = good, orange = borderline, red = garbage."
+            return "Quality score within group (same filter + target + exposure).\nStage 1: Red if any metric catastrophically bad (< 50% of group median).\nStage 2: Weighted z-scores of stars, FWHM, HFR, noise.\nFull green = excellent, half-green = good.\nOrange gradient (4 levels) = borderline. Red = garbage.\nHover each cell for per-metric breakdown + SNR contribution."
+        case "snrContrib":
+            return "SNR Contribution: how much this frame adds to a weighted stack\nrelative to the best frame in its group.\n100% = best frame, 50% = contributes half as much.\nBased on (SNR_i / SNR_best)² — the stacking SNR formula."
+        case "eccentricity":
+            return "Star eccentricity from 2D image moments (same method as SExtractor).\n0.0 = perfect circle, >0.5 = clearly elongated, >0.6 = trash.\nDetects tracking errors, wind shake, and mount issues.\nWeight in quality score: 1.5× (highest — can't be fixed by stacking)."
         case "snr":
             return "Signal-to-Noise Ratio.\nComputed from median pixel value / noise MAD during auto-stretch.\nHigher = cleaner signal. Affected by exposure, light pollution, clouds."
         case "fwhm":
