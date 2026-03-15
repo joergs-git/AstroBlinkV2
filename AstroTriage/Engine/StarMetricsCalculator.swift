@@ -129,9 +129,9 @@ enum StarMetricsCalculator {
         let medianHFR = hfrValues[hfrValues.count / 2]
         let medianFWHM = fwhmValues[fwhmValues.count / 2]
 
-        // Eccentricity requires more stars for reliable median (5 minimum)
+        // Eccentricity: 3 stars minimum for reliable median
         let medianEcc: Double?
-        if eccValues.count >= 5 {
+        if eccValues.count >= 3 {
             eccValues.sort()
             medianEcc = eccValues[eccValues.count / 2]
         } else {
@@ -425,9 +425,25 @@ enum StarMetricsCalculator {
     ) -> Double? {
         let intCx = Int(cx.rounded())
         let intCy = Int(cy.rounded())
-        let fitRadius = min(radius, 5.0)
+        // Tighter fit radius than FWHM — focus on star core where SNR is highest
+        let fitRadius: Float = 3.0
         let fitRadiusSq = fitRadius * fitRadius
         let fitR = Int(fitRadius)
+
+        // Find peak value first (same as FWHM does) — need minimum SNR
+        var peakValue: Float = 0
+        for dy in -2...2 {
+            for dx in -2...2 {
+                let px = intCx + dx
+                let py = intCy + dy
+                let val = Float(ptr[channelOffset + py * width + px]) - background
+                if val > peakValue { peakValue = val }
+            }
+        }
+        guard peakValue > 50 else { return nil }  // Need reasonable SNR for moments
+
+        // Only use pixels above 10% of peak (same threshold as FWHM Gaussian fit)
+        let threshold = peakValue * 0.1
 
         // Weighted second-order moments
         var sumI: Double = 0
@@ -444,7 +460,7 @@ enum StarMetricsCalculator {
                 let py = intCy + dy
                 let val = Float(ptr[channelOffset + py * width + px]) - background
 
-                if val > 0 {
+                if val > threshold {
                     let intensity = Double(val)
                     let ddx = Double(dx)
                     let ddy = Double(dy)
