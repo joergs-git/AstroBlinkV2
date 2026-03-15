@@ -426,6 +426,8 @@ class TriageViewModel: ObservableObject {
         let urls = panel.urls
         guard !urls.isEmpty else { return }
 
+        wireSessionOverviewCallbacks()
+
         // Separate directories and files
         var directories: [URL] = []
         var files: [URL] = []
@@ -448,6 +450,12 @@ class TriageViewModel: ObservableObject {
             // Individual files (or mix of files + dirs — treat dirs as files)
             loadFiles(urls: urls)
         }
+    }
+
+    /// Wire session overview tap callbacks (idempotent — safe to call multiple times)
+    private func wireSessionOverviewCallbacks() {
+        sessionOverviewModel.onObjectTapped = { [weak self] name in self?.navigateToObject(name) }
+        sessionOverviewModel.onFilterTapped = { [weak self] obj, filter in self?.navigateToObject(obj, filter: filter) }
     }
 
     // Load specific files (user selected individual files, not a folder)
@@ -1077,16 +1085,14 @@ class TriageViewModel: ObservableObject {
                 self.detectMeridianFlip()
 
                 // Auto-reorder columns based on session composition (4 cases)
-                // Only if user hasn't manually set a column order
-                if AppSettings.loadStrings(for: .columnOrder) == nil {
-                    let uniqueTargets = Set(self.images.compactMap { $0.target?.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty })
-                    let uniqueFilters = Set(self.images.compactMap { $0.filter?.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty })
-                    let isMultiObject = uniqueTargets.count > 1
-                    let isMultiFilter = uniqueFilters.count > 1
-                    self.pendingColumnOrder = ColumnDefinition.recommendedColumnOrder(
-                        isMultiObject: isMultiObject, isMultiFilter: isMultiFilter
-                    )
-                }
+                // Always apply — each session type needs its own layout
+                let uniqueTargets = Set(self.images.compactMap { $0.target?.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty })
+                let uniqueFilters = Set(self.images.compactMap { $0.filter?.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty })
+                let isMultiObject = uniqueTargets.count > 1
+                let isMultiFilter = uniqueFilters.count > 1
+                self.pendingColumnOrder = ColumnDefinition.recommendedColumnOrder(
+                    isMultiObject: isMultiObject, isMultiFilter: isMultiFilter
+                )
                 // Update rotation for current image now that pier side data is available
                 self.updateMeridianRotation()
 
@@ -1759,6 +1765,23 @@ class TriageViewModel: ObservableObject {
         guard index >= 0, index < images.count else { return }
         selectedIndex = index
         displayCurrentImage()
+    }
+
+    /// Navigate to the first image matching the given object name (and optionally filter).
+    /// Called from session overview when user clicks an object or filter name.
+    func navigateToObject(_ objectName: String, filter: String? = nil) {
+        let name = objectName.trimmingCharacters(in: .whitespaces)
+        guard let idx = images.firstIndex(where: { entry in
+            let target = (entry.target ?? "").trimmingCharacters(in: .whitespaces)
+            guard target == name else { return false }
+            if let f = filter {
+                return (entry.filter ?? "").uppercased().trimmingCharacters(in: .whitespaces)
+                    == f.uppercased().trimmingCharacters(in: .whitespaces)
+            }
+            return true
+        }) else { return }
+        selectImage(at: idx)
+        needsTableRefresh = true
     }
 
     func navigateNext() {

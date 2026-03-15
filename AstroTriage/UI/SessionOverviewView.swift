@@ -174,6 +174,10 @@ class SessionOverviewModel: ObservableObject {
     @Published var totalShots: Int = 0
 
     @Published var sessionObjects: String?
+    // Callback: navigate to first image of tapped object in file list
+    var onObjectTapped: ((String) -> Void)?
+    // Callback: navigate to first image of tapped filter within an object
+    var onFilterTapped: ((String, String) -> Void)?
     @Published var firstAcquisition: String?
     @Published var lastAcquisition: String?
     @Published var sessionCamera: String?
@@ -444,28 +448,8 @@ struct SessionOverviewContentView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // TOP: Session stats + integration table
+            // TOP: Integration table
             VStack(spacing: 0) {
-                // Session info header (compact)
-                VStack(alignment: .leading, spacing: 2) {
-                    if let obj = model.sessionObjects, !obj.isEmpty {
-                        infoRow("Object:", obj)
-                    }
-                    if let scope = model.sessionTelescope, !scope.isEmpty {
-                        infoRow("Scope:", scope)
-                    }
-                    if let cam = model.sessionCamera, !cam.isEmpty {
-                        infoRow("Camera:", cam)
-                    }
-                }
-                .font(.system(size: 13, design: .monospaced))
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 5)
-                .background(Color(NSColor.controlBackgroundColor))
-                .textSelection(.enabled)
-
-                Divider()
 
                 if model.rows.isEmpty {
                     Text("No session loaded")
@@ -744,16 +728,19 @@ struct SessionOverviewContentView: View {
             .trimmingCharacters(in: .whitespaces)
         return HStack(spacing: 0) {
             if hasMultipleObjects {
-                Text(row.object)
-                    .frame(minWidth: 50, alignment: .leading)
-                    .foregroundColor(.primary)
-                    .lineLimit(1)
+                Button(action: { model.onObjectTapped?(row.object) }) {
+                    Text(row.object).lineLimit(1).foregroundColor(.accentColor)
+                }
+                .buttonStyle(.plain)
+                .frame(minWidth: 50, alignment: .leading)
                 Spacer(minLength: 4)
             }
-            Text(cleanFilter)
-                .frame(width: 50, alignment: .leading)
-                .foregroundColor(cleanFilter == "none" ? .secondary : .green)
-                .fontWeight(.semibold)
+            Button(action: { model.onFilterTapped?(row.object, cleanFilter) }) {
+                Text(cleanFilter).fontWeight(.semibold)
+                    .foregroundColor(cleanFilter == "none" ? .secondary : .accentColor)
+            }
+            .buttonStyle(.plain)
+            .frame(width: 50, alignment: .leading)
             Text("\(row.shotCount)")
                 .frame(width: 45, alignment: .trailing)
             Text(formatExposure(row.exposurePerShot))
