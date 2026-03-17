@@ -20,6 +20,48 @@ class SyncedZoomState: ObservableObject {
 
 enum CompareWindowController {
 
+    /// Build a "why worse" summary comparing selected image metrics to the best
+    private static func buildWhyWorse(selected: ImageEntry, best: ImageEntry) -> String {
+        guard let selBD = selected.qualityBreakdown else { return "" }
+        let bestBD = best.qualityBreakdown
+
+        var lines: [String] = []
+
+        // Compare individual metrics: selected vs best
+        func cmp(_ name: String, selVal: Double?, bestVal: Double?, unit: String = "", lowerIsBetter: Bool = false) {
+            guard let sv = selVal, let bv = bestVal else { return }
+            let delta = lowerIsBetter ? sv - bv : bv - sv
+            let arrow = delta > 0.01 ? "\u{2191}" : (delta < -0.01 ? "\u{2193}" : "\u{2248}")
+            let selStr = String(format: "%.1f", sv)
+            let bestStr = String(format: "%.1f", bv)
+            lines.append("\(name): \(selStr)\(unit) vs \(bestStr)\(unit) \(arrow)")
+        }
+
+        cmp("Stars", selVal: selected.displayStarCount.map { Double($0) },
+            bestVal: best.displayStarCount.map { Double($0) })
+        cmp("FWHM", selVal: selected.displayFWHM, bestVal: best.displayFWHM, unit: "px", lowerIsBetter: true)
+        cmp("HFR", selVal: selected.displayHFR, bestVal: best.displayHFR, unit: "px", lowerIsBetter: true)
+        cmp("Ecc", selVal: selected.computedEccentricity, bestVal: best.computedEccentricity, lowerIsBetter: true)
+
+        // SNR comparison via noise stats
+        if let selMed = selected.noiseMedian, let selMAD = selected.noiseMAD, selMAD > 0,
+           let bestMed = best.noiseMedian, let bestMAD = best.noiseMAD, bestMAD > 0 {
+            let selSNR = selMed / selMAD
+            let bestSNR = bestMed / bestMAD
+            let pct = bestSNR > 0 ? (selSNR / bestSNR) * 100.0 : 0
+            lines.append("SNR: \(String(format: "%.0f", pct))% of best")
+        }
+
+        // Recommendation label
+        let rec = selBD.recommendationLabel
+        if !rec.isEmpty {
+            lines.append("")
+            lines.append("\u{2192} \(rec)")
+        }
+
+        return lines.joined(separator: "  \u{2502}  ")
+    }
+
     /// Open a comparison window: best image (left) vs selected image (right)
     static func open(selectedEntry: ImageEntry, bestEntry: ImageEntry,
                      device: MTLDevice, nightMode: Bool, debayerEnabled: Bool) {
@@ -76,13 +118,34 @@ enum CompareWindowController {
             let selDateTime = [selectedEntry.date, selectedEntry.time].compactMap { $0 }.joined(separator: " ")
             let bestLabel = "Best — \(bestEntry.filename)\n\(bestDateTime)"
             let selLabel = "Selected — \(selectedEntry.filename)\n\(selDateTime)"
+            let whyWorse = buildWhyWorse(selected: selectedEntry, best: bestEntry)
+
+            // Convert star details to normalized coordinates [0,1] for overlay rendering
+            // Show ALL measured stars with color coding by eccentricity
+            let selStarProblems: [(x: CGFloat, y: CGFloat, ecc: Double)] = {
+                guard let details = selectedEntry.starDetails,
+                      let w = selectedEntry.width, let h = selectedEntry.height,
+                      w > 0, h > 0 else { return [] }
+                return details.map { star in
+                    (x: CGFloat(star.x) / CGFloat(w),
+                     y: CGFloat(star.y) / CGFloat(h),
+                     ecc: star.eccentricity)
+                }
+            }()
 
             await MainActor.run {
                 let syncState = SyncedZoomState()
+                // Start at fit-to-view when star overlay data is available
+                // so all circles are visible without needing to zoom out
+                if !selStarProblems.isEmpty {
+                    syncState.zoomScale = 1.0
+                }
                 let view = CompareView(
                     leftTexture: bt, rightTexture: st,
                     leftLabel: bestLabel,
                     rightLabel: selLabel,
+                    whyWorseText: whyWorse,
+                    problemStars: selStarProblems,
                     syncState: syncState
                 )
                 let hostingView = NSHostingView(rootView: view)
@@ -98,7 +161,7 @@ enum CompareWindowController {
                 window.contentView = hostingView
                 window.minSize = NSSize(width: 800, height: 400)
                 window.isReleasedWhenClosed = false
-                window.orderFront(nil)
+                window.makeKeyAndOrderFront(nil)
             }
         }
     }
@@ -111,14 +174,19 @@ struct CompareView: View {
     let rightTexture: MTLTexture
     let leftLabel: String
     let rightLabel: String
+    let whyWorseText: String
+    // Problem stars: normalized (0-1) coordinates + eccentricity for overlay on right panel
+    let problemStars: [(x: CGFloat, y: CGFloat, ecc: Double)]
     @ObservedObject var syncState: SyncedZoomState
+    @State private var showStarOverlay: Bool = true
 
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 2) {
-                // Left: Best image
+                // Left: Best image (no star overlay)
                 VStack(spacing: 0) {
                     SyncedZoomableView(texture: leftTexture, syncState: syncState)
+                        .id("compare-left")
                     Text(leftLabel)
                         .font(.system(size: 11, design: .monospaced))
                         .foregroundColor(.green)
@@ -132,9 +200,14 @@ struct CompareView: View {
                 // Divider
                 Rectangle().fill(Color.gray.opacity(0.5)).frame(width: 2)
 
-                // Right: Selected image
+                // Right: Selected image with star overlay (rendered by NSView, pixel-perfect)
                 VStack(spacing: 0) {
-                    SyncedZoomableView(texture: rightTexture, syncState: syncState)
+                    SyncedZoomableView(
+                        texture: rightTexture, syncState: syncState,
+                        starOverlayData: problemStars,
+                        showStarOverlay: showStarOverlay
+                    )
+                    .id("compare-right")
                     Text(rightLabel)
                         .font(.system(size: 11, design: .monospaced))
                         .foregroundColor(.orange)
@@ -144,6 +217,22 @@ struct CompareView: View {
                         .frame(maxWidth: .infinity)
                         .background(Color.black)
                 }
+            }
+
+            // "Why worse" info bar — educational metric comparison
+            if !whyWorseText.isEmpty {
+                HStack(spacing: 6) {
+                    Image(systemName: "info.circle.fill")
+                        .font(.system(size: 11))
+                        .foregroundColor(.orange)
+                    Text(whyWorseText)
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundColor(.secondary)
+                        .lineLimit(2)
+                }
+                .padding(.horizontal, 8).padding(.vertical, 4)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color(NSColor.windowBackgroundColor).opacity(0.95))
             }
 
             // Controls bar
@@ -158,9 +247,24 @@ struct CompareView: View {
                 .buttonStyle(.bordered).controlSize(.small)
                 .help("Reset zoom and pan to fit-to-view")
 
+                // Star overlay toggle — only show when there are problem stars
+                if !problemStars.isEmpty {
+                    Toggle(isOn: $showStarOverlay) {
+                        HStack(spacing: 3) {
+                            Image(systemName: "circle.circle")
+                                .font(.system(size: 11))
+                            Text("Stars (\(problemStars.count))")
+                                .font(.system(size: 11, design: .monospaced))
+                        }
+                    }
+                    .toggleStyle(.switch).controlSize(.small)
+                    .tint(.red)
+                    .help("Show/hide circles on problematic stars (high eccentricity)")
+                }
+
                 Spacer()
 
-                Text("Click-drag to zoom • Scroll to pan • Double-click to reset")
+                Text("Click-drag to zoom \u{2022} Scroll to pan \u{2022} Double-click to reset")
                     .font(.system(size: 10, design: .monospaced))
                     .foregroundColor(.secondary)
             }
@@ -176,6 +280,9 @@ struct CompareView: View {
 struct SyncedZoomableView: NSViewRepresentable {
     let texture: MTLTexture
     @ObservedObject var syncState: SyncedZoomState
+    // Optional star overlay data (only used for right panel in compare view)
+    var starOverlayData: [(x: CGFloat, y: CGFloat, ecc: Double)] = []
+    var showStarOverlay: Bool = false
 
     func makeNSView(context: Context) -> SyncedZoomMTKView {
         let view = SyncedZoomMTKView()
@@ -194,9 +301,22 @@ struct SyncedZoomableView: NSViewRepresentable {
         context.coordinator.texture = texture
         mtkView.imageWidth = texture.width
         mtkView.imageHeight = texture.height
-        // Sync zoom state from the shared observable
         mtkView.zoomScale = syncState.zoomScale
         mtkView.panOffset = syncState.panOffset
+
+        // Manage star overlay: add if data present, remove if not (handles SwiftUI view reuse)
+        if !starOverlayData.isEmpty {
+            if mtkView.starOverlay == nil {
+                mtkView.setupStarOverlay(stars: starOverlayData)
+            }
+            mtkView.starOverlay?.showOverlay = showStarOverlay
+            mtkView.starOverlay?.needsDisplay = true
+        } else if mtkView.starOverlay != nil {
+            // Remove overlay if this view shouldn't have one (SwiftUI reused it)
+            mtkView.starOverlay?.removeFromSuperview()
+            mtkView.starOverlay = nil
+        }
+
         mtkView.needsDisplay = true
     }
 
@@ -273,6 +393,75 @@ struct SyncedZoomableView: NSViewRepresentable {
             enc.endEncoding()
             cb.present(drawable)
             cb.commit()
+
+            // Refresh star overlay after Metal draw so circles track the image
+            DispatchQueue.main.async {
+                zv.starOverlay?.needsDisplay = true
+            }
+        }
+    }
+}
+
+// MARK: - Star Overlay NSView (draws circles on top of MTKView using exact same coordinate system)
+
+class StarOverlayView: NSView {
+    // Star positions in normalized [0,1] image coords + eccentricity
+    var stars: [(x: CGFloat, y: CGFloat, ecc: Double)] = []
+    var showOverlay: Bool = true
+
+    // These must be set to match the parent SyncedZoomMTKView's state
+    weak var parentMTKView: SyncedZoomMTKView?
+
+    // NSView default: origin at bottom-left, Y goes up (same as Metal NDC)
+    // Do NOT override isFlipped — must match MTKView's coordinate system
+
+    override func draw(_ dirtyRect: NSRect) {
+        guard showOverlay, !stars.isEmpty, let parent = parentMTKView else { return }
+        let viewW = bounds.width
+        let viewH = bounds.height
+        guard viewW > 0, viewH > 0 else { return }
+
+        let imgW = CGFloat(parent.imageWidth)
+        let imgH = CGFloat(parent.imageHeight)
+        guard imgW > 0, imgH > 0 else { return }
+
+        // Must match Metal renderer's coordinate system exactly.
+        // Metal uses drawable pixels (= view points × backingScaleFactor) for NDC calculation,
+        // so we need to divide by bs to convert from pixel-based fitScale to view-point positions.
+        let bs = parent.window?.backingScaleFactor ?? 2.0
+        let fitScale = min(viewW / imgW, viewH / imgH)
+        let effScale = fitScale * parent.zoomScale / bs
+
+        // Image center in NSView coords (bottom-left origin, Y up)
+        let centerX = viewW / 2 + parent.panOffset.x
+        let centerY = viewH / 2 - parent.panOffset.y
+
+        for star in stars {
+            // Convert normalized [0,1] to view coords
+            // star.y=0 is image top → in non-flipped NSView, top = high Y
+            let sx = centerX + (star.x - 0.5) * imgW * effScale
+            let sy = centerY + (0.5 - star.y) * imgH * effScale
+
+            let circleR = max(7, 12 * effScale)
+
+            // Color by eccentricity
+            let color: NSColor
+            let lineW: CGFloat
+            if star.ecc > 0.5 {
+                color = .systemRed; lineW = 2.5
+            } else if star.ecc > 0.3 {
+                color = .systemOrange; lineW = 1.5
+            } else {
+                color = .systemGreen; lineW = 1.5
+            }
+
+            color.setStroke()
+            let path = NSBezierPath(ovalIn: NSRect(
+                x: sx - circleR, y: sy - circleR,
+                width: circleR * 2, height: circleR * 2
+            ))
+            path.lineWidth = lineW
+            path.stroke()
         }
     }
 }
@@ -285,6 +474,9 @@ class SyncedZoomMTKView: MTKView {
     var panOffset: CGPoint = .zero
     var imageWidth: Int = 0
     var imageHeight: Int = 0
+
+    // Star overlay drawn by AppKit NSView on top of Metal content
+    var starOverlay: StarOverlayView?
 
     private var isZoomDragging = false
     private var zoomAnchorView: NSPoint = .zero
@@ -306,6 +498,23 @@ class SyncedZoomMTKView: MTKView {
             state.zoomScale = self.zoomScale
             state.panOffset = self.panOffset
         }
+        // Refresh star overlay to track zoom/pan
+        starOverlay?.needsDisplay = true
+    }
+
+    func setupStarOverlay(stars: [(x: CGFloat, y: CGFloat, ecc: Double)]) {
+        let overlay = StarOverlayView(frame: bounds)
+        overlay.autoresizingMask = [.width, .height]
+        overlay.stars = stars
+        overlay.parentMTKView = self
+        overlay.wantsLayer = true
+        overlay.layer?.backgroundColor = .clear
+        // Clip to bounds so circles don't bleed into the adjacent panel
+        overlay.layer?.masksToBounds = true
+        self.wantsLayer = true
+        self.layer?.masksToBounds = true
+        addSubview(overlay)
+        starOverlay = overlay
     }
 
     override func mouseDown(with event: NSEvent) {

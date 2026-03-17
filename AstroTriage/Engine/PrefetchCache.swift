@@ -152,7 +152,8 @@ class PrefetchCache {
                             let finalMetrics = metrics ?? StarMetrics(
                                 medianHFR: 0, medianFWHM: 0,
                                 measuredStarCount: 0, totalStarCount: totalStarCount,
-                                medianEccentricity: nil
+                                medianEccentricity: nil,
+                                starDetails: []
                             )
                             Task { @MainActor in onStarMetrics(url, finalMetrics) }
                         }

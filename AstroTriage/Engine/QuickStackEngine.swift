@@ -35,6 +35,9 @@ class QuickStackEngine: ObservableObject {
     @Published var resultHeight: Int = 0
     // Detected star positions for the current frame (in preview coords 0–200)
     @Published var detectedStarPositions: [(x: CGFloat, y: CGFloat)] = []
+    // Source image dimensions for correct preview aspect ratio (set after first decode)
+    @Published var sourceWidth: Int = 0
+    @Published var sourceHeight: Int = 0
     // Raw float result data + dimensions for external rendering (zoomable result window)
     var resultFloatData: [Float]?
     var resultChannelCount: Int = 1
@@ -86,6 +89,10 @@ class QuickStackEngine: ObservableObject {
         // Cancel any previous run before resetting state
         stackTask?.cancel()
         stackTask = nil
+
+        // Clear stale preview from previous run
+        miniPreviewTexture = nil
+        detectedStarPositions = []
 
         totalLayers = entries.count
         currentLayer = 0
@@ -168,6 +175,8 @@ class QuickStackEngine: ObservableObject {
         // Ensure all frames have the same dimensions
         let refWidth = frames[0].decoded.width
         let refHeight = frames[0].decoded.height
+        sourceWidth = refWidth
+        sourceHeight = refHeight
         frames = frames.filter { $0.decoded.width == refWidth && $0.decoded.height == refHeight }
         guard frames.count >= 3 else {
             errorMessage = "Frames have different dimensions — cannot stack"

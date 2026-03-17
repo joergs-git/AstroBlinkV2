@@ -168,12 +168,14 @@ struct FileListView: NSViewRepresentable {
             coordinator.updateMetricRanges()
             let newCountRefreshed = coordinator.displayedImages.count
 
-            // Preserve current multi-selection across reload
-            let savedSelection = tableView.selectedRowIndexes
+            // Preserve current multi-selection across reload — UNLESS force-single is set
+            let forcesSingle = viewModel.needsForceSingleSelection
+            let savedSelection = forcesSingle ? IndexSet() : tableView.selectedRowIndexes
             tableView.reloadData()
             viewModel.needsTableRefresh = false
+            if forcesSingle { viewModel.needsForceSingleSelection = false }
 
-            // Restore saved selection if still valid
+            // Restore saved selection if still valid (skipped when force-single clears it)
             if !savedSelection.isEmpty && savedSelection.last! < newCountRefreshed {
                 tableView.selectRowIndexes(savedSelection, byExtendingSelection: false)
             }
@@ -516,11 +518,16 @@ struct FileListView: NSViewRepresentable {
                 }
             }()
 
-            var lines = ["\(tierName) (z = \(String(format: "%.2f", bd.combinedZScore)))"]
+            var lines = ["\(tierName)  (z = \(String(format: "%+.2f", bd.combinedZScore)))"]
 
             if let reason = bd.garbageReason {
+                lines.append("")
                 lines.append("  Reason: \(reason.rawValue)")
             } else {
+                // Section header for metrics
+                lines.append("")
+                lines.append("  \u{2500}\u{2500} Metrics \u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}")
+
                 // Per-metric z-score breakdown
                 // fwhm/hfr/noise: raw z is positive when worse (higher value = worse)
                 // Display convention: positive = above avg (good for stars), negative = below avg
@@ -531,18 +538,19 @@ struct FileListView: NSViewRepresentable {
                     let arrow = displayZ < -0.5 ? " \u{2193}" : (displayZ > 0.5 ? " \u{2191}" : "")
                     let label: String
                     if displayZ < -1.0 {
-                        label = "(dragging down)"
+                        label = "dragging down"
                     } else if displayZ < -0.5 {
-                        label = "(below avg)"
+                        label = "below avg"
                     } else if displayZ > 1.0 {
-                        label = "(well above avg)"
+                        label = "well above avg"
                     } else if displayZ > 0.5 {
-                        label = "(above avg)"
+                        label = "above avg"
                     } else {
-                        label = "(normal)"
+                        label = "normal"
                     }
-                    let padded = name.padding(toLength: 6, withPad: " ", startingAt: 0)
-                    return "  \(padded) \(String(format: "%+.1f", displayZ))\u{03C3} \(label)\(arrow)"
+                    let padded = name.padding(toLength: 7, withPad: " ", startingAt: 0)
+                    let zStr = String(format: "%+.1f\u{03C3}", displayZ).padding(toLength: 6, withPad: " ", startingAt: 0)
+                    return "  \(padded) \(zStr)  \(label)\(arrow)"
                 }
 
                 if let l = metricLine("Stars", bd.starsZ, lowerIsBetter: false) { lines.append(l) }
@@ -553,18 +561,20 @@ struct FileListView: NSViewRepresentable {
             }
 
             if let contrib = bd.snrContribution {
+                lines.append("")
                 lines.append("  SNR contribution: \(String(format: "%.0f", contrib))%")
             }
 
             let recommendation = bd.recommendationLabel
             if !recommendation.isEmpty {
                 lines.append("")
+                lines.append("  \u{2500}\u{2500} Recommendation \u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}")
                 // Bold the key action words (DELETE, KEEP, REVIEW)
                 let boldRec = recommendation
                     .replacingOccurrences(of: "DELETE", with: boldText("DELETE"))
                     .replacingOccurrences(of: "KEEP", with: boldText("KEEP"))
                     .replacingOccurrences(of: "REVIEW", with: boldText("REVIEW"))
-                lines.append("\u{2192} \(boldRec)")
+                lines.append("  \u{2192} \(boldRec)")
             }
 
             return lines.joined(separator: "\n")

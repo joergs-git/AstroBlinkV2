@@ -14,6 +14,8 @@ struct StarMetrics {
     let measuredStarCount: Int  // Stars used for HFR/FWHM measurement (capped subset)
     let totalStarCount: Int     // True total number of stars detected in the image
     let medianEccentricity: Double?  // Median star eccentricity [0..1], nil if < 5 measured
+    // Per-star details for problem visualization (positions + individual metrics)
+    let starDetails: [StarDetail]
 }
 
 enum StarMetricsCalculator {
@@ -74,6 +76,7 @@ enum StarMetricsCalculator {
         var hfrValues: [Double] = []
         var fwhmValues: [Double] = []
         var eccValues: [Double] = []
+        var details: [StarDetail] = []
 
         for star in toMeasure {
             let cx = Int(star.x.rounded())
@@ -89,6 +92,10 @@ enum StarMetricsCalculator {
                 cx: cx, cy: cy, innerR: bgInnerRadius, outerR: bgOuterRadius
             )
 
+            var starHFR: Double? = nil
+            var starFWHM: Double? = nil
+            var starEcc: Double? = nil
+
             // Compute HFR
             if let hfr = computeHFR(
                 ptr: ptr, channelOffset: channelOffset, width: w,
@@ -97,6 +104,7 @@ enum StarMetricsCalculator {
                 // Sanity check: HFR should be reasonable (0.5 - 15 pixels)
                 if hfr >= 0.5 && hfr <= 15.0 {
                     hfrValues.append(hfr)
+                    starHFR = hfr
                 }
             }
 
@@ -108,6 +116,7 @@ enum StarMetricsCalculator {
                 // Sanity check: FWHM should be reasonable (1.0 - 20 pixels)
                 if fwhm >= 1.0 && fwhm <= 20.0 {
                     fwhmValues.append(fwhm)
+                    starFWHM = fwhm
                 }
             }
 
@@ -117,6 +126,16 @@ enum StarMetricsCalculator {
                 cx: star.x, cy: star.y, radius: apertureRadius, background: bg
             ) {
                 eccValues.append(ecc)
+                starEcc = ecc
+            }
+
+            // Store per-star details for problem visualization
+            if let ecc = starEcc {
+                details.append(StarDetail(
+                    x: star.x, y: star.y,
+                    eccentricity: ecc,
+                    hfr: starHFR, fwhm: starFWHM
+                ))
             }
         }
 
@@ -143,7 +162,8 @@ enum StarMetricsCalculator {
             medianFWHM: medianFWHM,
             measuredStarCount: totalDetected,
             totalStarCount: totalStarCount ?? totalDetected,
-            medianEccentricity: medianEcc
+            medianEccentricity: medianEcc,
+            starDetails: details
         )
     }
 

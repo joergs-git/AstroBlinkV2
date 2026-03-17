@@ -163,6 +163,12 @@ struct KeyboardHandler {
             return true
         }
 
+        // Q: Global Quarantine — move marked files to ~/Desktop/Astro-Quarantine
+        if modifiers.isEmpty, chars == "q" {
+            Task { @MainActor in viewModel.moveMarkedToQuarantine() }
+            return true
+        }
+
         // S: Toggle Lock STF (freeze exact stretch params from current image)
         if modifiers.isEmpty, chars == "s" {
             Task { @MainActor in viewModel.toggleLockSTF() }
