@@ -48,7 +48,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.joergsflow.AstroBlinkV2
         GENERATE_INFOPLIST_FILE: NO
         INFOPLIST_FILE: AstroTriage/Info.plist
-        CURRENT_PROJECT_VERSION: 25
+        CURRENT_PROJECT_VERSION: 26
         MARKETING_VERSION: "4.3.0"
         SWIFT_EMIT_LOC_STRINGS: YES
         ENABLE_APP_SANDBOX: YES
@@ -79,7 +79,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.joergsflow.AstroBlinkV2.QuickLookThumbnail
         GENERATE_INFOPLIST_FILE: NO
         INFOPLIST_FILE: QuickLookExtension/Info.plist
-        CURRENT_PROJECT_VERSION: 25
+        CURRENT_PROJECT_VERSION: 26
         MARKETING_VERSION: "4.3.0"
         MACOSX_DEPLOYMENT_TARGET: "13.3"
         SWIFT_VERSION: "5.9"
@@ -114,7 +114,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.joergsflow.AstroBlinkV2.QuickLookPreview
         GENERATE_INFOPLIST_FILE: NO
         INFOPLIST_FILE: QuickLookPreview/Info.plist
-        CURRENT_PROJECT_VERSION: 25
+        CURRENT_PROJECT_VERSION: 26
         MARKETING_VERSION: "4.3.0"
         MACOSX_DEPLOYMENT_TARGET: "13.3"
         SWIFT_VERSION: "5.9"
