@@ -19,6 +19,16 @@ struct QuickStackProgressView: View {
     private var fgDim: Color { nightMode ? .red.opacity(0.7) : .secondary }
     private var bg: Color { nightMode ? .black : Color(NSColor.windowBackgroundColor) }
 
+    // Preview size respecting image aspect ratio (max 200px on longest side)
+    private var previewSize: CGSize {
+        let maxDim: CGFloat = 200
+        let w = CGFloat(engine.sourceWidth)
+        let h = CGFloat(engine.sourceHeight)
+        guard w > 0, h > 0 else { return CGSize(width: maxDim, height: maxDim) }
+        let scale = maxDim / max(w, h)
+        return CGSize(width: round(w * scale), height: round(h * scale))
+    }
+
     var body: some View {
         VStack(spacing: 12) {
             // Header
@@ -45,15 +55,15 @@ struct QuickStackProgressView: View {
                 }
             }
 
-            // Mini preview (200x200)
+            // Mini preview with correct aspect ratio (max 200px on longest side)
             ZStack {
                 Rectangle()
                     .fill(Color.black)
-                    .frame(width: 200, height: 200)
+                    .frame(width: previewSize.width, height: previewSize.height)
 
                 if let texture = engine.miniPreviewTexture {
                     MetalTextureView(texture: texture)
-                        .frame(width: 200, height: 200)
+                        .frame(width: previewSize.width, height: previewSize.height)
                 } else {
                     // Placeholder before first preview appears
                     VStack(spacing: 8) {
@@ -77,7 +87,7 @@ struct QuickStackProgressView: View {
                     }
                 }
             }
-            .frame(width: 200, height: 200)
+            .frame(width: previewSize.width, height: previewSize.height)
             .clipped()
             .cornerRadius(4)
 
@@ -197,8 +207,28 @@ struct StackResultView: View {
     @StateObject private var benchmarkService = BenchmarkService()
     // Debounce timer to avoid re-rendering on every slider tick
     @State private var renderTask: Task<Void, Never>?
+    // Freeze-stamp: stack of frozen base textures for sequential processing
+    @State private var frozenStack: [(texture: MTLTexture, floatData: [Float])] = []
 
     private var fgDim: Color { nightMode ? .red.opacity(0.7) : .secondary }
+
+    // Compute best frame metrics summary from stacked entries
+    private var bestFrameMetrics: String? {
+        let entries = engine.stackedEntries
+        guard entries.count >= 2 else { return nil }
+        guard let best = entries.max(by: { ($0.qualityZScore ?? -100) < ($1.qualityZScore ?? -100) }) else { return nil }
+        var parts: [String] = ["Best frame vs \(entries.count) stacked:"]
+        if let stars = best.displayStarCount { parts.append("Stars \(stars)") }
+        if let fwhm = best.displayFWHM { parts.append("FWHM \(String(format: "%.1f", fwhm))") }
+        if let hfr = best.displayHFR { parts.append("HFR \(String(format: "%.1f", hfr))") }
+        if let ecc = best.computedEccentricity { parts.append("Ecc \(String(format: "%.2f", ecc))") }
+        if let med = best.noiseMedian, let mad = best.noiseMAD, mad > 0 {
+            let snr = med / mad
+            let stackSNR = snr * Float(entries.count).squareRoot()
+            parts.append("SNR \(String(format: "%.0f", snr))\u{2192}\(String(format: "%.0f", stackSNR)) (est.)")
+        }
+        return parts.count > 1 ? parts.joined(separator: "  \u{2502}  ") : nil
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -227,7 +257,7 @@ struct StackResultView: View {
                 }
             }
 
-            // Row 1: Sliders
+            // Row 1: Sliders + Freeze/Unfreeze
             HStack(spacing: 10) {
                 // Reset button
                 Button(action: resetSliders) {
@@ -237,6 +267,34 @@ struct StackResultView: View {
                 .buttonStyle(.plain)
                 .foregroundColor(nightMode ? .red : .primary)
                 .help("Reset all sliders")
+
+                // Freeze: bake current adjustments into a new base layer
+                Button(action: freezeCurrentState) {
+                    HStack(spacing: 2) {
+                        Image(systemName: "snowflake")
+                            .font(.system(size: 10))
+                        Text("Freeze")
+                            .font(.system(size: 10, weight: .medium, design: .monospaced))
+                    }
+                }
+                .buttonStyle(.bordered).controlSize(.mini)
+                .tint(.cyan)
+                .help("Bake current adjustments into base. Then apply further adjustments on top.")
+
+                // Unfreeze: revert to previous frozen state
+                if !frozenStack.isEmpty {
+                    Button(action: unfreezeLastState) {
+                        HStack(spacing: 2) {
+                            Image(systemName: "flame")
+                                .font(.system(size: 10))
+                            Text("Unfreeze (\(frozenStack.count))")
+                                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                        }
+                    }
+                    .buttonStyle(.bordered).controlSize(.mini)
+                    .tint(.orange)
+                    .help("Undo last freeze — go back one step")
+                }
 
                 resultSlider("Stretch", value: $stretchValue, range: 0.0...1.0, step: 0.01,
                              display: "\(Int(stretchValue / 1.0 * 100))%")
@@ -278,6 +336,21 @@ struct StackResultView: View {
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
             .background(nightMode ? Color(red: 0.06, green: 0, blue: 0) : Color(NSColor.underPageBackgroundColor))
+
+            // Best frame comparison — shows what the best single frame had vs the stack
+            if let bestMetrics = bestFrameMetrics {
+                HStack(spacing: 4) {
+                    Image(systemName: "chart.bar.fill")
+                        .font(.system(size: 10))
+                        .foregroundColor(.cyan.opacity(0.8))
+                    Text(bestMetrics)
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundColor(fgDim)
+                        .lineLimit(1)
+                }
+                .padding(.horizontal, 8).padding(.vertical, 2)
+                .background(nightMode ? Color(red: 0.04, green: 0, blue: 0) : Color(NSColor.controlBackgroundColor).opacity(0.5))
+            }
 
             // Row 2: Share centered, info + save on sides
             HStack(spacing: 12) {
@@ -353,6 +426,64 @@ struct StackResultView: View {
 
     private func resetSliders() {
         stretchValue = 0.25; sharpening = 0.0; contrast = 0.0; darkLevel = 0.0; saturation = 1.0; linkedStretch = false; denoise = 0.0; deconvolve = 0.0; useRL = false
+        scheduleRender()
+    }
+
+    // Freeze: render current adjustments into a new base float array, reset sliders
+    private func freezeCurrentState() {
+        guard let currentTex = displayTexture ?? engine.resultTexture else { return }
+        guard let currentFloat = engine.resultFloatData else { return }
+
+        // Save current state before freezing
+        frozenStack.append((texture: currentTex, floatData: currentFloat))
+
+        // Render the current adjustments into the float data to create new base
+        let w = engine.resultWidth
+        let h = engine.resultHeight
+        let ch = engine.resultChannelCount
+
+        // Read back the current display texture pixels and convert to float16 data
+        // For simplicity: re-render with current params to get the result, then
+        // use that as the new base (convert RGBA8 back to uint16 float array)
+        let tex = currentTex
+        var pixels = [UInt8](repeating: 0, count: w * h * 4)
+        tex.getBytes(&pixels, bytesPerRow: w * 4,
+                     from: MTLRegion(origin: MTLOrigin(), size: MTLSize(width: w, height: h, depth: 1)),
+                     mipmapLevel: 0)
+
+        // Convert RGBA8 back to float array (0-65535 range per channel)
+        let isRGBA = tex.pixelFormat != .bgra8Unorm
+        var newFloatData = [Float](repeating: 0, count: w * h * ch)
+        let planeSize = w * h
+        for y in 0..<h {
+            for x in 0..<w {
+                let pi = (y * w + x) * 4
+                let r = Float(pixels[pi + (isRGBA ? 0 : 2)]) / 255.0 * 65535.0
+                let g = Float(pixels[pi + 1]) / 255.0 * 65535.0
+                let b = Float(pixels[pi + (isRGBA ? 2 : 0)]) / 255.0 * 65535.0
+                newFloatData[y * w + x] = r
+                if ch >= 3 {
+                    newFloatData[planeSize + y * w + x] = g
+                    newFloatData[2 * planeSize + y * w + x] = b
+                }
+            }
+        }
+
+        // Replace engine's float data with frozen result
+        engine.resultFloatData = newFloatData
+
+        // Reset sliders to neutral (adjustments are now baked in)
+        stretchValue = 0.25; sharpening = 0.0; contrast = 0.0; darkLevel = 0.0
+        saturation = 1.0; linkedStretch = false; denoise = 0.0; deconvolve = 0.0; useRL = false
+        scheduleRender()
+    }
+
+    // Unfreeze: restore the previous frozen state
+    private func unfreezeLastState() {
+        guard let prev = frozenStack.popLast() else { return }
+        engine.resultFloatData = prev.floatData
+        stretchValue = 0.25; sharpening = 0.0; contrast = 0.0; darkLevel = 0.0
+        saturation = 1.0; linkedStretch = false; denoise = 0.0; deconvolve = 0.0; useRL = false
         scheduleRender()
     }
 
@@ -432,6 +563,9 @@ struct StackResultView: View {
         if let cam = entries.compactMap({ $0.camera }).first, !cam.isEmpty {
             parts.append(cam.replacingOccurrences(of: " ", with: "_"))
         }
+
+        // Stacked frame count
+        parts.append("stacked-\(entries.count)")
 
         if parts.isEmpty { return "quickstack_result.png" }
         // Sanitize: remove characters that are problematic in filenames
@@ -1150,6 +1284,16 @@ struct QuickStackV2ProgressView: View {
     private var fgDim: Color { nightMode ? .red.opacity(0.7) : .secondary }
     private var bg: Color { nightMode ? .black : Color(NSColor.windowBackgroundColor) }
 
+    // Preview size respecting image aspect ratio (max 200px on longest side)
+    private var previewSize: CGSize {
+        let maxDim: CGFloat = 200
+        let w = CGFloat(engine.sourceWidth)
+        let h = CGFloat(engine.sourceHeight)
+        guard w > 0, h > 0 else { return CGSize(width: maxDim, height: maxDim) }
+        let scale = maxDim / max(w, h)
+        return CGSize(width: round(w * scale), height: round(h * scale))
+    }
+
     var body: some View {
         VStack(spacing: 12) {
             HStack {
@@ -1178,11 +1322,11 @@ struct QuickStackV2ProgressView: View {
             ZStack {
                 Rectangle()
                     .fill(Color.black)
-                    .frame(width: 200, height: 200)
+                    .frame(width: previewSize.width, height: previewSize.height)
 
                 if let texture = engine.miniPreviewTexture {
                     MetalTextureView(texture: texture)
-                        .frame(width: 200, height: 200)
+                        .frame(width: previewSize.width, height: previewSize.height)
                 } else {
                     VStack(spacing: 8) {
                         ProgressView()
@@ -1204,7 +1348,7 @@ struct QuickStackV2ProgressView: View {
                     }
                 }
             }
-            .frame(width: 200, height: 200)
+            .frame(width: previewSize.width, height: previewSize.height)
             .clipped()
             .cornerRadius(4)
 
@@ -1308,8 +1452,30 @@ struct StackResultViewV2: View {
     @State private var isRendering: Bool = false
     @State private var renderTask: Task<Void, Never>?
     @StateObject private var benchmarkService = BenchmarkService()
+    // Freeze-stamp: stack of frozen base textures for sequential processing
+    @State private var frozenStack: [(texture: MTLTexture, floatData: [Float])] = []
 
     private var fgDim: Color { nightMode ? .red.opacity(0.7) : .secondary }
+
+    // Compute best frame metrics summary from stacked entries
+    private var bestFrameMetrics: String? {
+        let entries = engine.stackedEntries
+        guard entries.count >= 2 else { return nil }
+        // Find the best entry by quality z-score
+        guard let best = entries.max(by: { ($0.qualityZScore ?? -100) < ($1.qualityZScore ?? -100) }) else { return nil }
+        var parts: [String] = ["Best frame vs \(entries.count) stacked:"]
+        if let stars = best.displayStarCount { parts.append("Stars \(stars)") }
+        if let fwhm = best.displayFWHM { parts.append("FWHM \(String(format: "%.1f", fwhm))") }
+        if let hfr = best.displayHFR { parts.append("HFR \(String(format: "%.1f", hfr))") }
+        if let ecc = best.computedEccentricity { parts.append("Ecc \(String(format: "%.2f", ecc))") }
+        if let med = best.noiseMedian, let mad = best.noiseMAD, mad > 0 {
+            let snr = med / mad
+            // Theoretical SNR improvement from stacking N frames
+            let stackSNR = snr * Float(entries.count).squareRoot()
+            parts.append("SNR \(String(format: "%.0f", snr))\u{2192}\(String(format: "%.0f", stackSNR)) (est.)")
+        }
+        return parts.count > 1 ? parts.joined(separator: "  \u{2502}  ") : nil
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -1344,6 +1510,34 @@ struct StackResultViewV2: View {
                 .buttonStyle(.plain)
                 .foregroundColor(nightMode ? .red : .primary)
                 .help("Reset all sliders")
+
+                // Freeze: bake current adjustments into a new base layer
+                Button(action: freezeCurrentState) {
+                    HStack(spacing: 2) {
+                        Image(systemName: "snowflake")
+                            .font(.system(size: 10))
+                        Text("Freeze")
+                            .font(.system(size: 10, weight: .medium, design: .monospaced))
+                    }
+                }
+                .buttonStyle(.bordered).controlSize(.mini)
+                .tint(.cyan)
+                .help("Bake current adjustments into base. Then apply further adjustments on top.")
+
+                // Unfreeze: revert to previous frozen state
+                if !frozenStack.isEmpty {
+                    Button(action: unfreezeLastState) {
+                        HStack(spacing: 2) {
+                            Image(systemName: "flame")
+                                .font(.system(size: 10))
+                            Text("Unfreeze (\(frozenStack.count))")
+                                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                        }
+                    }
+                    .buttonStyle(.bordered).controlSize(.mini)
+                    .tint(.orange)
+                    .help("Undo last freeze — go back one step")
+                }
 
                 resultSlider("Stretch", value: $stretchValue, range: 0.0...1.0, step: 0.01,
                              display: "\(Int(stretchValue * 100))%")
@@ -1385,6 +1579,21 @@ struct StackResultViewV2: View {
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
             .background(nightMode ? Color(red: 0.06, green: 0, blue: 0) : Color(NSColor.underPageBackgroundColor))
+
+            // Best frame comparison — shows what the best single frame had vs the stack
+            if let bestMetrics = bestFrameMetrics {
+                HStack(spacing: 4) {
+                    Image(systemName: "chart.bar.fill")
+                        .font(.system(size: 10))
+                        .foregroundColor(.cyan.opacity(0.8))
+                    Text(bestMetrics)
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundColor(fgDim)
+                        .lineLimit(1)
+                }
+                .padding(.horizontal, 8).padding(.vertical, 2)
+                .background(nightMode ? Color(red: 0.04, green: 0, blue: 0) : Color(NSColor.controlBackgroundColor).opacity(0.5))
+            }
 
             HStack(spacing: 12) {
                 Text("\(engine.resultWidth)x\(engine.resultHeight) — LightspeedStacker")
@@ -1460,6 +1669,53 @@ struct StackResultViewV2: View {
         scheduleRender()
     }
 
+    // Freeze: render current adjustments into a new base float array, reset sliders
+    private func freezeCurrentState() {
+        guard let currentTex = displayTexture ?? engine.resultTexture else { return }
+        guard let currentFloat = engine.resultFloatData else { return }
+
+        frozenStack.append((texture: currentTex, floatData: currentFloat))
+
+        let w = engine.resultWidth
+        let h = engine.resultHeight
+        let ch = engine.resultChannelCount
+
+        var pixels = [UInt8](repeating: 0, count: w * h * 4)
+        currentTex.getBytes(&pixels, bytesPerRow: w * 4,
+                     from: MTLRegion(origin: MTLOrigin(), size: MTLSize(width: w, height: h, depth: 1)),
+                     mipmapLevel: 0)
+
+        let isRGBA = currentTex.pixelFormat != .bgra8Unorm
+        var newFloatData = [Float](repeating: 0, count: w * h * ch)
+        let planeSize = w * h
+        for y in 0..<h {
+            for x in 0..<w {
+                let pi = (y * w + x) * 4
+                let r = Float(pixels[pi + (isRGBA ? 0 : 2)]) / 255.0 * 65535.0
+                let g = Float(pixels[pi + 1]) / 255.0 * 65535.0
+                let b = Float(pixels[pi + (isRGBA ? 2 : 0)]) / 255.0 * 65535.0
+                newFloatData[y * w + x] = r
+                if ch >= 3 {
+                    newFloatData[planeSize + y * w + x] = g
+                    newFloatData[2 * planeSize + y * w + x] = b
+                }
+            }
+        }
+
+        engine.resultFloatData = newFloatData
+        stretchValue = 0.25; sharpening = 0.0; contrast = 0.0; darkLevel = 0.0
+        saturation = 1.0; linkedStretch = false; denoise = 0.0; deconvolve = 0.0; useRL = false
+        scheduleRender()
+    }
+
+    private func unfreezeLastState() {
+        guard let prev = frozenStack.popLast() else { return }
+        engine.resultFloatData = prev.floatData
+        stretchValue = 0.25; sharpening = 0.0; contrast = 0.0; darkLevel = 0.0
+        saturation = 1.0; linkedStretch = false; denoise = 0.0; deconvolve = 0.0; useRL = false
+        scheduleRender()
+    }
+
     private func scheduleRender() {
         renderTask?.cancel()
         isRendering = true
@@ -1507,10 +1763,11 @@ struct StackResultViewV2: View {
         if let cam = entries.compactMap({ $0.camera }).first, !cam.isEmpty {
             parts.append(cam.replacingOccurrences(of: " ", with: "_"))
         }
+        parts.append("stacked-\(entries.count)")
         if parts.isEmpty { return "quickstack_v2_result.png" }
         let name = parts.joined(separator: "_")
             .components(separatedBy: CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "_+-")).inverted).joined()
-        return "\(name)_v2.png"
+        return "\(name).png"
     }
 
     private func saveAsPNG() {

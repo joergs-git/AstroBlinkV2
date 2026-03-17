@@ -68,6 +68,8 @@ class TriageViewModel: ObservableObject {
 
     // Triggers a table reload in updateNSView (for checkbox/mark changes)
     @Published var needsTableRefresh: Bool = false
+    // Force single selection after filter toggle (prevents multi-selection carryover)
+    @Published var needsForceSingleSelection: Bool = false
 
     // Recommended column order after header enrichment (set once per session load)
     // FileListView consumes and clears this after applying
@@ -399,6 +401,42 @@ class TriageViewModel: ObservableObject {
         // Use qualityZScore for fine-grained "best" selection (not just tier enum)
         guard let best = groupImages.max(by: { ($0.qualityZScore ?? -100) < ($1.qualityZScore ?? -100) }),
               best.url != entry.url else { return }
+
+        // Show loading indicator while compare images are decoded and stretched
+        statusMessage = "Preparing Compare..."
+        let loadingWindow = NSPanel(
+            contentRect: NSRect(x: 0, y: 0, width: 260, height: 60),
+            styleMask: [.titled], backing: .buffered, defer: false
+        )
+        loadingWindow.title = ""
+        loadingWindow.isFloatingPanel = true
+        loadingWindow.level = .floating
+        let label = NSTextField(labelWithString: "  Preparing Compare...")
+        label.font = NSFont.monospacedSystemFont(ofSize: 13, weight: .medium)
+        label.frame = NSRect(x: 20, y: 18, width: 220, height: 24)
+        let progress = NSProgressIndicator(frame: NSRect(x: 20, y: 8, width: 220, height: 4))
+        progress.style = .bar
+        progress.isIndeterminate = true
+        progress.startAnimation(nil)
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 260, height: 60))
+        container.addSubview(label)
+        container.addSubview(progress)
+        loadingWindow.contentView = container
+        loadingWindow.center()
+        loadingWindow.orderFront(nil)
+        // Auto-dismiss after 4s or when compare window opens
+        Task {
+            // Poll for compare window opening (check every 200ms, max 4s)
+            for _ in 0..<20 {
+                try? await Task.sleep(nanoseconds: 200_000_000)
+                let windowCount = await MainActor.run { NSApp.windows.filter { $0.title.hasPrefix("Compare:") }.count }
+                if windowCount > 0 { break }
+            }
+            await MainActor.run {
+                loadingWindow.close()
+                self.statusMessage = ""
+            }
+        }
 
         CompareWindowController.open(
             selectedEntry: entry, bestEntry: best,
@@ -838,6 +876,10 @@ class TriageViewModel: ObservableObject {
                     self.images[idx].computedStarCount = metrics.totalStarCount
                     // Store eccentricity from 2D image moments (nil if < 5 stars measured)
                     self.images[idx].computedEccentricity = metrics.medianEccentricity
+                    // Store per-star details for problem visualization in Compare window
+                    if !metrics.starDetails.isEmpty {
+                        self.images[idx].starDetails = metrics.starDetails
+                    }
                 }
             }
         )
@@ -1924,6 +1966,35 @@ class TriageViewModel: ObservableObject {
             showOnlyMarked = false
             statusMessage = "Showing all files"
         }
+        // Force single selection after filter toggle — prevents multi-selection carryover
+        // from N marked files staying highlighted after they disappear
+        let visible = visibleImages
+        if !visible.isEmpty {
+            if let currentURL = selectedImage?.url,
+               let visIdx = visible.firstIndex(where: { $0.url == currentURL }) {
+                if let realIdx = images.firstIndex(where: { $0.url == visible[visIdx].url }) {
+                    selectedIndex = realIdx
+                }
+            } else {
+                // Current image was hidden — select nearest visible
+                let targetIdx = max(0, min(selectedIndex, images.count - 1))
+                var bestVisibleIdx = 0
+                var bestDist = Int.max
+                for (vi, vImg) in visible.enumerated() {
+                    if let ri = images.firstIndex(where: { $0.url == vImg.url }) {
+                        let dist = abs(ri - targetIdx)
+                        if dist < bestDist {
+                            bestDist = dist
+                            bestVisibleIdx = vi
+                        }
+                    }
+                }
+                if let realIdx = images.firstIndex(where: { $0.url == visible[bestVisibleIdx].url }) {
+                    selectImage(at: realIdx)
+                }
+            }
+        }
+        needsForceSingleSelection = true
         needsTableRefresh = true
     }
 
@@ -1987,7 +2058,8 @@ class TriageViewModel: ObservableObject {
         }
 
         // Build deletion impact summary for the confirmation dialog
-        var infoText = ""
+        // Each section is clearly separated with blank lines for readability
+        var sections: [String] = []
         let totalExposure = images.reduce(0.0) { $0 + ($1.exposure ?? 0) }
         let markedExposure = markedImages.reduce(0.0) { $0 + ($1.exposure ?? 0) }
 
@@ -1995,13 +2067,13 @@ class TriageViewModel: ObservableObject {
             let integrationLoss = markedExposure / totalExposure * 100.0
             let markedStr = markedExposure >= 3600 ? String(format: "%.1fh", markedExposure / 3600) : String(format: "%.0fm", markedExposure / 60)
             let totalStr = totalExposure >= 3600 ? String(format: "%.1fh", totalExposure / 3600) : String(format: "%.0fm", totalExposure / 60)
-            infoText += "Integration lost: \(markedStr) of \(totalStr) total (-\(String(format: "%.0f", integrationLoss))%)\n"
+            sections.append("Integration lost:\n    \(markedStr) of \(totalStr) total (\(String(format: "-%.0f", integrationLoss))%)")
         }
 
         // SNR impact from live retention bar
         let snrLoss = 100.0 - snrRetention
         if snrLoss > 0.05 {
-            infoText += "Estimated SNR impact: -\(String(format: "%.1f", snrLoss))%\n"
+            sections.append("Estimated SNR impact:\n    \(String(format: "-%.1f", snrLoss))%")
         }
 
         // Breakdown by quality tier
@@ -2018,10 +2090,12 @@ class TriageViewModel: ObservableObject {
         if excellentCount > 0 { breakdown.append("\(excellentCount)× excellent") }
         if unscoredCount > 0 { breakdown.append("\(unscoredCount)× unscored") }
         if !breakdown.isEmpty {
-            infoText += "Breakdown: \(breakdown.joined(separator: ", "))\n"
+            sections.append("Tier breakdown:\n    \(breakdown.joined(separator: ", "))")
         }
 
-        infoText += "\nFiles will be moved to \"PRE-DELETE\" — not permanently deleted. Undo with Cmd+Z."
+        sections.append("Files will be moved to \"PRE-DELETE\" — not permanently deleted.\nUndo with \u{2318}Z.")
+
+        let infoText = sections.joined(separator: "\n\n")
 
         // Show confirmation dialog with impact summary
         let alert = NSAlert()
@@ -2283,6 +2357,121 @@ class TriageViewModel: ObservableObject {
             statusMessage = "Moved \(movedCount) to \"\(destName)\" (\(failedCount) failed) — Undo available"
         } else {
             statusMessage = "Moved \(movedCount) file(s) to \"\(destName)\" — Undo available"
+        }
+    }
+
+    // MARK: - Global Quarantine (Q key)
+
+    // Move all marked files to ~/Desktop/Astro-Quarantine/ regardless of source folder.
+    // Creates the quarantine folder if needed. Same undo mechanism as PRE-DELETE.
+    func moveMarkedToQuarantine() {
+        let markedImages = images.filter { $0.isMarkedForDeletion }
+        guard !markedImages.isEmpty else {
+            statusMessage = "No images marked — checkmark files first (Space)"
+            return
+        }
+
+        let desktopURL = FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask).first!
+        var quarantineDir = desktopURL.appendingPathComponent("Astro-Quarantine", isDirectory: true)
+
+        // Confirmation dialog
+        let alert = NSAlert()
+        alert.messageText = "Move \(markedImages.count) marked images to Quarantine?"
+        alert.informativeText = "Files will be moved to:\n    ~/Desktop/Astro-Quarantine/\n\nThis collects files from any session into one folder.\nUndo with \u{2318}Z."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Move to Quarantine")
+        alert.addButton(withTitle: "Cancel")
+
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+
+        let fm = FileManager.default
+
+        // Create quarantine folder — sandbox may block ~/Desktop, so use NSOpenPanel fallback
+        do {
+            if !fm.fileExists(atPath: quarantineDir.path) {
+                try fm.createDirectory(at: quarantineDir, withIntermediateDirectories: true)
+            }
+        } catch {
+            // Sandbox blocked — ask user to select/confirm the quarantine folder
+            let panel = NSOpenPanel()
+            panel.canChooseDirectories = true
+            panel.canChooseFiles = false
+            panel.canCreateDirectories = true
+            panel.directoryURL = desktopURL
+            panel.message = "Select or create the Astro-Quarantine folder on your Desktop"
+            panel.prompt = "Use This Folder"
+
+            guard panel.runModal() == .OK, let grantedURL = panel.url else {
+                statusMessage = "Quarantine cancelled — folder access not granted"
+                return
+            }
+            quarantineDir = grantedURL
+            // Ensure it exists
+            do {
+                if !fm.fileExists(atPath: quarantineDir.path) {
+                    try fm.createDirectory(at: quarantineDir, withIntermediateDirectories: true)
+                }
+            } catch {
+                statusMessage = "Error creating quarantine folder: \(error.localizedDescription)"
+                return
+            }
+        }
+
+        let firstMarkedIndex = images.firstIndex(where: { $0.isMarkedForDeletion }) ?? selectedIndex
+
+        var movedCount = 0
+        var failedCount = 0
+        var undoEntries: [PreDeleteUndoEntry] = []
+
+        for entry in markedImages {
+            var finalDest = quarantineDir.appendingPathComponent(entry.filename)
+            var suffix = 1
+            while fm.fileExists(atPath: finalDest.path) {
+                let name = entry.url.deletingPathExtension().lastPathComponent
+                let ext = entry.url.pathExtension
+                finalDest = quarantineDir.appendingPathComponent("\(name)_\(suffix).\(ext)")
+                suffix += 1
+            }
+            do {
+                let originalIndex = images.firstIndex(where: { $0.url == entry.url }) ?? 0
+                try fm.moveItem(at: entry.url, to: finalDest)
+                undoEntries.append(PreDeleteUndoEntry(
+                    originalURL: entry.url,
+                    preDeleteURL: finalDest,
+                    entry: entry,
+                    originalIndex: originalIndex
+                ))
+                movedCount += 1
+            } catch {
+                failedCount += 1
+            }
+        }
+
+        // Push to undo stack (same as PRE-DELETE — Cmd+Z undoes both)
+        if !undoEntries.isEmpty {
+            preDeleteUndoStack.append(undoEntries)
+        }
+
+        // Remove moved images from the list
+        let markedURLs = Set(markedImages.map { $0.url })
+        images.removeAll { markedURLs.contains($0.url) }
+
+        if !images.isEmpty {
+            let newIndex = min(firstMarkedIndex, images.count - 1)
+            selectImage(at: max(0, newIndex))
+        } else {
+            selectedIndex = -1
+            currentDecodedImage = nil
+        }
+
+        needsTableRefresh = true
+        sessionOverviewModel.updateStats(from: images)
+        recomputeSNRRetention()
+
+        if failedCount > 0 {
+            statusMessage = "Quarantined \(movedCount) files (\(failedCount) failed) — Undo available"
+        } else {
+            statusMessage = "Quarantined \(movedCount) file(s) to ~/Desktop/Astro-Quarantine — Undo available"
         }
     }
 

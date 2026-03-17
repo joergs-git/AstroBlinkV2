@@ -1,6 +1,15 @@
 // v4.0.0
 import Foundation
 
+// Per-star quality data for problem visualization in Compare window
+struct StarDetail: Hashable {
+    let x: Float          // Full-res pixel X coordinate
+    let y: Float          // Full-res pixel Y coordinate
+    let eccentricity: Double  // 0 = round, >0.5 = elongated
+    let hfr: Double?      // Half-flux radius (nil if not measured)
+    let fwhm: Double?     // Full width at half max (nil if not measured)
+}
+
 // Core data model representing a single astro image in the session
 struct ImageEntry: Identifiable, Hashable {
     let id = UUID()
@@ -48,6 +57,11 @@ struct ImageEntry: Identifiable, Hashable {
     var computedFWHM: Double?       // FWHM measured from image data (pixels)
     var computedStarCount: Int?     // Number of stars measured
     var computedEccentricity: Double?  // Median star eccentricity [0..1] from 2D image moments
+
+    // Per-star quality data: positions + eccentricity for problem star visualization
+    // Stored during precache when star metrics are computed. Used by Compare window
+    // to overlay circles on problematic stars. Coordinates are in full-res pixel space.
+    var starDetails: [StarDetail]?
 
     // Quality breakdown (computed after header enrichment via QualityEstimator)
     // nil = group too small (<10 frames) or metrics unavailable

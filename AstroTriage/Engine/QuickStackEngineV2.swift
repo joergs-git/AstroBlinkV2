@@ -36,6 +36,9 @@ class QuickStackEngineV2: ObservableObject {
     @Published var resultWidth: Int = 0
     @Published var resultHeight: Int = 0
     @Published var detectedStarPositions: [(x: CGFloat, y: CGFloat)] = []
+    // Source image dimensions for correct preview aspect ratio (set after first decode)
+    @Published var sourceWidth: Int = 0
+    @Published var sourceHeight: Int = 0
     var resultFloatData: [Float]?
     var resultChannelCount: Int = 1
     var stackedEntries: [ImageEntry] = []
@@ -112,6 +115,10 @@ class QuickStackEngineV2: ObservableObject {
         // Cancel any previous run before resetting state
         stackTask?.cancel()
         stackTask = nil
+
+        // Clear stale preview from previous run
+        miniPreviewTexture = nil
+        detectedStarPositions = []
 
         totalLayers = entries.count
         currentLayer = 0
@@ -266,6 +273,8 @@ class QuickStackEngineV2: ObservableObject {
         // Filter to matching dimensions
         let refWidth = frames[0].decoded.width
         let refHeight = frames[0].decoded.height
+        sourceWidth = refWidth
+        sourceHeight = refHeight
         frames = frames.filter { $0.decoded.width == refWidth && $0.decoded.height == refHeight }
 
         guard frames.count >= 3 else {

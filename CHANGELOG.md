@@ -4,6 +4,28 @@ All notable changes to AstroBlinkV2 will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [4.1.0] — 2026-03-17
+
+### Added
+- **Compare Star Overlay** — Compare window (C key) now shows colored circles on measured stars: green (round), orange (borderline ecc 0.3-0.5), red (elongated >0.5). Toggle on/off with switch. Per-star eccentricity, HFR, and FWHM stored during precache for visualization.
+- **"Why Worse" Info Bar** — Compare window bottom bar shows metric-by-metric comparison (Stars, FWHM, HFR, Ecc, SNR % of best) plus recommendation label.
+- **Global Quarantine (Q key)** — Move all marked files to `~/Desktop/Astro-Quarantine/` regardless of source folder. Same undo (Cmd+Z) as PRE-DELETE. Sandbox-safe with NSOpenPanel fallback.
+- **Freeze-Stamp Processing** — Stack result windows now have Freeze/Unfreeze buttons for sequential processing. Freeze bakes current adjustments into a new base layer, then apply further adjustments on top. Full undo stack.
+- **Best Frame Metrics Comparison** — Stack result windows show "Best frame vs N stacked" row with Stars, FWHM, HFR, Ecc, and estimated SNR improvement from stacking.
+- **Compare Loading Indicator** — Floating "Preparing Compare..." panel with progress bar while images are decoded. Auto-dismisses when compare window opens.
+
+### Changed
+- **Compare Window Zoom** — Opens at fit-to-view (1.0x) when star overlay is present, instead of 300% zoom. Ensures all star circles are visible immediately.
+- **Compare Window Focus** — Now receives keyboard/scroll focus immediately on open (makeKeyAndOrderFront).
+- **Pre-Delete Dialog** — Better formatting with section headers, indented values, and blank line separators between Integration lost, SNR impact, and Tier breakdown.
+- **Quality Tooltips** — Added section headers ("── Metrics ──", "── Recommendation ──"), better column alignment, and blank line separators for improved readability.
+- **Stack Save Filename** — Now includes `_stacked-N` suffix (e.g., `M81_2026-03-12_H_stacked-14.png`).
+- **Stack Preview Aspect Ratio** — Mini preview in stacking progress overlay now matches image aspect ratio instead of hardcoded 200×200 square.
+
+### Fixed
+- **Hide-Marked Selection** — Pressing H to hide marked files now correctly selects exactly 1 image (nearest to current). Previously left multiple files highlighted, which was confusing.
+- **Stale Stack Preview** — Running a second stack no longer shows the previous stack's mini preview. Preview texture and star positions cleared at start.
+
 ## [4.0.0] — 2026-03-15
 
 ### Added
