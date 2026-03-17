@@ -18,6 +18,35 @@ Nice side effect: Finally you have a native XISF and FITS Quicklook for macOS. (
 
 ---
 
+## What's New in v4.3.0
+
+### Self-Calibration & Intelligent Culling
+
+- **Per-setup calibration database** — AstroBlinkV2 silently learns your equipment's quality baseline as you work. After 30+ frames with the same setup (telescope + camera + focal length), an absolute quality floor activates: frames meeting the learned baseline are locked as KEEP — z-scores cannot override them. Prevents the "death spiral" where repeated culling removes good frames.
+- **Culling autopilot** — Click the status indicator in the bottom bar for one-click auto-marking: **Conservative** (Nebula — only trash), **Balanced** (trash + worst borderline), or **Aggressive** (Stars — all questionable). Each shows frame count and integration impact before applying.
+- **SSWEIGHT export** — Writes PixInsight-compatible SSWEIGHT keyword (0-100) into FITS/XISF headers for seamless WBPP weighted integration. CSV backup included.
+- **Background anomaly detection** — Catches clouds, light pollution gradients, and fog by detecting frames with abnormal background levels (>5 MADs from group median).
+- **Actionable culling status** — Replaces abstract readiness percentage with clear messages: "5x trash remaining", "Culling complete", or SNR warnings.
+
+### Compare Window Improvements
+
+- **Bold recommendation styling** — KEEP shown in bold green, DELETE in bold red, REVIEW in bold orange for instant visual recognition.
+- **PA direction arrows** — Elongated stars show position angle lines through the circle. Yellow consensus arrow with degree label when trailing direction is detected.
+- **Full-field star coverage** — Stars detected and displayed across 90% of the image (was 70%), covering edge regions.
+
+### Stacking Alignment Fix
+
+- **Ghost image elimination** — False triangle matches that produced 73-166° rotation artifacts are now rejected via minimum 6-inlier threshold and dual-axis scale validation.
+- **Alignment info display** — Stack result window shows "Aligned X of Y frames (Z skipped)" in the bottom bar.
+- **More robust matching** — 80 detected stars (was 50) for better field coverage across dither offsets.
+
+### Polish
+
+- **Status bar tooltips** — All status pills (Skip, Hide, Locked STF, Night, etc.) now have descriptive tooltips with keyboard shortcuts.
+- **Scroll flicker fix** — File list highlight no longer jumps during fast arrow key navigation.
+
+---
+
 ## What's New in v4.2.0
 
 ### Star Trailing Detection with Orientation Consensus (Industry First)

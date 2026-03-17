@@ -155,3 +155,21 @@
 - **Root cause:** Substring matching on full filenames doesn't distinguish between calibration frame types and target names containing calibration keywords
 - **Rule:** For filename-level calibration detection, parse the frame type token (LIGHT/DARK/FLAT/BIAS) via NINAFilenameParser first. Only fall back to substring matching for non-NINA filenames. Folder-level detection can safely use substring matching.
 - **Applies to:** SessionScanner.swift, any calibration frame detection logic
+
+## [2026-03-17] — GPU star detection buffer overflow causes left-biased star positions
+- **Mistake:** `maxGPUCandidates = 512` was too small. GPU threads execute in tile order (left-to-right), so the buffer filled up with only left-side stars. Increased to 4096, then again to 16384 for L-band images with 6000+ peaks.
+- **Root cause:** Metal compute threads are dispatched in threadgroup order. With atomic_fetch_add into a fixed-size buffer, early threadgroups (left side) fill it before right-side threads execute.
+- **Rule:** GPU candidate buffers must be sized for the WORST CASE (densest star field), not average. L-band broadband images can have 10,000+ peaks. Use at least 16384.
+- **Applies to:** PreviewGenerator.detectStarsGPU, any GPU kernel with atomic append to fixed buffer
+
+## [2026-03-17] — Stacking false triangle matches produce ghost images
+- **Mistake:** Minimum inlier threshold was 3, allowing coincidental matches with 73-166° rotation and 0.6-3.8x scale to pass through. Only validated scale on one axis.
+- **Root cause:** With sparse star fields (M81), false triangle matches can have 3-5 coincidental inliers. Need ≥6 to reliably reject false positives.
+- **Rule:** Require ≥6 initial inliers AND ≥5 refined inliers (4px). Validate scale on BOTH axes. Don't restrict rotation — let inlier counting do the rejection.
+- **Applies to:** QuickStackEngineV2.matchTrianglesHashed, QuickStackEngine.solveAffine
+
+## [2026-03-17] — NSView star overlay coordinates must match Metal drawable ratio
+- **Mistake:** Divided effScale by backingScaleFactor (bs=2) which halved circle positions on Retina. Then removed /bs entirely which doubled them. The correct factor is drawableW/viewW.
+- **Root cause:** Metal NDC coordinates map to the drawable (which may or may not be Retina-scaled). The overlay NSView works in view points. The ratio between drawable pixels and view points determines the correction factor.
+- **Rule:** Use `drawableRatio = drawableW / viewW` for the scale correction, not hardcoded backingScaleFactor. Also apply bs/drawableRatio to pan offset for consistent tracking.
+- **Applies to:** CompareWindow.swift StarOverlayView.draw(), any NSView overlay on MTKView
