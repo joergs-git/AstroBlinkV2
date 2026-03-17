@@ -186,7 +186,11 @@ struct FileListView: NSViewRepresentable {
             }
         }
 
-        // Sync selection from viewModel — map to visible index when filtering
+        // Sync selection from viewModel — map to visible index when filtering.
+        // Disable scroll animation during programmatic changes to prevent flicker
+        // when holding arrow keys (rapid key repeat fights NSTableView's scroll animation).
+        NSAnimationContext.beginGrouping()
+        NSAnimationContext.current.duration = 0
         if isFiltered {
             if let selectedURL = viewModel.selectedImage?.url,
                let visibleIdx = viewModel.visibleImages.firstIndex(where: { $0.url == selectedURL }) {
@@ -203,12 +207,12 @@ struct FileListView: NSViewRepresentable {
                 if currentSelection.count <= 1 {
                     if !currentSelection.contains(desiredIndex) {
                         tableView.selectRowIndexes(IndexSet(integer: desiredIndex), byExtendingSelection: false)
-                        // Only scroll when selection actually changes (avoids jump during cache refreshes)
                         tableView.scrollRowToVisible(desiredIndex)
                     }
                 }
             }
         }
+        NSAnimationContext.endGrouping()
     }
 
     // Reorder existing table columns to match the given order (without adding/removing columns)

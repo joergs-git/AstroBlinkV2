@@ -354,8 +354,9 @@ class QuickStackEngineV2: ObservableObject {
         }
 
         let alignedCount = transforms.compactMap({ $0 }).count
+        let failedCount = frames.count - alignedCount
         guard alignedCount >= 2 else {
-            errorMessage = "Could not align enough frames (\(alignedCount)/\(frames.count))"
+            errorMessage = "Could not align enough frames (\(alignedCount)/\(frames.count), \(failedCount) failed)"
             phase = .failed
             return
         }
@@ -676,7 +677,11 @@ class QuickStackEngineV2: ObservableObject {
             }
         }
 
-        guard bestInliers >= 3, let initial = bestTransform else { return nil }
+        // Require at least 6 inliers to reject false triangle matches.
+        // Correct matches typically have 15+ inliers; false matches have 3-5 from coincidence.
+        guard bestInliers >= 6, let initial = bestTransform else {
+            return nil
+        }
 
         // Two-pass least-squares refinement:
         // Pass 1: collect inliers at 8px threshold, re-solve affine from all pairs
@@ -692,7 +697,12 @@ class QuickStackEngineV2: ObservableObject {
             refStars: refStars, frameStars: frameStars,
             threshold: 4.0
         )
-        return pass2 ?? pass1 ?? initial
+        let final = pass2 ?? pass1 ?? initial
+        let finalInliers = countInliers(transform: final, refStars: refStars, frameStars: frameStars, threshold: 4.0)
+
+        // Post-refinement quality gate: reject if too few inliers survive 4px tightening
+        guard finalInliers >= 5 else { return nil }
+        return final
     }
 
     // Least-squares affine refinement using all inlier star correspondences.
@@ -769,9 +779,10 @@ class QuickStackEngineV2: ObservableObject {
         let d  = ((sy * sx - sxy * n) * sxY + (sxx * n - sx * sx) * syY + (sxy * sx - sxx * sy) * sY) * invDet
         let ty = ((sxy * sy - syy * sx) * sxY + (sxy * sx - sxx * sy) * syY + (sxx * syy - sxy * sxy) * sY) * invDet
 
-        // Sanity: scale should be near 1.0
-        let scale = (a * a + c * c).squareRoot()
-        guard scale > 0.8 && scale < 1.2 else { return nil }
+        // Scale should be near 1.0 on BOTH axes
+        let scaleX = (a * a + c * c).squareRoot()
+        let scaleY = (b * b + d * d).squareRoot()
+        guard scaleX > 0.95 && scaleX < 1.05 && scaleY > 0.95 && scaleY < 1.05 else { return nil }
 
         return AffineTransform2D(a: a, b: b, tx: tx, c: c, d: d, ty: ty)
     }
@@ -810,8 +821,10 @@ class QuickStackEngineV2: ObservableObject {
         let d  = inv10 * Y0 + inv11 * Y1 + inv12 * Y2
         let ty = inv20 * Y0 + inv21 * Y1 + inv22 * Y2
 
-        let scale = (a * a + c * c).squareRoot()
-        guard scale > 0.8 && scale < 1.2 else { return nil }
+        // Basic sanity: scale on both axes should be roughly 1.0
+        let scaleX = (a * a + c * c).squareRoot()
+        let scaleY = (b * b + d * d).squareRoot()
+        guard scaleX > 0.8 && scaleX < 1.2 && scaleY > 0.8 && scaleY < 1.2 else { return nil }
 
         return AffineTransform2D(a: a, b: b, tx: tx, c: c, d: d, ty: ty)
     }

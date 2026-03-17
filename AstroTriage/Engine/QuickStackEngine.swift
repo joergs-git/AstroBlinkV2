@@ -544,9 +544,10 @@ class QuickStackEngine: ObservableObject {
         let d  = inv10 * Y0 + inv11 * Y1 + inv12 * Y2
         let ty = inv20 * Y0 + inv21 * Y1 + inv22 * Y2
 
-        // Sanity check: scale should be roughly 1.0 (same focal length / sensor)
-        let scale = sqrtf(a * a + c * c)
-        guard scale > 0.8 && scale < 1.2 else { return nil }
+        // Sanity check: scale should be near 1.0 on BOTH axes
+        let scaleX = sqrtf(a * a + c * c)
+        let scaleY = sqrtf(b * b + d * d)
+        guard scaleX > 0.8 && scaleX < 1.2 && scaleY > 0.8 && scaleY < 1.2 else { return nil }
 
         return AffineTransform2D(a: a, b: b, tx: tx, c: c, d: d, ty: ty)
     }
