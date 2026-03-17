@@ -867,18 +867,30 @@ class TriageViewModel: ObservableObject {
             },
             onStarMetrics: { [weak self] url, metrics in
                 guard let self = self else { return }
-                // Store computed star metrics (always computed for per-group source consistency)
                 if let idx = self.images.firstIndex(where: { $0.url == url }) {
-                    // Only store HFR/FWHM if measurement succeeded (non-zero)
                     if metrics.medianHFR > 0 { self.images[idx].computedHFR = metrics.medianHFR }
                     if metrics.medianFWHM > 0 { self.images[idx].computedFWHM = metrics.medianFWHM }
-                    // Always store total star count
                     self.images[idx].computedStarCount = metrics.totalStarCount
-                    // Store eccentricity from 2D image moments (nil if < 5 stars measured)
                     self.images[idx].computedEccentricity = metrics.medianEccentricity
-                    // Store per-star details for problem visualization in Compare window
                     if !metrics.starDetails.isEmpty {
                         self.images[idx].starDetails = metrics.starDetails
+                    }
+
+                    // Run trailing analysis with orientation consensus.
+                    // focalLength may not be available yet (header enrichment runs in parallel)
+                    // — trailing scores are recomputed in recomputeQualityScores() after enrichment
+                    if !metrics.starDetails.isEmpty {
+                        let trailing = TrailingAnalyzer.analyze(
+                            starDetails: metrics.starDetails,
+                            focalLength: self.images[idx].focalLength,
+                            pixelSizeMicrons: self.images[idx].pixelSizeMicrons
+                        )
+                        if let t = trailing {
+                            self.images[idx].trailingScore = t.trailingScore
+                            self.images[idx].trailingPA = t.consensusPA
+                            self.images[idx].trailingAxisRatio = t.medianAxisRatio
+                            self.images[idx].trailingConsensus = t.consensusFraction
+                        }
                     }
                 }
             }
@@ -1057,6 +1069,13 @@ class TriageViewModel: ObservableObject {
                     if let focTemp = headers["FOCTEMP"], let val = Double(focTemp) {
                         self.images[index].focuserTemp = val
                     }
+                    // Focal length and pixel size for adaptive trailing thresholds
+                    if let fl = headers["FOCALLEN"], let val = Double(fl), val > 0 {
+                        self.images[index].focalLength = val
+                    }
+                    if let px = headers["XPIXSZ"], let val = Double(px), val > 0 {
+                        self.images[index].pixelSizeMicrons = val
+                    }
                     if let dateStr = headers["DATE-LOC"] ?? headers["DATE-OBS"], !dateStr.isEmpty {
                         if dateStr.count >= 10 {
                             self.images[index].date = self.images[index].date ?? String(dateStr.prefix(10))
@@ -1156,6 +1175,24 @@ class TriageViewModel: ObservableObject {
     // Called after header enrichment completes (FWHM, HFR, StarCount are now populated).
     // Also call this after adding a new folder to the session (new images may change group stats).
     func recomputeQualityScores() {
+        // Recompute trailing scores with current focal length info (may have been populated
+        // by header enrichment since initial star metrics were computed)
+        for index in images.indices {
+            if let details = images[index].starDetails, !details.isEmpty {
+                let trailing = TrailingAnalyzer.analyze(
+                    starDetails: details,
+                    focalLength: images[index].focalLength,
+                    pixelSizeMicrons: images[index].pixelSizeMicrons
+                )
+                if let t = trailing {
+                    images[index].trailingScore = t.trailingScore
+                    images[index].trailingPA = t.consensusPA
+                    images[index].trailingAxisRatio = t.medianAxisRatio
+                    images[index].trailingConsensus = t.consensusFraction
+                }
+            }
+        }
+
         let scores = QualityEstimator.computeScores(for: images)
         for index in images.indices {
             images[index].qualityBreakdown = scores[images[index].url]

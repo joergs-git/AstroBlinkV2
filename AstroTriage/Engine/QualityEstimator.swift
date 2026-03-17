@@ -13,12 +13,13 @@ enum QualityTier: Int {
 
 // Stage 1 garbage reason — explains WHY a frame was immediately flagged as trash
 enum GarbageReason: String, Hashable {
-    case noData       = "no signal detected"
-    case noStars      = "zero/near-zero stars"
-    case lowSNR       = "SNR catastrophically low"
-    case highFWHM     = "severe defocus/tracking"
-    case highHFR      = "severe defocus"
-    case elongated    = "star trailing/elongation"
+    case noData            = "no signal detected"
+    case noStars           = "zero/near-zero stars"
+    case lowSNR            = "SNR catastrophically low"
+    case highFWHM          = "severe defocus/tracking"
+    case highHFR           = "severe defocus"
+    case elongated         = "star trailing/elongation"
+    case starCountAnomaly  = "doubled stars (tracking jump)"
 }
 
 // Full quality breakdown per image — replaces the old (tier, zScore) tuple.
@@ -32,7 +33,7 @@ struct QualityBreakdown: Hashable {
     let fwhmZ: Double?
     let hfrZ: Double?
     let noiseZ: Double?
-    let eccZ: Double?       // Eccentricity z-score (higher = more elongated = worse)
+    let trailingZ: Double?  // Trailing score z-score (higher = more trailing = worse)
 
     // SNR contribution: (SNR_i / SNR_best)^2 as percentage [0..100]
     // Shows how much this frame adds to a weighted stack relative to the best frame.
@@ -57,7 +58,7 @@ struct QualityBreakdown: Hashable {
         guard tier == .borderline else { return "" }
 
         // Check eccentricity first — the critical differentiator
-        let hasHighEcc = (eccZ ?? 0) > 1.5  // Significantly more elongated than group average
+        let hasHighEcc = (trailingZ ?? 0) > 1.5  // Significantly more trailing than group average
         if hasHighEcc {
             return "REVIEW — stars may be elongated"
         }
@@ -183,7 +184,8 @@ struct QualityEstimator {
             let hfrZscores   = zscores(values: hfrValues)
             let starsZscores = zscores(values: starsValues)
             let noiseMadZscores = zscores(values: groupEntries.map { $0.noiseMAD.map { Double($0) } })
-            let eccZscores   = zscores(values: groupEntries.map { $0.computedEccentricity })
+            // Use trailing score (consensus-weighted, FL-adaptive) instead of raw eccentricity
+            let trailingZscores = zscores(values: groupEntries.map { $0.trailingScore })
 
             for (localIdx, globalIdx) in indices.enumerated() {
                 let entry = entries[globalIdx]
@@ -238,9 +240,24 @@ struct QualityEstimator {
                     }
                 }
 
-                // Rule 5: Star elongation — tracking failure, wind shake
-                if garbageReason == nil, let ecc = entry.computedEccentricity, ecc > 0.6 {
+                // Rule 5: Star trailing — uses consensus-weighted, focal-length-adaptive score
+                // instead of raw eccentricity. Catches tracking errors that raw ecc > 0.6 misses
+                // on long FL, and avoids false positives on short FL / fast optics.
+                if garbageReason == nil, let ts = entry.trailingScore, ts > 0.7 {
                     garbageReason = .elongated
+                }
+                // Also flag on very strong PA consensus even with moderate trailing score
+                if garbageReason == nil, let ts = entry.trailingScore, ts > 0.4,
+                   let consensus = entry.trailingConsensus, consensus > 0.7 {
+                    garbageReason = .elongated
+                }
+
+                // Rule 6: Star count anomaly — doubled stars from tracking/dithering jump
+                // If star count is >1.8× the group median, stars are likely doubled from movement
+                if garbageReason == nil, let stars = starsValues[localIdx], let median = starsMedian {
+                    if median > 20 && stars > median * 1.8 {
+                        garbageReason = .starCountAnomaly
+                    }
                 }
 
                 if garbageReason != nil {
@@ -254,7 +271,7 @@ struct QualityEstimator {
                         fwhmZ: fwhmZscores[localIdx],
                         hfrZ: hfrZscores[localIdx],
                         noiseZ: noiseMadZscores[localIdx],
-                        eccZ: eccZscores[localIdx],
+                        trailingZ: trailingZscores[localIdx],
                         snrContribution: nil,
                         snrSquared: snrSq,
                         garbageReason: garbageReason
@@ -282,8 +299,8 @@ struct QualityEstimator {
                     zSum += -z * 1.0     // lower noise = better → negate
                     wSum += 1.0
                 }
-                if let z = eccZscores[localIdx] {
-                    zSum += -z * 1.5     // lower eccentricity = better → negate, weight 1.5x
+                if let z = trailingZscores[localIdx] {
+                    zSum += z * 1.5      // Higher trailing score = worse → keep positive, weight 1.5x
                     wSum += 1.5          // Highest weight: elongation can't be fixed by stacking
                 }
 
@@ -312,7 +329,7 @@ struct QualityEstimator {
                     fwhmZ: fwhmZscores[localIdx],
                     hfrZ: hfrZscores[localIdx],
                     noiseZ: noiseMadZscores[localIdx],
-                    eccZ: eccZscores[localIdx],
+                    trailingZ: trailingZscores[localIdx],
                     snrContribution: displayContrib,
                     snrSquared: snrSq,
                     garbageReason: nil

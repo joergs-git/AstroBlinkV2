@@ -1,13 +1,16 @@
 // v4.0.0
 import Foundation
 
-// Per-star quality data for problem visualization in Compare window
+// Per-star quality data for problem visualization and trailing consensus analysis
 struct StarDetail: Hashable {
     let x: Float          // Full-res pixel X coordinate
     let y: Float          // Full-res pixel Y coordinate
     let eccentricity: Double  // 0 = round, >0.5 = elongated
     let hfr: Double?      // Half-flux radius (nil if not measured)
     let fwhm: Double?     // Full width at half max (nil if not measured)
+    // Trailing-specific metrics (from eigenvalue decomposition of 2D image moments)
+    let positionAngle: Double?  // PA of elongation axis in degrees [0..180), nil if not measurable
+    let axisRatio: Double?      // Minor/major eigenvalue ratio [0..1], 1 = perfectly round
 }
 
 // Core data model representing a single astro image in the session
@@ -57,6 +60,20 @@ struct ImageEntry: Identifiable, Hashable {
     var computedFWHM: Double?       // FWHM measured from image data (pixels)
     var computedStarCount: Int?     // Number of stars measured
     var computedEccentricity: Double?  // Median star eccentricity [0..1] from 2D image moments
+    var focalLength: Double?           // From FOCALLEN header (mm) — for adaptive trailing thresholds
+    var pixelSizeMicrons: Double?      // From XPIXSZ header (microns) — for arcsec/pixel computation
+
+    // Trailing analysis (computed by TrailingAnalyzer after star metrics)
+    var trailingScore: Double?         // 0 = no trailing, 1 = severe trailing (consensus-weighted, FL-adaptive)
+    var trailingPA: Double?            // Position angle of trailing direction (degrees, 0-180)
+    var trailingAxisRatio: Double?     // Median minor/major axis ratio (1 = round, 0 = line)
+    var trailingConsensus: Double?     // Fraction of stars agreeing on PA direction [0..1]
+
+    // Pixel scale for display (computed from focal length + pixel size)
+    var arcsecPerPixel: Double? {
+        guard let fl = focalLength, fl > 0, let px = pixelSizeMicrons, px > 0 else { return nil }
+        return 206.265 * px / fl
+    }
 
     // Per-star quality data: positions + eccentricity for problem star visualization
     // Stored during precache when star metrics are computed. Used by Compare window
