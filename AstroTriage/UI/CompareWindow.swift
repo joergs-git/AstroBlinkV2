@@ -231,9 +231,8 @@ struct CompareView: View {
                     Image(systemName: "info.circle.fill")
                         .font(.system(size: 11))
                         .foregroundColor(.orange)
-                    Text(whyWorseText)
-                        .font(.system(size: 10, design: .monospaced))
-                        .foregroundColor(.secondary)
+                    // Style recommendation keywords: KEEP=green bold, DELETE=red bold, REVIEW=orange bold
+                    styledWhyWorse(whyWorseText)
                         .lineLimit(2)
                 }
                 .padding(.horizontal, 8).padding(.vertical, 4)
@@ -278,6 +277,37 @@ struct CompareView: View {
             .background(Color(NSColor.windowBackgroundColor))
         }
         .background(Color.black)
+    }
+
+    /// Style recommendation text: KEEP = bold green, DELETE = bold red, REVIEW = bold orange
+    private func styledWhyWorse(_ text: String) -> Text {
+        // Split on the arrow marker that precedes the recommendation
+        guard let arrowRange = text.range(of: "\u{2192} ") else {
+            return Text(text).font(.system(size: 10, design: .monospaced)).foregroundColor(.secondary)
+        }
+        let metricsText = String(text[text.startIndex..<arrowRange.lowerBound])
+        let recText = String(text[arrowRange.upperBound...])
+
+        let recColor: Color
+        if recText.hasPrefix("KEEP") {
+            recColor = .green
+        } else if recText.hasPrefix("DELETE") {
+            recColor = .red
+        } else if recText.hasPrefix("REVIEW") {
+            recColor = .orange
+        } else {
+            recColor = .secondary
+        }
+
+        return Text(metricsText)
+            .font(.system(size: 10, design: .monospaced))
+            .foregroundColor(.secondary)
+        + Text("\u{2192} ")
+            .font(.system(size: 10, design: .monospaced))
+            .foregroundColor(.secondary)
+        + Text(recText)
+            .font(.system(size: 10, weight: .bold, design: .monospaced))
+            .foregroundColor(recColor)
     }
 }
 

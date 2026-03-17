@@ -20,6 +20,7 @@ enum GarbageReason: String, Hashable {
     case highHFR           = "severe defocus"
     case elongated         = "star trailing/elongation"
     case starCountAnomaly  = "doubled stars (tracking jump)"
+    case backgroundAnomaly = "abnormal background (clouds/gradient)"
 }
 
 // Full quality breakdown per image — replaces the old (tier, zScore) tuple.
@@ -195,6 +196,10 @@ struct QualityEstimator {
             let snrMedian = sortedMedian(snrValues)
             let fwhmMedian = sortedMedian(fwhmValues)
             let hfrMedian = sortedMedian(hfrValues)
+            // Background level: detect clouds/gradient via anomalous background median
+            let bgValues: [Double?] = groupEntries.map { $0.noiseMedian.map { Double($0) } }
+            let bgMedian = sortedMedian(bgValues)
+            let bgMAD = medianAbsoluteDeviation(bgValues, median: bgMedian)
 
             // Z-scores for relative scoring
             let fwhmZscores  = zscores(values: fwhmValues)
@@ -274,6 +279,17 @@ struct QualityEstimator {
                 if garbageReason == nil, let stars = starsValues[localIdx], let median = starsMedian {
                     if median > 20 && stars > median * 1.8 {
                         garbageReason = .starCountAnomaly
+                    }
+                }
+
+                // Rule 7: Background anomaly — clouds, light pollution gradient, or fog
+                // If background level deviates by >5 MADs from group median, it's anomalous.
+                // Clouds raise background level significantly; only flag strong deviations.
+                if garbageReason == nil, let bg = bgValues[localIdx],
+                   let median = bgMedian, let mad = bgMAD, mad > 0 {
+                    let deviation = Swift.abs(bg - median) / mad
+                    if deviation > 5.0 {
+                        garbageReason = .backgroundAnomaly
                     }
                 }
 
@@ -404,6 +420,14 @@ struct QualityEstimator {
         let present = values.compactMap { $0 }.sorted()
         guard !present.isEmpty else { return nil }
         return present[present.count / 2]
+    }
+
+    /// Compute MAD (median absolute deviation) from a median
+    private static func medianAbsoluteDeviation(_ values: [Double?], median: Double?) -> Double? {
+        guard let med = median else { return nil }
+        let deviations = values.compactMap { $0 }.map { Swift.abs($0 - med) }.sorted()
+        guard !deviations.isEmpty else { return nil }
+        return deviations[deviations.count / 2]
     }
 }
 

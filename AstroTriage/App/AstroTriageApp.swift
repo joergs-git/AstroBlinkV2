@@ -521,6 +521,30 @@ struct HelpContentView: View {
 
                 Divider()
 
+                sectionHeader("Autopilot Culling")
+
+                Text("Click the culling status indicator in the bottom bar to open the auto-mark menu. Three modes are available:")
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+
+                featureRow("Conservative (Nebula)", "Only marks trash-tier frames. Maximizes integration time for faint targets.")
+                featureRow("Balanced", "Marks trash + worst borderline frames. Good general-purpose choice.")
+                featureRow("Aggressive (Stars)", "Marks trash + all borderline. Prioritizes sharpness for star fields and galaxies.")
+
+                Text("Each option shows the frame count and integration time impact before applying. The status bar shows \"Culling complete\" when no more trash frames remain.")
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+
+                Divider()
+
+                sectionHeader("SSWEIGHT Export")
+
+                Text("The SSWEIGHT Export button writes PixInsight-compatible quality weights (0-100) into each FITS/XISF file header. WBPP can use these weights for optimal integration. A CSV backup is also created.")
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+
+                Divider()
+
                 sectionHeader("Search & Filter")
 
                 Text("The search field in the toolbar filters the file list in real time. Type any text to search across all columns, or use column:value syntax for targeted filtering.")
@@ -908,8 +932,21 @@ struct HelpBackgroundView: View {
                     """
                     Opens a side-by-side comparison window showing the best-quality frame from the same \
                     group (target + filter + exposure) next to the selected frame. Zoom and pan are \
-                    synchronized — drag in one image to zoom, both follow. Opens at 300% zoom for \
-                    immediate detail inspection. Press ESC to close.
+                    synchronized — drag in one image to zoom, both follow. \
+                    Star overlay shows circles color-coded by eccentricity (green=round, orange=borderline, \
+                    red=elongated). Elongated stars show PA direction lines. When trailing consensus \
+                    exists, a yellow arrow indicates the trailing direction. \
+                    The recommendation (KEEP/DELETE/REVIEW) is shown in bold color at the bottom.
+                    """)
+
+                faqItem("Self-Calibration",
+                    """
+                    AstroBlinkV2 silently learns your equipment's quality baseline as you work. Every \
+                    mark/unmark action and PRE-DELETE confirmation trains the system. After 30+ frames \
+                    with the same setup (telescope + camera + focal length), an absolute quality floor \
+                    activates: frames meeting the learned baseline are locked as KEEP — z-scores cannot \
+                    override them. This prevents the \"death spiral\" where repeated culling removes \
+                    good frames. Calibration data is stored per-setup in Application Support.
                     """)
 
                 Divider()
