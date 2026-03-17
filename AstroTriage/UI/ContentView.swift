@@ -441,6 +441,7 @@ struct ContentView: View {
                                     ? (viewModel.nightMode ? Color(red: 0.4, green: 0, blue: 0) : Color(red: 0.8, green: 0.25, blue: 0.25))
                                     : (viewModel.nightMode ? Color(red: 0.15, green: 0, blue: 0) : Color(white: 0.35))
                             )
+                            .help("Frames marked for deletion (Space to toggle, Cmd+Backspace to move to PRE-DELETE)")
                         }
 
                         // Hiding pill
@@ -448,6 +449,7 @@ struct ContentView: View {
                             statusPill("Hiding", bg: viewModel.nightMode
                                 ? Color(red: 0.3, green: 0, blue: 0)
                                 : Color(red: 0.15, green: 0.55, blue: 0.55))
+                            .help("Marked frames are hidden from the file list (H to toggle)")
                         }
 
                         // Show only marked pill (inverted view)
@@ -455,6 +457,7 @@ struct ContentView: View {
                             statusPill("Only Marked", bg: viewModel.nightMode
                                 ? Color(red: 0.35, green: 0, blue: 0)
                                 : Color(red: 0.7, green: 0.4, blue: 0.1))
+                            .help("Showing only marked frames — review before deleting (Shift+H to toggle)")
                         }
 
                         // Lock STF pill
@@ -462,6 +465,7 @@ struct ContentView: View {
                             statusPill("Locked STF", bg: viewModel.nightMode
                                 ? Color(red: 0.35, green: 0.15, blue: 0)
                                 : Color.orange.opacity(0.85))
+                            .help("Stretch is locked to current image's parameters — all images use the same brightness mapping for direct comparison (S to toggle)")
                         }
 
                         // Apply All pill
@@ -474,6 +478,7 @@ struct ContentView: View {
                                         ? Color.blue.opacity(0.7)
                                         : Color.blue.opacity(0.5))
                             )
+                            .help("Current stretch/sharp/contrast/dark settings are baked into all cached previews for consistent comparison")
                         }
 
                         // Skip pill
@@ -481,11 +486,13 @@ struct ContentView: View {
                             statusPill("Skip", bg: viewModel.nightMode
                                 ? Color(red: 0.3, green: 0, blue: 0)
                                 : Color(red: 0.75, green: 0.55, blue: 0.15))
+                            .help("Arrow keys skip over marked frames — navigate only unmarked images (K to toggle)")
                         }
 
                         // Night pill
                         if viewModel.nightMode {
                             statusPill("Night", bg: Color(red: 0.35, green: 0, blue: 0))
+                            .help("Night mode — red-only UI to preserve dark-adapted vision at the telescope (N to toggle)")
                         }
 
                         // Debayer pill — only shown when session has OSC images
@@ -493,6 +500,7 @@ struct ContentView: View {
                             statusPill("Debayer", bg: viewModel.nightMode
                                 ? Color(red: 0.3, green: 0, blue: 0)
                                 : Color(red: 0.15, green: 0.5, blue: 0.25))
+                            .help("Color debayering active — one-shot-color (OSC) images shown in RGB instead of mono (D to toggle)")
                         }
 
                         // Auto Meridian pill — shows when active and session has meridian flip
@@ -500,6 +508,7 @@ struct ContentView: View {
                             statusPill("MeridianFlip", bg: viewModel.nightMode
                                 ? Color(red: 0.25, green: 0, blue: 0.15)
                                 : Color.purple.opacity(0.7))
+                            .help("Meridian flip detected — images from the opposite pier side are rotated 180\u{00B0} for consistent orientation")
                         }
 
                         Spacer()
