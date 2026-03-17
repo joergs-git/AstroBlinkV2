@@ -215,6 +215,41 @@ Layer 3: Focal-Length Baseline (TrailingAnalyzer.swift)
 
 ---
 
+## Self-Calibration & Convergence (v4.3.0)
+
+### Calibration Database
+- **Location:** `~/Library/Application Support/AstroBlinkV2/Calibration/` (one JSON per setup hash)
+- **SetupFingerprint:** SHA256(telescope+camera+focalLength+pixelSize), anonymized for Supabase
+- **Learning:** Welford's online algorithm for incremental mean/variance/MAD per metric
+- **Threshold:** ≥30 frames before absolute quality floor activates
+- **Recording:** `recordAction()` on every mark/unmark, `commitSession()` on PRE-DELETE confirm (learns from retained frames)
+
+### Convergence Detection
+- Quality spread (std dev of retained z-scores) < 0.3 → "Culling complete"
+- SNR stopping: flags when SNR loss % > integration loss %
+- Stack readiness: 40% uniformity + 35% SNR retention + 25% floor coverage
+
+### Absolute Quality Floor
+- Frames within 1 MAD of learned baseline for ALL metrics → locked KEEP
+- Z-scores cannot override locked frames (bumped to at least .good)
+- Blue lock badge on quality column icons
+- `isLockedKeep` field on QualityBreakdown
+
+### SSWEIGHT Export
+- Weight formula: `clamp(0, 100, 50 + qualityZScore*20) * (1 - trailingScore*0.5)`
+- Locked KEEP frames get minimum weight of 50
+- Writes via `write_fits_keyword` / `write_xisf_keyword` (C bridge)
+- CSV backup: `AstroBlinkV2_SSWEIGHT.csv` in session root
+
+### Key Files
+- `AstroTriage/Engine/CalibrationDatabase.swift` — Persistence, Welford, fingerprinting
+- `AstroTriage/Engine/ConvergenceDetector.swift` — Spread analysis, readiness formula
+- `AstroTriage/Engine/QualityEstimator.swift` — Absolute floor, isLockedKeep, GroupKey now internal
+- `Tests/CalibrationDatabaseTests.swift` — 11 tests
+- `Tests/ConvergenceDetectorTests.swift` — 8 tests
+
+---
+
 ## STF Auto-Stretch Algorithmus
 
 **Quelle: PixInsight AutoSTF Script (Juan Conejero, PTeam) – verifizierte Implementierung**

@@ -4,6 +4,22 @@ All notable changes to AstroBlinkV2 will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [4.3.0] — 2026-03-17
+
+### Added
+- **Per-Setup Calibration Database** — Learns from user actions (mark/unmark/commit) to build per-setup quality baselines using Welford's online algorithm. Persistent JSON files in `~/Library/Application Support/AstroBlinkV2/Calibration/`. Keyed by anonymized SHA256 hardware fingerprint (telescope+camera+FL+pixelSize). Designed for future Supabase community learning.
+- **Absolute Quality Floor** — Frames within 1 MAD of the learned baseline for ALL metrics are locked as KEEP — z-scores cannot override. Prevents the "death spiral" where relative scoring always finds "the worst" even in excellent sets. Requires ≥30 learned frames per setup.
+- **Convergence Detection** — Monitors quality spread (std dev of z-scores). When spread < 0.3, displays "Culling complete — quality is uniform". Also detects SNR stopping: warns when SNR loss % exceeds integration loss %.
+- **Stack Readiness Meter** — Status bar health bar (0-100%): 40% uniformity + 35% SNR retention + 25% absolute floor coverage. Green ≥95%, yellow 80-95%, orange 60-80%, red <60%.
+- **SSWEIGHT Export** — Toolbar button writes SubframeSelector-compatible SSWEIGHT keyword (float, 0-100) into FITS/XISF headers for WBPP integration. Formula: `clamp(0, 100, 50 + z*20) * (1 - trailing*0.5)`. CSV backup created alongside.
+- **Lock Badge** — Blue lock.circle.fill SF Symbol overlay on quality icons for calibration-locked KEEP frames.
+- **Calibration Status** — Quality scoring status bar message shows learning progress ("Learning... (N/30 frames)") or calibrated state with frame/session counts.
+- **CalibrationDatabaseTests** — 11 tests: fingerprint hashing, Welford's mean/variance, MAD thresholds, profile learning, agreement rate.
+- **ConvergenceDetectorTests** — 8 tests: convergence detection, SNR stopping, readiness scoring, edge cases.
+
+### Fixed
+- **QualityEstimator test data** — `testBestFrameDetectedAsExcellent` and `testRecommendationLabelNotSetForExcellent` used starCount 800 vs group median 200, triggering starCountAnomaly Rule 6. Changed to 350 (< 1.8× median).
+
 ## [4.2.0] — 2026-03-17
 
 ### Added

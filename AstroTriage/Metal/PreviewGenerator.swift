@@ -291,7 +291,11 @@ class PreviewGenerator {
     // MARK: - GPU Star Detection
 
     // Maximum candidates the GPU kernel can emit (capped by atomic counter)
-    private static let maxGPUCandidates = 512
+    // Must be large enough to hold ALL peaks above threshold across the full image.
+    // GPU threads execute in tile order (left-to-right), so a small buffer fills up
+    // with left-biased stars and misses the right side entirely.
+    // 810 peaks found in a 9576×6388 H-alpha image → 4096 gives ample headroom.
+    private static let maxGPUCandidates = 4096
 
     /// True total star count from last detection (before truncation to 50)
     private(set) var lastTotalStarCount: Int = 0
@@ -391,10 +395,12 @@ class PreviewGenerator {
             stars.append(DetectedStar(x: fullX, y: fullY, brightness: val))
         }
 
-        // Sort by brightness (brightest first) and cap at 50
+        // Sort by brightness (brightest first) and cap at 200
+        // StarMetricsCalculator filters heavily (center crop 70%, saturation, crowding 10px),
+        // so we need ~200 input stars to get ~50 through the filter for shape measurement.
         stars.sort()
         lastTotalStarCount = rawCount  // True total from GPU atomic counter (not capped)
-        return Array(stars.prefix(50))
+        return Array(stars.prefix(200))
     }
 
     /// Detect stars from a full-resolution image: GPU bin2x + GPU star detection.

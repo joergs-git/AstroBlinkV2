@@ -1,10 +1,11 @@
-// v3.3.0
+// v4.3.0
 import Foundation
 import SwiftUI
 import Metal
 import MetalKit
 import UniformTypeIdentifiers
 import StoreKit
+import ImageDecoderBridge
 
 // Central state manager for the triage workflow
 // @MainActor ensures all UI updates happen on main thread (Lesson L9)
@@ -91,6 +92,45 @@ class TriageViewModel: ObservableObject {
     @Published var snrRetention: Double = 100.0
     // Tooltip detail for the SNR retention bar (per-group breakdown)
     @Published var snrRetentionDetail: String = ""
+
+    // Culling status — actionable text for status bar (v4.3.0)
+    @Published var cullingStatus: CullingStatus?
+    @Published var isConverged: Bool = false
+
+    // Culling status model: simple actionable state
+    struct CullingStatus {
+        enum Level { case trash, warning, done }
+        let level: Level
+        let text: String
+
+        func color(isNightMode: Bool) -> Color {
+            if isNightMode {
+                switch level {
+                case .trash:   return Color(red: 0.6, green: 0.0, blue: 0.0)
+                case .warning: return Color(red: 0.5, green: 0.3, blue: 0.0)
+                case .done:    return Color(red: 0.3, green: 0.0, blue: 0.0)
+                }
+            }
+            switch level {
+            case .trash:   return .red
+            case .warning: return .yellow
+            case .done:    return .green
+            }
+        }
+    }
+
+    // Current setup fingerprint (computed from first image's headers)
+    var currentSetupFingerprint: SetupFingerprint? {
+        guard let first = images.first(where: { $0.telescope != nil || $0.camera != nil }) else {
+            return nil
+        }
+        return SetupFingerprint(
+            telescope: first.telescope,
+            camera: first.camera,
+            focalLength: first.focalLength,
+            pixelSizeMicrons: first.pixelSizeMicrons
+        )
+    }
 
     // Spotlight-style search: filters file list in real time
     // Supports plain text (searches all columns) or "column:value" syntax (e.g. "filter:Ha", "fwhm:>4")
@@ -1193,7 +1233,11 @@ class TriageViewModel: ObservableObject {
             }
         }
 
-        let scores = QualityEstimator.computeScores(for: images)
+        let scores = QualityEstimator.computeScores(
+            for: images,
+            calibrationDB: CalibrationDatabase.shared,
+            fingerprint: currentSetupFingerprint
+        )
         for index in images.indices {
             images[index].qualityBreakdown = scores[images[index].url]
         }
@@ -1209,9 +1253,20 @@ class TriageViewModel: ObservableObject {
 
         let scored = scores.count
         let total  = images.count
+        let lockedCount = scores.values.filter { $0.isLockedKeep }.count
         if scored > 0 {
-            statusMessage = "Quality scored: \(scored)/\(total) images in \(countGroups(scores)) group(s)"
+            var msg = "Quality scored: \(scored)/\(total) images in \(countGroups(scores)) group(s)"
+            if lockedCount > 0 {
+                msg += " — \(lockedCount) locked KEEP"
+            }
+            // Show calibration learning status
+            if let fp = currentSetupFingerprint {
+                msg += " [\(CalibrationDatabase.shared.learningStatus(for: fp))]"
+            }
+            statusMessage = msg
         }
+
+        updateConvergence()
     }
 
     /// Count distinct groups that produced at least one score
@@ -1315,6 +1370,133 @@ class TriageViewModel: ObservableObject {
             // Fallback: simple frame count ratio
             snrRetention = fallbackTotal > 0 ? Double(fallbackRetained) / Double(fallbackTotal) * 100.0 : 100.0
             snrRetentionDetail = "SNR Retention: \(String(format: "%.1f", snrRetention))%\n(Estimated from frame count — noise stats not yet available)"
+        }
+    }
+
+    // MARK: - Convergence & Stack Readiness
+
+    /// Update culling status after mark/unmark or quality recomputation.
+    /// Simple actionable state: how many trash remain, SNR warning, convergence.
+    func updateConvergence() {
+        let unmarkedTrash = images.filter { !$0.isMarkedForDeletion && $0.qualityTier == .trash }.count
+        let unmarkedBorderline = images.filter { !$0.isMarkedForDeletion && $0.qualityTier == .borderline }.count
+        let hasScores = images.contains { $0.qualityBreakdown != nil }
+
+        guard hasScores else {
+            cullingStatus = nil
+            isConverged = false
+            return
+        }
+
+        // SNR stopping check
+        let totalExposure = images.reduce(0.0) { $0 + ($1.exposure ?? 0.0) }
+        let markedExposure = images.filter { $0.isMarkedForDeletion }.reduce(0.0) { $0 + ($1.exposure ?? 0.0) }
+        let integrationLossPct = totalExposure > 0 ? markedExposure / totalExposure * 100 : 0
+        let snrLossPct = 100.0 - snrRetention
+
+        if unmarkedTrash > 0 {
+            cullingStatus = CullingStatus(level: .trash, text: "\(unmarkedTrash)\u{00D7} trash remaining")
+            isConverged = false
+        } else if snrLossPct > integrationLossPct && snrLossPct > 5 {
+            cullingStatus = CullingStatus(
+                level: .warning,
+                text: "SNR: -\(String(format: "%.0f", snrLossPct))% vs integration -\(String(format: "%.0f", integrationLossPct))%"
+            )
+            isConverged = false
+        } else if unmarkedBorderline > 0 {
+            cullingStatus = CullingStatus(level: .done, text: "Culling done (\(unmarkedBorderline) borderline remain)")
+            isConverged = true
+        } else {
+            cullingStatus = CullingStatus(level: .done, text: "Culling complete")
+            isConverged = true
+        }
+    }
+
+    // MARK: - SSWEIGHT Export
+
+    /// Export SSWEIGHT keyword to FITS/XISF headers for WBPP integration.
+    /// Weight formula: clamp(0, 100, 50 + qualityZScore * 20) * (1 - trailingScore * 0.5)
+    func exportSSWEIGHT() {
+        let scoredImages = images.filter { $0.qualityBreakdown != nil }
+        guard !scoredImages.isEmpty else {
+            statusMessage = "No quality scores available — load and cache images first"
+            return
+        }
+
+        // Confirmation dialog
+        let alert = NSAlert()
+        alert.messageText = "Export SSWEIGHT to \(scoredImages.count) files?"
+        alert.informativeText = "This writes the SSWEIGHT keyword (float, 0-100) into each file's header.\n\nPixInsight WBPP can use this for weighted integration.\n\nA CSV backup will also be created."
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "Export")
+        alert.addButton(withTitle: "Cancel")
+
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+
+        var succeeded = 0
+        var failed = 0
+        var csvLines: [String] = ["Filename,SSWEIGHT,QualityTier,TrailingScore,FWHM,HFR,Ecc,SNR,StarCount"]
+
+        for entry in scoredImages {
+            guard let bd = entry.qualityBreakdown else { continue }
+
+            // Compute SSWEIGHT: 50 + z*20, penalized by trailing
+            var weight = 50.0 + bd.combinedZScore * 20.0
+            if let ts = entry.trailingScore {
+                weight *= (1.0 - ts * 0.5)
+            }
+            // Locked KEEP frames get minimum weight of 50
+            if bd.isLockedKeep {
+                weight = max(weight, 50.0)
+            }
+            weight = max(0.0, min(100.0, weight))
+
+            let weightStr = String(format: "%.2f", weight)
+            let path = entry.decodingURL.path
+
+            // Write to file header
+            let result: WriteResult
+            if entry.isXISF {
+                result = write_xisf_keyword(path, path, "SSWEIGHT", weightStr)
+            } else if entry.isFITS {
+                result = write_fits_keyword(path, "SSWEIGHT", weightStr)
+            } else {
+                continue
+            }
+
+            if result.success == 1 {
+                succeeded += 1
+            } else {
+                failed += 1
+            }
+
+            // CSV line
+            let tierName = bd.tier == .excellent ? "excellent" : bd.tier == .good ? "good" : bd.tier == .borderline ? "borderline" : "trash"
+            let ts = entry.trailingScore.map { String(format: "%.3f", $0) } ?? ""
+            let fwhm = entry.displayFWHM.map { String(format: "%.2f", $0) } ?? ""
+            let hfr = entry.displayHFR.map { String(format: "%.2f", $0) } ?? ""
+            let ecc = entry.computedEccentricity.map { String(format: "%.3f", $0) } ?? ""
+            let snr: String
+            if let med = entry.noiseMedian, let mad = entry.noiseMAD, mad > 0 {
+                snr = String(format: "%.1f", Double(med) / Double(mad))
+            } else {
+                snr = ""
+            }
+            let stars = entry.displayStarCount.map { "\($0)" } ?? ""
+            csvLines.append("\(entry.filename),\(weightStr),\(tierName),\(ts),\(fwhm),\(hfr),\(ecc),\(snr),\(stars)")
+        }
+
+        // Write CSV backup
+        if let rootURL = sessionRootURL {
+            let csvURL = rootURL.appendingPathComponent("AstroBlinkV2_SSWEIGHT.csv")
+            let csvContent = csvLines.joined(separator: "\n")
+            try? csvContent.write(to: csvURL, atomically: true, encoding: .utf8)
+        }
+
+        if failed > 0 {
+            statusMessage = "SSWEIGHT exported: \(succeeded) files (\(failed) failed)"
+        } else {
+            statusMessage = "SSWEIGHT exported to \(succeeded) files + CSV backup"
         }
     }
 
@@ -2050,6 +2232,14 @@ class TriageViewModel: ObservableObject {
         statusMessage = marked ? "Marked for deletion" : "Unmarked"
         needsTableRefresh = true
         recomputeSNRRetention()
+
+        // Record action for calibration learning
+        if let fp = currentSetupFingerprint {
+            CalibrationDatabase.shared.recordAction(
+                entry: images[index], wasMarked: marked, fingerprint: fp
+            )
+        }
+        updateConvergence()
     }
 
     func togglePreDeleteForRows(_ rows: IndexSet) {
@@ -2066,6 +2256,7 @@ class TriageViewModel: ObservableObject {
         statusMessage = anyUnmarked ? "Marked \(count) for deletion" : "Unmarked \(count)"
         needsTableRefresh = true
         recomputeSNRRetention()
+        updateConvergence()
     }
 
     // MARK: - Move Marked to PRE-DELETE Folder
@@ -2254,6 +2445,13 @@ class TriageViewModel: ObservableObject {
         } else {
             statusMessage = "Moved \(movedCount) files to PRE-DELETE — Undo available"
         }
+
+        // Commit retained frames to calibration database for learning
+        if let fp = currentSetupFingerprint {
+            CalibrationDatabase.shared.commitSession(entries: images, fingerprint: fp)
+        }
+        recomputeQualityScores()
+        updateConvergence()
     }
 
     // Undo the last pre-delete operation: move files back and restore entries
@@ -2916,9 +3114,13 @@ class TriageViewModel: ObservableObject {
         ))
 
         // Recompute quality scores (filter/exposure may have changed)
-        let scores = QualityEstimator.computeScores(for: images)
+        let batchScores = QualityEstimator.computeScores(
+            for: images,
+            calibrationDB: CalibrationDatabase.shared,
+            fingerprint: currentSetupFingerprint
+        )
         for i in images.indices {
-            images[i].qualityBreakdown = scores[images[i].url]
+            images[i].qualityBreakdown = batchScores[images[i].url]
         }
 
         statusMessage = "Batch: \(result.succeeded) files modified"

@@ -81,8 +81,9 @@ final class QualityEstimatorTests: XCTestCase {
     }
 
     func testBestFrameDetectedAsExcellent() {
+        // Star count must be < 1.8× group median to avoid triggering starCountAnomaly Rule 6
         var entries = makeGroup(count: 24, fwhm: 5.0, hfr: 4.0, starCount: 200, noiseMAD: 0.02)
-        let best = makeEntry(index: 99, fwhm: 1.5, hfr: 1.0, starCount: 800, noiseMAD: 0.005)
+        let best = makeEntry(index: 99, fwhm: 1.5, hfr: 1.0, starCount: 350, noiseMAD: 0.005)
         entries.append(best)
 
         let scores = QualityEstimator.computeScores(for: entries)
@@ -336,8 +337,9 @@ final class QualityEstimatorTests: XCTestCase {
     }
 
     func testRecommendationLabelNotSetForExcellent() {
+        // Star count must be < 1.8× group median to avoid triggering starCountAnomaly Rule 6
         var entries = makeGroup(count: 24, fwhm: 5.0, hfr: 4.0, starCount: 200, noiseMAD: 0.02, noiseMedian: 0.05)
-        let best = makeEntry(index: 99, fwhm: 1.5, hfr: 1.0, starCount: 800, noiseMAD: 0.005, noiseMedian: 0.05)
+        let best = makeEntry(index: 99, fwhm: 1.5, hfr: 1.0, starCount: 350, noiseMAD: 0.005, noiseMedian: 0.05)
         entries.append(best)
 
         let scores = QualityEstimator.computeScores(for: entries)

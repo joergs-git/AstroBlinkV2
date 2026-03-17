@@ -119,7 +119,7 @@ final class ColumnDefinitionTests: XCTestCase {
         entry.fileSize = 120_000_000
         entry.noiseMedian = 0.05
         entry.noiseMAD = 0.001
-        entry.qualityBreakdown = QualityBreakdown(tier: .good, combinedZScore: 0.1, starsZ: nil, fwhmZ: nil, hfrZ: nil, noiseZ: nil, trailingZ: nil, snrContribution: nil, snrSquared: nil, garbageReason: nil)
+        entry.qualityBreakdown = QualityBreakdown(tier: .good, combinedZScore: 0.1, starsZ: nil, fwhmZ: nil, hfrZ: nil, noiseZ: nil, trailingZ: nil, snrContribution: nil, snrSquared: nil, garbageReason: nil, isLockedKeep: false)
 
         for col in ColumnDefinition.allColumns {
             // This should never crash
@@ -178,7 +178,7 @@ final class ColumnDefinitionTests: XCTestCase {
 
     func testQualityColumnReturnsEmptyString() {
         var entry = ImageEntry(url: URL(fileURLWithPath: "/tmp/test.xisf"))
-        entry.qualityBreakdown = QualityBreakdown(tier: .good, combinedZScore: 0.1, starsZ: nil, fwhmZ: nil, hfrZ: nil, noiseZ: nil, trailingZ: nil, snrContribution: nil, snrSquared: nil, garbageReason: nil)
+        entry.qualityBreakdown = QualityBreakdown(tier: .good, combinedZScore: 0.1, starsZ: nil, fwhmZ: nil, hfrZ: nil, noiseZ: nil, trailingZ: nil, snrContribution: nil, snrSquared: nil, garbageReason: nil, isLockedKeep: false)
 
         XCTAssertEqual(ColumnDefinition.value(for: "quality", from: entry), "",
                        "Quality column text should be empty (rendered as icon)")
@@ -188,20 +188,20 @@ final class ColumnDefinitionTests: XCTestCase {
         var entry = ImageEntry(url: URL(fileURLWithPath: "/tmp/test.xisf"))
 
         // With z-score: returns z-score for fine-grained sorting within tiers
-        entry.qualityBreakdown = QualityBreakdown(tier: .excellent, combinedZScore: 1.5, starsZ: nil, fwhmZ: nil, hfrZ: nil, noiseZ: nil, trailingZ: nil, snrContribution: nil, snrSquared: nil, garbageReason: nil)
+        entry.qualityBreakdown = QualityBreakdown(tier: .excellent, combinedZScore: 1.5, starsZ: nil, fwhmZ: nil, hfrZ: nil, noiseZ: nil, trailingZ: nil, snrContribution: nil, snrSquared: nil, garbageReason: nil, isLockedKeep: false)
         XCTAssertEqual(ColumnDefinition.numericValue(for: "quality", from: entry), 1.5)
 
         // Tier fallback: when z-score is present, numericValue still returns it
-        entry.qualityBreakdown = QualityBreakdown(tier: .excellent, combinedZScore: 0.8, starsZ: nil, fwhmZ: nil, hfrZ: nil, noiseZ: nil, trailingZ: nil, snrContribution: nil, snrSquared: nil, garbageReason: nil)
+        entry.qualityBreakdown = QualityBreakdown(tier: .excellent, combinedZScore: 0.8, starsZ: nil, fwhmZ: nil, hfrZ: nil, noiseZ: nil, trailingZ: nil, snrContribution: nil, snrSquared: nil, garbageReason: nil, isLockedKeep: false)
         XCTAssertEqual(ColumnDefinition.numericValue(for: "quality", from: entry), 0.8)
 
-        entry.qualityBreakdown = QualityBreakdown(tier: .good, combinedZScore: 0.1, starsZ: nil, fwhmZ: nil, hfrZ: nil, noiseZ: nil, trailingZ: nil, snrContribution: nil, snrSquared: nil, garbageReason: nil)
+        entry.qualityBreakdown = QualityBreakdown(tier: .good, combinedZScore: 0.1, starsZ: nil, fwhmZ: nil, hfrZ: nil, noiseZ: nil, trailingZ: nil, snrContribution: nil, snrSquared: nil, garbageReason: nil, isLockedKeep: false)
         XCTAssertEqual(ColumnDefinition.numericValue(for: "quality", from: entry), 0.1)
 
-        entry.qualityBreakdown = QualityBreakdown(tier: .borderline, combinedZScore: -0.5, starsZ: nil, fwhmZ: nil, hfrZ: nil, noiseZ: nil, trailingZ: nil, snrContribution: nil, snrSquared: nil, garbageReason: nil)
+        entry.qualityBreakdown = QualityBreakdown(tier: .borderline, combinedZScore: -0.5, starsZ: nil, fwhmZ: nil, hfrZ: nil, noiseZ: nil, trailingZ: nil, snrContribution: nil, snrSquared: nil, garbageReason: nil, isLockedKeep: false)
         XCTAssertEqual(ColumnDefinition.numericValue(for: "quality", from: entry), -0.5)
 
-        entry.qualityBreakdown = QualityBreakdown(tier: .trash, combinedZScore: -99.0, starsZ: nil, fwhmZ: nil, hfrZ: nil, noiseZ: nil, trailingZ: nil, snrContribution: nil, snrSquared: nil, garbageReason: nil)
+        entry.qualityBreakdown = QualityBreakdown(tier: .trash, combinedZScore: -99.0, starsZ: nil, fwhmZ: nil, hfrZ: nil, noiseZ: nil, trailingZ: nil, snrContribution: nil, snrSquared: nil, garbageReason: nil, isLockedKeep: false)
         XCTAssertEqual(ColumnDefinition.numericValue(for: "quality", from: entry), -99.0)
 
         entry.qualityBreakdown = nil

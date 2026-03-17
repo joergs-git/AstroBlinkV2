@@ -1,4 +1,4 @@
-// v4.0.0
+// v4.3.0
 import Foundation
 
 // Four-tier quality system with sub-tiers for borderline:
@@ -45,12 +45,22 @@ struct QualityBreakdown: Hashable {
     // Garbage reason (nil if not Stage 1 garbage)
     let garbageReason: GarbageReason?
 
+    // Absolute quality floor: frame meets calibration baseline for ALL metrics.
+    // When true, z-scores cannot override — this frame is locked as KEEP.
+    // Only set when the setup has ≥30 learned frames.
+    let isLockedKeep: Bool
+
     // Smart recommendation label based on per-metric analysis
     // Smart recommendation based on per-metric analysis and eccentricity.
     // Research shows: round stars = always keep (even with worse FWHM/noise).
     // FWHM of final stack barely changes when including softer-but-round frames.
     // Eccentricity is the one hard boundary — elongated stars can't be fixed by stacking.
     var recommendationLabel: String {
+        // Locked keep from calibration floor — overrides z-score recommendations
+        if isLockedKeep {
+            return "KEEP — within calibrated baseline"
+        }
+
         if let reason = garbageReason {
             return "DELETE — \(reason.rawValue)"
         }
@@ -129,7 +139,14 @@ struct QualityEstimator {
 
     // MARK: - Public API
 
-    static func computeScores(for entries: [ImageEntry]) -> [URL: QualityBreakdown] {
+    /// Compute quality scores with optional calibration data for absolute quality floor.
+    /// When calibrationDB and fingerprint are provided, frames that meet the learned baseline
+    /// for ALL metrics are locked as KEEP — z-scores cannot override them.
+    static func computeScores(
+        for entries: [ImageEntry],
+        calibrationDB: CalibrationDatabase? = nil,
+        fingerprint: SetupFingerprint? = nil
+    ) -> [URL: QualityBreakdown] {
         var groups: [GroupKey: [Int]] = [:]
         for (index, entry) in entries.enumerated() {
             let key = GroupKey(entry: entry)
@@ -274,9 +291,20 @@ struct QualityEstimator {
                         trailingZ: trailingZscores[localIdx],
                         snrContribution: nil,
                         snrSquared: snrSq,
-                        garbageReason: garbageReason
+                        garbageReason: garbageReason,
+                        isLockedKeep: false
                     )
                     continue
+                }
+
+                // ── Absolute Quality Floor (calibration-aware) ──
+                // If frame meets the learned baseline for ALL metrics, lock as KEEP.
+                // Prevents death spiral: z-scores always find "the worst" even in excellent sets.
+                let lockedKeep: Bool
+                if let db = calibrationDB, let fp = fingerprint, db.meetsAbsoluteFloor(entry: entry, fingerprint: fp) {
+                    lockedKeep = true
+                } else {
+                    lockedKeep = false
                 }
 
                 // ── Stage 2: Relative weighted z-score comparison ──
@@ -309,7 +337,14 @@ struct QualityEstimator {
                 let combinedZ = zSum / wSum
 
                 let tier: QualityTier
-                if combinedZ > thresholdExcellent {
+                if lockedKeep {
+                    // Absolute floor: z-scores cannot downgrade below .good
+                    if combinedZ > thresholdExcellent {
+                        tier = .excellent
+                    } else {
+                        tier = .good
+                    }
+                } else if combinedZ > thresholdExcellent {
                     tier = .excellent
                 } else if combinedZ > thresholdGood {
                     tier = .good
@@ -332,7 +367,8 @@ struct QualityEstimator {
                     trailingZ: trailingZscores[localIdx],
                     snrContribution: displayContrib,
                     snrSquared: snrSq,
-                    garbageReason: nil
+                    garbageReason: nil,
+                    isLockedKeep: lockedKeep
                 )
             }
         }
@@ -373,7 +409,7 @@ struct QualityEstimator {
 
 // MARK: - Group key
 
-private struct GroupKey: Hashable {
+struct GroupKey: Hashable {
     let filter:   String
     let object:   String
     let exposure: Int

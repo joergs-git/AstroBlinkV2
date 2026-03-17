@@ -474,6 +474,27 @@ struct FileListView: NSViewRepresentable {
                 cellView.imageView?.image = nil
             }
 
+            // Lock badge overlay for calibration-locked KEEP frames
+            let lockTag = 999
+            cellView.viewWithTag(lockTag)?.removeFromSuperview()
+            if entry.qualityBreakdown?.isLockedKeep == true {
+                let lockView = NSImageView()
+                lockView.tag = lockTag
+                lockView.translatesAutoresizingMaskIntoConstraints = false
+                if let lockImg = NSImage(systemSymbolName: "lock.circle.fill", accessibilityDescription: "Calibration locked") {
+                    let lockConfig = NSImage.SymbolConfiguration(pointSize: 7, weight: .bold)
+                    lockView.image = lockImg.withSymbolConfiguration(lockConfig)
+                    lockView.contentTintColor = .systemBlue
+                }
+                cellView.addSubview(lockView)
+                NSLayoutConstraint.activate([
+                    lockView.widthAnchor.constraint(equalToConstant: 8),
+                    lockView.heightAnchor.constraint(equalToConstant: 8),
+                    lockView.trailingAnchor.constraint(equalTo: cellView.trailingAnchor, constant: -1),
+                    lockView.bottomAnchor.constraint(equalTo: cellView.bottomAnchor, constant: -1),
+                ])
+            }
+
             return cellView
         }
 
@@ -519,6 +540,10 @@ struct FileListView: NSViewRepresentable {
             }()
 
             var lines = ["\(tierName)  (z = \(String(format: "%+.2f", bd.combinedZScore)))"]
+
+            if bd.isLockedKeep {
+                lines.append("  [LOCKED] Within calibrated baseline for this setup")
+            }
 
             if let reason = bd.garbageReason {
                 lines.append("")

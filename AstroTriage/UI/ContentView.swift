@@ -1,4 +1,4 @@
-// v3.3.0
+// v4.3.0
 import SwiftUI
 
 // Root view: toolbar on top, optional side panels (inspector left, session right),
@@ -73,6 +73,9 @@ struct ContentView: View {
                     }
                     sfToolbarButton("bolt.fill", "Lightspeed\nStacker", "GPU-accelerated stacking — fast preview.\nSelect 3+ images first.") {
                         viewModel.startQuickStackV2()
+                    }
+                    sfToolbarButton("square.and.arrow.up", "SSWEIGHT\nExport", "Export quality weights to FITS/XISF headers for WBPP.\nAlso creates CSV backup.") {
+                        viewModel.exportSSWEIGHT()
                     }
                     toolbarDivider
 
@@ -526,6 +529,12 @@ struct ContentView: View {
                                 .help(viewModel.snrRetentionDetail)
                         }
 
+                        // Culling status — actionable text + autopilot button
+                        if viewModel.cullingStatus != nil && !viewModel.images.isEmpty {
+                            statusDivider
+                            CullingStatusView(viewModel: viewModel, isNightMode: viewModel.nightMode)
+                        }
+
                         statusDivider
 
                         Text(viewModel.statusMessage)
@@ -743,5 +752,164 @@ struct SNRRetentionBarView: View {
                 .font(.system(size: 9, weight: .medium, design: .monospaced))
                 .foregroundColor(textColor)
         }
+    }
+}
+
+// MARK: - Culling Status View (replaces RDY bar)
+
+/// Actionable culling status + autopilot button.
+/// Shows how many trash frames remain, convergence state, and SNR warnings.
+/// Click to open auto-mark popover with Conservative/Balanced/Aggressive options.
+struct CullingStatusView: View {
+    @ObservedObject var viewModel: TriageViewModel
+    let isNightMode: Bool
+    @State private var showPopover = false
+
+    var body: some View {
+        Button(action: { showPopover.toggle() }) {
+            if let status = viewModel.cullingStatus {
+                Text(status.text)
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .foregroundColor(isNightMode ? .red.opacity(0.9) : status.color(isNightMode: false))
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 4)
+                            .stroke(status.color(isNightMode: isNightMode), lineWidth: 1.5)
+                    )
+            }
+        }
+        .buttonStyle(.plain)
+        .help("Click for auto-mark options — Conservative (Nebula), Balanced, or Aggressive (Stars)")
+        .popover(isPresented: $showPopover, arrowEdge: .top) {
+            AutoMarkPopover(viewModel: viewModel, isPresented: $showPopover)
+                .frame(width: 320)
+        }
+    }
+}
+
+/// Auto-mark popover with 3 modes: Conservative (Nebula), Balanced, Aggressive (Stars).
+struct AutoMarkPopover: View {
+    @ObservedObject var viewModel: TriageViewModel
+    @Binding var isPresented: Bool
+
+    private struct MarkOption {
+        let title: String
+        let subtitle: String
+        let count: Int
+        let integrationLoss: String
+        let color: Color
+    }
+
+    private var options: [MarkOption] {
+        let images = viewModel.images
+        let totalExposure = images.reduce(0.0) { $0 + ($1.exposure ?? 0.0) }
+
+        // Conservative: only trash tier
+        let trashOnly = images.filter { !$0.isMarkedForDeletion && $0.qualityTier == .trash }
+        let trashExp = trashOnly.reduce(0.0) { $0 + ($1.exposure ?? 0.0) }
+
+        // Balanced: trash + severe borderline (severity 2-3)
+        let balanced = images.filter {
+            !$0.isMarkedForDeletion && (
+                $0.qualityTier == .trash ||
+                ($0.qualityTier == .borderline && ($0.qualityBreakdown?.borderlineSeverity ?? 0) >= 2)
+            )
+        }
+        let balancedExp = balanced.reduce(0.0) { $0 + ($1.exposure ?? 0.0) }
+
+        // Aggressive: trash + all borderline
+        let aggressive = images.filter {
+            !$0.isMarkedForDeletion && (
+                $0.qualityTier == .trash || $0.qualityTier == .borderline
+            )
+        }
+        let aggressiveExp = aggressive.reduce(0.0) { $0 + ($1.exposure ?? 0.0) }
+
+        func lossStr(_ exp: Double) -> String {
+            guard totalExposure > 0 else { return "" }
+            let pct = exp / totalExposure * 100
+            let time = exp >= 3600 ? String(format: "%.1fh", exp / 3600) : String(format: "%.0fm", exp / 60)
+            return "-\(time) (\(String(format: "%.0f", pct))%)"
+        }
+
+        return [
+            MarkOption(title: "Conservative", subtitle: "Nebula — maximize integration time.\nOnly removes definite garbage.",
+                       count: trashOnly.count, integrationLoss: lossStr(trashExp), color: .green),
+            MarkOption(title: "Balanced", subtitle: "General use — removes garbage\n+ worst borderline frames.",
+                       count: balanced.count, integrationLoss: lossStr(balancedExp), color: .orange),
+            MarkOption(title: "Aggressive", subtitle: "Stars/Galaxy — prioritize sharpness.\nRemoves all questionable frames.",
+                       count: aggressive.count, integrationLoss: lossStr(aggressiveExp), color: .red),
+        ]
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Auto-Mark for Deletion")
+                .font(.system(size: 13, weight: .bold))
+                .padding(.bottom, 2)
+
+            ForEach(Array(options.enumerated()), id: \.offset) { _, option in
+                Button(action: {
+                    applyOption(option)
+                    isPresented = false
+                }) {
+                    HStack(spacing: 8) {
+                        Circle().fill(option.color).frame(width: 10, height: 10)
+                        VStack(alignment: .leading, spacing: 2) {
+                            HStack {
+                                Text(option.title).font(.system(size: 12, weight: .semibold))
+                                Spacer()
+                                if option.count > 0 {
+                                    Text("\(option.count) frames  \(option.integrationLoss)")
+                                        .font(.system(size: 10, weight: .medium, design: .monospaced))
+                                        .foregroundColor(.secondary)
+                                } else {
+                                    Text("nothing to mark")
+                                        .font(.system(size: 10))
+                                        .foregroundColor(.secondary)
+                                }
+                            }
+                            Text(option.subtitle)
+                                .font(.system(size: 10))
+                                .foregroundColor(.secondary)
+                                .lineLimit(2)
+                        }
+                    }
+                    .padding(.vertical, 6)
+                    .padding(.horizontal, 8)
+                    .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(0.05)))
+                }
+                .buttonStyle(.plain)
+                .disabled(option.count == 0)
+            }
+        }
+        .padding(12)
+    }
+
+    private func applyOption(_ option: MarkOption) {
+        let title = option.title
+        for i in viewModel.images.indices {
+            let entry = viewModel.images[i]
+            guard !entry.isMarkedForDeletion else { continue }
+
+            let shouldMark: Bool
+            if title == "Conservative" {
+                shouldMark = entry.qualityTier == .trash
+            } else if title == "Balanced" {
+                shouldMark = entry.qualityTier == .trash ||
+                    (entry.qualityTier == .borderline && (entry.qualityBreakdown?.borderlineSeverity ?? 0) >= 2)
+            } else {
+                shouldMark = entry.qualityTier == .trash || entry.qualityTier == .borderline
+            }
+
+            if shouldMark {
+                viewModel.images[i].isMarkedForDeletion = true
+            }
+        }
+        viewModel.needsTableRefresh = true
+        viewModel.recomputeSNRRetention()
+        viewModel.updateConvergence()
+        viewModel.statusMessage = "Auto-marked \(option.count) frames (\(option.title))"
     }
 }

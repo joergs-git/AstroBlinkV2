@@ -121,17 +121,20 @@ enum CompareWindowController {
             let whyWorse = buildWhyWorse(selected: selectedEntry, best: bestEntry)
 
             // Convert star details to normalized coordinates [0,1] for overlay rendering
-            // Show ALL measured stars with color coding by eccentricity
-            let selStarProblems: [(x: CGFloat, y: CGFloat, ecc: Double)] = {
+            // Includes PA and axis ratio for direction arrows
+            let selStarProblems: [(x: CGFloat, y: CGFloat, ecc: Double, pa: Double?, axisRatio: Double?)] = {
                 guard let details = selectedEntry.starDetails,
                       let w = selectedEntry.width, let h = selectedEntry.height,
                       w > 0, h > 0 else { return [] }
                 return details.map { star in
                     (x: CGFloat(star.x) / CGFloat(w),
                      y: CGFloat(star.y) / CGFloat(h),
-                     ecc: star.eccentricity)
+                     ecc: star.eccentricity,
+                     pa: star.positionAngle,
+                     axisRatio: star.axisRatio)
                 }
             }()
+            let selConsensusPA = selectedEntry.trailingPA
 
             await MainActor.run {
                 let syncState = SyncedZoomState()
@@ -146,6 +149,7 @@ enum CompareWindowController {
                     rightLabel: selLabel,
                     whyWorseText: whyWorse,
                     problemStars: selStarProblems,
+                    consensusPA: selConsensusPA,
                     syncState: syncState
                 )
                 let hostingView = NSHostingView(rootView: view)
@@ -175,8 +179,9 @@ struct CompareView: View {
     let leftLabel: String
     let rightLabel: String
     let whyWorseText: String
-    // Problem stars: normalized (0-1) coordinates + eccentricity for overlay on right panel
-    let problemStars: [(x: CGFloat, y: CGFloat, ecc: Double)]
+    // Problem stars: normalized (0-1) coordinates + shape metrics for overlay on right panel
+    let problemStars: [(x: CGFloat, y: CGFloat, ecc: Double, pa: Double?, axisRatio: Double?)]
+    let consensusPA: Double?
     @ObservedObject var syncState: SyncedZoomState
     @State private var showStarOverlay: Bool = true
 
@@ -205,6 +210,7 @@ struct CompareView: View {
                     SyncedZoomableView(
                         texture: rightTexture, syncState: syncState,
                         starOverlayData: problemStars,
+                        consensusPA: consensusPA,
                         showStarOverlay: showStarOverlay
                     )
                     .id("compare-right")
@@ -281,7 +287,8 @@ struct SyncedZoomableView: NSViewRepresentable {
     let texture: MTLTexture
     @ObservedObject var syncState: SyncedZoomState
     // Optional star overlay data (only used for right panel in compare view)
-    var starOverlayData: [(x: CGFloat, y: CGFloat, ecc: Double)] = []
+    var starOverlayData: [(x: CGFloat, y: CGFloat, ecc: Double, pa: Double?, axisRatio: Double?)] = []
+    var consensusPA: Double?
     var showStarOverlay: Bool = false
 
     func makeNSView(context: Context) -> SyncedZoomMTKView {
@@ -309,6 +316,7 @@ struct SyncedZoomableView: NSViewRepresentable {
             if mtkView.starOverlay == nil {
                 mtkView.setupStarOverlay(stars: starOverlayData)
             }
+            mtkView.starOverlay?.consensusPA = consensusPA
             mtkView.starOverlay?.showOverlay = showStarOverlay
             mtkView.starOverlay?.needsDisplay = true
         } else if mtkView.starOverlay != nil {
@@ -405,8 +413,10 @@ struct SyncedZoomableView: NSViewRepresentable {
 // MARK: - Star Overlay NSView (draws circles on top of MTKView using exact same coordinate system)
 
 class StarOverlayView: NSView {
-    // Star positions in normalized [0,1] image coords + eccentricity
-    var stars: [(x: CGFloat, y: CGFloat, ecc: Double)] = []
+    // Star positions in normalized [0,1] image coords + shape metrics
+    var stars: [(x: CGFloat, y: CGFloat, ecc: Double, pa: Double?, axisRatio: Double?)] = []
+    // Consensus PA direction (degrees 0-180) — shown as a large arrow when available
+    var consensusPA: Double?
     var showOverlay: Bool = true
 
     // These must be set to match the parent SyncedZoomMTKView's state
@@ -425,16 +435,20 @@ class StarOverlayView: NSView {
         let imgH = CGFloat(parent.imageHeight)
         guard imgW > 0, imgH > 0 else { return }
 
-        // Must match Metal renderer's coordinate system exactly.
-        // Metal uses drawable pixels (= view points × backingScaleFactor) for NDC calculation,
-        // so we need to divide by bs to convert from pixel-based fitScale to view-point positions.
-        let bs = parent.window?.backingScaleFactor ?? 2.0
+        // Must match the Metal renderer coordinate system exactly.
+        // Metal uses: ndcHW = tw * fitScale * zoom / drawableW
+        // Overlay must produce same visual positions in view points.
+        let drawableW = parent.currentDrawable?.texture.width ?? 0
+        let bs = parent.window?.backingScaleFactor ?? 1.0
+        let drawableRatio = drawableW > 0 ? CGFloat(drawableW) / viewW : 1.0
         let fitScale = min(viewW / imgW, viewH / imgH)
-        let effScale = fitScale * parent.zoomScale / bs
+        let effScale = fitScale * parent.zoomScale / drawableRatio
 
-        // Image center in NSView coords (bottom-left origin, Y up)
-        let centerX = viewW / 2 + parent.panOffset.x
-        let centerY = viewH / 2 - parent.panOffset.y
+        // Image center in NSView coords
+        // Metal pan: panX_NDC = panOffset.x * bs / drawableW * 2.0
+        // In view points: centerX = viewW/2 + panOffset.x * bs / drawableRatio
+        let centerX = viewW / 2 + parent.panOffset.x * bs / drawableRatio
+        let centerY = viewH / 2 - parent.panOffset.y * bs / drawableRatio
 
         for star in stars {
             // Convert normalized [0,1] to view coords
@@ -462,6 +476,70 @@ class StarOverlayView: NSView {
             ))
             path.lineWidth = lineW
             path.stroke()
+
+            // PA direction line — shows elongation axis through the circle
+            // Only drawn for stars with measurable elongation (axisRatio < 0.85)
+            if let pa = star.pa, let ar = star.axisRatio, ar < 0.85 {
+                let lineLen = circleR * 1.3
+                // PA is measured in degrees [0..180) from image +X axis
+                // Convert to radians; NSView Y is flipped vs image Y, so negate angle
+                let rad = -pa * .pi / 180.0
+                let dx = lineLen * CGFloat(cos(rad))
+                let dy = lineLen * CGFloat(sin(rad))
+
+                let paLine = NSBezierPath()
+                paLine.move(to: NSPoint(x: sx - dx, y: sy - dy))
+                paLine.line(to: NSPoint(x: sx + dx, y: sy + dy))
+                paLine.lineWidth = max(1.5, lineW * 0.8)
+                color.withAlphaComponent(0.8).setStroke()
+                paLine.stroke()
+            }
+        }
+
+        // Consensus PA arrow — large arrow showing overall trailing direction
+        // Only shown when there's a consensus direction (>30% star agreement)
+        if let cpa = consensusPA {
+            let arrowLen: CGFloat = 40
+            let rad = -cpa * .pi / 180.0
+            let arrowX = viewW - 60
+            let arrowY = viewH - 40
+            let dx = arrowLen * CGFloat(cos(rad))
+            let dy = arrowLen * CGFloat(sin(rad))
+
+            // Draw thick line for trailing direction
+            NSColor.systemYellow.withAlphaComponent(0.9).setStroke()
+            let arrowLine = NSBezierPath()
+            arrowLine.move(to: NSPoint(x: arrowX - dx * 0.5, y: arrowY - dy * 0.5))
+            arrowLine.line(to: NSPoint(x: arrowX + dx * 0.5, y: arrowY + dy * 0.5))
+            arrowLine.lineWidth = 3.0
+            arrowLine.stroke()
+
+            // Arrowhead
+            let headLen: CGFloat = 10
+            let headAngle: CGFloat = 0.4  // ~23 degrees
+            let tipX = arrowX + dx * 0.5
+            let tipY = arrowY + dy * 0.5
+            let arrowHead = NSBezierPath()
+            arrowHead.move(to: NSPoint(x: tipX, y: tipY))
+            arrowHead.line(to: NSPoint(
+                x: tipX - headLen * CGFloat(cos(rad - headAngle)),
+                y: tipY - headLen * CGFloat(sin(rad - headAngle))
+            ))
+            arrowHead.move(to: NSPoint(x: tipX, y: tipY))
+            arrowHead.line(to: NSPoint(
+                x: tipX - headLen * CGFloat(cos(rad + headAngle)),
+                y: tipY - headLen * CGFloat(sin(rad + headAngle))
+            ))
+            arrowHead.lineWidth = 2.5
+            arrowHead.stroke()
+
+            // Label
+            let label = "Trail PA: \(Int(cpa))\u{00B0}"
+            let attrs: [NSAttributedString.Key: Any] = [
+                .foregroundColor: NSColor.systemYellow,
+                .font: NSFont.monospacedSystemFont(ofSize: 10, weight: .medium)
+            ]
+            (label as NSString).draw(at: NSPoint(x: arrowX - 30, y: arrowY - 25), withAttributes: attrs)
         }
     }
 }
@@ -502,7 +580,7 @@ class SyncedZoomMTKView: MTKView {
         starOverlay?.needsDisplay = true
     }
 
-    func setupStarOverlay(stars: [(x: CGFloat, y: CGFloat, ecc: Double)]) {
+    func setupStarOverlay(stars: [(x: CGFloat, y: CGFloat, ecc: Double, pa: Double?, axisRatio: Double?)]) {
         let overlay = StarOverlayView(frame: bounds)
         overlay.autoresizingMask = [.width, .height]
         overlay.stars = stars
