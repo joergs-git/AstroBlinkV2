@@ -167,6 +167,54 @@ AstroTriage/
 
 ---
 
+## Star Trailing Detection — Orientation Consensus (v4.2.0)
+
+**Industry first: no other astrophotography tool uses this approach.**
+
+### Problem
+Traditional eccentricity measurement (fixed 3px aperture, global threshold) fails:
+- Misses star trails (measures only bright core, not wings)
+- False positives on fast optics (f/2.2 RASA produces naturally non-circular PSFs)
+- No distinction between tracking errors and optical aberrations
+
+### Solution: Three-Layer Detection
+
+```
+Layer 1: Adaptive Aperture (StarMetricsCalculator.swift)
+  - Eccentricity radius: min(15, max(5, medianFWHM × 2.5))
+  - Captures PSF wings where trailing is visible
+  - Extracts position angle (PA) and axis ratio per star
+  - Bright stars: annular measurement (skip saturated core)
+  - 60 measured stars, 10px crowding, full-res refinement
+
+Layer 2: Orientation Consensus (TrailingAnalyzer.swift)
+  - Circular statistics on star PAs (doubled-angle method)
+  - Consensus = fraction of stars with PA within ±20° of mean
+  - >50% consensus = systematic tracking error
+  - Random PAs = optical aberration (don't penalize)
+
+Layer 3: Focal-Length Baseline (TrailingAnalyzer.swift)
+  - baseline_ecc = 0.8 / sqrt(focalLength / 200)
+  - 468mm → 0.52 (short FL, more aberration normal)
+  - 2423mm → 0.23 (long FL, tight PSF expected)
+  - trailingScore = excessEcc × consensusMultiplier
+```
+
+### Key Files
+- `AstroTriage/Engine/StarMetricsCalculator.swift` — Adaptive aperture, PA + axis ratio
+- `AstroTriage/Engine/TrailingAnalyzer.swift` — Consensus engine, FL baseline
+- `AstroTriage/Engine/QualityEstimator.swift` — trailingScore replaces raw ecc
+- `Tests/StarAnalyzerTests.swift` — Multi-setup validation harness
+
+### Validation Results (5 setups, 1455 frames)
+- NGC7635 (RASA 620mm): excellent separation (good <0.39, bad >0.54)
+- IC63 (RC12 2423mm): good separation (most bad >0.55)
+- M81 (140mm 904mm): moderate (worst bad=1.00, some overlap)
+- NGC3184 (85mm 468mm): correctly 0.00 (bad=defocus not trailing)
+- ngc7000 (RASA 620mm): moderate (bad 0.19-0.63)
+
+---
+
 ## STF Auto-Stretch Algorithmus
 
 **Quelle: PixInsight AutoSTF Script (Juan Conejero, PTeam) – verifizierte Implementierung**

@@ -4,6 +4,25 @@ All notable changes to AstroBlinkV2 will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [4.2.0] — 2026-03-17
+
+### Added
+- **Star Trailing Detection (Industry First)** — Orientation consensus analysis using circular statistics on star position angles (PAs). When >50% of stars agree on elongation direction, it's a tracking error — not optical aberration. First astrophotography tool to use this approach.
+- **Adaptive Eccentricity Aperture** — FWHM-scaled measurement radius `min(15, max(5, FWHM×2.5))` instead of fixed 3px. Captures PSF wings where trailing is visible. Bright stars measured via annular region (skips saturated core).
+- **Focal-Length-Adaptive Thresholds** — Baseline eccentricity model `0.8/sqrt(FL/200)` automatically adjusts for optical setup. Short FL (468mm) allows more optical aberration; long FL (2423mm) expects tighter PSF. Uses FOCALLEN from FITS headers.
+- **TrailingAnalyzer Engine** — New module: circular statistics on PAs (doubled-angle method), consensus detection, focal-length baseline model, trailing score [0..1] combining elongation excess + consensus strength.
+- **Star Count Anomaly Detection** — Flags frames with >1.8x group median star count as garbage (doubled stars from tracking/dithering jumps).
+- **StarAnalyzerTests** — Blackbox test harness for multi-setup validation. Auto-discovers test data folders, generates annotated PNGs with PA direction lines, consensus arrows, and relative color coding. Extracts FITS headers for full hardware context.
+- **Position Angle + Axis Ratio** — StarDetail struct now stores PA of elongation axis [0..180°) and minor/major axis ratio [0..1] per star. Used for consensus analysis and compare view visualization.
+
+### Changed
+- **Eccentricity Measurement** — 60 measured stars (was 30), 10px crowding distance (was 15px), full-res position refinement via `refinePositions()`. Relaxed saturation threshold (99.5%) for shape measurement to include bright stars.
+- **Quality Scoring** — `trailingScore` replaces raw eccentricity in garbage detection and z-score computation. Garbage rule: `trailingScore > 0.7` OR `(>0.4 with >70% PA consensus)`.
+- **Quality Tooltips** — "Trail" metric replaces "Ecc" in z-score breakdown.
+
+### Validated
+- Tested across 5 optical setups: RC12 (2423mm f/8), refractor 140mm (904mm), refractor 85mm (468mm f/5.5), RASA 11" (620mm f/2.2). Cameras: ASI6200MM, ASI2600MC, ASI6200MC. 1338 good + 117 bad frames.
+
 ## [4.1.0] — 2026-03-17
 
 ### Added

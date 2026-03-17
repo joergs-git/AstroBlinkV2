@@ -18,13 +18,41 @@ Nice side effect: Finally you have a native XISF and FITS Quicklook for macOS. (
 
 ---
 
+## What's New in v4.2.0
+
+### Star Trailing Detection with Orientation Consensus (Industry First)
+
+AstroBlinkV2 is the first astrophotography tool to use **orientation consensus analysis** for star trailing detection. When a mount has tracking errors, ALL stars trail in the SAME direction — this uniform signal is far more reliable than measuring individual star shapes.
+
+- **Adaptive measurement aperture** — Eccentricity measured at FWHM-scaled radius (up to 15px) instead of a fixed 3px core. Captures the full PSF wings where trailing is actually visible.
+- **Position angle (PA) extraction** — Each star's elongation direction computed from eigenvalue decomposition of 2D image moments.
+- **Orientation consensus** — Circular statistics detect when >50% of stars agree on trailing direction. Strong consensus = tracking error. Random directions = normal optical aberration.
+- **Focal-length-adaptive thresholds** — Short focal length optics (e.g., 85mm f/5.5) naturally produce rounder-looking stars with higher optical aberration. Long focal length (e.g., 2400mm f/8) shows tracking issues more clearly. Thresholds adapt automatically using FOCALLEN from FITS headers.
+- **Star count anomaly detection** — Flags frames where star count is >1.8x the group median (doubled stars from tracking/dithering jumps).
+- **Validated across 5 optical setups** — RC12 (2423mm), refractor 140mm (904mm), refractor 85mm (468mm), RASA 11" (620mm) with ASI6200MM, ASI2600MC, and ASI6200MC cameras.
+
+### Compare Window Enhancements
+
+- **Star problem overlay** — Colored circles on measured stars (green=round, orange=borderline, red=elongated) with PA direction lines showing elongation angle. Toggle on/off.
+- **"Why worse" info bar** — Metric-by-metric comparison (Stars, FWHM, HFR, Ecc, SNR) between selected and best frame.
+- **Fit-to-view default** — Opens at 1x zoom when star overlay is active for full visibility.
+- **Loading indicator** — Floating progress panel while images are decoded.
+
+### Workflow Features
+
+- **Global Quarantine (Q key)** — Move marked files to ~/Desktop/Astro-Quarantine/ from any session. Same undo with Cmd+Z.
+- **Freeze-stamp processing** — Bake current adjustments in stack result window, then apply further processing on top. Full undo stack.
+- **Best frame metrics** — Stack result shows comparison of stacked result vs best single frame (Stars, FWHM, HFR, Ecc, estimated SNR improvement).
+- **Improved formatting** — Better pre-delete dialog layout, richer quality tooltips with section headers.
+
+---
+
 ## What's New in v4.0.0
 
 ### Smart Culling: Eccentricity, SNR Contribution & Live Impact Analysis
 
-- **Star eccentricity detection** — 2D image moment analysis (same method as SExtractor) detects star elongation from tracking errors, wind shake, and mount issues. Eccentricity > 0.6 = automatic trash. Highest weight (1.5x) in quality scoring — because elongation is the one defect stacking can't fix.
 - **SNR contribution score** — New "Contrib" column shows how much each frame adds to a weighted stack: `(SNR/SNR_best)^2`. 100% = best frame, 49% = 70% of best SNR. Hidden for trash frames.
-- **Per-metric quality tooltip** — Hover any quality icon for detailed z-score breakdown per metric (Stars, FWHM, HFR, Noise, Ecc) with arrows, SNR contribution %, and **KEEP/DELETE** recommendation.
+- **Per-metric quality tooltip** — Hover any quality icon for detailed z-score breakdown per metric with arrows, SNR contribution %, and **KEEP/DELETE** recommendation.
 - **Orange gradient icons** — Borderline tier split into 4 visual sub-levels from light amber (nearly good) to deep orange (nearly trash).
 - **Live SNR retention bar** — Status bar health bar updates in real-time as you mark frames. Shows exact SNR impact of your triage decisions.
 - **Deletion impact dialog** — Before moving to PRE-DELETE: integration time lost, SNR impact %, quality tier breakdown.
