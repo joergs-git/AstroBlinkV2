@@ -1,5 +1,7 @@
-// v4.0.0 — Computed HFR, FWHM & Eccentricity from detected star positions
+// v4.2.0 — Computed HFR, FWHM, Eccentricity + Trailing Detection from detected star positions
 // Measures Half-Flux Radius and Full Width at Half Maximum for quality scoring.
+// Eccentricity uses ADAPTIVE aperture (FWHM-scaled) to capture star wings/trails.
+// Extracts position angle (PA) and axis ratio for orientation consensus analysis.
 // Operates on full-resolution uint16 data using small patches around each star.
 // FWHM uses linearized Gaussian fit (ln(brightness) vs dist² → sigma → 2.355σ).
 // Values are for *relative comparison within a session*, not absolute calibration.
@@ -14,8 +16,15 @@ struct StarMetrics {
     let measuredStarCount: Int  // Stars used for HFR/FWHM measurement (capped subset)
     let totalStarCount: Int     // True total number of stars detected in the image
     let medianEccentricity: Double?  // Median star eccentricity [0..1], nil if < 5 measured
-    // Per-star details for problem visualization (positions + individual metrics)
+    // Per-star details for problem visualization and trailing consensus analysis
     let starDetails: [StarDetail]
+}
+
+// Result of 2D moment analysis on a single star: eccentricity + position angle + axis ratio
+private struct ShapeResult {
+    let eccentricity: Double   // [0..1], 0 = round
+    let positionAngle: Double  // PA of major axis in degrees [0..180)
+    let axisRatio: Double      // minor/major eigenvalue ratio [0..1], 1 = round
 }
 
 enum StarMetricsCalculator {
@@ -27,28 +36,32 @@ enum StarMetricsCalculator {
     private static let bgOuterRadius: Float = 15.0
     // Minimum number of qualifying stars to produce a result
     private static let minStars = 2
-    // Maximum stars to measure (top N brightest after filtering)
-    private static let maxMeasuredStars = 30
-    // Saturation threshold (98% of uint16 max — relaxed from 95% to accept more stars)
+    // Maximum stars to measure (increased from 30 to 60 for better trailing consensus)
+    private static let maxMeasuredStars = 60
+    // Saturation threshold for HFR/FWHM (98% — saturated cores corrupt Gaussian fits)
     private static let saturationThreshold: UInt16 = 64224
-    // Minimum distance between stars to avoid crowding (full-res pixels)
-    private static let crowdingDistance: Float = 15.0
+    // Relaxed saturation threshold for shape measurement only (99.5% — include bright stars)
+    // Bright stars show trailing most visibly; the annular measurement skips the saturated core
+    private static let shapeSaturationThreshold: UInt16 = 65207
+    // Minimum distance between stars to avoid crowding (reduced from 15 to 10 for more candidates)
+    private static let crowdingDistance: Float = 10.0
     // Minimum distance from image edge (full-res pixels)
     private static let edgeMargin: Float = 12.0
-    // Center crop fraction for quality measurement: only use stars within this
-    // fraction of the image (centered). Excludes edge stars affected by optical
-    // aberrations, vignetting, dithering shifts, and tilt.
+    // Center crop fraction for quality measurement
     private static let centerCropFraction: Float = 0.70
     // Gaussian fit: minimum pixels above background required for valid fit
     private static let minFitPixels = 8
+    // Minimum eccentricity aperture (pixels) — ensures measurement even for tiny stars
+    private static let minEccAperture: Float = 5.0
+    // Maximum eccentricity aperture (pixels) — prevents measuring too far into background
+    private static let maxEccAperture: Float = 15.0
+    // FWHM multiplier for adaptive eccentricity aperture
+    private static let eccApertureFWHMMultiplier: Float = 2.5
 
-    /// Measure HFR and FWHM from detected star positions on full-resolution image data.
-    ///
-    /// - Parameters:
-    ///   - stars: Detected stars from GPU or CPU star detection (full-res coordinates)
-    ///   - image: Full-resolution decoded image (uint16 buffer)
-    ///   - channel: Which channel to measure on (0=mono/first, 1=green for debayered OSC)
-    /// - Returns: StarMetrics with median values, or nil if fewer than minStars qualify
+    /// Measure HFR, FWHM, and eccentricity from detected star positions.
+    /// Two-pass approach:
+    ///   Pass 1: Compute FWHM for all stars (used to determine adaptive eccentricity aperture)
+    ///   Pass 2: Compute eccentricity with FWHM-scaled aperture + extract PA and axis ratio
     static func measure(
         stars: [DetectedStar],
         fullResImage image: DecodedImage,
@@ -63,90 +76,113 @@ enum StarMetricsCalculator {
         let ptr = image.buffer.contents().bindMemory(to: UInt16.self, capacity: planeSize * image.channelCount)
         let totalDetected = stars.count
 
-        // Filter stars: center crop + skip edge, saturated, crowded
-        var filtered = filterStars(stars, width: w, height: h, ptr: ptr, channelOffset: channelOffset, useCenterCrop: true)
-        // Fallback: if center crop is too strict, retry with full frame
+        // Refine star positions to full-res sub-pixel accuracy (currently GPS returns bin2x coords)
+        let refinedStars = StarDetector.refinePositions(stars: stars, in: image, channel: channel)
+
+        // Filter stars: center crop + skip edge, saturated (strict for HFR/FWHM), crowded
+        var filtered = filterStars(refinedStars, width: w, height: h, ptr: ptr, channelOffset: channelOffset, useCenterCrop: true)
         if filtered.count < minStars {
-            filtered = filterStars(stars, width: w, height: h, ptr: ptr, channelOffset: channelOffset, useCenterCrop: false)
+            filtered = filterStars(refinedStars, width: w, height: h, ptr: ptr, channelOffset: channelOffset, useCenterCrop: false)
         }
         guard filtered.count >= minStars else { return nil }
 
         let toMeasure = Array(filtered.prefix(maxMeasuredStars))
 
+        // ── Pass 1: Compute HFR and FWHM ──
         var hfrValues: [Double] = []
         var fwhmValues: [Double] = []
-        var eccValues: [Double] = []
-        var details: [StarDetail] = []
+        // Per-star FWHM for adaptive aperture (parallel arrays with toMeasure)
+        var perStarFWHM: [Double?] = Array(repeating: nil, count: toMeasure.count)
+        var perStarHFR: [Double?] = Array(repeating: nil, count: toMeasure.count)
 
-        for star in toMeasure {
+        for (i, star) in toMeasure.enumerated() {
             let cx = Int(star.x.rounded())
             let cy = Int(star.y.rounded())
-            let safeRadius = Int(bgOuterRadius)  // Use largest radius for bounds check
-
-            // Bounds check (must cover background annulus which extends to bgOuterRadius)
+            let safeRadius = Int(bgOuterRadius)
             guard cx - safeRadius >= 0, cx + safeRadius < w, cy - safeRadius >= 0, cy + safeRadius < h else { continue }
 
-            // Estimate local background from annulus
             let bg = estimateBackground(
                 ptr: ptr, channelOffset: channelOffset, width: w,
                 cx: cx, cy: cy, innerR: bgInnerRadius, outerR: bgOuterRadius
             )
 
-            var starHFR: Double? = nil
-            var starFWHM: Double? = nil
-            var starEcc: Double? = nil
-
-            // Compute HFR
             if let hfr = computeHFR(
                 ptr: ptr, channelOffset: channelOffset, width: w,
                 cx: star.x, cy: star.y, radius: apertureRadius, background: bg
-            ) {
-                // Sanity check: HFR should be reasonable (0.5 - 15 pixels)
-                if hfr >= 0.5 && hfr <= 15.0 {
-                    hfrValues.append(hfr)
-                    starHFR = hfr
-                }
+            ), hfr >= 0.5 && hfr <= 15.0 {
+                hfrValues.append(hfr)
+                perStarHFR[i] = hfr
             }
 
-            // Compute FWHM via Gaussian fit
             if let fwhm = computeFWHMGaussian(
                 ptr: ptr, channelOffset: channelOffset, width: w,
                 cx: star.x, cy: star.y, radius: apertureRadius, background: bg
-            ) {
-                // Sanity check: FWHM should be reasonable (1.0 - 20 pixels)
-                if fwhm >= 1.0 && fwhm <= 20.0 {
-                    fwhmValues.append(fwhm)
-                    starFWHM = fwhm
-                }
-            }
-
-            // Compute eccentricity via 2D image moments (same pixel data, near-zero extra cost)
-            if let ecc = computeEccentricity(
-                ptr: ptr, channelOffset: channelOffset, width: w,
-                cx: star.x, cy: star.y, radius: apertureRadius, background: bg
-            ) {
-                eccValues.append(ecc)
-                starEcc = ecc
-            }
-
-            // Store per-star details for problem visualization
-            if let ecc = starEcc {
-                details.append(StarDetail(
-                    x: star.x, y: star.y,
-                    eccentricity: ecc,
-                    hfr: starHFR, fwhm: starFWHM
-                ))
+            ), fwhm >= 1.0 && fwhm <= 20.0 {
+                fwhmValues.append(fwhm)
+                perStarFWHM[i] = fwhm
             }
         }
 
         guard hfrValues.count >= minStars, fwhmValues.count >= minStars else { return nil }
 
-        // Use median for robustness against outliers
         hfrValues.sort()
         fwhmValues.sort()
-
         let medianHFR = hfrValues[hfrValues.count / 2]
         let medianFWHM = fwhmValues[fwhmValues.count / 2]
+
+        // ── Pass 2: Compute eccentricity with FWHM-adaptive aperture ──
+        // Use median FWHM to determine a consistent aperture across all stars in this image.
+        // This captures the full PSF wings where trailing is visible.
+        let eccAperture = min(maxEccAperture, max(minEccAperture, Float(medianFWHM) * eccApertureFWHMMultiplier))
+
+        var eccValues: [Double] = []
+        var details: [StarDetail] = []
+
+        // Also measure bright stars that were excluded from HFR/FWHM (for shape analysis only)
+        let shapeStars = filterStarsForShape(refinedStars, width: w, height: h, ptr: ptr, channelOffset: channelOffset)
+        let shapeCandidates = Array(shapeStars.prefix(maxMeasuredStars))
+
+        for star in shapeCandidates {
+            let cx = Int(star.x.rounded())
+            let cy = Int(star.y.rounded())
+            // Need enough room for the adaptive aperture + background annulus
+            let safeR = Int(max(bgOuterRadius, eccAperture + 2))
+            guard cx - safeR >= 0, cx + safeR < w, cy - safeR >= 0, cy + safeR < h else { continue }
+
+            let bg = estimateBackground(
+                ptr: ptr, channelOffset: channelOffset, width: w,
+                cx: cx, cy: cy, innerR: bgInnerRadius, outerR: bgOuterRadius
+            )
+
+            if let shape = computeShape(
+                ptr: ptr, channelOffset: channelOffset, width: w,
+                cx: star.x, cy: star.y, aperture: eccAperture, background: bg
+            ) {
+                eccValues.append(shape.eccentricity)
+
+                // Find this star's HFR/FWHM from Pass 1 (if it was in toMeasure)
+                let starHFR = perStarHFR.first(where: { $0 != nil }) as? Double
+                let starFWHM = perStarFWHM.first(where: { $0 != nil }) as? Double
+                // Look up by position match
+                var matchedHFR: Double? = nil
+                var matchedFWHM: Double? = nil
+                for (j, m) in toMeasure.enumerated() {
+                    if abs(m.x - star.x) < 2 && abs(m.y - star.y) < 2 {
+                        matchedHFR = perStarHFR[j]
+                        matchedFWHM = perStarFWHM[j]
+                        break
+                    }
+                }
+
+                details.append(StarDetail(
+                    x: star.x, y: star.y,
+                    eccentricity: shape.eccentricity,
+                    hfr: matchedHFR, fwhm: matchedFWHM,
+                    positionAngle: shape.positionAngle,
+                    axisRatio: shape.axisRatio
+                ))
+            }
+        }
 
         // Eccentricity: 3 stars minimum for reliable median
         let medianEcc: Double?
@@ -167,12 +203,8 @@ enum StarMetricsCalculator {
         )
     }
 
-    // MARK: - Star Filtering
+    // MARK: - Star Filtering (strict — for HFR/FWHM measurement)
 
-    /// Filter stars: skip saturated, edge, crowded, and stars outside center crop.
-    /// Center crop (70%) excludes stars affected by optical aberrations, vignetting,
-    /// dithering shifts, and tilt — giving more consistent quality measurements.
-    /// Returns filtered stars sorted by brightness (brightest first).
     private static func filterStars(
         _ stars: [DetectedStar],
         width: Int, height: Int,
@@ -180,9 +212,40 @@ enum StarMetricsCalculator {
         channelOffset: Int,
         useCenterCrop: Bool = true
     ) -> [DetectedStar] {
+        return filterStarsImpl(stars, width: width, height: height, ptr: ptr, channelOffset: channelOffset,
+                               useCenterCrop: useCenterCrop, satThreshold: saturationThreshold)
+    }
+
+    // MARK: - Star Filtering (relaxed — for shape/eccentricity measurement)
+    // Includes brighter stars (higher saturation threshold) because trailing is most
+    // visible in bright stars. The shape measurement skips the saturated core.
+
+    private static func filterStarsForShape(
+        _ stars: [DetectedStar],
+        width: Int, height: Int,
+        ptr: UnsafeMutablePointer<UInt16>,
+        channelOffset: Int
+    ) -> [DetectedStar] {
+        // Try center crop first, fall back to full frame
+        var result = filterStarsImpl(stars, width: width, height: height, ptr: ptr, channelOffset: channelOffset,
+                                     useCenterCrop: true, satThreshold: shapeSaturationThreshold)
+        if result.count < minStars {
+            result = filterStarsImpl(stars, width: width, height: height, ptr: ptr, channelOffset: channelOffset,
+                                     useCenterCrop: false, satThreshold: shapeSaturationThreshold)
+        }
+        return result
+    }
+
+    private static func filterStarsImpl(
+        _ stars: [DetectedStar],
+        width: Int, height: Int,
+        ptr: UnsafeMutablePointer<UInt16>,
+        channelOffset: Int,
+        useCenterCrop: Bool,
+        satThreshold: UInt16
+    ) -> [DetectedStar] {
         var result: [DetectedStar] = []
 
-        // Boundary limits
         let minX: Float, maxX: Float, minY: Float, maxY: Float
         if useCenterCrop {
             let cropMarginX = Float(width) * (1.0 - centerCropFraction) * 0.5
@@ -199,13 +262,9 @@ enum StarMetricsCalculator {
         }
 
         for star in stars {
-            // Skip stars outside boundary region
-            if star.x < minX || star.x >= maxX ||
-               star.y < minY || star.y >= maxY {
-                continue
-            }
+            if star.x < minX || star.x >= maxX || star.y < minY || star.y >= maxY { continue }
 
-            // Skip saturated stars: check peak pixel in 3x3 around centroid
+            // Check saturation using the provided threshold
             let cx = Int(star.x.rounded())
             let cy = Int(star.y.rounded())
             var isSaturated = false
@@ -214,7 +273,7 @@ enum StarMetricsCalculator {
                     let px = cx + dx
                     let py = cy + dy
                     if px >= 0 && px < width && py >= 0 && py < height {
-                        if ptr[channelOffset + py * width + px] > saturationThreshold {
+                        if ptr[channelOffset + py * width + px] > satThreshold {
                             isSaturated = true
                             break
                         }
@@ -224,7 +283,7 @@ enum StarMetricsCalculator {
             }
             if isSaturated { continue }
 
-            // Skip crowded: check if any already-accepted brighter star is too close
+            // Crowding check
             let isCrowded = result.contains { accepted in
                 let dx = star.x - accepted.x
                 let dy = star.y - accepted.y
@@ -240,7 +299,6 @@ enum StarMetricsCalculator {
 
     // MARK: - Background Estimation
 
-    /// Estimate local background as median of pixels in an annulus around the star.
     private static func estimateBackground(
         ptr: UnsafeMutablePointer<UInt16>,
         channelOffset: Int,
@@ -269,8 +327,6 @@ enum StarMetricsCalculator {
 
     // MARK: - HFR Computation
 
-    /// Compute Half-Flux Radius using cumulative radial flux profile.
-    /// HFR = radius enclosing 50% of total star flux.
     private static func computeHFR(
         ptr: UnsafeMutablePointer<UInt16>,
         channelOffset: Int,
@@ -279,7 +335,6 @@ enum StarMetricsCalculator {
         radius: Float,
         background: Float
     ) -> Double? {
-        // Build cumulative radial flux profile with 0.5px steps
         let steps = Int(radius / 0.5) + 1
         var cumulativeFlux = [Double](repeating: 0, count: steps)
         var totalFlux: Double = 0
@@ -288,7 +343,6 @@ enum StarMetricsCalculator {
         let intCx = Int(cx.rounded())
         let intCy = Int(cy.rounded())
 
-        // Collect all pixel fluxes with their distances
         struct PixelFlux {
             let distance: Float
             let flux: Float
@@ -312,7 +366,6 @@ enum StarMetricsCalculator {
 
         guard totalFlux > 0 else { return nil }
 
-        // Build cumulative profile
         for stepIdx in 0..<steps {
             let stepRadius = Float(stepIdx) * 0.5
             var flux: Double = 0
@@ -324,7 +377,6 @@ enum StarMetricsCalculator {
             cumulativeFlux[stepIdx] = flux
         }
 
-        // Find radius where cumulative flux reaches 50% (linear interpolation)
         let halfFlux = totalFlux * 0.5
         for stepIdx in 1..<steps {
             if cumulativeFlux[stepIdx] >= halfFlux {
@@ -342,12 +394,6 @@ enum StarMetricsCalculator {
 
     // MARK: - FWHM Computation (Gaussian Fit)
 
-    /// Compute FWHM via linearized Gaussian fit.
-    /// For a Gaussian profile: I(r) = I_peak * exp(-r² / (2σ²))
-    /// Taking ln: ln(I) = ln(I_peak) - r² / (2σ²)
-    /// This is linear in r² → simple linear regression on (r², ln(I))
-    /// gives slope = -1/(2σ²), so σ = sqrt(-1/(2*slope))
-    /// FWHM = 2.355 * σ (standard Gaussian relation)
     private static func computeFWHMGaussian(
         ptr: UnsafeMutablePointer<UInt16>,
         channelOffset: Int,
@@ -356,11 +402,9 @@ enum StarMetricsCalculator {
         radius: Float,
         background: Float
     ) -> Double? {
-        let r = Int(radius)
         let intCx = Int(cx.rounded())
         let intCy = Int(cy.rounded())
 
-        // Find peak value first (background-subtracted)
         var peakValue: Float = 0
         for dy in -2...2 {
             for dx in -2...2 {
@@ -370,10 +414,8 @@ enum StarMetricsCalculator {
                 if val > peakValue { peakValue = val }
             }
         }
-        guard peakValue > 100 else { return nil }  // Need reasonable SNR
+        guard peakValue > 100 else { return nil }
 
-        // Collect (r², ln(brightness)) pairs for pixels above 10% of peak
-        // Only use pixels within a reasonable radius (5px) to avoid background contamination
         let fitRadius = min(radius, 5.0)
         let fitRadiusSq = fitRadius * fitRadius
         let threshold = peakValue * 0.1
@@ -394,11 +436,9 @@ enum StarMetricsCalculator {
                 let py = intCy + dy
                 let val = Float(ptr[channelOffset + py * width + px]) - background
 
-                // Only include pixels well above background and below saturation
                 if val > threshold && val < peakValue * 1.1 {
                     let r2 = Double(distSq)
                     let lnI = log(Double(val))
-
                     sumR2 += r2
                     sumLnI += lnI
                     sumR2LnI += r2 * lnI
@@ -410,47 +450,41 @@ enum StarMetricsCalculator {
 
         guard count >= minFitPixels else { return nil }
 
-        // Linear regression: lnI = a + b * r²
-        // b = (n * Σ(r²·lnI) - Σr² · ΣlnI) / (n * Σ(r²²) - (Σr²)²)
         let n = Double(count)
         let denominator = n * sumR2R2 - sumR2 * sumR2
         guard Swift.abs(denominator) > 1e-10 else { return nil }
 
         let slope = (n * sumR2LnI - sumR2 * sumLnI) / denominator
-
-        // slope = -1/(2σ²), so σ² = -1/(2*slope)
-        guard slope < -1e-6 else { return nil }  // Must be negative (Gaussian falls off)
+        guard slope < -1e-6 else { return nil }
         let sigmaSq = -1.0 / (2.0 * slope)
         let sigma = sigmaSq.squareRoot()
-
-        // FWHM = 2 * sqrt(2 * ln(2)) * σ ≈ 2.3548 * σ
         let fwhm = 2.3548 * sigma
 
         return fwhm
     }
 
-    // MARK: - Eccentricity (2D Image Moments)
+    // MARK: - Shape Analysis (Eccentricity + PA + Axis Ratio)
 
-    /// Compute star eccentricity using weighted second-order image moments.
-    /// Same method as SExtractor/DAOPHOT — O(n) per star, no iteration.
-    /// eccentricity = sqrt(1 - b²/a²) where a,b are eigenvalues of the covariance matrix.
-    /// Returns [0..1]: 0 = perfect circle, >0.5 = clearly elongated, >0.7 = trailing.
-    private static func computeEccentricity(
+    /// Compute star shape using weighted second-order image moments with ADAPTIVE aperture.
+    /// Uses annular measurement for bright stars: skips the potentially saturated core (inner 3px),
+    /// measures the wings where trailing is most visible.
+    ///
+    /// Returns eccentricity, position angle of major axis, and minor/major axis ratio.
+    /// PA uses the standard convention: 0° = horizontal, 90° = vertical, range [0..180).
+    private static func computeShape(
         ptr: UnsafeMutablePointer<UInt16>,
         channelOffset: Int,
         width: Int,
         cx: Float, cy: Float,
-        radius: Float,
+        aperture: Float,
         background: Float
-    ) -> Double? {
+    ) -> ShapeResult? {
         let intCx = Int(cx.rounded())
         let intCy = Int(cy.rounded())
-        // Tighter fit radius than FWHM — focus on star core where SNR is highest
-        let fitRadius: Float = 3.0
-        let fitRadiusSq = fitRadius * fitRadius
-        let fitR = Int(fitRadius)
+        let fitRadiusSq = aperture * aperture
+        let fitR = Int(aperture)
 
-        // Find peak value first (same as FWHM does) — need minimum SNR
+        // Find peak value for threshold
         var peakValue: Float = 0
         for dy in -2...2 {
             for dx in -2...2 {
@@ -460,10 +494,16 @@ enum StarMetricsCalculator {
                 if val > peakValue { peakValue = val }
             }
         }
-        guard peakValue > 50 else { return nil }  // Need reasonable SNR for moments
+        guard peakValue > 30 else { return nil }  // Lower SNR threshold than before (was 50)
 
-        // Only use pixels above 10% of peak (same threshold as FWHM Gaussian fit)
-        let threshold = peakValue * 0.1
+        // Use 5% of peak as threshold (was 10%) to capture more of the PSF wings
+        let threshold = peakValue * 0.05
+
+        // For bright stars near saturation: skip the inner 3px core (may be saturated)
+        // and measure shape from the wings only. This captures trailing better.
+        let isBright = peakValue > Float(saturationThreshold - 5000)  // Within 8% of saturation
+        let innerSkipRadius: Float = isBright ? 3.0 : 0.0
+        let innerSkipRadiusSq = innerSkipRadius * innerSkipRadius
 
         // Weighted second-order moments
         var sumI: Double = 0
@@ -475,6 +515,7 @@ enum StarMetricsCalculator {
             for dx in -fitR...fitR {
                 let distSq = Float(dx * dx + dy * dy)
                 if distSq > fitRadiusSq { continue }
+                if distSq < innerSkipRadiusSq { continue }  // Skip saturated core for bright stars
 
                 let px = intCx + dx
                 let py = intCy + dy
@@ -495,12 +536,10 @@ enum StarMetricsCalculator {
 
         guard sumI > 0 else { return nil }
 
-        // Second-order moments (covariance matrix elements)
         let mxx = sumIxx / sumI
         let myy = sumIyy / sumI
         let mxy = sumIxy / sumI
 
-        // Eigenvalues of [[mxx, mxy], [mxy, myy]]
         let trace = mxx + myy
         let det = mxx * myy - mxy * mxy
 
@@ -515,13 +554,22 @@ enum StarMetricsCalculator {
 
         guard lambda1 > 0, lambda2 >= 0 else { return nil }
 
-        // Eccentricity = sqrt(1 - b²/a²) = sqrt(1 - lambda2/lambda1)
-        let ratio = lambda2 / lambda1
-        let eccentricity = (1.0 - ratio).squareRoot()
+        // Eccentricity = sqrt(1 - b²/a²)
+        let axisRatio = (lambda2 / lambda1).squareRoot()  // b/a, 1 = round
+        let eccentricity = (1.0 - lambda2 / lambda1).squareRoot()
 
-        // Sanity check: eccentricity should be in [0, 1)
         guard eccentricity >= 0, eccentricity < 1.0 else { return nil }
 
-        return eccentricity
+        // Position angle of major axis: angle of eigenvector for lambda1
+        // PA = 0.5 * atan2(2*mxy, mxx - myy), normalized to [0..180)
+        var pa = atan2(2.0 * mxy, mxx - myy) * 0.5 * (180.0 / .pi)
+        if pa < 0 { pa += 180.0 }
+        if pa >= 180.0 { pa -= 180.0 }
+
+        return ShapeResult(
+            eccentricity: eccentricity,
+            positionAngle: pa,
+            axisRatio: axisRatio
+        )
     }
 }
