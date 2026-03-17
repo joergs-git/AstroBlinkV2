@@ -294,8 +294,8 @@ class PreviewGenerator {
     // Must be large enough to hold ALL peaks above threshold across the full image.
     // GPU threads execute in tile order (left-to-right), so a small buffer fills up
     // with left-biased stars and misses the right side entirely.
-    // 810 peaks found in a 9576×6388 H-alpha image → 4096 gives ample headroom.
-    private static let maxGPUCandidates = 4096
+    // L-band images can have 6000+ peaks — 16384 handles even dense star fields.
+    private static let maxGPUCandidates = 16384
 
     /// True total star count from last detection (before truncation to 50)
     private(set) var lastTotalStarCount: Int = 0

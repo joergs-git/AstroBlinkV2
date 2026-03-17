@@ -47,8 +47,11 @@ enum StarMetricsCalculator {
     private static let crowdingDistance: Float = 10.0
     // Minimum distance from image edge (full-res pixels)
     private static let edgeMargin: Float = 12.0
-    // Center crop fraction for quality measurement
+    // Center crop fraction for HFR/FWHM measurement (strict — avoid edge aberrations)
     private static let centerCropFraction: Float = 0.70
+    // Wider crop for shape/eccentricity measurement and compare overlay (5% margin)
+    // Trailing consensus handles edge aberrations via PA analysis, so wider coverage is safe
+    private static let shapeCropFraction: Float = 0.90
     // Gaussian fit: minimum pixels above background required for valid fit
     private static let minFitPixels = 8
     // Minimum eccentricity aperture (pixels) — ensures measurement even for tiny stars
@@ -226,9 +229,10 @@ enum StarMetricsCalculator {
         ptr: UnsafeMutablePointer<UInt16>,
         channelOffset: Int
     ) -> [DetectedStar] {
-        // Try center crop first, fall back to full frame
+        // Use wider crop (90%) for shape measurement — trailing consensus handles edge aberrations
         var result = filterStarsImpl(stars, width: width, height: height, ptr: ptr, channelOffset: channelOffset,
-                                     useCenterCrop: true, satThreshold: shapeSaturationThreshold)
+                                     useCenterCrop: true, satThreshold: shapeSaturationThreshold,
+                                     cropFraction: shapeCropFraction)
         if result.count < minStars {
             result = filterStarsImpl(stars, width: width, height: height, ptr: ptr, channelOffset: channelOffset,
                                      useCenterCrop: false, satThreshold: shapeSaturationThreshold)
@@ -242,14 +246,15 @@ enum StarMetricsCalculator {
         ptr: UnsafeMutablePointer<UInt16>,
         channelOffset: Int,
         useCenterCrop: Bool,
-        satThreshold: UInt16
+        satThreshold: UInt16,
+        cropFraction: Float = centerCropFraction
     ) -> [DetectedStar] {
         var result: [DetectedStar] = []
 
         let minX: Float, maxX: Float, minY: Float, maxY: Float
         if useCenterCrop {
-            let cropMarginX = Float(width) * (1.0 - centerCropFraction) * 0.5
-            let cropMarginY = Float(height) * (1.0 - centerCropFraction) * 0.5
+            let cropMarginX = Float(width) * (1.0 - cropFraction) * 0.5
+            let cropMarginY = Float(height) * (1.0 - cropFraction) * 0.5
             minX = max(edgeMargin, cropMarginX)
             maxX = Float(width) - max(edgeMargin, cropMarginX)
             minY = max(edgeMargin, cropMarginY)
