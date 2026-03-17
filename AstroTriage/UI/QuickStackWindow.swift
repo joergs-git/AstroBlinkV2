@@ -1600,6 +1600,12 @@ struct StackResultViewV2: View {
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundColor(fgDim)
 
+                if !engine.alignmentInfo.isEmpty {
+                    Text(engine.alignmentInfo)
+                        .font(.system(size: 10, weight: .medium, design: .monospaced))
+                        .foregroundColor(engine.alignmentInfo.contains("skipped") ? .orange : .green)
+                }
+
                 Spacer()
 
                 // Share & Compare benchmark button — centered and prominent

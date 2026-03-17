@@ -39,6 +39,7 @@ class QuickStackEngineV2: ObservableObject {
     // Source image dimensions for correct preview aspect ratio (set after first decode)
     @Published var sourceWidth: Int = 0
     @Published var sourceHeight: Int = 0
+    @Published var alignmentInfo: String = ""
     var resultFloatData: [Float]?
     var resultChannelCount: Int = 1
     var stackedEntries: [ImageEntry] = []
@@ -51,9 +52,12 @@ class QuickStackEngineV2: ObservableObject {
     private let cosmeticPipeline: MTLComputePipelineState?
     private var stackTask: Task<Void, Never>?
 
-    // V2 tuning: match V1 star/triangle counts for accuracy, use finer detection grid
-    private let maxStars = 50               // Same as V1 — more inliers for LS refinement
-    private let triangleStarLimit = 15      // C(15,3)=455 triangles — same as V1, hash keeps it fast
+    // V2 tuning: 80 detected stars for robust field coverage and LS refinement.
+    // 15 triangle stars → C(15,3) = 455 triangles (fast).
+    // More detected stars means more inlier candidates → better refinement accuracy.
+    private let maxStars = 80
+    private let triangleStarLimit = 15
+    private let inlierCheckLimit = 50      // Cap for O(N²) inlier counting during matching
     private let subsampleFactor = 2         // Half-res detection (was 4) — 4× finer star positions
     private let sigmaThreshold: Float = 5.0
 
@@ -355,6 +359,11 @@ class QuickStackEngineV2: ObservableObject {
 
         let alignedCount = transforms.compactMap({ $0 }).count
         let failedCount = frames.count - alignedCount
+
+        alignmentInfo = failedCount > 0
+            ? "Aligned \(alignedCount) of \(frames.count) frames (\(failedCount) skipped)"
+            : "Aligned all \(alignedCount) frames"
+
         guard alignedCount >= 2 else {
             errorMessage = "Could not align enough frames (\(alignedCount)/\(frames.count), \(failedCount) failed)"
             phase = .failed
@@ -665,7 +674,8 @@ class QuickStackEngineV2: ObservableObject {
                         let inliers = countInliers(
                             transform: transform,
                             refStars: refStars, frameStars: frameStars,
-                            threshold: 10.0
+                            threshold: 10.0,
+                            limit: inlierCheckLimit
                         )
 
                         if inliers > bestInliers {
@@ -832,16 +842,19 @@ class QuickStackEngineV2: ObservableObject {
     private nonisolated func countInliers(
         transform: AffineTransform2D,
         refStars: [Star], frameStars: [Star],
-        threshold: Float
+        threshold: Float,
+        limit: Int = Int.max
     ) -> Int {
         let threshSq = threshold * threshold
         var count = 0
+        let maxFrame = min(frameStars.count, limit)
+        let maxRef = min(refStars.count, limit)
 
-        for fs in frameStars {
-            let (tx, ty) = transform.apply(fs.x, fs.y)
-            for rs in refStars {
-                let dx = tx - rs.x
-                let dy = ty - rs.y
+        for i in 0..<maxFrame {
+            let (tx, ty) = transform.apply(frameStars[i].x, frameStars[i].y)
+            for j in 0..<maxRef {
+                let dx = tx - refStars[j].x
+                let dy = ty - refStars[j].y
                 if dx * dx + dy * dy < threshSq {
                     count += 1
                     break
