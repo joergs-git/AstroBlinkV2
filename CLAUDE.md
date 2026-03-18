@@ -215,6 +215,34 @@ Layer 3: Focal-Length Baseline (TrailingAnalyzer.swift)
 
 ---
 
+## Pre-Caching Pipeline Optimization (v4.5.0)
+
+### Dual-Queue Architecture
+```
+PrefetchCache:
+  priorityQueue (max 2 concurrent, .userInteractive QoS)
+    → current image, ±1, ±2 neighbors (on navigation to uncached image)
+  backgroundQueue (max 6 concurrent, .userInitiated QoS)
+    → all other images (bulk fill)
+```
+
+- Priority queue cancels previous ops on each navigation, submits uncached neighbors
+- Background queue checks for priority-filled entries to skip duplicates
+- `onPriorityPreviewReady` callback triggers `displayCurrentImage()` auto-refresh
+
+### Async GPU Preview
+- `PreviewGenerator.generatePreviewAsync()` uses `addCompletedHandler` on final command buffer
+- Worker thread freed immediately after GPU dispatch (~2-3ms saved per image)
+- Synchronous `generatePreview()` preserved for backward compatibility
+
+### Key Files
+- `AstroTriage/Engine/PrefetchCache.swift` — Dual queue, prioritizeCaching(), async pipeline
+- `AstroTriage/Metal/PreviewGenerator.swift` — generatePreviewAsync() with completion handler
+- `AstroTriage/Engine/TriageViewModel.swift` — Priority queue wiring, focusTableAfterDelay fix
+- `AstroTriage/UI/FileListView.swift` — Visible-row-only reload, lightweight selection color update
+
+---
+
 ## Stacking Improvements (v4.4.0)
 
 ### Min/Max Pixel Rejection
