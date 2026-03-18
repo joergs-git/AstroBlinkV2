@@ -4,6 +4,19 @@ All notable changes to AstroBlinkV2 will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [4.4.0] — 2026-03-18
+
+### Added
+- **Color Combine** — Combine mono filter stacks into RGB color images directly in the app. Auto-detects filters (Ha, OIII, SII, L, R, G, B with broad alias matching), auto-selects best palette preset (SHO, HOO, LRGB, HSO, HaRGB, Custom). Per-channel weight sliders with on-release recombine. Optional luminance blending for LRGB. Full post-processing (stretch, dark, sharp, contrast, color, denoise, deconvolution). Result window auto-opens when combine completes. Save PNG export.
+- **Min/Max Pixel Rejection** — Per-pixel per-channel min/max tracking during warp accumulation. Automatically subtracts the single brightest and darkest values when ≥3 frames contribute. Effectively removes satellite trails (1 bright frame) and hot pixels. No UI toggle needed — always active, transparent to user.
+- **Lanczos-3 Interpolation** — Optional 6x6 sinc-windowed interpolation kernel for sharper stacking on large dither offsets. Selectable via segmented picker in stacking progress panel. Default remains bilinear for speed.
+- **Adaptive Triangle Matching** — On alignment failure, retries with wider triangle set (25 stars, up from 20) and looser inlier threshold (15px vs 10px). Dramatically reduces alignment failures on wide-dither sessions like M81.
+
+### Changed
+- **Triangle Star Limit** — Increased from 15 to 20 (C(20,3) = 1140 triangles vs 455). Better coverage for large dither patterns.
+- **V1 NormalStacker Removed** — Deleted QuickStackEngine.swift (781 lines), V1 views (920 lines), V1 toolbar button and all references. LightspeedStacker (V2) is now the sole stacking engine.
+- **Dark Slider Position** — Moved between Stretch and Sharp in all result windows (LightspeedStacker, Color Combine, Image Preview).
+
 ## [4.3.0] — 2026-03-17
 
 ### Added

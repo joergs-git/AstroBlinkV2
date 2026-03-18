@@ -41,13 +41,9 @@
 - [x] Friendly alert dialogs when no images selected
 - [x] Toolbar icon bottom-alignment with multi-line labels
 - [x] README FAQ: "Why is LightspeedStacker so fast?" + disclaimer
-- [ ] A/B test V1 vs V2 — if V2 proves stable long-term, consider removing V1 engine code
-
-## Future TODOs — Stacking Enhancements
-- [ ] Sigma clipping / outlier rejection (remove hot pixels, satellite trails, planes)
-- [ ] Hot pixel map detection and removal
-- [ ] Sub-pixel interpolation (Lanczos kernel instead of bilinear)
-- [ ] Sigma/winsorized rejection modes (not just mean combine)
+- [x] A/B test V1 vs V2 — V1 removed in v4.4.0, V2 is sole engine
+- [x] Sigma clipping → min/max rejection (v4.4.0)
+- [x] Sub-pixel interpolation → Lanczos-3 option (v4.4.0)
 
 ## Future TODOs — Pre-Caching Pipeline Optimization
 
@@ -189,22 +185,40 @@ Uncompressed XISF: ~17ms decode (SSD limited). LZ4-compressed: ~100-300ms (CPU d
 - [x] SessionOverview: onFilterTapped passes exposure to distinguish L@180s vs L@300s
 - [x] wireSessionOverviewCallbacks called from all load paths (loadSession, loadFiles, loadMultipleFolders)
 
-### App hang during precaching (needs investigation)
-- [ ] Reproduce and diagnose hang (required force kill)
-- [ ] Suspect 1: Single MTLCommandQueue shared by 6 workers — GPU command buffer hang cascades to all threads
-- [ ] Suspect 2: Data race on PreviewGenerator.lastTotalStarCount (written from 6 threads, no sync)
-- [ ] Suspect 3: Main actor flooding — hundreds of Task { @MainActor in } callbacks (star metrics runs TrailingAnalyzer.analyze on main thread per image)
-- [ ] Suspect 4: enrichWithHeaders + precaching race — both modify images[] on main actor, header enrichment does one giant await MainActor.run batch blocking all other callbacks
-- [ ] Add GPU command buffer error/timeout handling
-- [ ] Consider per-worker MTLCommandQueues to reduce contention
+### App hang during precaching — RESOLVED
+- [x] No longer reproduces after v4.3.1 fixes (likely resolved by quote stripping or trail detection changes)
 
 ---
 
+## v4.4.0 — Stacking Improvements (IN PROGRESS 2026-03-18)
+
+### Phase 1: Min/Max Pixel Rejection ✅
+- [x] New GPU min/max tracking in warp_accumulate shader (buffer indices 7,8)
+- [x] Normalization: `result = (sum - min - max) / (count - 2)` when count >= 3
+- [x] CPU fallback also tracks min/max
+- [x] No UI toggle — transparent, always active when count >= 3
+
+### Phase 2: M81 Alignment Fix ✅
+- [x] triangleStarLimit 15 → 20 (C(20,3) = 1140 triangles)
+- [x] Retry on alignment failure: triangleStarLimit=25, inlier threshold 15px (was 10px)
+- [x] matchTrianglesHashed accepts configurable inlierThreshold
+
+### Phase 3: Lanczos-3 Interpolation ✅
+- [x] New warp_accumulate_lanczos GPU kernel (6x6 kernel, sinc windowed, 3px margin)
+- [x] InterpolationMode enum (.bilinear/.lanczos) on QuickStackEngineV2
+- [x] Segmented picker in V2 progress view (visible during decode/detect phases)
+- [x] Pipeline selection at dispatch time (falls back to bilinear if Lanczos unavailable)
+
+### Phase 4: V1 Engine Removal ✅
+- [x] Deleted QuickStackEngine.swift (781 lines)
+- [x] Removed V1 views from QuickStackWindow.swift (QuickStackProgressView + StackResultView)
+- [x] Removed V1 toolbar button from ContentView.swift
+- [x] Removed V1 properties/methods from TriageViewModel.swift
+- [x] Removed V1 phase observer from ContentView.swift
+- [x] Preserved shared renderFloatToTexture function
+- [x] XcodeGen regenerated, build passes
+
 ## Future TODOs — Stacking
-- [ ] Investigate 14/50 M81 frames failing alignment (brightest 15 stars don't overlap across large dither)
-- [ ] Sigma clipping / outlier rejection (satellite trails, planes, hot pixels)
-- [ ] Sub-pixel interpolation (Lanczos kernel instead of bilinear)
-- [ ] A/B test V1 vs V2 — consider removing V1 engine code
 
 ## Future TODOs — Batch Operations
 - [ ] Test batch rename with real FITS/XISF files (manual verification)

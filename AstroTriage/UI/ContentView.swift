@@ -68,11 +68,11 @@ struct ContentView: View {
                     if viewModel.canUndoPreDelete {
                         sfToolbarButton("arrow.uturn.backward", "Undo", "Undo last Pre-Delete (⌘Z)") { viewModel.undoPreDelete() }
                     }
-                    sfToolbarButton("tortoise.fill", "Normal\nStacker", "CPU stacking — accurate, detects more stars, slower.\nSelect 3+ images first.") {
-                        viewModel.startQuickStack()
-                    }
-                    sfToolbarButton("bolt.fill", "Lightspeed\nStacker", "GPU-accelerated stacking — fast preview.\nSelect 3+ images first.") {
+                    sfToolbarButton("bolt.fill", "Lightspeed\nStacker", "GPU-accelerated stacking with outlier rejection.\nSelect 3+ images first.") {
                         viewModel.startQuickStackV2()
+                    }
+                    sfToolbarButton("paintpalette.fill", "Color\nCombine", "Combine mono filter stacks into RGB color image.\nNeeds 2+ filters with 3+ frames each.") {
+                        viewModel.startColorCombine()
                     }
                     sfToolbarButton("square.and.arrow.up", "SSWEIGHT\nExport", "Export quality weights to FITS/XISF headers for WBPP.\nAlso creates CSV backup.") {
                         viewModel.exportSSWEIGHT()
@@ -313,25 +313,6 @@ struct ContentView: View {
                             }
 
                             // Quick Stack progress overlay (anchored top-right)
-                            if viewModel.showQuickStack, let engine = viewModel.quickStackEngine {
-                                VStack {
-                                    HStack {
-                                        Spacer()
-                                        QuickStackProgressView(
-                                            engine: engine,
-                                            nightMode: viewModel.nightMode,
-                                            onDismiss: {
-                                                viewModel.showQuickStack = false
-                                                viewModel.quickStackEngine?.cancel()
-                                            }
-                                        )
-                                        .padding(12)
-                                    }
-                                    Spacer()
-                                }
-                            }
-
-                            // Quick Stack V2 progress overlay (anchored top-right)
                             if viewModel.showQuickStackV2, let engine = viewModel.quickStackEngineV2 {
                                 VStack {
                                     HStack {
@@ -343,6 +324,26 @@ struct ContentView: View {
                                                 viewModel.showQuickStackV2 = false
                                                 viewModel.quickStackEngineV2?.cancel()
                                             }
+                                        )
+                                        .padding(12)
+                                    }
+                                    Spacer()
+                                }
+                            }
+
+                            // Color Combine setup overlay (anchored top-right)
+                            if viewModel.showColorCombine, let engine = viewModel.colorCombineEngine {
+                                VStack {
+                                    HStack {
+                                        Spacer()
+                                        ColorCombineSetupView(
+                                            engine: engine,
+                                            nightMode: viewModel.nightMode,
+                                            onDismiss: {
+                                                viewModel.showColorCombine = false
+                                                viewModel.colorCombineEngine?.cancel()
+                                            },
+                                            debayerEnabled: viewModel.debayerEnabled
                                         )
                                         .padding(12)
                                     }
@@ -598,11 +599,6 @@ struct ContentView: View {
             if alert.runModal() == .alertFirstButtonReturn {
                 viewModel.resetAllSettings()
                 sliderValue = Double(viewModel.stretchStrength)
-            }
-        }
-        .onChange(of: viewModel.quickStackEngine?.phase) { newPhase in
-            if newPhase == .done || newPhase == .failed {
-                viewModel.benchmarkStats.markQuickStackEnd()
             }
         }
         .onChange(of: viewModel.quickStackEngineV2?.phase) { newPhase in

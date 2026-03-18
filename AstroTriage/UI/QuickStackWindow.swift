@@ -1,649 +1,16 @@
-// v3.2.0
+// v4.4.0
 import SwiftUI
 import MetalKit
 import Accelerate
 import UniformTypeIdentifiers
 
-// Quick Stack progress panel: shows live 200x200 mini preview during stacking,
-// then opens the full result in a floating window when complete.
+// LightspeedStacker views: progress panel, result view, image preview.
+// Shared utilities: renderFloatToTexture, StarCrossShape, ZoomableTextureMTKView,
+// ZoomableMetalTextureView, MetalTextureView, ImagePreviewView, ImagePreviewWindowController.
 
-struct QuickStackProgressView: View {
-    @ObservedObject var engine: QuickStackEngine
-    let nightMode: Bool
-    var onDismiss: () -> Void
+// MARK: - Shared Rendering
 
-    // Track stack start time to compute duration for benchmark
-    @State private var stackStartDate = Date()
-
-    private var fg: Color { nightMode ? .red : .primary }
-    private var fgDim: Color { nightMode ? .red.opacity(0.7) : .secondary }
-    private var bg: Color { nightMode ? .black : Color(NSColor.windowBackgroundColor) }
-
-    // Preview size respecting image aspect ratio (max 200px on longest side)
-    private var previewSize: CGSize {
-        let maxDim: CGFloat = 200
-        let w = CGFloat(engine.sourceWidth)
-        let h = CGFloat(engine.sourceHeight)
-        guard w > 0, h > 0 else { return CGSize(width: maxDim, height: maxDim) }
-        let scale = maxDim / max(w, h)
-        return CGSize(width: round(w * scale), height: round(h * scale))
-    }
-
-    var body: some View {
-        VStack(spacing: 12) {
-            // Header
-            HStack {
-                Image(systemName: "square.3.layers.3d.down.right")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundColor(fg)
-                Text("Quick Stack")
-                    .font(.system(size: 14, weight: .semibold, design: .monospaced))
-                    .foregroundColor(fg)
-                Spacer()
-
-                if engine.phase != .done && engine.phase != .failed && engine.phase != .idle {
-                    Button(action: {
-                        engine.cancel()
-                        onDismiss()
-                    }) {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 14))
-                            .foregroundColor(fgDim)
-                    }
-                    .buttonStyle(.plain)
-                    .help("Cancel stacking")
-                }
-            }
-
-            // Mini preview with correct aspect ratio (max 200px on longest side)
-            ZStack {
-                Rectangle()
-                    .fill(Color.black)
-                    .frame(width: previewSize.width, height: previewSize.height)
-
-                if let texture = engine.miniPreviewTexture {
-                    MetalTextureView(texture: texture)
-                        .frame(width: previewSize.width, height: previewSize.height)
-                } else {
-                    // Placeholder before first preview appears
-                    VStack(spacing: 8) {
-                        ProgressView()
-                            .progressViewStyle(.circular)
-                            .tint(nightMode ? .red : nil)
-                        Text("Preparing...")
-                            .font(.system(size: 11, design: .monospaced))
-                            .foregroundColor(.gray)
-                    }
-                }
-
-                // Blue crosses showing detected star positions during star detection phase
-                if engine.phase == .detecting && !engine.detectedStarPositions.isEmpty {
-                    ForEach(0..<engine.detectedStarPositions.count, id: \.self) { i in
-                        let pos = engine.detectedStarPositions[i]
-                        StarCrossShape()
-                            .stroke(Color(red: 0.3, green: 0.6, blue: 1.0), lineWidth: 1.5)
-                            .frame(width: 10, height: 10)
-                            .position(x: pos.x, y: pos.y)
-                    }
-                }
-            }
-            .frame(width: previewSize.width, height: previewSize.height)
-            .clipped()
-            .cornerRadius(4)
-
-            // Phase + progress
-            Text(engine.phase.rawValue)
-                .font(.system(size: 11, weight: .medium, design: .monospaced))
-                .foregroundColor(fg)
-
-            if engine.phase == .aligning || engine.phase == .stacking {
-                Text("Layer \(engine.currentLayer) / \(engine.totalLayers)")
-                    .font(.system(size: 10, design: .monospaced))
-                    .foregroundColor(fgDim)
-            }
-
-            ProgressView(value: engine.progress)
-                .progressViewStyle(.linear)
-                .tint(nightMode ? .red : .accentColor)
-
-            // Error message
-            if let error = engine.errorMessage {
-                Text(error)
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundColor(.red)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 4)
-            }
-
-            // Done: open result button
-            if engine.phase == .done {
-                Button(action: { openResultWindow() }) {
-                    HStack(spacing: 6) {
-                        Image(systemName: "photo")
-                            .font(.system(size: 12))
-                        Text("Open Result (\(engine.resultWidth)x\(engine.resultHeight))")
-                            .font(.system(size: 12, weight: .medium, design: .monospaced))
-                    }
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.small)
-            }
-
-            // Dismiss button for done/failed states
-            if engine.phase == .done || engine.phase == .failed {
-                Button("Close") { onDismiss() }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    .foregroundColor(fg)
-            }
-        }
-        .padding(16)
-        .frame(width: 240)
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(bg.opacity(0.95))
-                .shadow(radius: 8)
-        )
-        // Auto-open result window when stacking completes
-        .onChange(of: engine.phase) { newPhase in
-            if newPhase == .done {
-                openResultWindow()
-            }
-        }
-    }
-
-    // Open the stacked result in a new floating NSWindow
-    private func openResultWindow() {
-        guard engine.resultTexture != nil else { return }
-
-        let stackMs = Int(Date().timeIntervalSince(stackStartDate) * 1000)
-        let resultView = StackResultView(
-            engine: engine,
-            nightMode: nightMode,
-            stackTimeMs: stackMs
-        )
-
-        let hostingView = NSHostingView(rootView: resultView)
-
-        // Size the window to fit the image at a reasonable scale
-        let maxDim: CGFloat = 1200
-        let scale = min(maxDim / CGFloat(engine.resultWidth), maxDim / CGFloat(engine.resultHeight), 1.0)
-        let winW = max(1100, CGFloat(engine.resultWidth) * scale + 40)
-        let winH = CGFloat(engine.resultHeight) * scale + 80
-
-        let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: winW, height: winH),
-            styleMask: [.titled, .closable, .resizable, .miniaturizable],
-            backing: .buffered,
-            defer: false
-        )
-        window.minSize = NSSize(width: 900, height: 400)
-        window.title = "Quick Stack Result — \(engine.resultWidth)x\(engine.resultHeight)"
-        window.contentView = hostingView
-        window.center()
-        window.isReleasedWhenClosed = false
-        window.makeKeyAndOrderFront(nil)
-    }
-}
-
-// Displays the stacked result with all adjustment sliders (stretch, sharpening, contrast, dark)
-// and Save as PNG. All adjustments are applied to the raw float data for maximum quality.
-struct StackResultView: View {
-    let engine: QuickStackEngine
-    let nightMode: Bool
-    let stackTimeMs: Int
-    @State private var stretchValue: Double = 0.25
-    @State private var sharpening: Double = 0.0
-    @State private var contrast: Double = 0.0
-    @State private var darkLevel: Double = 0.0
-    @State private var saturation: Double = 1.0
-    @State private var linkedStretch: Bool = false
-    @State private var denoise: Double = 0.0
-    @State private var deconvolve: Double = 0.0
-    @State private var useRL: Bool = false
-    @State private var displayTexture: MTLTexture?
-    @State private var savedMessage: String?
-    @State private var isRendering: Bool = false
-    @StateObject private var benchmarkService = BenchmarkService()
-    // Debounce timer to avoid re-rendering on every slider tick
-    @State private var renderTask: Task<Void, Never>?
-    // Freeze-stamp: stack of frozen base textures for sequential processing
-    @State private var frozenStack: [(texture: MTLTexture, floatData: [Float])] = []
-
-    private var fgDim: Color { nightMode ? .red.opacity(0.7) : .secondary }
-
-    // Compute best frame metrics summary from stacked entries
-    private var bestFrameMetrics: String? {
-        let entries = engine.stackedEntries
-        guard entries.count >= 2 else { return nil }
-        guard let best = entries.max(by: { ($0.qualityZScore ?? -100) < ($1.qualityZScore ?? -100) }) else { return nil }
-        var parts: [String] = ["Best frame vs \(entries.count) stacked:"]
-        if let stars = best.displayStarCount { parts.append("Stars \(stars)") }
-        if let fwhm = best.displayFWHM { parts.append("FWHM \(String(format: "%.1f", fwhm))") }
-        if let hfr = best.displayHFR { parts.append("HFR \(String(format: "%.1f", hfr))") }
-        if let ecc = best.computedEccentricity { parts.append("Ecc \(String(format: "%.2f", ecc))") }
-        if let med = best.noiseMedian, let mad = best.noiseMAD, mad > 0 {
-            let snr = med / mad
-            let stackSNR = snr * Float(entries.count).squareRoot()
-            parts.append("SNR \(String(format: "%.0f", snr))\u{2192}\(String(format: "%.0f", stackSNR)) (est.)")
-        }
-        return parts.count > 1 ? parts.joined(separator: "  \u{2502}  ") : nil
-    }
-
-    var body: some View {
-        VStack(spacing: 0) {
-            ZStack {
-                if let tex = displayTexture ?? engine.resultTexture {
-                    ZoomableMetalTextureView(texture: tex)
-                }
-
-                // Subtle loading spinner while re-rendering after slider change
-                if isRendering {
-                    VStack {
-                        Spacer()
-                        HStack {
-                            Spacer()
-                            ProgressView()
-                                .progressViewStyle(.circular)
-                                .scaleEffect(1.2)
-                                .tint(nightMode ? .red : .blue)
-                                .padding(12)
-                                .background(Color.black.opacity(0.6))
-                                .cornerRadius(10)
-                            Spacer()
-                        }
-                        Spacer()
-                    }
-                }
-            }
-
-            // Row 1: Sliders + Freeze/Unfreeze
-            HStack(spacing: 10) {
-                // Reset button
-                Button(action: resetSliders) {
-                    Image(systemName: "arrow.counterclockwise")
-                        .font(.system(size: 12, weight: .medium))
-                }
-                .buttonStyle(.plain)
-                .foregroundColor(nightMode ? .red : .primary)
-                .help("Reset all sliders")
-
-                // Freeze: bake current adjustments into a new base layer
-                Button(action: freezeCurrentState) {
-                    HStack(spacing: 2) {
-                        Image(systemName: "snowflake")
-                            .font(.system(size: 10))
-                        Text("Freeze")
-                            .font(.system(size: 10, weight: .medium, design: .monospaced))
-                    }
-                }
-                .buttonStyle(.bordered).controlSize(.mini)
-                .tint(.cyan)
-                .help("Bake current adjustments into base. Then apply further adjustments on top.")
-
-                // Unfreeze: revert to previous frozen state
-                if !frozenStack.isEmpty {
-                    Button(action: unfreezeLastState) {
-                        HStack(spacing: 2) {
-                            Image(systemName: "flame")
-                                .font(.system(size: 10))
-                            Text("Unfreeze (\(frozenStack.count))")
-                                .font(.system(size: 10, weight: .medium, design: .monospaced))
-                        }
-                    }
-                    .buttonStyle(.bordered).controlSize(.mini)
-                    .tint(.orange)
-                    .help("Undo last freeze — go back one step")
-                }
-
-                resultSlider("Stretch", value: $stretchValue, range: 0.0...1.0, step: 0.01,
-                             display: "\(Int(stretchValue / 1.0 * 100))%")
-                    .help("STF auto-stretch target background level.\n0% = linear (no stretch), 25% = default, higher = brighter.")
-                resultSlider("Sharp", value: $sharpening, range: -4.0...4.0, step: 0.1,
-                             display: String(format: "%+.1f", sharpening))
-                    .help("Unsharp mask sharpening.\nNegative = blur, 0 = off, positive = sharpen.")
-                resultSlider("Contrast", value: $contrast, range: -2.0...2.0, step: 0.05,
-                             display: String(format: "%+.1f", contrast))
-                    .help("Contrast adjustment around midpoint.\nNegative = flatten, 0 = off, positive = increase.")
-                resultSlider("Dark", value: $darkLevel, range: 0.0...1.0, step: 0.01,
-                             display: String(format: "%.2f", darkLevel))
-                    .help("Dark level / shadows clip.\nRaises the black point to clip faint background.")
-                if engine.resultChannelCount > 1 {
-                    resultSlider("Color", value: $saturation, range: 0.0...3.0, step: 0.05,
-                                 display: String(format: "%.1f", saturation))
-                        .help("Color saturation.\n0 = monochrome, 1.0 = natural, >1 = boosted.")
-                    Toggle("Linked", isOn: $linkedStretch)
-                        .toggleStyle(.switch).controlSize(.mini)
-                        .font(.system(size: 10, design: .monospaced))
-                        .foregroundColor(nightMode ? .red.opacity(0.7) : .secondary)
-                        .help("OFF = Balanced: per-channel background clip + shared midtone (best white balance).\nON = Linked: identical stretch for all channels (raw color ratios).")
-                        .onChange(of: linkedStretch) { _ in scheduleRender() }
-                }
-                resultSlider("Denoise", value: $denoise, range: 0.0...2.0, step: 0.02,
-                             display: denoise < 0.01 ? "Off" : String(format: "%.0f%%", denoise * 100))
-                    .help("Two-pass GPU denoise: bilateral (pixel noise) + chrominance (color patches).\n0 = off, 100%+ = aggressive.")
-                resultSlider("Deconv", value: $deconvolve, range: 0.0...2.0, step: 0.02,
-                             display: deconvolve < 0.01 ? "Off" : String(format: "%.1f", deconvolve))
-                    .help("Deconvolution sharpening to recover detail.\nUSM = multi-scale unsharp mask, RL = Richardson-Lucy iterative.")
-                Toggle(useRL ? "RL" : "USM", isOn: $useRL)
-                    .toggleStyle(.switch).controlSize(.mini)
-                    .font(.system(size: 10, weight: .medium, design: .monospaced))
-                    .foregroundColor(useRL ? .orange : .secondary)
-                    .help("USM = Multi-scale Unsharp Mask (fast).\nRL = Richardson-Lucy deconvolution (better quality, slower).")
-                    .onChange(of: useRL) { _ in scheduleRender() }
-                    .frame(width: 52)
-            }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(nightMode ? Color(red: 0.06, green: 0, blue: 0) : Color(NSColor.underPageBackgroundColor))
-
-            // Best frame comparison — shows what the best single frame had vs the stack
-            if let bestMetrics = bestFrameMetrics {
-                HStack(spacing: 4) {
-                    Image(systemName: "chart.bar.fill")
-                        .font(.system(size: 10))
-                        .foregroundColor(.cyan.opacity(0.8))
-                    Text(bestMetrics)
-                        .font(.system(size: 10, design: .monospaced))
-                        .foregroundColor(fgDim)
-                        .lineLimit(1)
-                }
-                .padding(.horizontal, 8).padding(.vertical, 2)
-                .background(nightMode ? Color(red: 0.04, green: 0, blue: 0) : Color(NSColor.controlBackgroundColor).opacity(0.5))
-            }
-
-            // Row 2: Share centered, info + save on sides
-            HStack(spacing: 12) {
-                Text("\(engine.resultWidth)x\(engine.resultHeight) — Quick Stack")
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundColor(fgDim)
-
-                Spacer()
-
-                // Share & Compare benchmark button — centered and prominent
-                Button(action: { shareNormalBenchmark() }) {
-                    HStack(spacing: 4) {
-                        Image(systemName: benchmarkService.isUploading ? "arrow.triangle.2.circlepath" : "trophy")
-                            .font(.system(size: 12))
-                        Text("Share & Compare")
-                            .font(.system(size: 11, weight: .medium, design: .monospaced))
-                    }
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(.green)
-                .controlSize(.small)
-                .disabled(benchmarkService.isUploading || !BenchmarkConfig.isConfigured)
-                .help(BenchmarkConfig.isConfigured
-                      ? "Share your benchmark and see how you rank"
-                      : "Benchmark sharing not configured — see CLAUDE.md")
-
-                Spacer()
-
-                Button(action: saveAsPNG) {
-                    HStack(spacing: 4) {
-                        Image(systemName: "square.and.arrow.down")
-                            .font(.system(size: 12))
-                        Text("Save PNG")
-                            .font(.system(size: 11, weight: .medium, design: .monospaced))
-                    }
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
-                .help("Export current view as PNG file")
-
-                if let msg = savedMessage {
-                    Text(msg)
-                        .font(.system(size: 10, design: .monospaced))
-                        .foregroundColor(.green)
-                }
-            }
-            .padding(.horizontal, 8)
-            .padding(.vertical, 4)
-            .background(nightMode ? Color.black : Color(NSColor.windowBackgroundColor))
-        }
-        .background(Color.black)
-        .onAppear { scheduleRender() }
-    }
-
-    // Compact slider matching the main app's style
-    private func resultSlider(_ label: String, value: Binding<Double>,
-                               range: ClosedRange<Double>, step: Double,
-                               display: String) -> some View {
-        HStack(spacing: 3) {
-            Text(label)
-                .font(.system(size: 10, design: .monospaced))
-                .foregroundColor(fgDim)
-                .frame(width: 48, alignment: .trailing)
-            Slider(value: value, in: range, step: step)
-                .frame(minWidth: 60, maxWidth: 100)
-                .onChange(of: value.wrappedValue) { _ in scheduleRender() }
-            Text(display)
-                .font(.system(size: 10, design: .monospaced))
-                .foregroundColor(fgDim)
-                .frame(width: 32, alignment: .leading)
-        }
-    }
-
-    private func resetSliders() {
-        stretchValue = 0.25; sharpening = 0.0; contrast = 0.0; darkLevel = 0.0; saturation = 1.0; linkedStretch = false; denoise = 0.0; deconvolve = 0.0; useRL = false
-        scheduleRender()
-    }
-
-    // Freeze: render current adjustments into a new base float array, reset sliders
-    private func freezeCurrentState() {
-        guard let currentTex = displayTexture ?? engine.resultTexture else { return }
-        guard let currentFloat = engine.resultFloatData else { return }
-
-        // Save current state before freezing
-        frozenStack.append((texture: currentTex, floatData: currentFloat))
-
-        // Render the current adjustments into the float data to create new base
-        let w = engine.resultWidth
-        let h = engine.resultHeight
-        let ch = engine.resultChannelCount
-
-        // Read back the current display texture pixels and convert to float16 data
-        // For simplicity: re-render with current params to get the result, then
-        // use that as the new base (convert RGBA8 back to uint16 float array)
-        let tex = currentTex
-        var pixels = [UInt8](repeating: 0, count: w * h * 4)
-        tex.getBytes(&pixels, bytesPerRow: w * 4,
-                     from: MTLRegion(origin: MTLOrigin(), size: MTLSize(width: w, height: h, depth: 1)),
-                     mipmapLevel: 0)
-
-        // Convert RGBA8 back to float array (0-65535 range per channel)
-        let isRGBA = tex.pixelFormat != .bgra8Unorm
-        var newFloatData = [Float](repeating: 0, count: w * h * ch)
-        let planeSize = w * h
-        for y in 0..<h {
-            for x in 0..<w {
-                let pi = (y * w + x) * 4
-                let r = Float(pixels[pi + (isRGBA ? 0 : 2)]) / 255.0 * 65535.0
-                let g = Float(pixels[pi + 1]) / 255.0 * 65535.0
-                let b = Float(pixels[pi + (isRGBA ? 2 : 0)]) / 255.0 * 65535.0
-                newFloatData[y * w + x] = r
-                if ch >= 3 {
-                    newFloatData[planeSize + y * w + x] = g
-                    newFloatData[2 * planeSize + y * w + x] = b
-                }
-            }
-        }
-
-        // Replace engine's float data with frozen result
-        engine.resultFloatData = newFloatData
-
-        // Reset sliders to neutral (adjustments are now baked in)
-        stretchValue = 0.25; sharpening = 0.0; contrast = 0.0; darkLevel = 0.0
-        saturation = 1.0; linkedStretch = false; denoise = 0.0; deconvolve = 0.0; useRL = false
-        scheduleRender()
-    }
-
-    // Unfreeze: restore the previous frozen state
-    private func unfreezeLastState() {
-        guard let prev = frozenStack.popLast() else { return }
-        engine.resultFloatData = prev.floatData
-        stretchValue = 0.25; sharpening = 0.0; contrast = 0.0; darkLevel = 0.0
-        saturation = 1.0; linkedStretch = false; denoise = 0.0; deconvolve = 0.0; useRL = false
-        scheduleRender()
-    }
-
-    // Debounced render: cancels previous task so rapid slider changes don't pile up
-    private func scheduleRender() {
-        renderTask?.cancel()
-        isRendering = true
-        renderTask = Task {
-            try? await Task.sleep(nanoseconds: 50_000_000) // 50ms debounce
-            guard !Task.isCancelled else { return }
-            await restretch()
-        }
-    }
-
-    // Re-render with current stretch + post-processing settings
-    @MainActor
-    private func restretch() async {
-        guard let floatData = engine.resultFloatData else {
-            isRendering = false
-            return
-        }
-        let w = engine.resultWidth
-        let h = engine.resultHeight
-        let ch = engine.resultChannelCount
-        let target = Float(stretchValue)
-        let sharp = Float(sharpening)
-        let cont = Float(contrast)
-        let dark = Float(darkLevel)
-        let sat = Float(saturation)
-        let linked = linkedStretch
-        let dn = Float(denoise)
-        let dc = Float(deconvolve)
-        let rl = useRL
-        let dev = engine.device
-
-        let tex = await Task.detached(priority: .userInitiated) {
-            renderFloatToTexture(
-                data: floatData, width: w, height: h,
-                channelCount: ch, targetBackground: target,
-                sharpening: sharp, contrast: cont, darkLevel: dark,
-                saturation: sat, linkedStretch: linked, denoise: dn, deconvolve: dc, useRL: rl, device: dev
-            )
-        }.value
-
-        displayTexture = tex
-        isRendering = false
-    }
-
-    // Build a descriptive default filename from session metadata:
-    // objectname_datetime_filters_camera.png
-    private func defaultFilename() -> String {
-        let entries = engine.stackedEntries
-        guard !entries.isEmpty else { return "quickstack_result.png" }
-
-        var parts: [String] = []
-
-        // Object name
-        if let obj = entries.compactMap({ $0.target }).first, !obj.isEmpty, obj.lowercased() != "unknown" {
-            parts.append(obj.replacingOccurrences(of: " ", with: "_"))
-        }
-
-        // Acquisition date from first image
-        if let date = entries.compactMap({ $0.date }).sorted().first {
-            parts.append(date)
-        }
-
-        // Unique filters sorted alphabetically
-        let filters = Set(entries.compactMap { $0.filter?
-            .replacingOccurrences(of: "'", with: "")
-            .trimmingCharacters(in: .whitespaces) }
-            .filter { !$0.isEmpty && $0.lowercased() != "none" })
-        if !filters.isEmpty {
-            parts.append(filters.sorted().joined(separator: "+"))
-        }
-
-        // Camera/instrument
-        if let cam = entries.compactMap({ $0.camera }).first, !cam.isEmpty {
-            parts.append(cam.replacingOccurrences(of: " ", with: "_"))
-        }
-
-        // Stacked frame count
-        parts.append("stacked-\(entries.count)")
-
-        if parts.isEmpty { return "quickstack_result.png" }
-        // Sanitize: remove characters that are problematic in filenames
-        let name = parts.joined(separator: "_")
-            .components(separatedBy: CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "_+-")).inverted)
-            .joined()
-        return "\(name).png"
-    }
-
-    // Save the current display texture as PNG (includes all adjustments)
-    private func saveAsPNG() {
-        guard let tex = displayTexture ?? engine.resultTexture else { return }
-
-        let panel = NSSavePanel()
-        panel.allowedContentTypes = [.png]
-        panel.nameFieldStringValue = defaultFilename()
-
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-
-        let w = tex.width
-        let h = tex.height
-        var pixels = [UInt8](repeating: 0, count: w * h * 4)
-        tex.getBytes(&pixels, bytesPerRow: w * 4,
-                     from: MTLRegion(origin: MTLOrigin(), size: MTLSize(width: w, height: h, depth: 1)),
-                     mipmapLevel: 0)
-
-        // Swap B↔R only for BGRA textures (engine.resultTexture).
-        // renderFloatToTexture output is RGBA — no swap needed.
-        if tex.pixelFormat == .bgra8Unorm {
-            for i in stride(from: 0, to: pixels.count, by: 4) {
-                let b = pixels[i]; pixels[i] = pixels[i + 2]; pixels[i + 2] = b
-            }
-        }
-
-        let colorSpace = CGColorSpaceCreateDeviceRGB()
-        guard let context = CGContext(
-            data: &pixels, width: w, height: h,
-            bitsPerComponent: 8, bytesPerRow: w * 4,
-            space: colorSpace,
-            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-        ), let cgImage = context.makeImage() else { return }
-
-        let rep = NSBitmapImageRep(cgImage: cgImage)
-        guard let pngData = rep.representation(using: .png, properties: [:]) else { return }
-
-        do {
-            try pngData.write(to: url)
-            savedMessage = "Saved!"
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { savedMessage = nil }
-        } catch {
-            savedMessage = "Error: \(error.localizedDescription)"
-        }
-    }
-
-    // Upload benchmark and open leaderboard
-    private func shareNormalBenchmark() {
-        let entry = BenchmarkService.buildEntry(
-            engine: "normal",
-            stackTimeMs: stackTimeMs,
-            fileCount: engine.totalLayers,
-            imageWidth: engine.resultWidth,
-            imageHeight: engine.resultHeight
-        )
-        Task {
-            await benchmarkService.shareAndCompare(entry: entry)
-            BenchmarkLeaderboardWindowController.shared.show(
-                service: benchmarkService,
-                myMachineHash: MachineInfo.machineHash,
-                engine: "normal"
-            )
-        }
-    }
-}
-
-// Render float data to a BGRA8 texture with STF stretch + post-processing.
-// Uses Metal GPU compute for instant results (<16ms on any Apple Silicon).
-// CPU fallback only if Metal pipeline setup fails.
-// Post-process pipeline: stretch → dark level → contrast → sharpening (matches main app)
+// Converts raw float data to GPU texture with STF stretch, post-processing, denoise, deconvolution
 func renderFloatToTexture(
     data: [Float], width: Int, height: Int,
     channelCount: Int, targetBackground: Float,
@@ -1352,6 +719,23 @@ struct QuickStackV2ProgressView: View {
             .clipped()
             .cornerRadius(4)
 
+            // Interpolation mode selector (visible while not stacking)
+            if engine.phase == .idle || engine.phase == .decoding || engine.phase == .detecting {
+                HStack(spacing: 6) {
+                    Text("Interpolation:")
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundColor(fgDim)
+                    Picker("", selection: $engine.interpolationMode) {
+                        ForEach(QuickStackEngineV2.InterpolationMode.allCases, id: \.self) { mode in
+                            Text(mode.rawValue).tag(mode)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .frame(width: 150)
+                    .controlSize(.mini)
+                }
+            }
+
             Text(engine.phase.rawValue)
                 .font(.system(size: 11, weight: .medium, design: .monospaced))
                 .foregroundColor(fg)
@@ -1542,15 +926,15 @@ struct StackResultViewV2: View {
                 resultSlider("Stretch", value: $stretchValue, range: 0.0...1.0, step: 0.01,
                              display: "\(Int(stretchValue * 100))%")
                     .help("STF auto-stretch target background level.\n0% = linear (no stretch), 25% = default, higher = brighter.")
+                resultSlider("Dark", value: $darkLevel, range: 0.0...1.0, step: 0.01,
+                             display: String(format: "%.2f", darkLevel))
+                    .help("Dark level / shadows clip.\nRaises the black point to clip faint background.")
                 resultSlider("Sharp", value: $sharpening, range: -4.0...4.0, step: 0.1,
                              display: String(format: "%+.1f", sharpening))
                     .help("Unsharp mask sharpening.\nNegative = blur, 0 = off, positive = sharpen.")
                 resultSlider("Contrast", value: $contrast, range: -2.0...2.0, step: 0.05,
                              display: String(format: "%+.1f", contrast))
                     .help("Contrast adjustment around midpoint.\nNegative = flatten, 0 = off, positive = increase.")
-                resultSlider("Dark", value: $darkLevel, range: 0.0...1.0, step: 0.01,
-                             display: String(format: "%.2f", darkLevel))
-                    .help("Dark level / shadows clip.\nRaises the black point to clip faint background.")
                 if engine.resultChannelCount > 1 {
                     resultSlider("Color", value: $saturation, range: 0.0...3.0, step: 0.05,
                                  display: String(format: "%.1f", saturation))
@@ -2027,15 +1411,15 @@ struct ImagePreviewView: View {
                 resultSlider("Stretch", value: $stretchValue, range: 0.0...1.0, step: 0.01,
                              display: "\(Int(stretchValue * 100))%")
                     .help("STF auto-stretch target background level.\n0% = linear (no stretch), 25% = default, higher = brighter.")
+                resultSlider("Dark", value: $darkLevel, range: 0.0...1.0, step: 0.01,
+                             display: String(format: "%.2f", darkLevel))
+                    .help("Dark level / shadows clip.\nRaises the black point to clip faint background.")
                 resultSlider("Sharp", value: $sharpening, range: -4.0...4.0, step: 0.1,
                              display: String(format: "%+.1f", sharpening))
                     .help("Unsharp mask sharpening.\nNegative = blur, 0 = off, positive = sharpen.")
                 resultSlider("Contrast", value: $contrast, range: -2.0...2.0, step: 0.05,
                              display: String(format: "%+.1f", contrast))
                     .help("Contrast adjustment around midpoint.\nNegative = flatten, 0 = off, positive = increase.")
-                resultSlider("Dark", value: $darkLevel, range: 0.0...1.0, step: 0.01,
-                             display: String(format: "%.2f", darkLevel))
-                    .help("Dark level / shadows clip.\nRaises the black point to clip faint background.")
                 if channelCount > 1 {
                     resultSlider("Color", value: $saturation, range: 0.0...3.0, step: 0.05,
                                  display: String(format: "%.1f", saturation))

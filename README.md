@@ -175,12 +175,28 @@ AstroBlinkV2 is the first astrophotography tool to use **orientation consensus a
 
 ---
 
+## What's New in v4.4.0
+
+### Color Combine — Mono filters to RGB
+- **Auto-detect filters** — recognizes Ha, OIII, SII, L, R, G, B with broad alias matching (H, O, S, O3, S2, etc.)
+- **Palette presets** — SHO, HOO, HSO, LRGB, HaRGB, Custom — auto-selected based on available filters
+- **Per-channel weights** — adjust R/G/B balance with on-release recombine (<100ms)
+- **Luminance blending** — optional L channel injection for LRGB with adjustable blend
+- **Full post-processing** — stretch, dark, sharp, contrast, color, denoise, deconvolution
+
+### LightspeedStacker improvements
+- **Min/max pixel rejection** — automatically removes satellite trails and hot pixels (always active when ≥3 frames)
+- **Lanczos-3 interpolation** — optional sharper kernel for large dithers (bilinear/Lanczos picker)
+- **Adaptive alignment retry** — wider triangle set + looser threshold on failure, dramatically fewer alignment failures
+- **V1 NormalStacker removed** — LightspeedStacker is now the sole stacking engine
+
+---
+
 ## What's New in v3.4.0
 
 ### LightspeedStacker — GPU stacking
 - **GPU warp+accumulate** — 10-20x faster than CPU stacking
 - **Hash-based triangle matching** — O(1) star matching with full centroid refinement
-- **Two stackers** — LightspeedStacker (~15s) and NormalStacker (~102s) for 16 frames
 - **GPU restretch** — result window sliders respond in <16ms via Metal compute
 - **Benchmark Stats** — see loading phase timings and memory usage
 

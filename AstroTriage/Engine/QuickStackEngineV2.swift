@@ -1,4 +1,4 @@
-// v3.3.0 — Quick Stack V2: Optimized stacking pipeline
+// v4.4.0 — Quick Stack V2: Optimized stacking pipeline
 // Key improvements over V1:
 // 1. GPU warp+accumulate via Metal compute kernel (10-20x faster than CPU)
 // 2. Parallel star detection across all frames (TaskGroup)
@@ -6,6 +6,9 @@
 // 4. Reduced star/triangle count for preview-quality matching
 // 5. vDSP vectorized normalization
 // 6. Mini preview updates every 3rd frame (not every frame)
+// 7. Min/max pixel rejection — removes satellite trails and hot pixels
+// 8. Lanczos-3 interpolation option — sharper on large dithers
+// 9. Adaptive triangle matching with retry for wide dither patterns
 
 import Foundation
 import Metal
@@ -26,6 +29,11 @@ class QuickStackEngineV2: ObservableObject {
         case failed = "Failed"
     }
 
+    enum InterpolationMode: String, CaseIterable {
+        case bilinear = "Bilinear"
+        case lanczos = "Lanczos-3"
+    }
+
     @Published var phase: Phase = .idle
     @Published var progress: Double = 0
     @Published var currentLayer: Int = 0
@@ -43,20 +51,22 @@ class QuickStackEngineV2: ObservableObject {
     var resultFloatData: [Float]?
     var resultChannelCount: Int = 1
     var stackedEntries: [ImageEntry] = []
+    var interpolationMode: InterpolationMode = .bilinear
 
     let device: MTLDevice
     private let commandQueue: MTLCommandQueue
     private let bin2xPipeline: MTLComputePipelineState?
     private let warpPipeline: MTLComputePipelineState?
+    private let warpLanczosPipeline: MTLComputePipelineState?
     private let debayerPipeline: MTLComputePipelineState?
     private let cosmeticPipeline: MTLComputePipelineState?
     private var stackTask: Task<Void, Never>?
 
     // V2 tuning: 80 detected stars for robust field coverage and LS refinement.
-    // 15 triangle stars → C(15,3) = 455 triangles (fast).
+    // 20 triangle stars → C(20,3) = 1140 triangles (still fast, better coverage for wide dithers).
     // More detected stars means more inlier candidates → better refinement accuracy.
     private let maxStars = 80
-    private let triangleStarLimit = 15
+    private let triangleStarLimit = 20
     private let inlierCheckLimit = 50      // Cap for O(N²) inlier counting during matching
     private let subsampleFactor = 2         // Half-res detection (was 4) — 4× finer star positions
     private let sigmaThreshold: Float = 5.0
@@ -69,6 +79,7 @@ class QuickStackEngineV2: ObservableObject {
         guard let library = device.makeDefaultLibrary() else {
             self.bin2xPipeline = nil
             self.warpPipeline = nil
+            self.warpLanczosPipeline = nil
             self.cosmeticPipeline = nil
             return nil
         }
@@ -86,6 +97,13 @@ class QuickStackEngineV2: ObservableObject {
             self.warpPipeline = pipe
         } else {
             self.warpPipeline = nil
+        }
+
+        if let lanczosFunc = library.makeFunction(name: "warp_accumulate_lanczos"),
+           let pipe = try? device.makeComputePipelineState(function: lanczosFunc) {
+            self.warpLanczosPipeline = pipe
+        } else {
+            self.warpLanczosPipeline = nil
         }
 
         if let debayerFunc = library.makeFunction(name: "debayer_bilinear"),
@@ -331,9 +349,14 @@ class QuickStackEngineV2: ObservableObject {
         phase = .matching
         progress = 0.35
 
-        let refTriangles = buildTriangles(from: refStars)
+        let refTriangles = buildTriangles(from: refStars, limit: triangleStarLimit)
         // Build hash index from reference triangles
         let refIndex = buildTriangleIndex(from: refTriangles)
+
+        // Also build wider triangle sets for retry on alignment failure (M81 fix)
+        let retryLimit = 25
+        let retryRefTriangles = buildTriangles(from: refStars, limit: retryLimit)
+        let retryRefIndex = buildTriangleIndex(from: retryRefTriangles)
 
         var transforms: [AffineTransform2D?] = [AffineTransform2D.identity] // Reference = identity
 
@@ -345,15 +368,26 @@ class QuickStackEngineV2: ObservableObject {
                 continue
             }
 
-            let frameTriangles = buildTriangles(from: frameStars)
+            let frameTriangles = buildTriangles(from: frameStars, limit: triangleStarLimit)
             // Use hash-based matching instead of brute force
             if let transform = matchTrianglesHashed(
                 refIndex: refIndex, refTriangles: refTriangles, refStars: refStars,
-                frameTriangles: frameTriangles, frameStars: frameStars
+                frameTriangles: frameTriangles, frameStars: frameStars,
+                inlierThreshold: 10.0
             ) {
                 transforms.append(transform)
             } else {
-                transforms.append(nil)
+                // Retry with wider triangle set and looser threshold for large dither patterns
+                let retryFrameTriangles = buildTriangles(from: frameStars, limit: retryLimit)
+                if let transform = matchTrianglesHashed(
+                    refIndex: retryRefIndex, refTriangles: retryRefTriangles, refStars: refStars,
+                    frameTriangles: retryFrameTriangles, frameStars: frameStars,
+                    inlierThreshold: 15.0
+                ) {
+                    transforms.append(transform)
+                } else {
+                    transforms.append(nil)
+                }
             }
         }
 
@@ -379,20 +413,24 @@ class QuickStackEngineV2: ObservableObject {
         let pixelCount = refWidth * refHeight
         let totalFloats = pixelCount * channelCount
 
-        // Create GPU buffers for accumulator and weights
+        // Create GPU buffers for accumulator, weights, and min/max rejection
         let accByteCount = totalFloats * MemoryLayout<Float>.size
         let wgtByteCount = pixelCount * MemoryLayout<Float>.size
+        let minMaxByteCount = totalFloats * MemoryLayout<Float>.size
 
         guard let accBuffer = device.makeBuffer(length: accByteCount, options: .storageModeShared),
-              let wgtBuffer = device.makeBuffer(length: wgtByteCount, options: .storageModeShared) else {
+              let wgtBuffer = device.makeBuffer(length: wgtByteCount, options: .storageModeShared),
+              let minBuffer = device.makeBuffer(length: minMaxByteCount, options: .storageModeShared),
+              let maxBuffer = device.makeBuffer(length: minMaxByteCount, options: .storageModeShared) else {
             errorMessage = "Failed to allocate GPU buffers"
             phase = .failed
             return
         }
 
-        // Zero-fill accumulator and weights
+        // Zero-fill accumulator and weights; init min to FLT_MAX, max to -FLT_MAX
         memset(accBuffer.contents(), 0, accByteCount)
         memset(wgtBuffer.contents(), 0, wgtByteCount)
+        // Min/max initialization happens in shader on first write (when weight==0)
 
         for (i, frame) in frames.enumerated() {
             guard !Task.isCancelled else { phase = .idle; return }
@@ -403,8 +441,9 @@ class QuickStackEngineV2: ObservableObject {
             currentLayer += 1
             progress = 0.5 + Double(currentLayer) / Double(alignedCount) * 0.4
 
-            // GPU warp: dispatch Metal compute kernel
-            if let warpPipeline = warpPipeline {
+            // GPU warp: dispatch Metal compute kernel (bilinear or Lanczos-3)
+            let activePipeline = interpolationMode == .lanczos ? (warpLanczosPipeline ?? warpPipeline) : warpPipeline
+            if let activePipeline = activePipeline {
                 let inv = xform.inverse ?? .identity
 
                 guard let cmdBuf = commandQueue.makeCommandBuffer(),
@@ -414,7 +453,7 @@ class QuickStackEngineV2: ObservableObject {
                 var params = (inv.a, inv.b, inv.tx, inv.c, inv.d, inv.ty)
                 var w = Int32(refWidth), h = Int32(refHeight), cc = Int32(channelCount)
 
-                encoder.setComputePipelineState(warpPipeline)
+                encoder.setComputePipelineState(activePipeline)
                 encoder.setBuffer(frame.decoded.buffer, offset: 0, index: 0)
                 encoder.setBuffer(accBuffer, offset: 0, index: 1)
                 encoder.setBuffer(wgtBuffer, offset: 0, index: 2)
@@ -422,6 +461,8 @@ class QuickStackEngineV2: ObservableObject {
                 encoder.setBytes(&w, length: 4, index: 4)
                 encoder.setBytes(&h, length: 4, index: 5)
                 encoder.setBytes(&cc, length: 4, index: 6)
+                encoder.setBuffer(minBuffer, offset: 0, index: 7)
+                encoder.setBuffer(maxBuffer, offset: 0, index: 8)
 
                 let tg = MTLSize(width: 32, height: 32, depth: 1)
                 let grid = MTLSize(width: (refWidth + 31) / 32, height: (refHeight + 31) / 32, depth: 1)
@@ -430,15 +471,20 @@ class QuickStackEngineV2: ObservableObject {
                 cmdBuf.commit()
                 cmdBuf.waitUntilCompleted()
             } else {
-                // Fallback: CPU warp (same as V1)
-                var accPtr = accBuffer.contents().bindMemory(to: Float.self, capacity: totalFloats)
-                var wgtPtr = wgtBuffer.contents().bindMemory(to: Float.self, capacity: pixelCount)
-                var accArray = Array(UnsafeBufferPointer(start: accPtr, count: totalFloats))
-                var wgtArray = Array(UnsafeBufferPointer(start: wgtPtr, count: pixelCount))
+                // Fallback: CPU warp with min/max tracking
+                let accPtrCPU = accBuffer.contents().bindMemory(to: Float.self, capacity: totalFloats)
+                let wgtPtrCPU = wgtBuffer.contents().bindMemory(to: Float.self, capacity: pixelCount)
+                let minPtrCPU = minBuffer.contents().bindMemory(to: Float.self, capacity: totalFloats)
+                let maxPtrCPU = maxBuffer.contents().bindMemory(to: Float.self, capacity: totalFloats)
+                var accArray = Array(UnsafeBufferPointer(start: accPtrCPU, count: totalFloats))
+                var wgtArray = Array(UnsafeBufferPointer(start: wgtPtrCPU, count: pixelCount))
+                var minArray = Array(UnsafeBufferPointer(start: minPtrCPU, count: totalFloats))
+                var maxArray = Array(UnsafeBufferPointer(start: maxPtrCPU, count: totalFloats))
 
                 warpAndAccumulateCPU(
                     source: frame.decoded, transform: xform,
                     into: &accArray, weights: &wgtArray,
+                    minValues: &minArray, maxValues: &maxArray,
                     width: refWidth, height: refHeight, channelCount: channelCount
                 )
 
@@ -447,6 +493,12 @@ class QuickStackEngineV2: ObservableObject {
                 }
                 wgtArray.withUnsafeBufferPointer { src in
                     memcpy(wgtBuffer.contents(), src.baseAddress!, wgtByteCount)
+                }
+                minArray.withUnsafeBufferPointer { src in
+                    memcpy(minBuffer.contents(), src.baseAddress!, minMaxByteCount)
+                }
+                maxArray.withUnsafeBufferPointer { src in
+                    memcpy(maxBuffer.contents(), src.baseAddress!, minMaxByteCount)
                 }
             }
 
@@ -471,19 +523,42 @@ class QuickStackEngineV2: ObservableObject {
 
         let accPtr = accBuffer.contents().bindMemory(to: Float.self, capacity: totalFloats)
         let wgtPtr = wgtBuffer.contents().bindMemory(to: Float.self, capacity: pixelCount)
+        let minPtr = minBuffer.contents().bindMemory(to: Float.self, capacity: totalFloats)
+        let maxPtr = maxBuffer.contents().bindMemory(to: Float.self, capacity: totalFloats)
         var accumulator = Array(UnsafeBufferPointer(start: accPtr, count: totalFloats))
         let weightMap = Array(UnsafeBufferPointer(start: wgtPtr, count: pixelCount))
+        let minValues = Array(UnsafeBufferPointer(start: minPtr, count: totalFloats))
+        let maxValues = Array(UnsafeBufferPointer(start: maxPtr, count: totalFloats))
 
-        // Vectorized normalization: accumulator[ch*planeSize + px] /= max(weight[px], 1.0)
+        // Min/max rejection: subtract per-pixel min and max from sum, reduce weight by 2.
+        // Only applies when pixel has >= 3 contributions (otherwise simple mean).
+        // Removes single-frame outliers: satellite trails (1 bright frame) and hot pixels.
+        for ch in 0..<channelCount {
+            let chOff = ch * pixelCount
+            for px in 0..<pixelCount {
+                let w = weightMap[px]
+                if w >= 3.0 {
+                    accumulator[chOff + px] -= minValues[chOff + px] + maxValues[chOff + px]
+                }
+            }
+        }
+
+        // Build effective weight map: reduce by 2 where rejection was applied
+        var effectiveWeights = weightMap
+        for px in 0..<pixelCount {
+            if effectiveWeights[px] >= 3.0 {
+                effectiveWeights[px] -= 2.0
+            }
+        }
+
         // Clamp weights to minimum 1.0 to avoid division by zero
-        var safeWeights = weightMap
         var one: Float = 1.0
-        vDSP_vthr(safeWeights, 1, &one, &safeWeights, 1, vDSP_Length(pixelCount))
+        vDSP_vthr(effectiveWeights, 1, &one, &effectiveWeights, 1, vDSP_Length(pixelCount))
 
         for ch in 0..<channelCount {
             let offset = ch * pixelCount
             accumulator.withUnsafeMutableBufferPointer { accBuf in
-                safeWeights.withUnsafeBufferPointer { wgtBuf in
+                effectiveWeights.withUnsafeBufferPointer { wgtBuf in
                     vDSP_vdiv(
                         wgtBuf.baseAddress!, 1,
                         accBuf.baseAddress! + offset, 1,
@@ -578,8 +653,8 @@ class QuickStackEngineV2: ObservableObject {
         }
     }
 
-    private nonisolated func buildTriangles(from stars: [Star]) -> [Triangle] {
-        let n = min(stars.count, triangleStarLimit)
+    private nonisolated func buildTriangles(from stars: [Star], limit: Int? = nil) -> [Triangle] {
+        let n = min(stars.count, limit ?? triangleStarLimit)
         var triangles: [Triangle] = []
 
         for i in 0..<n {
@@ -636,7 +711,8 @@ class QuickStackEngineV2: ObservableObject {
     // After finding the best 3-point transform, refines it using least-squares on all inliers
     private nonisolated func matchTrianglesHashed(
         refIndex: [TriangleKey: [Int]], refTriangles: [Triangle], refStars: [Star],
-        frameTriangles: [Triangle], frameStars: [Star]
+        frameTriangles: [Triangle], frameStars: [Star],
+        inlierThreshold: Float = 10.0
     ) -> AffineTransform2D? {
         var bestInliers = 0
         var bestTransform: AffineTransform2D?
@@ -674,7 +750,7 @@ class QuickStackEngineV2: ObservableObject {
                         let inliers = countInliers(
                             transform: transform,
                             refStars: refStars, frameStars: frameStars,
-                            threshold: 10.0,
+                            threshold: inlierThreshold,
                             limit: inlierCheckLimit
                         )
 
@@ -871,6 +947,8 @@ class QuickStackEngineV2: ObservableObject {
         transform: AffineTransform2D,
         into accumulator: inout [Float],
         weights: inout [Float],
+        minValues: inout [Float],
+        maxValues: inout [Float],
         width: Int, height: Int, channelCount: Int
     ) {
         let srcPtr = source.buffer.contents().bindMemory(to: UInt16.self, capacity: source.pixelCount)
@@ -892,6 +970,7 @@ class QuickStackEngineV2: ObservableObject {
                 let w11 = fx * fy
 
                 let dstIdx = y * width + x
+                let isFirst = weights[dstIdx] == 0.0
 
                 for ch in 0..<channelCount {
                     let chOff = ch * planeSize
@@ -901,7 +980,17 @@ class QuickStackEngineV2: ObservableObject {
                     let v11 = Float(srcPtr[chOff + (iy + 1) * width + ix + 1])
 
                     let interpolated = v00 * w00 + v10 * w10 + v01 * w01 + v11 * w11
-                    accumulator[ch * planeSize + dstIdx] += interpolated
+                    let accIdx = ch * planeSize + dstIdx
+                    accumulator[accIdx] += interpolated
+
+                    // Track min/max for outlier rejection
+                    if isFirst {
+                        minValues[accIdx] = interpolated
+                        maxValues[accIdx] = interpolated
+                    } else {
+                        minValues[accIdx] = min(minValues[accIdx], interpolated)
+                        maxValues[accIdx] = max(maxValues[accIdx], interpolated)
+                    }
                 }
                 weights[dstIdx] += 1.0
             }

@@ -141,11 +141,13 @@ class TriageViewModel: ObservableObject {
     @Published var showSessionOverview: Bool = false
 
     // Quick Stack: triangle-match alignment + mean combine for visual impression
-    @Published var showQuickStack: Bool = false
-    var quickStackEngine: QuickStackEngine?
+    // V1 stacker removed in v4.4.0 — V2 (LightspeedStacker) is the only stacking engine
     // Quick Stack V2: optimized pipeline with GPU warp, hash-based matching, parallel star detection
     @Published var showQuickStackV2: Bool = false
     var quickStackEngineV2: QuickStackEngineV2?
+    // Color Combine: mono filter stacks → RGB color image
+    @Published var showColorCombine: Bool = false
+    var colorCombineEngine: ColorCombineEngine?
     // Selected row indices from the file list (for multi-select operations like stacking)
     var selectedTableIndices: IndexSet = IndexSet()
 
@@ -1828,63 +1830,7 @@ class TriageViewModel: ObservableObject {
 
     // Start quick stack with the currently selected images from the file list.
     // Validates that all selected images target the same object (by name or RA/DEC proximity).
-    func startQuickStack() {
-        let indices = selectedTableIndices
-
-        if indices.count < 3 {
-            let alert = NSAlert()
-            alert.alertStyle = .informational
-            alert.addButton(withTitle: "Got it")
-            if indices.isEmpty {
-                alert.messageText = "No Images Selected"
-                alert.informativeText = "Select 3 or more images in the file list first, then hit NormalStacker.\n\nTip: Use Cmd+A to select all, or Shift+Click for a range."
-            } else {
-                alert.messageText = "Not Enough Images"
-                alert.informativeText = "NormalStacker needs at least 3 images to align and stack. You selected \(indices.count).\n\nSelect more images and try again."
-            }
-            alert.runModal()
-            return
-        }
-
-        let visible = visibleImages
-        let entries = indices.compactMap { idx -> ImageEntry? in
-            guard idx >= 0 && idx < visible.count else { return nil }
-            return visible[idx]
-        }
-
-        guard entries.count >= 3 else { return }
-
-        // Safety check: all images must target the same object (prevents accidental mixed stacking)
-        if let mismatch = validateSameTarget(entries) {
-            statusMessage = mismatch
-            // Show alert dialog so the user can't miss the warning
-            let alert = NSAlert()
-            alert.messageText = "Cannot NormalStacker"
-            alert.informativeText = mismatch
-            alert.alertStyle = .warning
-            alert.addButton(withTitle: "OK")
-            alert.runModal()
-            return
-        }
-
-        // Create engine if needed
-        if quickStackEngine == nil, let device = device {
-            quickStackEngine = QuickStackEngine(device: device)
-        }
-
-        guard let engine = quickStackEngine else { return }
-
-        showQuickStack = true
-        benchmarkStats.markQuickStackStart(
-            frameCount: entries.count,
-            engine: "normal",
-            imageWidth: entries.first?.width ?? 0,
-            imageHeight: entries.first?.height ?? 0
-        )
-        engine.startStack(entries: entries, debayerEnabled: debayerEnabled)
-    }
-
-    // Quick Stack V2: GPU warp, hash-based matching, parallel star detection
+    // Quick Stack V2 (LightspeedStacker): GPU warp, hash-based matching, parallel star detection
     func startQuickStackV2() {
         let indices = selectedTableIndices
 
@@ -1938,6 +1884,41 @@ class TriageViewModel: ObservableObject {
             imageHeight: entries.first?.height ?? 0
         )
         engine.startStack(entries: entries, debayerEnabled: debayerEnabled)
+    }
+
+    // Color Combine: groups all visible images by filter, stacks each group, combines to RGB
+    func startColorCombine() {
+        let entries = visibleImages
+        guard !entries.isEmpty else {
+            let alert = NSAlert()
+            alert.messageText = "No Images"
+            alert.informativeText = "Open a session first, then use Color Combine."
+            alert.alertStyle = .informational
+            alert.addButton(withTitle: "Got it")
+            alert.runModal()
+            return
+        }
+
+        // Create engine
+        guard let device = device else { return }
+        let engine = ColorCombineEngine(device: device)
+        guard let engine = engine else { return }
+
+        engine.scanFilters(entries: entries)
+
+        // Validate: need at least 2 filters with >= 3 frames
+        guard engine.availableFilters.count >= 2 else {
+            let alert = NSAlert()
+            alert.messageText = "Not Enough Filters"
+            alert.informativeText = "Color Combine needs at least 2 different filters with 3+ frames each.\n\nDetected filters: \(engine.availableFilters.map { "\($0.display)(\($0.count))" }.joined(separator: ", "))"
+            alert.alertStyle = .informational
+            alert.addButton(withTitle: "Got it")
+            alert.runModal()
+            return
+        }
+
+        colorCombineEngine = engine
+        showColorCombine = true
     }
 
     // Validate all entries target the same sky object. Returns error message if mismatch found, nil if OK.

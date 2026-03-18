@@ -200,6 +200,8 @@ kernel void warp_accumulate(
     constant int& width [[buffer(4)]],
     constant int& height [[buffer(5)]],
     constant int& channelCount [[buffer(6)]],
+    device float* minValues [[buffer(7)]],
+    device float* maxValues [[buffer(8)]],
     uint2 gid [[thread_position_in_grid]])
 {
     if ((int)gid.x >= width || (int)gid.y >= height) return;
@@ -233,7 +235,104 @@ kernel void warp_accumulate(
                 + float(source[chOff + iy * w + ix + 1])   * w10
                 + float(source[chOff + (iy + 1) * w + ix]) * w01
                 + float(source[chOff + (iy + 1) * w + ix + 1]) * w11;
-        accumulator[ch * planeSize + dstIdx] += v;
+
+        int accIdx = ch * planeSize + dstIdx;
+        accumulator[accIdx] += v;
+
+        // Track per-pixel per-channel min/max for outlier rejection
+        if (weights[dstIdx] == 0.0) {
+            // First contribution: initialize min/max
+            minValues[accIdx] = v;
+            maxValues[accIdx] = v;
+        } else {
+            minValues[accIdx] = min(minValues[accIdx], v);
+            maxValues[accIdx] = max(maxValues[accIdx], v);
+        }
+    }
+
+    weights[dstIdx] += 1.0;
+}
+
+// ==========================================================================
+// Lanczos-3 warp + accumulate with min/max rejection
+// 6x6 kernel (36 samples) for sharper interpolation on large dithers.
+// sinc(x) * sinc(x/3) windowed interpolation, 3px margin bounds check.
+// ==========================================================================
+
+inline float sinc_pi(float x) {
+    if (abs(x) < 1e-6) return 1.0;
+    float px = M_PI_F * x;
+    return sin(px) / px;
+}
+
+inline float lanczos3(float x) {
+    if (abs(x) >= 3.0) return 0.0;
+    return sinc_pi(x) * sinc_pi(x / 3.0);
+}
+
+kernel void warp_accumulate_lanczos(
+    device const uint16_t* source [[buffer(0)]],
+    device float* accumulator [[buffer(1)]],
+    device float* weights [[buffer(2)]],
+    constant AffineParams& invTransform [[buffer(3)]],
+    constant int& width [[buffer(4)]],
+    constant int& height [[buffer(5)]],
+    constant int& channelCount [[buffer(6)]],
+    device float* minValues [[buffer(7)]],
+    device float* maxValues [[buffer(8)]],
+    uint2 gid [[thread_position_in_grid]])
+{
+    if ((int)gid.x >= width || (int)gid.y >= height) return;
+
+    int w = width;
+    int h = height;
+    int planeSize = w * h;
+
+    // Backward map: destination → source coordinate
+    float sx = invTransform.a * float(gid.x) + invTransform.b * float(gid.y) + invTransform.tx;
+    float sy = invTransform.c * float(gid.x) + invTransform.d * float(gid.y) + invTransform.ty;
+
+    // 3px margin for Lanczos-3 kernel radius
+    if (sx < 2.0 || sx >= float(w - 3) || sy < 2.0 || sy >= float(h - 3)) return;
+
+    int cx = int(sx);
+    int cy = int(sy);
+    float fracX = sx - float(cx);
+    float fracY = sy - float(cy);
+
+    int dstIdx = int(gid.y) * w + int(gid.x);
+
+    for (int ch = 0; ch < channelCount; ch++) {
+        int chOff = ch * planeSize;
+        float sum = 0.0;
+        float wSum = 0.0;
+
+        // 6x6 Lanczos-3 kernel: sample from (cx-2) to (cx+3)
+        for (int ky = -2; ky <= 3; ky++) {
+            float wy = lanczos3(float(ky) - fracY);
+            int rowOff = chOff + (cy + ky) * w;
+            for (int kx = -2; kx <= 3; kx++) {
+                float wx = lanczos3(float(kx) - fracX);
+                float weight = wx * wy;
+                sum += float(source[rowOff + cx + kx]) * weight;
+                wSum += weight;
+            }
+        }
+
+        float v = (wSum > 0.0) ? (sum / wSum) : 0.0;
+        v = max(v, 0.0);  // Lanczos can ring slightly negative
+
+        int accIdx = ch * planeSize + dstIdx;
+        accumulator[accIdx] += v;
+
+        // Track per-pixel per-channel min/max for outlier rejection
+        if (weights[dstIdx] == 0.0) {
+            minValues[accIdx] = v;
+            maxValues[accIdx] = v;
+        } else {
+            minValues[accIdx] = min(minValues[accIdx], v);
+            maxValues[accIdx] = max(maxValues[accIdx], v);
+        }
     }
 
     weights[dstIdx] += 1.0;

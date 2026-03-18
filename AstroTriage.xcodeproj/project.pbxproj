@@ -27,6 +27,8 @@
 		3D029D52F10611A437BC2B5F /* NINAFilenameParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 958EAAFB0801AA6BF89E7E57 /* NINAFilenameParser.swift */; };
 		4E375B87AAA7578C60D7169E /* BenchmarkStatsWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A5DA4A13F92A7266A8F0998 /* BenchmarkStatsWindow.swift */; };
 		4E6737835242429BC0A1C652 /* ReleaseNotesWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = F523409C99088A95634ED4F9 /* ReleaseNotesWindow.swift */; };
+		4FD361F2A70A9911B8E51359 /* ColorCombineWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3E8644313598CB076771595 /* ColorCombineWindow.swift */; };
+		4FF1837BB573517518363D80 /* ColorCombineEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01FF98B4BC98399919553F34 /* ColorCombineEngine.swift */; };
 		56FFE42C0B6D9DB482139AC0 /* ThumbnailProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E84C4C954C1B6E8C561713D /* ThumbnailProvider.swift */; };
 		5BEA8CB806944696DA8FF49D /* ImageEntry.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5A5655E4FCDB14E3F9CECE3 /* ImageEntry.swift */; };
 		5E675BB37EE91BCC5AA74C71 /* MetadataExtractorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 19E7CEF533FCAE62802CFC77 /* MetadataExtractorTests.swift */; };
@@ -47,7 +49,6 @@
 		9D950EBF4E4EBC1A00430834 /* StarAnalyzerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C73F68266BEC1BE0872283EB /* StarAnalyzerTests.swift */; };
 		A5EE486F27D98657DB57A781 /* ImageDecoderBridge in Frameworks */ = {isa = PBXBuildFile; productRef = 8A263D3D8B89B08DB446B5AB /* ImageDecoderBridge */; };
 		A799E8B23AAF9BD60D73D16F /* QuickLookSTF.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD2457C0829FBD7832C880DF /* QuickLookSTF.swift */; };
-		AD63F381C61EC28A6F1B34E6 /* QuickStackEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1EDBF7B29404E9A127A41CC2 /* QuickStackEngine.swift */; };
 		B215D4883BE0323F252D110A /* QuickLookDecoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = CAB86491BE4F5019B5883E46 /* QuickLookDecoder.swift */; };
 		B2444CC3BD5AB4C5BC49A87E /* AppSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 571C5A1575E51796C6AEABB1 /* AppSettings.swift */; };
 		B54934C587552F12AB659721 /* PrefetchCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B4C4D1E3CA9608F6E41582A /* PrefetchCache.swift */; };
@@ -115,6 +116,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		01FF98B4BC98399919553F34 /* ColorCombineEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ColorCombineEngine.swift; sourceTree = "<group>"; };
 		0BFB130B08CCDD11AC1018A7 /* StarMetricsCalculator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StarMetricsCalculator.swift; sourceTree = "<group>"; };
 		0F4C747A549511B45DCACC15 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		107592623F603E84A4E408A9 /* GPUStarDetectionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GPUStarDetectionTests.swift; sourceTree = "<group>"; };
@@ -122,7 +124,6 @@
 		1A5DA4A13F92A7266A8F0998 /* BenchmarkStatsWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BenchmarkStatsWindow.swift; sourceTree = "<group>"; };
 		1B4C4D1E3CA9608F6E41582A /* PrefetchCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrefetchCache.swift; sourceTree = "<group>"; };
 		1C26D1D4C5DFA7795B28D750 /* AstroTriageTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AstroTriageTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		1EDBF7B29404E9A127A41CC2 /* QuickStackEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickStackEngine.swift; sourceTree = "<group>"; };
 		24F8E2016E26D881862A1E76 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		3E84C4C954C1B6E8C561713D /* ThumbnailProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThumbnailProvider.swift; sourceTree = "<group>"; };
 		40D54AA4B026ABD4997C7758 /* STFCalculator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = STFCalculator.swift; sourceTree = "<group>"; };
@@ -162,6 +163,7 @@
 		B8942CE397AE911C7346F9D1 /* TrailingAnalyzer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrailingAnalyzer.swift; sourceTree = "<group>"; };
 		C0EFA1508203190F9C1216AE /* PreviewGenerator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreviewGenerator.swift; sourceTree = "<group>"; };
 		C17E45E7EC559D0FCD362808 /* AstroTriageQuickLookPreview.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = AstroTriageQuickLookPreview.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		C3E8644313598CB076771595 /* ColorCombineWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ColorCombineWindow.swift; sourceTree = "<group>"; };
 		C5A5655E4FCDB14E3F9CECE3 /* ImageEntry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageEntry.swift; sourceTree = "<group>"; };
 		C73F68266BEC1BE0872283EB /* StarAnalyzerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StarAnalyzerTests.swift; sourceTree = "<group>"; };
 		CAB86491BE4F5019B5883E46 /* QuickLookDecoder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickLookDecoder.swift; sourceTree = "<group>"; };
@@ -290,12 +292,12 @@
 				6A3C4F920C008F3B9EEA4CED /* BenchmarkSharing.swift */,
 				7E3E8374566F596C93B1AE16 /* BenchmarkStats.swift */,
 				511D5503EE634473FF2EC433 /* CalibrationDatabase.swift */,
+				01FF98B4BC98399919553F34 /* ColorCombineEngine.swift */,
 				4EC5D8FEF949DAD6CA5217B2 /* ConvergenceDetector.swift */,
 				EAC4AFD3D3784B02004BA98D /* MetadataExtractor.swift */,
 				958EAAFB0801AA6BF89E7E57 /* NINAFilenameParser.swift */,
 				1B4C4D1E3CA9608F6E41582A /* PrefetchCache.swift */,
 				CC2B51C4B8F25806E968FDB4 /* QualityEstimator.swift */,
-				1EDBF7B29404E9A127A41CC2 /* QuickStackEngine.swift */,
 				F51EC131A3171F9475C7979F /* QuickStackEngineV2.swift */,
 				72BFE1A73BD5AD652BD34CB8 /* SessionCache.swift */,
 				B7D54DB9FE9BF17CD5203F2D /* SessionScanner.swift */,
@@ -343,6 +345,7 @@
 				85A0D5497E7EBF43F03546F6 /* BatchRenameWindow.swift */,
 				96AD4E25EE11AD6039128785 /* BenchmarkLeaderboardWindow.swift */,
 				1A5DA4A13F92A7266A8F0998 /* BenchmarkStatsWindow.swift */,
+				C3E8644313598CB076771595 /* ColorCombineWindow.swift */,
 				4F4E0BFE3D430285CFC280C9 /* CompareWindow.swift */,
 				24F8E2016E26D881862A1E76 /* ContentView.swift */,
 				B6D16C070C8599AC5C5A265B /* FileListView.swift */,
@@ -574,6 +577,8 @@
 				D1C96F46237D0B999DA95C52 /* BenchmarkStats.swift in Sources */,
 				4E375B87AAA7578C60D7169E /* BenchmarkStatsWindow.swift in Sources */,
 				9B91613EEB76EB27A7DCB3FC /* CalibrationDatabase.swift in Sources */,
+				4FF1837BB573517518363D80 /* ColorCombineEngine.swift in Sources */,
+				4FD361F2A70A9911B8E51359 /* ColorCombineWindow.swift in Sources */,
 				7E8C4EF0CF4108B17C2096A8 /* ColumnDefinition.swift in Sources */,
 				F5831BE6789DBE653994543B /* CompareWindow.swift in Sources */,
 				3AE8C59AED6435B5F41CA9AF /* ContentView.swift in Sources */,
@@ -591,7 +596,6 @@
 				B54934C587552F12AB659721 /* PrefetchCache.swift in Sources */,
 				BFD9D646DC78249F8654CC1D /* PreviewGenerator.swift in Sources */,
 				785DA5B582B5E5DD03CF89AE /* QualityEstimator.swift in Sources */,
-				AD63F381C61EC28A6F1B34E6 /* QuickStackEngine.swift in Sources */,
 				0169C332A6AE8044239328AB /* QuickStackEngineV2.swift in Sources */,
 				0E09D42DA6C26E06AADDEC40 /* QuickStackWindow.swift in Sources */,
 				4E6737835242429BC0A1C652 /* ReleaseNotesWindow.swift in Sources */,
@@ -647,7 +651,7 @@
 				CODE_SIGN_ENTITLEMENTS = QuickLookExtension/QuickLookExtension.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 26;
+				CURRENT_PROJECT_VERSION = 27;
 				DEVELOPMENT_TEAM = FDSVBU33S8;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -659,7 +663,7 @@
 					"@executable_path/../../../../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 13.3;
-				MARKETING_VERSION = 4.3.0;
+				MARKETING_VERSION = 4.4.0;
 				OTHER_LDFLAGS = (
 					"-lz",
 				);
@@ -678,7 +682,7 @@
 				CODE_SIGN_ENTITLEMENTS = QuickLookPreview/QuickLookPreview.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 26;
+				CURRENT_PROJECT_VERSION = 27;
 				DEVELOPMENT_TEAM = FDSVBU33S8;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -690,7 +694,7 @@
 					"@executable_path/../../../../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 13.3;
-				MARKETING_VERSION = 4.3.0;
+				MARKETING_VERSION = 4.4.0;
 				OTHER_LDFLAGS = (
 					"-lz",
 				);
@@ -709,7 +713,7 @@
 				CODE_SIGN_ENTITLEMENTS = QuickLookExtension/QuickLookExtension.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 26;
+				CURRENT_PROJECT_VERSION = 27;
 				DEVELOPMENT_TEAM = FDSVBU33S8;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -721,7 +725,7 @@
 					"@executable_path/../../../../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 13.3;
-				MARKETING_VERSION = 4.3.0;
+				MARKETING_VERSION = 4.4.0;
 				OTHER_LDFLAGS = (
 					"-lz",
 				);
@@ -740,7 +744,7 @@
 				CODE_SIGN_ENTITLEMENTS = AstroTriage/AstroTriage.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 26;
+				CURRENT_PROJECT_VERSION = 27;
 				DEVELOPMENT_TEAM = FDSVBU33S8;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -750,7 +754,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 4.3.0;
+				MARKETING_VERSION = 4.4.0;
 				METAL_COMPILER_FLAGS = "";
 				OTHER_LDFLAGS = (
 					"-lz",
@@ -873,7 +877,7 @@
 				CODE_SIGN_ENTITLEMENTS = AstroTriage/AstroTriage.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 26;
+				CURRENT_PROJECT_VERSION = 27;
 				DEVELOPMENT_TEAM = FDSVBU33S8;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -883,7 +887,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 4.3.0;
+				MARKETING_VERSION = 4.4.0;
 				METAL_COMPILER_FLAGS = "";
 				OTHER_LDFLAGS = (
 					"-lz",
@@ -961,7 +965,7 @@
 				CODE_SIGN_ENTITLEMENTS = QuickLookPreview/QuickLookPreview.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 26;
+				CURRENT_PROJECT_VERSION = 27;
 				DEVELOPMENT_TEAM = FDSVBU33S8;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -973,7 +977,7 @@
 					"@executable_path/../../../../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 13.3;
-				MARKETING_VERSION = 4.3.0;
+				MARKETING_VERSION = 4.4.0;
 				OTHER_LDFLAGS = (
 					"-lz",
 				);
