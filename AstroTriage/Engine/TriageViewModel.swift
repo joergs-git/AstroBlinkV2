@@ -357,6 +357,11 @@ class TriageViewModel: ObservableObject {
         self.device = MTLCreateSystemDefaultDevice()
         if let device = self.device {
             self.prefetchCache = PrefetchCache(device: device)
+            // When a priority-queued preview completes, refresh display if it matches current image
+            self.prefetchCache?.onPriorityPreviewReady = { [weak self] url in
+                guard let self = self, self.selectedImage?.url == url else { return }
+                self.displayCurrentImage()
+            }
         }
         // Clean up stale network cache directories (keep most recent 3)
         SessionCache.cleanupOldCaches()
@@ -2848,15 +2853,19 @@ class TriageViewModel: ObservableObject {
     func focusTableAfterDelay() {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
             guard let window = NSApp.keyWindow else { return }
-            func findTable(in view: NSView?) -> NSTableView? {
+            // Find the file list table specifically (not header inspector or other tables)
+            func findFileListTable(in view: NSView?) -> NSTableView? {
                 guard let view = view else { return nil }
-                if let tv = view as? NSTableView { return tv }
+                if let tv = view as? NSTableView,
+                   tv.identifier == NSUserInterfaceItemIdentifier("fileListTable") {
+                    return tv
+                }
                 for sub in view.subviews {
-                    if let found = findTable(in: sub) { return found }
+                    if let found = findFileListTable(in: sub) { return found }
                 }
                 return nil
             }
-            if let tableView = findTable(in: window.contentView) {
+            if let tableView = findFileListTable(in: window.contentView) {
                 window.makeFirstResponder(tableView)
             }
         }
@@ -2995,6 +3004,47 @@ class TriageViewModel: ObservableObject {
         }
 
         // Slow path: decode on demand (image not yet cached or settings don't match cache)
+        // During active caching, request priority decode for current neighborhood (±2 images).
+        // The priority queue uses .userInteractive QoS to get P-core scheduling priority.
+        // When the priority preview completes, onPriorityPreviewReady auto-refreshes the display.
+        if isCaching, cacheMatchesCurrentSettings {
+            let targetBg: Float? = abs(appliedStretch - STFCalculator.defaultTargetBackground) > 0.001
+                ? appliedStretch : nil
+            let lockedParams: [STFParams]? = appliedLocked ? renderer?.lockedSTFParams : nil
+            let ppParams: (sharpening: Float, contrast: Float, darkLevel: Float)?
+            if abs(appliedSharpening) > 0.001 || abs(appliedContrast) > 0.001 || appliedDarkLevel > 0.001 {
+                ppParams = (appliedSharpening, appliedContrast, appliedDarkLevel)
+            } else {
+                ppParams = nil
+            }
+            prefetchCache?.prioritizeCaching(
+                around: selectedIndex,
+                images: images,
+                debayerEnabled: debayerEnabled,
+                targetBackground: lockedParams != nil ? nil : targetBg,
+                lockedSTFParams: lockedParams,
+                postProcessParams: ppParams,
+                onNoiseStats: { [weak self] url, stats in
+                    guard let self = self else { return }
+                    if let idx = self.images.firstIndex(where: { $0.url == url }) {
+                        self.images[idx].noiseMedian = stats.median
+                        self.images[idx].noiseMAD = stats.normalizedMAD
+                    }
+                },
+                onStarMetrics: { [weak self] url, metrics in
+                    guard let self = self else { return }
+                    if let idx = self.images.firstIndex(where: { $0.url == url }) {
+                        if metrics.medianHFR > 0 { self.images[idx].computedHFR = metrics.medianHFR }
+                        if metrics.medianFWHM > 0 { self.images[idx].computedFWHM = metrics.medianFWHM }
+                        self.images[idx].computedStarCount = metrics.totalStarCount
+                        self.images[idx].computedEccentricity = metrics.medianEccentricity
+                        if !metrics.starDetails.isEmpty {
+                            self.images[idx].starDetails = metrics.starDetails
+                        }
+                    }
+                }
+            )
+        }
         statusMessage = "Loading \(image.filename)..."
         let targetURL = image.url
         let decodeURL = image.decodingURL

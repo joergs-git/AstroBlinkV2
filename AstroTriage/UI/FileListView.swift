@@ -168,17 +168,48 @@ struct FileListView: NSViewRepresentable {
             coordinator.updateMetricRanges()
             let newCountRefreshed = coordinator.displayedImages.count
 
-            // Preserve current multi-selection across reload — UNLESS force-single is set
             let forcesSingle = viewModel.needsForceSingleSelection
-            let savedSelection = forcesSingle ? IndexSet() : tableView.selectedRowIndexes
-            tableView.reloadData()
-            viewModel.needsTableRefresh = false
-            if forcesSingle { viewModel.needsForceSingleSelection = false }
 
-            // Restore saved selection if still valid (skipped when force-single clears it)
-            if !savedSelection.isEmpty && savedSelection.last! < newCountRefreshed {
-                tableView.selectRowIndexes(savedSelection, byExtendingSelection: false)
+            // When row count is unchanged (soft refresh for cache checkmarks, quality icons, etc.),
+            // only reload the currently visible rows to avoid scroll position disruption.
+            // Full reloadData() during rapid arrow-key navigation causes visible stutter because
+            // it destroys and rebuilds all cell views, resetting the scroll clip view.
+            if currentCount == newCountRefreshed && !forcesSingle && !nightModeChanged {
+                NSAnimationContext.beginGrouping()
+                NSAnimationContext.current.duration = 0
+                let visibleRange = tableView.rows(in: tableView.visibleRect)
+                if visibleRange.length > 0 {
+                    let visibleRows = IndexSet(integersIn: visibleRange.location..<(visibleRange.location + visibleRange.length))
+                    let allColumns = IndexSet(0..<tableView.numberOfColumns)
+                    tableView.reloadData(forRowIndexes: visibleRows, columnIndexes: allColumns)
+                    // Re-apply selection since reloadData clears it for reloaded rows
+                    let selection = tableView.selectedRowIndexes
+                    if !selection.isEmpty {
+                        tableView.selectRowIndexes(selection, byExtendingSelection: false)
+                    }
+                }
+                NSAnimationContext.endGrouping()
+            } else {
+                // Full reload needed: row count changed, force-single, or night mode toggle
+                let savedSelection = forcesSingle ? IndexSet() : tableView.selectedRowIndexes
+                let scrollView = tableView.enclosingScrollView
+                let savedScrollOrigin = scrollView?.contentView.bounds.origin
+                NSAnimationContext.beginGrouping()
+                NSAnimationContext.current.duration = 0
+                tableView.reloadData()
+                if forcesSingle { viewModel.needsForceSingleSelection = false }
+
+                if !savedSelection.isEmpty && savedSelection.last! < newCountRefreshed {
+                    tableView.selectRowIndexes(savedSelection, byExtendingSelection: false)
+                }
+                // Restore scroll position to prevent jump from full reload + re-select
+                if let origin = savedScrollOrigin {
+                    scrollView?.contentView.scroll(to: origin)
+                    scrollView?.reflectScrolledClipView(scrollView!.contentView)
+                }
+                NSAnimationContext.endGrouping()
             }
+            viewModel.needsTableRefresh = false
 
             // After first load, make file list the first responder for arrow key navigation
             if wasEmpty && newCount > 0 {
@@ -759,16 +790,33 @@ struct FileListView: NSViewRepresentable {
             guard let tableView = notification.object as? NSTableView else { return }
             let selectedRows = tableView.selectedRowIndexes
 
-            // Refresh rows that changed selection state so marked-row text color updates
-            // (white when selected, red when deselected)
+            // Update text color for rows that changed selection state.
+            // Only marked rows need color updates (white when selected, red when deselected).
+            // Use lightweight textColor update instead of reloadData to avoid stutter during
+            // rapid arrow key navigation (reloadData rebuilds entire cell views).
             let deselected = previousSelectedRows.subtracting(selectedRows)
             let newlySelected = selectedRows.subtracting(previousSelectedRows)
             let changed = deselected.union(newlySelected)
             if !changed.isEmpty {
-                let columns = IndexSet(0..<tableView.numberOfColumns)
-                tableView.reloadData(forRowIndexes: changed, columnIndexes: columns)
-                // Re-apply selection since reloadData clears it for those rows
-                tableView.selectRowIndexes(selectedRows, byExtendingSelection: false)
+                let isNight = viewModel.nightMode
+                for row in changed where row >= 0 && row < displayedImages.count {
+                    let entry = displayedImages[row]
+                    let isSelected = selectedRows.contains(row)
+                    // Update text color on all visible cells for this row
+                    for col in 0..<tableView.numberOfColumns {
+                        if let cellView = tableView.view(atColumn: col, row: row, makeIfNecessary: false) as? NSTableCellView {
+                            if isNight {
+                                cellView.textField?.textColor = entry.isMarkedForDeletion
+                                    ? NSColor(red: 0.5, green: 0, blue: 0, alpha: 1)
+                                    : NSColor.systemRed
+                            } else if entry.isMarkedForDeletion && isSelected {
+                                cellView.textField?.textColor = .white
+                            } else {
+                                cellView.textField?.textColor = entry.isMarkedForDeletion ? .systemRed : .labelColor
+                            }
+                        }
+                    }
+                }
             }
             previousSelectedRows = selectedRows
 

@@ -220,6 +220,9 @@ Uncompressed XISF: ~17ms decode (SSD limited). LZ4-compressed: ~100-300ms (CPU d
 
 ## Future TODOs — Stacking
 
+## Future TODOs — UI Polish
+- [ ] Smooth arrow-key scrolling: holding up/down should pin selection at visible edge while rows scroll past (like Finder). Current behavior still stutters — likely needs NSTableView subclass override of `moveDown:`/`moveUp:` to control scroll position directly instead of relying on `scrollRowToVisible`.
+
 ## Future TODOs — Batch Operations
 - [ ] Test batch rename with real FITS/XISF files (manual verification)
 - [ ] Batch undo integration with Cmd+Z (currently separate undoBatchRename method)

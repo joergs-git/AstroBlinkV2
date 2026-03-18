@@ -4,6 +4,19 @@ All notable changes to AstroBlinkV2 will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [4.5.0] — 2026-03-19
+
+### Added
+- **Priority Navigation Queue** — Dual-queue caching architecture for perceived-instant navigation during initial cache. When browsing to an uncached image, a high-priority queue (`.userInteractive` QoS) decodes the current image ±2 neighbors first, while background fill continues at lower priority. Auto-refreshes display when priority preview completes.
+- **Async GPU Preview Generation** — Final GPU pass (bin2x → STF → post-process → mipmaps) uses `addCompletedHandler` instead of `waitUntilCompleted()`, freeing worker threads ~2-3ms earlier per image for the next decode.
+
+### Changed
+- **Concurrency Increase** — Background queue uses up to 6 workers, priority queue adds 2 more, total max 8 concurrent decode operations on high-core-count machines (was 6 max).
+
+### Fixed
+- **File List Focus** — Opening a folder now correctly focuses the file list table for immediate keyboard navigation, instead of focusing the header inspector table.
+- **File List Scroll Stutter** — Reduced scroll disruption during caching: soft refreshes (cache checkmarks, quality icons) now reload only visible rows instead of full `reloadData()`. Selection change color updates use lightweight `textColor` property change instead of cell rebuilds.
+
 ## [4.4.0] — 2026-03-18
 
 ### Added

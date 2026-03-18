@@ -18,6 +18,15 @@ Nice side effect: Finally you have a native XISF and FITS Quicklook for macOS. (
 
 ---
 
+## What's New in v4.5.0
+
+### Caching Pipeline Optimization
+- **Priority navigation queue** — When browsing to an uncached image during initial caching, a high-priority queue immediately decodes the current image and ±2 neighbors. No more waiting for your current image to reach the front of the background queue.
+- **Async GPU completion** — Worker threads are freed instantly after dispatching GPU work instead of blocking on `waitUntilCompleted()`. More decode throughput with the same thread count.
+- **Faster file list** — Reduced scroll stutter during caching: visible-row-only reloads instead of full table rebuilds.
+
+---
+
 ## What's New in v4.3.0
 
 ### Self-Calibration & Intelligent Culling
@@ -299,10 +308,9 @@ After a night of imaging you might have 200-600 sub-exposures. Some have clouds,
 - Double-click to reset zoom to fit-to-view
 - Persistent settings — all sliders, toggles, and column layout remembered across sessions
 
-### Stacking — Two Modes
-- **LightspeedStacker** — GPU warp kernel, hash-based triangle matching, parallel star detection, full-res centroid refinement, two-pass least-squares alignment. ~15s for 16 frames with near-V1 accuracy.
-- **NormalStacker** — CPU warp, brute-force triangle matching, ~102s for 16 frames. Kept as reference/fallback.
-- Both: select 3+ images and stack with one click — no plate solving required
+### LightspeedStacker — GPU Stacking
+- **LightspeedStacker** — GPU warp kernel, hash-based triangle matching, parallel star detection, full-res centroid refinement, two-pass least-squares alignment. ~15s for 16 frames.
+- Select 3+ images and stack with one click — no plate solving required
 - Triangle pattern matching for scale-invariant star alignment
 - Affine transform alignment (rotation + translation + scale)
 - GPU bin2x pre-processing for ~4x faster stacking
@@ -545,14 +553,6 @@ LightspeedStacker is ~7x faster than NormalStacker (15s vs 102s for 16 frames) w
 
 5. **GPU restretch** — The result window sliders use a Metal compute kernel (`restretch_float`) for instant response (<16ms) instead of CPU processing.
 
-### When should I use NormalStacker instead?
-
-Both stackers now use the same detection parameters (50 stars, 455 triangles). NormalStacker may still be worth trying on:
-- **Extremely sparse star fields** — its exhaustive O(N²) matching checks every possible pairing
-- **Edge cases** where hash bucket quantization might miss an unusual triangle shape
-
-If LightspeedStacker fails to align some frames, try NormalStacker on the same selection.
-
 ### Why don't the computed HFR/FWHM values match what NINA reports?
 
 Different software measures HFR/FWHM differently. NINA measures during capture (often on a subframe), while AstroBlinkV2 measures post-capture on the full saved frame with its own star detection algorithm. The absolute numbers will differ, but the *relative ranking* (which frames are better/worse) should be very consistent. AstroBlinkV2's quality scoring always uses the same measurement method across all frames in a group to ensure fair comparison.
@@ -563,15 +563,13 @@ The quality scoring is designed for *triage* — quickly identifying the best an
 
 ### Is this scientific stacking?
 
-No. Both stackers are designed for **visual preview only** — a quick "what does my data look like stacked?" without leaving the triage app. They are not a replacement for dedicated stacking software like PixInsight, Siril, or APP. Specifically:
+No. LightspeedStacker is designed for **visual preview only** — a quick "what does my data look like stacked?" without leaving the triage app. It is not a replacement for dedicated stacking software like PixInsight, Siril, or APP. Specifically:
 
 - **No astrometric calibration** — alignment uses triangle pattern matching, not plate solving with a star catalog
-- **No sub-pixel interpolation** — warping uses bilinear interpolation, not Lanczos or drizzle
-- **No outlier rejection** — hot pixels, satellite trails, airplanes, and cosmic rays are not removed
 - **No calibration frames** — no dark, flat, or bias subtraction
-- **Mean combine only** — no sigma clipping, winsorized sigma, or other robust rejection methods
+- **Min/max rejection only** — removes single-frame outliers (satellite trails, hot pixels) but no sigma clipping or advanced rejection
 
-The stacked result is meant to give you a quick visual impression of your session's potential — not a final image.
+LightspeedStacker does support optional Lanczos-3 interpolation and min/max pixel rejection (v4.4.0+). The stacked result is meant to give you a quick visual impression of your session's potential — not a final image.
 
 ---
 

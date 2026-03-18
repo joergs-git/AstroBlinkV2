@@ -191,3 +191,15 @@
 - **Root cause:** Metal NDC coordinates map to the drawable (which may or may not be Retina-scaled). The overlay NSView works in view points. The ratio between drawable pixels and view points determines the correction factor.
 - **Rule:** Use `drawableRatio = drawableW / viewW` for the scale correction, not hardcoded backingScaleFactor. Also apply bs/drawableRatio to pan offset for consistent tracking.
 - **Applies to:** CompareWindow.swift StarOverlayView.draw(), any NSView overlay on MTKView
+
+## [2026-03-18] — NSWindow EXC_BAD_ACCESS on close without isReleasedWhenClosed
+- **Mistake:** Created NSWindow for Color Combine result without `window.isReleasedWhenClosed = false`. Crashed with `objc_release` in `_NSWindowTransformAnimation dealloc` when closing.
+- **Root cause:** NSWindow created as a local variable has no strong reference. ARC deallocates it, but the close animation still holds a dangling reference.
+- **Rule:** Always set `window.isReleasedWhenClosed = false` on programmatically created NSWindows. Follow the LightspeedStacker result window pattern.
+- **Applies to:** Any NSWindow created in a function scope (ColorCombineWindow, QuickStackWindow)
+
+## [2026-03-18] — SwiftUI Slider trailing closure vs onEditingChanged
+- **Mistake:** Used `Slider(value:in:step:) { editing in ... }` thinking the trailing closure was `onEditingChanged`. It was interpreted as the `label` closure, so the callback never fired.
+- **Root cause:** `Slider` has multiple initializers. The trailing closure maps to `label:` not `onEditingChanged:`.
+- **Rule:** Always use the explicit named parameter: `Slider(value:in:step:onEditingChanged: { editing in ... })`. Never rely on trailing closure disambiguation for Slider.
+- **Applies to:** SwiftUI Slider with onEditingChanged callback

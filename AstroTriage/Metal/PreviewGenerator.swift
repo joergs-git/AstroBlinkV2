@@ -288,6 +288,174 @@ class PreviewGenerator {
         )
     }
 
+    // Async version: dispatches final GPU command buffer and calls completion on Metal callback thread.
+    // Frees the calling worker thread immediately instead of blocking on waitUntilCompleted().
+    func generatePreviewAsync(
+        from image: DecodedImage,
+        stfParams: [STFParams],
+        postProcessParams: (sharpening: Float, contrast: Float, darkLevel: Float)? = nil,
+        completion: @escaping (CachedPreview?) -> Void
+    ) {
+        let srcW = image.width
+        let srcH = image.height
+        let channels = image.channelCount
+        let binnedW = srcW / 2
+        let binnedH = srcH / 2
+
+        guard binnedW > 0, binnedH > 0 else { completion(nil); return }
+
+        let binnedBytes = binnedW * binnedH * channels * MemoryLayout<UInt16>.size
+        guard let binnedBuffer = device.makeBuffer(length: binnedBytes, options: .storageModeShared) else {
+            completion(nil); return
+        }
+
+        var params = stfParams
+        while params.count < 3 {
+            params.append(params.first ?? STFParams(c0: 0.0, mb: 0.5))
+        }
+
+        var floatData: [Float] = []
+        for p in params {
+            floatData.append(p.c0)
+            floatData.append(p.mb)
+        }
+
+        guard let stfBuffer = device.makeBuffer(
+            bytes: &floatData,
+            length: floatData.count * MemoryLayout<Float>.size,
+            options: .storageModeShared
+        ) else { completion(nil); return }
+
+        let texDesc = MTLTextureDescriptor.texture2DDescriptor(
+            pixelFormat: .bgra8Unorm,
+            width: binnedW,
+            height: binnedH,
+            mipmapped: true
+        )
+        texDesc.usage = [.shaderWrite, .shaderRead]
+        texDesc.storageMode = .private
+
+        guard let outTexture = device.makeTexture(descriptor: texDesc) else { completion(nil); return }
+        guard let commandBuffer = commandQueue.makeCommandBuffer() else { completion(nil); return }
+
+        // Pass 1: GPU bin2x
+        if let bin2xPipeline = bin2xPipeline {
+            guard let encoder = commandBuffer.makeComputeCommandEncoder() else { completion(nil); return }
+            encoder.setComputePipelineState(bin2xPipeline)
+            encoder.setBuffer(image.buffer, offset: 0, index: 0)
+            encoder.setBuffer(binnedBuffer, offset: 0, index: 1)
+            var sw = Int32(srcW)
+            var sh = Int32(srcH)
+            var cc = Int32(channels)
+            encoder.setBytes(&sw, length: 4, index: 2)
+            encoder.setBytes(&sh, length: 4, index: 3)
+            encoder.setBytes(&cc, length: 4, index: 4)
+
+            let tg = MTLSize(width: 32, height: 32, depth: 1)
+            let grid = MTLSize(
+                width: (binnedW + 31) / 32,
+                height: (binnedH + 31) / 32,
+                depth: 1
+            )
+            encoder.dispatchThreadgroups(grid, threadsPerThreadgroup: tg)
+            encoder.endEncoding()
+        }
+
+        // Pass 2: STF stretch → BGRA8 texture
+        do {
+            guard let encoder = commandBuffer.makeComputeCommandEncoder() else { completion(nil); return }
+            encoder.setComputePipelineState(computePipeline)
+            encoder.setBuffer(binnedBuffer, offset: 0, index: 0)
+
+            var width = Int32(binnedW)
+            var height = Int32(binnedH)
+            var channelCount = Int32(channels)
+            encoder.setBytes(&width, length: MemoryLayout<Int32>.size, index: 1)
+            encoder.setBytes(&height, length: MemoryLayout<Int32>.size, index: 2)
+            encoder.setBytes(&channelCount, length: MemoryLayout<Int32>.size, index: 3)
+            encoder.setBuffer(stfBuffer, offset: 0, index: 4)
+            encoder.setTexture(outTexture, index: 0)
+
+            let tg = MTLSize(width: 32, height: 32, depth: 1)
+            let grid = MTLSize(
+                width: (binnedW + 31) / 32,
+                height: (binnedH + 31) / 32,
+                depth: 1
+            )
+            encoder.dispatchThreadgroups(grid, threadsPerThreadgroup: tg)
+            encoder.endEncoding()
+        }
+
+        // Pass 3: Optional post-processing
+        let finalTexture: MTLTexture
+        if let pp = postProcessParams, let ppPipeline = postProcessPipeline,
+           (abs(pp.sharpening) > 0.001 || abs(pp.contrast) > 0.001 || pp.darkLevel > 0.001) {
+            let ppTexDesc = MTLTextureDescriptor.texture2DDescriptor(
+                pixelFormat: .bgra8Unorm,
+                width: binnedW,
+                height: binnedH,
+                mipmapped: true
+            )
+            ppTexDesc.usage = [.shaderWrite, .shaderRead]
+            ppTexDesc.storageMode = .private
+
+            guard let ppOutTexture = device.makeTexture(descriptor: ppTexDesc),
+                  let encoder = commandBuffer.makeComputeCommandEncoder() else {
+                // Fall back to STF-only with sync completion
+                commandBuffer.commit()
+                commandBuffer.addCompletedHandler { _ in
+                    completion(CachedPreview(texture: outTexture, stfParams: stfParams,
+                        originalWidth: image.width, originalHeight: image.height,
+                        channelCount: image.channelCount))
+                }
+                return
+            }
+
+            encoder.setComputePipelineState(ppPipeline)
+            encoder.setTexture(outTexture, index: 0)
+            encoder.setTexture(ppOutTexture, index: 1)
+
+            var ppData = (pp.sharpening, pp.contrast, pp.darkLevel)
+            encoder.setBytes(&ppData, length: MemoryLayout<(Float, Float, Float)>.size, index: 0)
+
+            let tg = MTLSize(width: 32, height: 32, depth: 1)
+            let grid = MTLSize(
+                width: (binnedW + 31) / 32,
+                height: (binnedH + 31) / 32,
+                depth: 1
+            )
+            encoder.dispatchThreadgroups(grid, threadsPerThreadgroup: tg)
+            encoder.endEncoding()
+
+            finalTexture = ppOutTexture
+        } else {
+            finalTexture = outTexture
+        }
+
+        // Generate mipmaps
+        if finalTexture.mipmapLevelCount > 1 {
+            if let blitEncoder = commandBuffer.makeBlitCommandEncoder() {
+                blitEncoder.generateMipmaps(for: finalTexture)
+                blitEncoder.endEncoding()
+            }
+        }
+
+        // Async completion — frees the worker thread immediately
+        let origWidth = image.width
+        let origHeight = image.height
+        let origChannels = image.channelCount
+        commandBuffer.addCompletedHandler { _ in
+            completion(CachedPreview(
+                texture: finalTexture,
+                stfParams: stfParams,
+                originalWidth: origWidth,
+                originalHeight: origHeight,
+                channelCount: origChannels
+            ))
+        }
+        commandBuffer.commit()
+    }
+
     // MARK: - GPU Star Detection
 
     // Maximum candidates the GPU kernel can emit (capped by atomic counter)

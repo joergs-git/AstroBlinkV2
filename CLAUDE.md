@@ -215,6 +215,38 @@ Layer 3: Focal-Length Baseline (TrailingAnalyzer.swift)
 
 ---
 
+## Stacking Improvements (v4.4.0)
+
+### Min/Max Pixel Rejection
+- `warp_accumulate` shader tracks per-pixel per-channel min/max via buffers 7,8
+- Normalization: `(sum - min - max) / (count - 2)` when count >= 3, simple mean otherwise
+- Removes satellite trails (1 bright frame) and hot pixels automatically
+
+### Lanczos-3 Interpolation
+- `warp_accumulate_lanczos` kernel: 6x6 sinc-windowed interpolation, 3px margin
+- `InterpolationMode` enum on `QuickStackEngineV2` (.bilinear/.lanczos)
+- Selectable via segmented picker in stacking progress view
+
+### Adaptive Triangle Matching
+- `triangleStarLimit` 15→20 (1140 triangles)
+- On failure: retry with limit=25, inlier threshold 15px (was 10px)
+- Dramatically reduces alignment failures on wide-dither sessions
+
+### Color Combine
+- `ColorCombineEngine.swift` — orchestrates sequential per-filter stacking via QuickStackEngineV2
+- Filter alias mapping: "H"→"Ha", "O"→"OIII", "S"→"SII", bandwidth suffix stripping
+- Presets: SHO, HOO, HSO, LRGB, HaRGB, Custom (auto-detected from available filters)
+- vDSP weighted linear combination for channel mapping (<100ms)
+- Luminance blending: ratio-preserving (RGB *= L/Y) for LRGB palettes
+- `ColorCombineWindow.swift` — setup panel + result view with per-channel weight sliders
+
+### V1 NormalStacker Removed
+- `QuickStackEngine.swift` deleted (781 lines)
+- V1 views removed from QuickStackWindow.swift (920 lines)
+- V1 toolbar button, overlay, properties, methods removed
+
+---
+
 ## Self-Calibration & Convergence (v4.3.0)
 
 ### Calibration Database
