@@ -40,7 +40,14 @@ struct MetadataExtractor {
                 let value = withUnsafePointer(to: entries[i].value) { ptr in
                     String(cString: UnsafeRawPointer(ptr).assumingMemoryBound(to: CChar.self))
                 }
-                headerDict[key.trimmingCharacters(in: .whitespaces)] = value.trimmingCharacters(in: .whitespaces)
+                // FITS string values include single quotes (e.g., "'L'", "'2026-03-18T04:39:24'").
+                // Strip whitespace and surrounding quotes so downstream code gets clean values.
+                let cleanKey = key.trimmingCharacters(in: .whitespaces)
+                var cleanVal = value.trimmingCharacters(in: .whitespaces)
+                if cleanVal.hasPrefix("'") && cleanVal.hasSuffix("'") && cleanVal.count >= 2 {
+                    cleanVal = String(cleanVal.dropFirst().dropLast()).trimmingCharacters(in: .whitespaces)
+                }
+                headerDict[cleanKey] = cleanVal
             }
         }
 
@@ -106,17 +113,21 @@ struct MetadataExtractor {
             entry.target = obj
         }
 
-        // Date from header (DATE-LOC or DATE-OBS)
-        if let dateStr = headers["DATE-LOC"] ?? headers["DATE-OBS"], !dateStr.isEmpty {
-            // Parse ISO date: "2026-03-06T23:54:58.000"
-            if dateStr.count >= 10 {
-                let dateOnly = String(dateStr.prefix(10))
-                entry.date = entry.date ?? dateOnly
+        // DATE-LOC (NINA local capture time) unconditionally overrides filename date.
+        // DATE-OBS is fallback only — may contain unexpected values in some FITS writers.
+        if let dateLoc = headers["DATE-LOC"], !dateLoc.isEmpty, dateLoc.count >= 10 {
+            entry.date = String(dateLoc.prefix(10))
+            if dateLoc.count >= 19, let tIndex = dateLoc.firstIndex(of: "T") {
+                let timeStart = dateLoc.index(after: tIndex)
+                let timeEnd = dateLoc.index(timeStart, offsetBy: 8, limitedBy: dateLoc.endIndex) ?? dateLoc.endIndex
+                entry.time = entry.time ?? String(dateLoc[timeStart..<timeEnd])
             }
-            if dateStr.count >= 19, let tIndex = dateStr.firstIndex(of: "T") {
-                let timeStart = dateStr.index(after: tIndex)
-                let timeEnd = dateStr.index(timeStart, offsetBy: 8, limitedBy: dateStr.endIndex) ?? dateStr.endIndex
-                entry.time = entry.time ?? String(dateStr[timeStart..<timeEnd])
+        } else if let dateObs = headers["DATE-OBS"], !dateObs.isEmpty, dateObs.count >= 10 {
+            entry.date = entry.date ?? String(dateObs.prefix(10))
+            if dateObs.count >= 19, let tIndex = dateObs.firstIndex(of: "T") {
+                let timeStart = dateObs.index(after: tIndex)
+                let timeEnd = dateObs.index(timeStart, offsetBy: 8, limitedBy: dateObs.endIndex) ?? dateObs.endIndex
+                entry.time = entry.time ?? String(dateObs[timeStart..<timeEnd])
             }
         }
 

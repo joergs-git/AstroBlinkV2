@@ -275,10 +275,21 @@ struct QualityEstimator {
                 }
 
                 // Rule 6: Star count anomaly — doubled stars from tracking/dithering jump
-                // If star count is >1.8× the group median, stars are likely doubled from movement
+                // If star count is >1.8× the group median, stars may be doubled from movement.
+                // BUT: satellite/plane trails also inflate star count without affecting star quality.
+                // Distinguish: tracking jumps degrade FWHM/HFR (doubled PSFs are wider),
+                // while satellite trails leave real star metrics normal. Only flag if FWHM or HFR
+                // is also elevated (>1.3× median), confirming the PSFs themselves are degraded.
                 if garbageReason == nil, let stars = starsValues[localIdx], let median = starsMedian {
                     if median > 20 && stars > median * 1.8 {
-                        garbageReason = .starCountAnomaly
+                        let fwhmElevated = fwhmValues[localIdx] != nil && fwhmMedian != nil &&
+                            fwhmValues[localIdx]! > fwhmMedian! * 1.3
+                        let hfrElevated = hfrValues[localIdx] != nil && hfrMedian != nil &&
+                            hfrValues[localIdx]! > hfrMedian! * 1.3
+                        if fwhmElevated || hfrElevated {
+                            garbageReason = .starCountAnomaly
+                        }
+                        // Otherwise: likely satellite trail — frame is usable (sigma clipping removes trail)
                     }
                 }
 

@@ -176,6 +176,30 @@ Uncompressed XISF: ~17ms decode (SSD limited). LZ4-compressed: ~100-300ms (CPU d
 - [x] Help panel updated (autopilot, SSWEIGHT, calibration, compare PA)
 - [x] GPU star detection buffer 512→16384
 
+## v4.3.1 — Bug Fixes (IN PROGRESS 2026-03-18)
+
+### Completed fixes
+- [x] MetadataExtractor: strip single quotes from FITS/XISF header string values
+- [x] MetadataExtractor: DATE-LOC unconditionally overrides filename date, DATE-OBS fallback only
+- [x] StarMetricsCalculator: RANSAC collinear trail detection removes satellite/plane detections before all metrics
+- [x] StarMetricsCalculator: trail-contaminated frames use verified real star count (not GPU atomic)
+- [x] QualityEstimator: Rule 6 (starCountAnomaly) requires elevated FWHM/HFR, not just high star count
+- [x] TriageViewModel.navigateToObject: match "unknown" group, case-insensitive, nil/"none" filter convention
+- [x] TriageViewModel.navigateToObject: accepts exposure parameter for correct group navigation
+- [x] SessionOverview: onFilterTapped passes exposure to distinguish L@180s vs L@300s
+- [x] wireSessionOverviewCallbacks called from all load paths (loadSession, loadFiles, loadMultipleFolders)
+
+### App hang during precaching (needs investigation)
+- [ ] Reproduce and diagnose hang (required force kill)
+- [ ] Suspect 1: Single MTLCommandQueue shared by 6 workers — GPU command buffer hang cascades to all threads
+- [ ] Suspect 2: Data race on PreviewGenerator.lastTotalStarCount (written from 6 threads, no sync)
+- [ ] Suspect 3: Main actor flooding — hundreds of Task { @MainActor in } callbacks (star metrics runs TrailingAnalyzer.analyze on main thread per image)
+- [ ] Suspect 4: enrichWithHeaders + precaching race — both modify images[] on main actor, header enrichment does one giant await MainActor.run batch blocking all other callbacks
+- [ ] Add GPU command buffer error/timeout handling
+- [ ] Consider per-worker MTLCommandQueues to reduce contention
+
+---
+
 ## Future TODOs — Stacking
 - [ ] Investigate 14/50 M81 frames failing alignment (brightest 15 stars don't overlap across large dither)
 - [ ] Sigma clipping / outlier rejection (satellite trails, planes, hot pixels)

@@ -60,6 +60,13 @@ enum StarMetricsCalculator {
     private static let maxEccAperture: Float = 15.0
     // FWHM multiplier for adaptive eccentricity aperture
     private static let eccApertureFWHMMultiplier: Float = 2.5
+    // Axis ratio below which a detection is classified as a satellite/plane streak artifact.
+    // Real stars — even with severe tracking errors — have axisRatio > 0.15.
+    // Satellite and airplane trails are essentially linear (axisRatio < 0.05).
+    // Threshold 0.12 aggressively rejects streaks without mis-rejecting tracked stars.
+    private static let streakAxisRatioThreshold: Double = 0.12
+    // Fixed aperture for quick pre-filter shape check (before FWHM-adaptive aperture is known)
+    private static let preFilterAperture: Float = 5.0
 
     /// Measure HFR, FWHM, and eccentricity from detected star positions.
     /// Two-pass approach:
@@ -82,16 +89,33 @@ enum StarMetricsCalculator {
         // Refine star positions to full-res sub-pixel accuracy (currently GPS returns bin2x coords)
         let refinedStars = StarDetector.refinePositions(stars: stars, in: image, channel: channel)
 
+        // ── Pass 0: Satellite/airplane trail detection via collinear point pattern ──
+        // Detect and remove detections that lie along a straight line (satellite/plane trail).
+        // Uses RANSAC-style line detection on ALL refined star positions (before center crop).
+        // This catches trails regardless of where they cross the image.
+        let trailIndices = detectSatelliteTrail(stars: refinedStars, width: w, height: h)
+        var trailPositions = Set<Int>()  // indices into refinedStars
+        for idx in trailIndices { trailPositions.insert(idx) }
+        let streakRejectCount = trailIndices.count
+
         // Filter stars: center crop + skip edge, saturated (strict for HFR/FWHM), crowded
-        var filtered = filterStars(refinedStars, width: w, height: h, ptr: ptr, channelOffset: channelOffset, useCenterCrop: true)
+        // Exclude trail detections from the filtered set
+        let refinedClean: [DetectedStar]
+        if !trailPositions.isEmpty {
+            refinedClean = refinedStars.enumerated().compactMap { trailPositions.contains($0.offset) ? nil : $0.element }
+        } else {
+            refinedClean = refinedStars
+        }
+
+        var filtered = filterStars(refinedClean, width: w, height: h, ptr: ptr, channelOffset: channelOffset, useCenterCrop: true)
         if filtered.count < minStars {
-            filtered = filterStars(refinedStars, width: w, height: h, ptr: ptr, channelOffset: channelOffset, useCenterCrop: false)
+            filtered = filterStars(refinedClean, width: w, height: h, ptr: ptr, channelOffset: channelOffset, useCenterCrop: false)
         }
         guard filtered.count >= minStars else { return nil }
 
         let toMeasure = Array(filtered.prefix(maxMeasuredStars))
 
-        // ── Pass 1: Compute HFR and FWHM ──
+        // ── Pass 1: Compute HFR and FWHM (on streak-filtered stars only) ──
         var hfrValues: [Double] = []
         var fwhmValues: [Double] = []
         // Per-star FWHM for adaptive aperture (parallel arrays with toMeasure)
@@ -141,14 +165,13 @@ enum StarMetricsCalculator {
         var eccValues: [Double] = []
         var details: [StarDetail] = []
 
-        // Also measure bright stars that were excluded from HFR/FWHM (for shape analysis only)
+        // Use wider crop for shape/eccentricity, but pre-filter streaks here too
         let shapeStars = filterStarsForShape(refinedStars, width: w, height: h, ptr: ptr, channelOffset: channelOffset)
         let shapeCandidates = Array(shapeStars.prefix(maxMeasuredStars))
 
         for star in shapeCandidates {
             let cx = Int(star.x.rounded())
             let cy = Int(star.y.rounded())
-            // Need enough room for the adaptive aperture + background annulus
             let safeR = Int(max(bgOuterRadius, eccAperture + 2))
             guard cx - safeR >= 0, cx + safeR < w, cy - safeR >= 0, cy + safeR < h else { continue }
 
@@ -161,12 +184,12 @@ enum StarMetricsCalculator {
                 ptr: ptr, channelOffset: channelOffset, width: w,
                 cx: star.x, cy: star.y, aperture: eccAperture, background: bg
             ) {
+                // Reject streaks again with the FWHM-adaptive aperture (more accurate than Pass 0)
+                if shape.axisRatio < streakAxisRatioThreshold { continue }
+
                 eccValues.append(shape.eccentricity)
 
-                // Find this star's HFR/FWHM from Pass 1 (if it was in toMeasure)
-                let starHFR = perStarHFR.first(where: { $0 != nil }) as? Double
-                let starFWHM = perStarFWHM.first(where: { $0 != nil }) as? Double
-                // Look up by position match
+                // Look up HFR/FWHM from Pass 1 by position match
                 var matchedHFR: Double? = nil
                 var matchedFWHM: Double? = nil
                 for (j, m) in toMeasure.enumerated() {
@@ -196,14 +219,103 @@ enum StarMetricsCalculator {
             medianEcc = nil
         }
 
+        // Correct total star count for satellite/plane trail contamination.
+        // When a trail is detected, the GPU atomic counter is unreliable — a single bright
+        // trail creates hundreds/thousands of false peaks. Use the count of verified real
+        // stars (trail detections already removed from `filtered` before center crop).
+        let rawTotal = totalStarCount ?? totalDetected
+        let correctedTotal: Int
+        if streakRejectCount > 0 {
+            // Satellite trail detected — GPU count is garbage, use verified stars only
+            correctedTotal = filtered.count
+        } else {
+            correctedTotal = rawTotal
+        }
+
         return StarMetrics(
             medianHFR: medianHFR,
             medianFWHM: medianFWHM,
             measuredStarCount: totalDetected,
-            totalStarCount: totalStarCount ?? totalDetected,
+            totalStarCount: correctedTotal,
             medianEccentricity: medianEcc,
             starDetails: details
         )
+    }
+
+    // MARK: - Satellite Trail Detection (collinear point pattern)
+
+    /// Detect satellite/airplane trail by finding collinear star detections.
+    /// Returns indices of stars that lie on a detected trail line.
+    /// Algorithm: RANSAC-style — sample random pairs, count inliers within tolerance,
+    /// keep the best line. If it has enough inliers (>= 8), those are trail detections.
+    private static func detectSatelliteTrail(
+        stars: [DetectedStar], width: Int, height: Int
+    ) -> [Int] {
+        let n = stars.count
+        guard n >= 10 else { return [] }
+
+        // Distance tolerance: a detection within this many pixels of the line is an inlier.
+        // Satellite trails are typically 2-5px wide; use 5px for some margin.
+        let tolerance: Float = 5.0
+        // Minimum inliers to confirm a trail (8 points on a line can't be coincidence)
+        let minInliers = 8
+        // Number of RANSAC iterations — sample pairs and test
+        let maxIterations = min(200, n * (n - 1) / 2)
+
+        var bestInliers: [Int] = []
+
+        // Deterministic sampling: test pairs spread across the star list
+        var iteration = 0
+        let step = max(1, n / 15)  // Sample ~15 anchor points
+
+        for i in stride(from: 0, to: n, by: step) {
+            for j in (i + 1)..<n {
+                guard iteration < maxIterations else { break }
+                iteration += 1
+
+                let dx = stars[j].x - stars[i].x
+                let dy = stars[j].y - stars[i].y
+                let len = (dx * dx + dy * dy).squareRoot()
+                guard len > 20 else { continue }  // Skip pairs too close together
+
+                // Line normal (perpendicular direction)
+                let nx = -dy / len
+                let ny = dx / len
+
+                // Count inliers: stars within `tolerance` of the line through i and j
+                var inliers: [Int] = []
+                for k in 0..<n {
+                    let ex = stars[k].x - stars[i].x
+                    let ey = stars[k].y - stars[i].y
+                    let dist = Swift.abs(ex * nx + ey * ny)
+                    if dist < tolerance {
+                        inliers.append(k)
+                    }
+                }
+
+                if inliers.count > bestInliers.count {
+                    bestInliers = inliers
+                }
+            }
+            guard iteration < maxIterations else { break }
+        }
+
+        // Only flag as trail if enough collinear points found
+        guard bestInliers.count >= minInliers else { return [] }
+
+        // Verify the trail spans a significant portion of the image (not just a cluster)
+        let trailStars = bestInliers.map { stars[$0] }
+        let minX = trailStars.map(\.x).min()!
+        let maxX = trailStars.map(\.x).max()!
+        let minY = trailStars.map(\.y).min()!
+        let maxY = trailStars.map(\.y).max()!
+        let span = ((maxX - minX) * (maxX - minX) + (maxY - minY) * (maxY - minY)).squareRoot()
+        let imageSize = (Float(width * width + height * height)).squareRoot()
+
+        // Trail must span at least 15% of image diagonal
+        guard span > imageSize * 0.15 else { return [] }
+
+        return bestInliers
     }
 
     // MARK: - Star Filtering (strict — for HFR/FWHM measurement)

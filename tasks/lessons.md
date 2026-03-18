@@ -168,6 +168,24 @@
 - **Rule:** Require ≥6 initial inliers AND ≥5 refined inliers (4px). Validate scale on BOTH axes. Don't restrict rotation — let inlier counting do the rejection.
 - **Applies to:** QuickStackEngineV2.matchTrianglesHashed, QuickStackEngine.solveAffine
 
+## [2026-03-18] — FITS/XISF header string values include single quotes
+- **Mistake:** Used header values directly (e.g., `String(dateStr.prefix(10))`) without stripping FITS single quotes. `'2026-03-18T...'` → prefix(10) = `'2026-03-1` (quote eats a character). Filter `'L'` broke matching.
+- **Root cause:** C bridge returns FITS string values verbatim with surrounding single quotes. `readHeaders` only trimmed whitespace, not quotes.
+- **Rule:** Always strip surrounding single quotes from FITS/XISF header values at the source (`readHeaders`). Never assume header string values are clean.
+- **Applies to:** MetadataExtractor.readHeaders, any FITS/XISF header value usage
+
+## [2026-03-18] — Satellite trail detection needs collinear pattern matching, not per-pixel shape
+- **Mistake:** Tried per-star axisRatio check at 5px aperture to detect trail segments. Trail segments look like slightly elongated blobs at small apertures (axisRatio 0.15-0.30), passing the threshold.
+- **Root cause:** Shape analysis measures local morphology. A satellite trail is a global geometric pattern (collinear points), not a local shape feature.
+- **Rule:** Detect satellite trails via RANSAC collinear point detection on star positions (≥8 points within 5px of a line, spanning ≥15% of image diagonal). Remove trail detections BEFORE any metric measurement.
+- **Applies to:** StarMetricsCalculator, any satellite/streak detection
+
+## [2026-03-18] — Session overview callbacks must be wired in ALL load paths
+- **Mistake:** `wireSessionOverviewCallbacks()` only called in `openFolder()`. Sessions loaded via `loadSession()`, `loadFiles()`, `loadMultipleFolders()` had nil callbacks → clicks did nothing.
+- **Root cause:** Only tested the primary load path, not all entry points.
+- **Rule:** Any setup that must happen for every session load should go in all load methods, or be called from a shared setup function.
+- **Applies to:** TriageViewModel session loading, any session-level initialization
+
 ## [2026-03-17] — NSView star overlay coordinates must match Metal drawable ratio
 - **Mistake:** Divided effScale by backingScaleFactor (bs=2) which halved circle positions on Retina. Then removed /bs entirely which doubled them. The correct factor is drawableW/viewW.
 - **Root cause:** Metal NDC coordinates map to the drawable (which may or may not be Retina-scaled). The overlay NSView works in view points. The ratio between drawable pixels and view points determines the correction factor.

@@ -176,8 +176,8 @@ class SessionOverviewModel: ObservableObject {
     @Published var sessionObjects: String?
     // Callback: navigate to first image of tapped object in file list
     var onObjectTapped: ((String) -> Void)?
-    // Callback: navigate to first image of tapped filter within an object
-    var onFilterTapped: ((String, String) -> Void)?
+    // Callback: navigate to first image of tapped filter+exposure within an object
+    var onFilterTapped: ((String, String, Double) -> Void)?
     @Published var firstAcquisition: String?
     @Published var lastAcquisition: String?
     @Published var sessionCamera: String?
@@ -735,7 +735,7 @@ struct SessionOverviewContentView: View {
                 .frame(minWidth: 50, alignment: .leading)
                 Spacer(minLength: 4)
             }
-            Button(action: { model.onFilterTapped?(row.object, cleanFilter) }) {
+            Button(action: { model.onFilterTapped?(row.object, cleanFilter, row.exposurePerShot) }) {
                 Text(cleanFilter).fontWeight(.semibold)
                     .foregroundColor(cleanFilter == "none" ? .secondary : .accentColor)
             }

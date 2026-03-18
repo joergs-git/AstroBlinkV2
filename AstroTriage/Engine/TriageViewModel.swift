@@ -533,7 +533,7 @@ class TriageViewModel: ObservableObject {
     /// Wire session overview tap callbacks (idempotent — safe to call multiple times)
     private func wireSessionOverviewCallbacks() {
         sessionOverviewModel.onObjectTapped = { [weak self] name in self?.navigateToObject(name) }
-        sessionOverviewModel.onFilterTapped = { [weak self] obj, filter in self?.navigateToObject(obj, filter: filter) }
+        sessionOverviewModel.onFilterTapped = { [weak self] obj, filter, exposure in self?.navigateToObject(obj, filter: filter, exposure: exposure) }
     }
 
     // Load specific files (user selected individual files, not a folder)
@@ -544,6 +544,7 @@ class TriageViewModel: ObservableObject {
             return
         }
 
+        wireSessionOverviewCallbacks()
         benchmarkStats.markSessionStart()
         isLoading = true
         isCaching = false
@@ -637,6 +638,7 @@ class TriageViewModel: ObservableObject {
     func loadMultipleFolders(urls: [URL]) {
         guard !urls.isEmpty else { return }
 
+        wireSessionOverviewCallbacks()
         benchmarkStats.markSessionStart()
         isLoading = true
         isCaching = false
@@ -698,6 +700,7 @@ class TriageViewModel: ObservableObject {
     }
 
     func loadSession(url: URL) {
+        wireSessionOverviewCallbacks()
         benchmarkStats.markSessionStart()
         isLoading = true
         isCaching = false
@@ -1116,14 +1119,24 @@ class TriageViewModel: ObservableObject {
                     if let px = headers["XPIXSZ"], let val = Double(px), val > 0 {
                         self.images[index].pixelSizeMicrons = val
                     }
-                    if let dateStr = headers["DATE-LOC"] ?? headers["DATE-OBS"], !dateStr.isEmpty {
-                        if dateStr.count >= 10 {
-                            self.images[index].date = self.images[index].date ?? String(dateStr.prefix(10))
+                    // DATE-LOC (NINA local capture time) is authoritative — always overrides filename date.
+                    // DATE-OBS is only used as fallback when no date exists yet (it may contain
+                    // unexpected values in some FITS writers, e.g. session-start or file-creation date).
+                    if let dateLoc = headers["DATE-LOC"], !dateLoc.isEmpty, dateLoc.count >= 10 {
+                        // DATE-LOC: unconditional override (fixes NINA $$DATENOW$$ after-midnight issue)
+                        self.images[index].date = String(dateLoc.prefix(10))
+                        if dateLoc.count >= 19, let tIndex = dateLoc.firstIndex(of: "T") {
+                            let timeStart = dateLoc.index(after: tIndex)
+                            let timeEnd = dateLoc.index(timeStart, offsetBy: 8, limitedBy: dateLoc.endIndex) ?? dateLoc.endIndex
+                            self.images[index].time = String(dateLoc[timeStart..<timeEnd])
                         }
-                        if dateStr.count >= 19, let tIndex = dateStr.firstIndex(of: "T") {
-                            let timeStart = dateStr.index(after: tIndex)
-                            let timeEnd = dateStr.index(timeStart, offsetBy: 8, limitedBy: dateStr.endIndex) ?? dateStr.endIndex
-                            self.images[index].time = self.images[index].time ?? String(dateStr[timeStart..<timeEnd])
+                    } else if let dateObs = headers["DATE-OBS"], !dateObs.isEmpty, dateObs.count >= 10 {
+                        // DATE-OBS: fallback only — fill in if no date set yet
+                        self.images[index].date = self.images[index].date ?? String(dateObs.prefix(10))
+                        if dateObs.count >= 19, let tIndex = dateObs.firstIndex(of: "T") {
+                            let timeStart = dateObs.index(after: tIndex)
+                            let timeEnd = dateObs.index(timeStart, offsetBy: 8, limitedBy: dateObs.endIndex) ?? dateObs.endIndex
+                            self.images[index].time = self.images[index].time ?? String(dateObs[timeStart..<timeEnd])
                         }
                     }
 
@@ -2030,19 +2043,29 @@ class TriageViewModel: ObservableObject {
 
     /// Navigate to the first image matching the given object name (and optionally filter).
     /// Called from session overview when user clicks an object or filter name.
-    func navigateToObject(_ objectName: String, filter: String? = nil) {
+    func navigateToObject(_ objectName: String, filter: String? = nil, exposure: Double? = nil) {
         let name = objectName.trimmingCharacters(in: .whitespaces)
+        // Session overview groups nil/empty targets as "unknown" — match that here
+        let isUnknownGroup = name == "unknown"
         guard let idx = images.firstIndex(where: { entry in
             let target = (entry.target ?? "").trimmingCharacters(in: .whitespaces)
-            guard target == name else { return false }
+            let targetMatches = isUnknownGroup ? target.isEmpty : target.caseInsensitiveCompare(name) == .orderedSame
+            guard targetMatches else { return false }
             if let f = filter {
-                return (entry.filter ?? "").uppercased().trimmingCharacters(in: .whitespaces)
-                    == f.uppercased().trimmingCharacters(in: .whitespaces)
+                // Session overview defaults nil filters to "none" — match that convention
+                let entryFilter = (entry.filter ?? "none").uppercased().trimmingCharacters(in: .whitespaces)
+                guard entryFilter == f.uppercased().trimmingCharacters(in: .whitespaces) else { return false }
+            }
+            // Match exposure if provided (distinguishes e.g. L@180s vs L@300s groups)
+            if let exp = exposure, exp > 0 {
+                guard let entryExp = entry.exposure, Swift.abs(entryExp - exp) < 0.5 else { return false }
             }
             return true
         }) else { return }
+        // Do NOT set needsTableRefresh here — it triggers a table reload that saves and restores
+        // the old selection, which can block the scroll to the new row (especially with multi-select).
+        // The selectedIndex @Published change already triggers updateNSView and scrolls correctly.
         selectImage(at: idx)
-        needsTableRefresh = true
     }
 
     func navigateNext() {
