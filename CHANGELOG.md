@@ -4,6 +4,31 @@ All notable changes to AstroBlinkV2 will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [4.6.0] — 2026-03-19
+
+### Added
+- **SmartCull Quality Engine** — Multi-stage scoring with rescue rules for borderline frames
+  - Stage 3 Rule A: FWHM + noise within group norm → rescued to good
+  - Stage 3 Rule B: Star count dip with good FWHM → rescued (transient event detection)
+  - Stage 3 Rule C: FWHM-only trash → promoted to borderline
+  - Stage 4: Group-level FWHM sanity check for z-score trash
+- **Quality reasoning ("Why?")** — Human-readable explanations in quality tooltips
+  - New `reasoningText` field on QualityBreakdown
+  - Explains dominant penalty, rescue reasons, and percentile position
+- **BatchQualityAnalysisTests** — Ground-truth calibration test suite with annotated thumbnails + CSV export
+
+### Fixed
+- **Trailing false positives eliminated** — FWHM cross-check in Rule 5 prevents flagging sharp frames as "elongated" (real trailing always degrades FWHM)
+- **noiseZ explosion** — Individual z-scores capped at ±3.0 in QualityBreakdown (was raw, could be 10922 in homogeneous groups)
+- **Background anomaly sensitivity** — Threshold scales with group size (small groups < 20 frames use wider threshold)
+- **Z-score trash threshold** — Widened from -1.5 to -2.0 (Stage 1 garbage catches truly bad frames; z-score trash now requires 2σ below average)
+- **Sort tiebreaker** — Within any sort order, time is always ascending (chronological within the same night). Only grouping columns + first metric used as sort keys; no extra metrics that break time ordering.
+- **Direct re-sort after scoring** — Eliminates timing issues with indirect flag mechanism
+
+### Changed
+- borderlineSeverity ranges updated for wider threshold (-0.5 to -2.0 span)
+- Trailing consensus threshold raised from 0.4/0.7 to 0.5/0.8 for Rule 5b
+
 ## [4.5.0] — 2026-03-19
 
 ### Added
