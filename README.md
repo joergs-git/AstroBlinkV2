@@ -18,6 +18,67 @@ Nice side effect: Finally you have a native XISF and FITS Quicklook for macOS. (
 
 ---
 
+## What's New in v4.6.0
+
+### SmartCull Quality Engine
+
+Multi-stage quality scoring validated on 1,457 frames across 6 setups (3 telescopes, mono+OSC, narrowband+broadband). Handles 99% of quality decisions automatically.
+
+**"1,457 frames. 14 decisions."**
+
+- **Stage 3 rescue rules** — Frames with good FWHM + acceptable noise rescued from trash. Star count dips with sharp stars recognized as transient events (clouds, dew), not quality issues.
+- **Quality reasoning ("Why?")** — Hover any quality icon for a human-readable explanation: "FWHM worst in group", "Star count dip — likely transient", "Elevated noise — background brightening".
+- **FWHM cross-check for trailing** — The trailing detector now verifies that flagged frames actually have degraded FWHM. Sharp stars can't be genuinely trailed — this eliminates false positives from optical coma being misidentified as tracking errors.
+- **Wider trash threshold** — Only frames 2σ below group average become z-score trash (was 1.5σ). Stage 1 garbage detection catches truly bad frames regardless. The Autopilot button gives you control over borderline frames.
+
+### Bug Fixes
+- Individual z-scores capped at ±3.0 (extreme values in homogeneous groups)
+- Background anomaly scales with group size (fewer false positives in small filter groups)
+- Sort tiebreaker: time always ascending within quality tiers
+
+---
+
+### How the SmartCull Algorithm Works
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    SmartCull Quality Pipeline                    │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  Stage 1: Garbage Detection (absolute thresholds)               │
+│  ├── Zero/near-zero stars (< 15-25% of group median)           │
+│  ├── SNR catastrophically low (< 50% of group median)          │
+│  ├── FWHM/HFR catastrophically high (> 2× group median)        │
+│  ├── Star trailing (score > 0.7, cross-checked with FWHM)      │
+│  ├── Star count anomaly (doubled stars from tracking jump)      │
+│  └── Background anomaly (clouds/gradient, > 5 MAD deviation)   │
+│                                                                 │
+│  Stage 2: Relative Z-Score Scoring (within filter+night group)  │
+│  ├── Median/MAD robust statistics (outlier-resistant)           │
+│  ├── Metrics: FWHM, HFR, star count, noise, trailing           │
+│  ├── Per-metric z-scores capped at ±3.0                        │
+│  ├── Weighted combination (stars: 1.2× broadband, 0.5× NB)     │
+│  └── Tier: Excellent (>0.5σ), Good (>-0.5σ), Border, Trash     │
+│                                                                 │
+│  Stage 3: Pattern-Based Rescue Rules                            │
+│  ├── Rule A: FWHM + noise OK → rescued to Good                 │
+│  ├── Rule B: Star dip + good FWHM → transient event            │
+│  └── Rule C: FWHM-only penalty → promoted to Borderline        │
+│                                                                 │
+│  Stage 4: Group-Level Sanity Check                              │
+│  └── Z-score trash with FWHM within GOOD range → Borderline    │
+│                                                                 │
+│  User Control: Culling Autopilot                                │
+│  ├── Conservative: Only Stage 1 garbage                         │
+│  ├── Balanced: + severe borderline (severity ≥ 2)               │
+│  └── Aggressive: + all borderline                               │
+│                                                                 │
+│  Result: ~99% auto-classified, ~1% shown with "Why?" tooltip    │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+---
+
 ## What's New in v4.5.0
 
 ### Caching Pipeline Optimization

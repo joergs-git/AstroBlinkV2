@@ -338,6 +338,32 @@ any artifacts. Is this a good frame for stacking?"
 - [ ] Batch undo integration with Cmd+Z (currently separate undoBatchRename method)
 - [ ] Cleanup old batch backups on app quit or session reload
 
+## Future TODOs — Master Calibration Stacking
+
+### Concept
+Stack darks and flats into masterdarks/masterflats directly in AstroBlinkV2.
+No normalization — pure pixel integration following PixInsight ImageIntegration logic.
+State of the art: sigma-clipped mean (or winsorized sigma clipping) for darks,
+median or averaged sigma-clipped for flats.
+
+### Implementation Plan
+- [ ] CalibrationStacker engine — separate from QuickStackEngineV2 (different workflow)
+- [ ] Dark stacking: sigma-clipped mean (3σ, 3 iterations) — removes hot pixels, cosmic rays
+- [ ] Flat stacking: averaged sigma-clipped mean → divide by mean to normalize
+- [ ] Input: select folder of darks/flats → auto-detect by IMAGETYP header or filename
+- [ ] Output: single master FITS/XISF with proper headers (IMAGETYP=MASTER_DARK etc.)
+- [ ] GPU compute kernel for sigma-clipped accumulation (extend warp_accumulate)
+- [ ] No alignment needed (darks/flats are taken at fixed position)
+- [ ] Temperature matching for darks (group by CCD-TEMP ± 1°C)
+- [ ] UI: "Create Master" button in toolbar → select Dark/Flat/Bias → folder picker → progress → save
+
+### PixInsight Reference (ImageIntegration)
+- Rejection: sigma clipping (low=3σ, high=3σ) or winsorized sigma clipping
+- Normalization: none for darks/bias, multiplicative for flats (divide by mean)
+- Combination: mean (after rejection)
+- Weight: equal (all calibration frames same exposure/conditions)
+- PixelMath for master flat: `$T / mean($T)` after integration
+
 ## Future TODOs — Testing
 - [ ] Fix pre-existing DecoderTests.testMetalBufferCreation failure
 - [ ] CI: GitHub Actions workflow running tests on push
