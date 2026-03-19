@@ -51,6 +51,10 @@ struct QualityBreakdown: Hashable {
     // Only set when the setup has ≥30 learned frames.
     let isLockedKeep: Bool
 
+    // Human-readable explanation of why this frame received its tier.
+    // Generated during scoring when group context is available.
+    let reasoningText: String?
+
     // Smart recommendation label based on per-metric analysis
     // Smart recommendation based on per-metric analysis and eccentricity.
     // Research shows: round stars = always keep (even with worse FWHM/noise).
@@ -105,12 +109,12 @@ struct QualityBreakdown: Hashable {
     // Only meaningful when tier == .borderline
     var borderlineSeverity: Int {
         guard tier == .borderline else { return 0 }
-        // Range is thresholdGood (-0.5) to thresholdBorderline (-1.5), span = 1.0
-        // Split into 4 equal sub-tiers of 0.25 each
+        // Range is thresholdGood (-0.5) to thresholdBorderline (-2.0), span = 1.5
+        // Split into 4 sub-tiers
         let z = combinedZScore
-        if z > -0.75  { return 0 }       // Nearly good
-        if z > -1.00  { return 1 }       // Middle borderline
-        if z > -1.25  { return 2 }       // Leaning towards trash
+        if z > -0.875 { return 0 }       // Nearly good
+        if z > -1.25  { return 1 }       // Middle borderline
+        if z > -1.625 { return 2 }       // Leaning towards trash
         return 3                          // Nearly trash
     }
 }
@@ -123,12 +127,18 @@ struct QualityEstimator {
     static let minGroupSize = 10
 
     // Stage 2: z-score thresholds for 4-tier relative classification
-    // Widened from original (-0.3/-1.2) to avoid penalizing normal seeing variation.
-    // In a homogeneous session, most frames should be green (good/excellent).
+    // Widened from original (-0.3/-1.2/-1.5) after validation on 1457 frames/6 setups.
+    // Sessions with exceptional quality blocks (e.g. peak seeing mid-session) can have
+    // wide z-score distributions. At -1.5, frames that are "normal by absolute standards"
+    // but "below average for this excellent session" get trashed. -2.0 ensures only
+    // frames that are clearly degraded (2σ below average) become z-score trash.
+    // Stage 1 garbage detection catches truly catastrophic frames regardless.
+    // The Autopilot button gives users control: Conservative keeps borderline,
+    // Balanced removes severe borderline, Aggressive removes all borderline.
     static let thresholdExcellent: Double =  0.5   // Top tier: clearly above average
     static let thresholdGood:      Double = -0.5   // Solid: within normal session variation
-    static let thresholdBorderline: Double = -1.5  // Edge: noticeably below average
-    // Below borderline → trash (red) via Stage 2
+    static let thresholdBorderline: Double = -2.0  // Edge: noticeably below average (was -1.5)
+    // Below -2.0 → trash (red) via Stage 2
 
     // Stage 2: z-score cap — prevents extreme scores from normal variation.
     // In homogeneous groups (tight MAD), a 10-15% difference can produce z > 4.
@@ -318,15 +328,24 @@ struct QualityEstimator {
                     }
                 }
 
-                // Rule 5: Star trailing — uses consensus-weighted, focal-length-adaptive score
-                // instead of raw eccentricity. Catches tracking errors that raw ecc > 0.6 misses
-                // on long FL, and avoids false positives on short FL / fast optics.
-                if garbageReason == nil, let ts = entry.trailingScore, ts > 0.7 {
+                // Rule 5: Star trailing — uses consensus-weighted, focal-length-adaptive score.
+                // Cross-check: real trailing always degrades FWHM. If a frame's FWHM is at or
+                // below the group median, the stars are sharp and CAN'T be genuinely trailed.
+                // This prevents false positives from the PA consensus detector on sharp frames.
+                let fwhmRulesOutTrailing: Bool = {
+                    guard let fwhm = fwhmValues[localIdx], let median = fwhmMedian else { return false }
+                    return fwhm <= median * 1.15  // Within 15% of median = not degraded by trailing
+                }()
+
+                if garbageReason == nil, !fwhmRulesOutTrailing,
+                   let ts = entry.trailingScore, ts > 0.7 {
                     garbageReason = .elongated
                 }
-                // Also flag on very strong PA consensus even with moderate trailing score
-                if garbageReason == nil, let ts = entry.trailingScore, ts > 0.4,
-                   let consensus = entry.trailingConsensus, consensus > 0.7 {
+                // Strong consensus variant: require BOTH high trailing AND high consensus AND
+                // FWHM above median (confirming the trailing actually degraded star sharpness).
+                if garbageReason == nil, !fwhmRulesOutTrailing,
+                   let ts = entry.trailingScore, ts > 0.5,
+                   let consensus = entry.trailingConsensus, consensus > 0.8 {
                     garbageReason = .elongated
                 }
 
@@ -352,12 +371,24 @@ struct QualityEstimator {
                 // Rule 7: Background anomaly — clouds, light pollution gradient, or fog
                 // If background level deviates by >5 MADs from group median, it's anomalous.
                 // Clouds raise background level significantly; only flag strong deviations.
+                // Scale threshold for small groups: tight MAD in <20 frames causes false positives.
+                // 20+ frames → 5.0 MAD, 15 → 5.75, 10 → 6.5 (linear interpolation)
                 if garbageReason == nil, let bg = bgValues[localIdx],
                    let median = bgMedian, let mad = bgMAD, mad > 0 {
+                    let bgThreshold = max(5.0, 5.0 + (20.0 - Double(min(groupEntries.count, 20))) * 0.15)
                     let deviation = Swift.abs(bg - median) / mad
-                    if deviation > 5.0 {
+                    if deviation > bgThreshold {
                         garbageReason = .backgroundAnomaly
                     }
+                }
+
+                // Cap individual z-scores at ±3 for display consistency.
+                // The cap is already applied during combinedZ computation (lines below),
+                // but storing raw values caused extreme display values (e.g. noiseZ=10922
+                // when group MAD is near-zero). Cap stored values for tooltip sanity.
+                func cappedZ(_ z: Double?) -> Double? {
+                    guard let z = z else { return nil }
+                    return min(zscoreCap, max(-zscoreCap, z))
                 }
 
                 if garbageReason != nil {
@@ -367,15 +398,16 @@ struct QualityEstimator {
                     result[entry.url] = QualityBreakdown(
                         tier: .trash,
                         combinedZScore: -99.0,
-                        starsZ: starsZscores[localIdx],
-                        fwhmZ: fwhmZscores[localIdx],
-                        hfrZ: hfrZscores[localIdx],
-                        noiseZ: noiseMadZscores[localIdx],
-                        trailingZ: trailingZscores[localIdx],
+                        starsZ: cappedZ(starsZscores[localIdx]),
+                        fwhmZ: cappedZ(fwhmZscores[localIdx]),
+                        hfrZ: cappedZ(hfrZscores[localIdx]),
+                        noiseZ: cappedZ(noiseMadZscores[localIdx]),
+                        trailingZ: cappedZ(trailingZscores[localIdx]),
                         snrContribution: nil,
                         snrSquared: snrSq,
                         garbageReason: garbageReason,
-                        isLockedKeep: false
+                        isLockedKeep: false,
+                        reasoningText: garbageReason?.rawValue
                     )
                     continue
                 }
@@ -424,7 +456,7 @@ struct QualityEstimator {
 
                 let combinedZ = zSum / wSum
 
-                let tier: QualityTier
+                var tier: QualityTier
                 if lockedKeep {
                     // Absolute floor: z-scores cannot downgrade below .good
                     if combinedZ > thresholdExcellent {
@@ -442,21 +474,132 @@ struct QualityEstimator {
                     tier = .trash
                 }
 
+                // ── Stage 3: Pattern-based rescue rules ──
+                // Rescue borderline/z-score-trash frames that have compensating qualities.
+                // Only promotes, never demotes. Only for Stage 2 classified frames.
+                var rescueReason: String? = nil
+
+                if !lockedKeep && (tier == .borderline || tier == .trash) {
+                    let fwhmOK = fwhmValues[localIdx] != nil && fwhmMedian != nil
+                        && fwhmValues[localIdx]! <= fwhmMedian! * 1.05
+                    let noiseOK = noiseMadZscores[localIdx] != nil
+                        && noiseMadZscores[localIdx]! <= 0.5
+                    let starsLow = starsValues[localIdx] != nil && starsMedian != nil
+                        && starsValues[localIdx]! < starsMedian! * 0.75
+                    let trailingOK = (entry.trailingScore ?? 0) < 0.3
+
+                    // Rule A: Good FWHM + acceptable noise → frame is fundamentally sound
+                    if fwhmOK && noiseOK && trailingOK {
+                        tier = .good
+                        rescueReason = "FWHM and noise within group norm"
+                    }
+                    // Rule B: Star dip with good FWHM → transient event (cloud, dew), not bad data
+                    else if starsLow && fwhmOK && trailingOK {
+                        tier = .good
+                        rescueReason = "Star count dip with normal FWHM — likely transient event"
+                    }
+                    // Rule C: Only FWHM penalty, nothing else wrong → don't trash, keep as borderline
+                    else if tier == .trash {
+                        let badNoise = (noiseMadZscores[localIdx] ?? 0) > 0.5
+                        let badStars = (starsZscores[localIdx] ?? 0) < -0.5
+                        let badTrailing = (trailingZscores[localIdx] ?? 0) > 0.5
+                        if !badNoise && !badStars && !badTrailing {
+                            tier = .borderline
+                            rescueReason = "Only FWHM slightly elevated — no other issues"
+                        }
+                    }
+                }
+
+                // ── Generate reasoning text ──
+                let reasoning = generateReasoning(
+                    fwhmZ: cappedZ(fwhmZscores[localIdx]),
+                    starsZ: cappedZ(starsZscores[localIdx]),
+                    noiseZ: cappedZ(noiseMadZscores[localIdx]),
+                    trailingZ: cappedZ(trailingZscores[localIdx]),
+                    tier: tier,
+                    isLockedKeep: lockedKeep,
+                    rescueReason: rescueReason
+                )
+
                 // Hide SNR contribution for trash tier — misleading to show high % on garbage frames
                 let displayContrib = tier == .trash ? nil : contribution
 
                 result[entry.url] = QualityBreakdown(
                     tier: tier,
                     combinedZScore: combinedZ,
-                    starsZ: starsZscores[localIdx],
-                    fwhmZ: fwhmZscores[localIdx],
-                    hfrZ: hfrZscores[localIdx],
-                    noiseZ: noiseMadZscores[localIdx],
-                    trailingZ: trailingZscores[localIdx],
+                    starsZ: cappedZ(starsZscores[localIdx]),
+                    fwhmZ: cappedZ(fwhmZscores[localIdx]),
+                    hfrZ: cappedZ(hfrZscores[localIdx]),
+                    noiseZ: cappedZ(noiseMadZscores[localIdx]),
+                    trailingZ: cappedZ(trailingZscores[localIdx]),
                     snrContribution: displayContrib,
                     snrSquared: snrSq,
                     garbageReason: nil,
-                    isLockedKeep: lockedKeep
+                    isLockedKeep: lockedKeep,
+                    reasoningText: reasoning
+                )
+            }
+        }
+
+        // ── Stage 4: FWHM sanity check for z-score trash ──
+        // Z-score trash frames (not Stage 1 garbage) may have FWHM comparable to
+        // GOOD frames. This happens when a peak-quality block in the session pulls
+        // the median down, making "normal" frames look worse than they are.
+        // If a z-score-trash frame's FWHM falls within the range of GOOD frames,
+        // its seeing was comparable — rescue to borderline.
+        // Dawn/cloud frames are unaffected (they have Stage 1 garbage reasons).
+        for (_, indices) in groupsList {
+            guard indices.count >= minGroupSize else { continue }
+
+            let groupEntries = indices.map { entries[$0] }
+            let allHaveHeaderFWHM = groupEntries.allSatisfy { $0.fwhm != nil }
+
+            // Collect FWHM of GOOD/EXCELLENT frames as reference
+            var goodFWHMs: [Double] = []
+            var zScoreTrash: [(url: URL, fwhm: Double)] = []
+            var borderlineFrames: [(url: URL, fwhm: Double)] = []
+
+            for globalIdx in indices {
+                let entry = entries[globalIdx]
+                guard let bd = result[entry.url] else { continue }
+                let fwhm = allHaveHeaderFWHM ? entry.fwhm : entry.computedFWHM
+                guard let fwhmVal = fwhm else { continue }
+
+                switch bd.tier {
+                case .excellent, .good:
+                    goodFWHMs.append(fwhmVal)
+                case .trash where bd.garbageReason == nil:
+                    zScoreTrash.append((entry.url, fwhmVal))
+                case .borderline:
+                    borderlineFrames.append((entry.url, fwhmVal))
+                default:
+                    break
+                }
+            }
+
+            guard !goodFWHMs.isEmpty, !zScoreTrash.isEmpty else { continue }
+
+            // Use 90th percentile of GOOD FWHM as the comparison ceiling
+            let sorted = goodFWHMs.sorted()
+            let goodFWHM90th = sorted[min(sorted.count - 1, Int(Double(sorted.count) * 0.9))]
+
+            for (url, fwhm) in zScoreTrash {
+                guard fwhm <= goodFWHM90th else { continue }
+                guard let oldBD = result[url] else { continue }
+
+                result[url] = QualityBreakdown(
+                    tier: .borderline,
+                    combinedZScore: oldBD.combinedZScore,
+                    starsZ: oldBD.starsZ,
+                    fwhmZ: oldBD.fwhmZ,
+                    hfrZ: oldBD.hfrZ,
+                    noiseZ: oldBD.noiseZ,
+                    trailingZ: oldBD.trailingZ,
+                    snrContribution: oldBD.snrContribution,
+                    snrSquared: oldBD.snrSquared,
+                    garbageReason: nil,
+                    isLockedKeep: oldBD.isLockedKeep,
+                    reasoningText: "FWHM comparable to good frames — penalized by session peak quality, not actual degradation"
                 )
             }
         }
@@ -520,6 +663,84 @@ struct QualityEstimator {
         let deviations = values.compactMap { $0 }.map { Swift.abs($0 - med) }.sorted()
         guard !deviations.isEmpty else { return nil }
         return deviations[deviations.count / 2]
+    }
+
+    /// Generate human-readable reasoning for why a frame got its tier.
+    /// Called during scoring with full group context available.
+    private static func generateReasoning(
+        fwhmZ: Double?, starsZ: Double?, noiseZ: Double?, trailingZ: Double?,
+        tier: QualityTier,
+        isLockedKeep: Bool,
+        rescueReason: String?
+    ) -> String {
+        if isLockedKeep {
+            return "Within calibrated baseline — all metrics match learned profile"
+        }
+
+        var parts: [String] = []
+
+        // Rescue reason takes priority — explains the Stage 3 override
+        if let rescue = rescueReason {
+            parts.append(rescue)
+        }
+
+        // For FWHM/noise/trailing: raw z > 0 means WORSE (higher value = worse)
+        // For stars: raw z < 0 means WORSE (fewer stars = worse)
+        let fwhmPenalty: Double = fwhmZ ?? 0
+        let noisePenalty: Double = noiseZ ?? 0
+        let starsPenalty: Double = -(starsZ ?? 0)
+        let trailingPenalty: Double = trailingZ ?? 0
+
+        var penalties: [(String, Double)] = []
+        if fwhmPenalty > 0.5     { penalties.append(("FWHM", fwhmPenalty)) }
+        if noisePenalty > 0.5    { penalties.append(("Noise", noisePenalty)) }
+        if starsPenalty > 0.5    { penalties.append(("Stars", starsPenalty)) }
+        if trailingPenalty > 0.5 { penalties.append(("Trailing", trailingPenalty)) }
+
+        let sorted = penalties.sorted { $0.1 > $1.1 }
+
+        if tier == .excellent || tier == .good {
+            if sorted.isEmpty && rescueReason == nil {
+                parts.append("All metrics within normal range")
+            } else if rescueReason == nil {
+                // Good tier but with a notable penalty — explain what was compensated
+                if let worst = sorted.first {
+                    parts.append("\(worst.0) slightly below average, compensated by other metrics")
+                }
+            }
+        } else {
+            // Borderline or trash: explain what is dragging it down
+            if let worst = sorted.first {
+                switch worst.0 {
+                case "FWHM":
+                    if worst.1 > 2.0 {
+                        parts.append("FWHM worst in group")
+                    } else if worst.1 > 1.0 {
+                        parts.append("FWHM below average")
+                    } else {
+                        parts.append("FWHM slightly elevated")
+                    }
+                case "Noise":
+                    parts.append("Elevated noise (background brightening)")
+                case "Stars":
+                    if let fz = fwhmZ, fz <= 0.5 {
+                        parts.append("Fewer stars but FWHM OK — possible transient")
+                    } else {
+                        parts.append("Fewer stars detected")
+                    }
+                case "Trailing":
+                    parts.append("Star elongation detected")
+                default: break
+                }
+
+                // Secondary penalty
+                for penalty in sorted.dropFirst().prefix(1) {
+                    parts.append("\(penalty.0.lowercased()) also below average")
+                }
+            }
+        }
+
+        return parts.isEmpty ? "" : parts.joined(separator: " — ")
     }
 }
 

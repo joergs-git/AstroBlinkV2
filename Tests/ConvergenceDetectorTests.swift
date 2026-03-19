@@ -17,7 +17,7 @@ final class ConvergenceDetectorTests: XCTestCase {
             combinedZScore: zScore,
             starsZ: nil, fwhmZ: nil, hfrZ: nil, noiseZ: nil, trailingZ: nil,
             snrContribution: nil, snrSquared: nil, garbageReason: nil,
-            isLockedKeep: false
+            isLockedKeep: false, reasoningText: nil
         )
         entry.isMarkedForDeletion = isMarked
         return entry

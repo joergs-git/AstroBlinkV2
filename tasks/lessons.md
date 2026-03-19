@@ -1,5 +1,29 @@
 # Lessons Learned
 
+## [2026-03-19] — Always verify scoring changes with BOTH batch test AND app diagnostics
+- **Mistake:** Changed z-score thresholds and rescue rules, verified only via batch test (19% trash). But app still showed 42% trash because the app's star detection pipeline produced different trailing scores, causing 20 false-positive "elongation" flags on the BEST frames.
+- **Root cause:** Batch test and app use different code paths for star detection (batch: standalone PreviewGenerator; app: PrefetchCache pipeline). Trailing consensus analysis is sensitive to small differences in star positions/eccentricities.
+- **Rule:** After ANY scoring change: (1) Run batch test to verify baseline. (2) Add diagnostic logging to the app (UserDefaults write). (3) Compare app output vs batch test. (4) Only present to user when BOTH match.
+- **Applies to:** QualityEstimator changes, TrailingAnalyzer changes, any scoring pipeline
+
+## [2026-03-19] — Trailing detection must cross-check FWHM: sharp stars can't be trailing
+- **Mistake:** TrailingAnalyzer flagged 20 frames as "star trailing/elongation" even though they had FWHM 6.2-6.9 (the BEST in the session). Real trailing always degrades FWHM.
+- **Root cause:** The PA consensus detector found directional agreement in star PSF orientation, but this was optical aberration (coma), not tracking error. The FWHM proved the stars were sharp.
+- **Rule:** In Rule 5 (elongation garbage): if frame FWHM ≤ group median × 1.15, skip the trailing flag. Sharp stars + directional PA = optics, not tracking.
+- **Applies to:** QualityEstimator Rule 5, TrailingAnalyzer interpretation
+
+## [2026-03-19] — noStars rule needs FWHM cross-check for transient events
+- **Mistake:** H#0005 (103 stars, median 1200) flagged as "zero/near-zero stars" trash. But FWHM 6.6 was BETTER than best frame (6.9). The frame visually looked fine — galaxy clearly visible, stars sharp.
+- **Root cause:** A transient event (thin cloud, dew) reduced star visibility without degrading star quality. The noStars rule doesn't check if the remaining stars are actually sharp.
+- **Rule:** TODO: Add FWHM cross-check to noStars rule. If FWHM ≤ median, the frame's stars are sharp — flag as borderline (transient event), not trash. Same principle as the trailing cross-check.
+- **Applies to:** QualityEstimator Rule 1, any star-count-based garbage detection
+
+## [2026-03-19] — Metal .private texture getBytes crashes GPU driver
+- **Mistake:** Called `tex.getBytes()` on a PreviewGenerator output texture that has `.private` storageMode. Crashed with EXC_BAD_ACCESS in AGXMetalG15X_M1 twiddle function.
+- **Root cause:** `.private` textures are GPU-only. `getBytes()` requires `.shared` or `.managed` storage. The driver crashes instead of returning an error.
+- **Rule:** Always blit from `.private` to a `.shared` texture before calling `getBytes()`. Use `MTLBlitCommandEncoder.copy()` → `commit()` → `waitUntilCompleted()` → then `getBytes()` on the shared copy.
+- **Applies to:** Any test or utility that needs to read back PreviewGenerator output, PNG export from GPU textures
+
 ## [2026-03-15] — NSTableView metric bar constraint accumulation
 - **Mistake:** Used `bar.constraints.filter { ... }` to remove old width constraints before adding new ones on cell reuse
 - **Root cause:** The proportional width constraint `bar.widthAnchor = cellView.widthAnchor * multiplier` is owned by the common ancestor (`cellView`), not by `bar`. So `bar.constraints` never found it. Constraints accumulated on each cell reuse until layout collapsed.

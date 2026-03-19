@@ -1268,11 +1268,18 @@ class TriageViewModel: ObservableObject {
         // Notify table that quality column cells need redrawing
         needsTableRefresh = true
 
-        // Re-sort whenever quality z-scores are available (initial load + after re-cache).
-        // Quality scores change when noise stats/star metrics update, so the sort must be reapplied.
+        // Re-sort directly whenever quality z-scores change.
+        // Previously used needsQualityResort flag consumed by FileListView.updateNSView,
+        // but the indirect mechanism had timing issues (flag consumed before metrics were ready).
+        // Direct sort ensures the correct order immediately after scoring.
         let hasStarMetrics = images.contains { $0.computedStarCount != nil || $0.computedFWHM != nil }
         if hasStarMetrics && !scores.isEmpty {
-            needsQualityResort = true
+            let uniqueTargets = Set(images.compactMap { $0.target?.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty })
+            let uniqueFilters = Set(images.compactMap { $0.filter?.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty })
+            let order = ColumnDefinition.recommendedColumnOrder(
+                isMultiObject: uniqueTargets.count > 1, isMultiFilter: uniqueFilters.count > 1
+            )
+            applySortByColumnOrder(order)
         }
 
         let scored = scores.count
@@ -2957,13 +2964,30 @@ class TriageViewModel: ObservableObject {
     // Uses isDefaultDescending: numeric AND date/time columns sort descending by default
     // (newest date first, highest SNR first, etc.), text columns ascending (A-Z).
     func applySortByColumnOrder(_ columnIdentifiers: [String]) {
-        // Skip marked and frameNumber (sequence number, not a meaningful sort key)
-        // Use up to 5 sort keys to cover grouping columns (target, filter, exposure) + quality
-        let sortColumns = Array(
-            columnIdentifiers
-                .filter { $0 != "marked" && $0 != "frameNumber" }
-                .prefix(5)
-        )
+        // Build sort chain: grouping columns + first metric column only.
+        // Additional metric columns (contrib, stars, snr after quality) are skipped
+        // to preserve the implicit tiebreaker: night descending, time ascending.
+        let groupingColumns: Set<String> = [
+            "filter", "target", "exposure", "night", "date", "time",
+            "subfolder", "filename", "camera", "telescope", "binning",
+            "frameType", "pierSide"
+        ]
+
+        var sortColumns: [String] = []
+        var foundMetric = false
+
+        for colId in columnIdentifiers {
+            if colId == "marked" || colId == "frameNumber" { continue }
+            if groupingColumns.contains(colId) && !foundMetric {
+                sortColumns.append(colId)
+            } else if !foundMetric {
+                // First metric/value column (quality, snr, fwhm, etc.) — include and stop
+                sortColumns.append(colId)
+                foundMetric = true
+            }
+            // Skip additional metric columns — tiebreaker handles the rest
+        }
+
         let descriptors = sortColumns.map { colId in
             let ascending = !ColumnDefinition.isDefaultDescending(colId)
             return NSSortDescriptor(key: colId, ascending: ascending)

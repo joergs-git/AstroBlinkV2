@@ -223,6 +223,116 @@ Uncompressed XISF: ~17ms decode (SSD limited). LZ4-compressed: ~100-300ms (CPU d
 ## Future TODOs — UI Polish
 - [ ] Smooth arrow-key scrolling: holding up/down should pin selection at visible edge while rows scroll past (like Finder). Current behavior still stutters — likely needs NSTableView subclass override of `moveDown:`/`moveUp:` to control scroll position directly instead of relying on `scrollRowToVisible`.
 
+---
+
+## v4.6.0 — SmartCull: Multi-Stage Quality Engine (ANALYSIS COMPLETE 2026-03-19)
+
+### Validation Results (1457 frames, 6 setups, 3 telescopes, mono+OSC)
+- Stage 1 (z-scores): 1237 decided, 220 debatable (15%)
+- Stage 2 (deep analysis): 165 resolved (75%)
+- Stage 3 (pattern rules): 47 more resolved → KEEP with lower SSWEIGHT
+- **Final: 37 for user (2.5%), of which 23 are FWHM-only → ~14 genuine edge cases (0.96%)**
+
+### Completed — Research Phase
+- [x] BatchQualityAnalysisTests.swift — processes images, generates annotated thumbnails + CSV
+- [x] Fix: Metal .private texture → blit to .shared before getBytes
+- [x] M82 Stage 1+2 deep dive: temporal trends, XISF header forensics (FOCPOS, AIRMASS, humidity)
+- [x] Full 6-setup batch test (5307 seconds, all passed)
+- [x] Stage 2 cross-setup analysis: 75% auto-resolution across all setups
+- [x] Stage 3 pattern mining: two new rules (FWHM+noise→KEEP, star-dip+good-FWHM→transient KEEP)
+- [x] Design decision: FWHM-only borderlines → KEEP with lower SSWEIGHT (not delete)
+- [x] Memory: project_edge_case_resolution.md, project_smartcull_marketing.md, project_ai_integration_idea.md
+
+### Design Decisions
+1. **FWHM-only borderlines = KEEP with low SSWEIGHT** (they add signal, weighted stacking handles quality)
+2. **Culling Autopilot maps to stages**: Conservative=Stage1 only, Balanced=+Stage2+3, Aggressive=+FWHM borderlines
+3. **Always show WHY** — tooltip/popover explains reasoning per frame (not a black box)
+4. **Header forensics is opportunistic** — works with whatever headers are available, graceful fallback
+5. **Tagline: "1,457 frames. 14 decisions."**
+
+### Completed — Implementation (2026-03-19)
+- [x] Fix noiseZ explosion: cap individual metric z-scores at ±3 in QualityBreakdown
+- [x] Fix background anomaly: group-size-aware threshold (10→6.5 MAD, 20+→5.0)
+- [x] Stage 3 rescue rules in QualityEstimator: Rule A (FWHM+noise OK→good), Rule B (star dip transient→good), Rule C (FWHM-only trash→borderline)
+- [x] reasoningText field on QualityBreakdown + generateReasoning() method
+- [x] "Why?" section in quality tooltip (FileListView.swift)
+- [x] All 106 non-batch tests pass, 0 failures
+
+### Remaining — SmartCull Polish
+- [ ] Update Help panel with SmartCull explanation
+- [ ] Update README + App Store description with SmartCull marketing copy
+- [ ] Run validation on more user setups (different software: SGP, Voyager, APT)
+
+---
+
+## AIsaac — In-App AI Assistant (NEXT UP)
+
+### Concept
+"Ask AIsaac" — AI-powered assistant for astrophotography quality analysis.
+Named after Isaac Newton (astronomer, optics). Backend proxy via Supabase Edge Function
+calling Claude API. Rate-limited per user to control costs.
+
+### Architecture: Supabase Backend Proxy
+- App → Supabase Edge Function → Claude API → response back
+- User authenticates via anonymous Supabase auth (no signup required)
+- Rate limit: N queries per day per device UUID (e.g. 20/day free, more with account)
+- Cost control: set monthly Claude API budget cap on Supabase side
+- Estimated cost: ~$0.01/query text, ~$0.02/query with image → at 1000 users × 5 queries/day = ~$3/day
+- Cache common queries (object info) → reduces API calls by ~50%
+
+### Phase 1: Object Info (mostly free)
+- [ ] Local object database (Messier, NGC, IC — name, type, constellation, mag, size)
+- [ ] "Tell me about [OBJECT]" from FITS header → local DB first, Claude API fallback
+- [ ] Supabase Edge Function: `/ask-aisaac` endpoint
+- [ ] Swift client: `AIsaacClient.swift` — URLSession to Supabase, Keychain for device ID
+- [ ] UI: "Ask AIsaac" button in toolbar or session overview panel
+
+### Phase 2: Quality Explanation
+- [ ] "Why is this frame borderline?" → send metrics JSON (no image needed)
+- [ ] "What's wrong with my marked frames?" → send tier distribution + reasons
+- [ ] Pre-prepared system prompts with astrophotography context
+- [ ] Claude responds with natural language explanation
+
+### Phase 3: Visual Analysis (Claude Vision)
+- [ ] "What's the problem with this image?" → send 800px JPEG thumbnail
+- [ ] "Compare these two frames" → send pair of thumbnails
+- [ ] Star shape analysis, trailing detection, background gradient identification
+- [ ] Privacy: only thumbnails (800px), never full-res, never file paths
+
+### Phase 4: Session Summary
+- [ ] "How was my night?" → narrative from per-filter metrics + temporal trends
+- [ ] "Which filter needs more data?" → integration time recommendations
+- [ ] Auto-generate after session load (opt-in)
+
+### Pre-Prepared Prompts (system prompt templates)
+```
+OBJECT_INFO: "You are AIsaac, an expert astrophotography advisor. The user is imaging
+{OBJECT} with {TELESCOPE} ({FOCAL_LENGTH}mm) and {CAMERA}. Filter: {FILTER}.
+Provide: 1) What this object is, 2) Recommended filters and exposure,
+3) Common challenges, 4) Tips for this specific setup. Be concise."
+
+QUALITY_EXPLAIN: "You are AIsaac. The user has {TOTAL} frames of {OBJECT}.
+Quality distribution: {EXCELLENT} excellent, {GOOD} good, {BORDERLINE} borderline,
+{TRASH} trash. The highlighted frame has: FWHM={FWHM}, Stars={STARS}, SNR={SNR},
+TrailingScore={TRAIL}. Group median FWHM={MED_FWHM}. Explain why this frame
+is rated {TIER} and whether the user should keep or delete it."
+
+IMAGE_ANALYSIS: "You are AIsaac analyzing an astrophotography subframe.
+Setup: {TELESCOPE} + {CAMERA}, {FOCAL_LENGTH}mm, {FILTER} filter.
+Metrics: FWHM={FWHM}, Stars={STARS}, Ecc={ECC}, Trail={TRAIL}.
+Look at the image and describe: star shapes, trailing, background uniformity,
+any artifacts. Is this a good frame for stacking?"
+```
+
+### Privacy & Cost Control
+- Device UUID for rate limiting (no personal data)
+- Monthly budget cap on Supabase (e.g. $50/month → alert at 80%)
+- Cache object info responses for 30 days (same object = same answer)
+- All AI features optional — app works fully offline
+- Never send: file paths, real names, full-resolution images, API keys
+
+---
+
 ## Future TODOs — Batch Operations
 - [ ] Test batch rename with real FITS/XISF files (manual verification)
 - [ ] Batch undo integration with Cmd+Z (currently separate undoBatchRename method)

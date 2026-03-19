@@ -637,6 +637,12 @@ struct FileListView: NSViewRepresentable {
                 lines.append("  \u{2192} \(boldRec)")
             }
 
+            if let reasoning = bd.reasoningText, !reasoning.isEmpty {
+                lines.append("")
+                lines.append("  \u{2500}\u{2500} Why? \u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}")
+                lines.append("  \(reasoning)")
+            }
+
             return lines.joined(separator: "\n")
         }
 
