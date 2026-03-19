@@ -11,10 +11,11 @@ import AppKit
 private let highlightedKeywords: Set<String> = [
     "INSTRUME",
     "EXPOSURE", "EXPTIME", "FILTER", "GAIN", "OFFSET",
-    "FOCUSPOS", "FOCPOS", "FOCTEMP",
+    "FOCUSPOS", "FOCPOS", "FOCTEMP", "FOCALLEN",
     "CCD-TEMP", "SET-TEMP",
     "OBJECT", "IMAGETYP",
     "BAYERPAT", "XBINNING", "YBINNING",
+    "CROTA1", "CROTA2", "PIERSIDE",
 ]
 
 // MARK: - Window Controller (singleton, reusable)

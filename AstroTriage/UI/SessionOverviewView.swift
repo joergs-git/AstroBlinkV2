@@ -68,8 +68,13 @@ class SessionOverviewController: NSWindowController {
         struct GroupKey: Hashable {
             let object: String
             let filter: String
+            let night: String?
             let exposure: Double
         }
+
+        // Detect multi-night session (uses observingNight to handle midnight crossings)
+        let uniqueNights = Set(images.compactMap { $0.observingNight })
+        let useNight = uniqueNights.count > 1
 
         var grouped: [GroupKey: Int] = [:]
         var totalExposure: Double = 0
@@ -89,8 +94,9 @@ class SessionOverviewController: NSWindowController {
             let obj = entry.target ?? "unknown"
             let f = entry.filter ?? "none"
             let exp = entry.exposure ?? 0
+            let night = useNight ? entry.observingNight : nil
 
-            let key = GroupKey(object: obj, filter: f, exposure: exp)
+            let key = GroupKey(object: obj, filter: f, night: night, exposure: exp)
             grouped[key, default: 0] += 1
             totalExposure += exp
             totalCount += 1
@@ -114,12 +120,14 @@ class SessionOverviewController: NSWindowController {
             .sorted { a, b in
                 if a.key.object != b.key.object { return a.key.object < b.key.object }
                 if a.key.filter != b.key.filter { return a.key.filter < b.key.filter }
+                if a.key.night != b.key.night { return (a.key.night ?? "") > (b.key.night ?? "") }
                 return a.key.exposure < b.key.exposure
             }
             .map { (key, count) in
                 FilterRow(
                     object: key.object,
                     filter: key.filter,
+                    night: key.night,
                     exposurePerShot: key.exposure,
                     shotCount: count,
                     totalSeconds: key.exposure * Double(count)
@@ -148,6 +156,7 @@ struct FilterRow: Identifiable {
     let id = UUID()
     let object: String
     let filter: String
+    let night: String?            // observingNight (nil = single-night session)
     let exposurePerShot: Double
     let shotCount: Int
     let totalSeconds: Double
@@ -176,8 +185,9 @@ class SessionOverviewModel: ObservableObject {
     @Published var sessionObjects: String?
     // Callback: navigate to first image of tapped object in file list
     var onObjectTapped: ((String) -> Void)?
-    // Callback: navigate to first image of tapped filter+exposure within an object
-    var onFilterTapped: ((String, String, Double) -> Void)?
+    // Callback: navigate to first image of tapped filter+exposure+night within an object
+    // Parameters: (object, filter, exposure, night?)
+    var onFilterTapped: ((String, String, Double, String?) -> Void)?
     @Published var firstAcquisition: String?
     @Published var lastAcquisition: String?
     @Published var sessionCamera: String?
@@ -192,8 +202,13 @@ class SessionOverviewModel: ObservableObject {
         struct GroupKey: Hashable {
             let object: String
             let filter: String
+            let night: String?
             let exposure: Double
         }
+
+        // Detect multi-night session (uses observingNight to handle midnight crossings)
+        let uniqueNights = Set(images.compactMap { $0.observingNight })
+        let useNight = uniqueNights.count > 1
 
         var grouped: [GroupKey: Int] = [:]
         var total: Double = 0
@@ -213,8 +228,9 @@ class SessionOverviewModel: ObservableObject {
             let obj = entry.target ?? "unknown"
             let f = entry.filter ?? "none"
             let exp = entry.exposure ?? 0
+            let night = useNight ? entry.observingNight : nil
 
-            let key = GroupKey(object: obj, filter: f, exposure: exp)
+            let key = GroupKey(object: obj, filter: f, night: night, exposure: exp)
             grouped[key, default: 0] += 1
             total += exp
             count += 1
@@ -238,12 +254,14 @@ class SessionOverviewModel: ObservableObject {
             .sorted { a, b in
                 if a.key.object != b.key.object { return a.key.object < b.key.object }
                 if a.key.filter != b.key.filter { return a.key.filter < b.key.filter }
+                if a.key.night != b.key.night { return (a.key.night ?? "") > (b.key.night ?? "") }
                 return a.key.exposure < b.key.exposure
             }
             .map { (key, cnt) in
                 FilterRow(
                     object: key.object,
                     filter: key.filter,
+                    night: key.night,
                     exposurePerShot: key.exposure,
                     shotCount: cnt,
                     totalSeconds: key.exposure * Double(cnt)
@@ -305,7 +323,7 @@ class SessionOverviewModel: ObservableObject {
         qualityRows = grouped
             .sorted { a, b in
                 if a.key.filter != b.key.filter { return a.key.filter < b.key.filter }
-                return (a.key.date ?? "") < (b.key.date ?? "")
+                return (a.key.date ?? "") > (b.key.date ?? "")
             }
             .map { (key, values) in
                 let noises = values.map { $0.mad }
@@ -446,6 +464,10 @@ struct SessionOverviewContentView: View {
         Set(model.rows.map { $0.object }).count > 1
     }
 
+    private var hasMultipleNights: Bool {
+        model.rows.contains(where: { $0.night != nil })
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             // TOP: Integration table
@@ -466,6 +488,10 @@ struct SessionOverviewContentView: View {
                         }
                         Text("Fi")
                             .frame(width: 50, alignment: .leading)
+                        if hasMultipleNights {
+                            Text("Date")
+                                .frame(width: 50, alignment: .leading)
+                        }
                         Text("Shots")
                             .frame(width: 45, alignment: .trailing)
                         Text("Exp")
@@ -498,6 +524,10 @@ struct SessionOverviewContentView: View {
                                 Text("TOTAL")
                                     .frame(width: 50, alignment: .leading)
                                     .fontWeight(.bold)
+                                if hasMultipleNights {
+                                    Text("")
+                                        .frame(width: 50, alignment: .leading)
+                                }
                                 Text("\(model.totalShots)")
                                     .frame(width: 45, alignment: .trailing)
                                     .fontWeight(.bold)
@@ -735,12 +765,21 @@ struct SessionOverviewContentView: View {
                 .frame(minWidth: 50, alignment: .leading)
                 Spacer(minLength: 4)
             }
-            Button(action: { model.onFilterTapped?(row.object, cleanFilter, row.exposurePerShot) }) {
+            Button(action: { model.onFilterTapped?(row.object, cleanFilter, row.exposurePerShot, row.night) }) {
                 Text(cleanFilter).fontWeight(.semibold)
                     .foregroundColor(cleanFilter == "none" ? .secondary : .accentColor)
             }
             .buttonStyle(.plain)
             .frame(width: 50, alignment: .leading)
+            if hasMultipleNights {
+                // Show MM-DD from observing night (last 5 chars of YYYY-MM-DD)
+                Button(action: { model.onFilterTapped?(row.object, cleanFilter, row.exposurePerShot, row.night) }) {
+                    Text(row.night.map { String($0.suffix(5)) } ?? "")
+                        .foregroundColor(.accentColor)
+                }
+                .buttonStyle(.plain)
+                .frame(width: 50, alignment: .leading)
+            }
             Text("\(row.shotCount)")
                 .frame(width: 45, alignment: .trailing)
             Text(formatExposure(row.exposurePerShot))

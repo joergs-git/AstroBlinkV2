@@ -586,7 +586,7 @@ class PreviewGenerator {
             return result.stars
         }
 
-        // Compute threshold on CPU from 5% subsample (~2ms)
+        // Compute threshold on CPU from 5% subsample of raw data (~2ms)
         guard let (median, threshold) = StarDetector.computeThreshold(
             from: image, subsampleFactor: 2, sigmaThreshold: 5.0, channel: channel
         ) else {
@@ -628,7 +628,7 @@ class PreviewGenerator {
         commandBuffer.waitUntilCompleted()
 
         // GPU star detection on binned buffer
-        return detectStarsGPU(
+        var stars = detectStarsGPU(
             binnedBuffer: binnedBuffer,
             binnedWidth: binnedW,
             binnedHeight: binnedH,
@@ -637,5 +637,29 @@ class PreviewGenerator {
             median: median,
             threshold: threshold
         )
+
+        // Sanity check: if too many candidates (> 5000), the threshold is catching
+        // galaxy/nebula structure (HII regions, star clusters) as false stars.
+        // Auto-escalate sigma threshold until count is reasonable.
+        // Only the GPU detection kernel re-runs — bin2x is already done.
+        if lastTotalStarCount > 5000 {
+            for sigma: Float in [8.0, 12.0, 16.0] {
+                guard let (med2, thresh2) = StarDetector.computeThreshold(
+                    from: image, subsampleFactor: 2, sigmaThreshold: sigma, channel: channel
+                ) else { break }
+                stars = detectStarsGPU(
+                    binnedBuffer: binnedBuffer,
+                    binnedWidth: binnedW,
+                    binnedHeight: binnedH,
+                    channelCount: channels,
+                    channel: channel,
+                    median: med2,
+                    threshold: thresh2
+                )
+                if lastTotalStarCount <= 5000 { break }
+            }
+        }
+
+        return stars
     }
 }

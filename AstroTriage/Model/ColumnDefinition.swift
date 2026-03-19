@@ -163,8 +163,11 @@ struct ColumnDefinition {
         switch columnId {
         case "frameNumber", "exposure", "starCount", "sensorTemp",
              "gain", "offset", "focuserTemp", "ambientTemp", "fileSize", "snr",
-             "quality", "snrContrib", "date", "nightDate", "time":
+             "quality", "snrContrib", "date", "nightDate":
             return true
+        // time: ascending by default (oldest first = chronological within a session)
+        case "time":
+            return false
         // fwhm and hfr: lower = better → default ascending (best first)
         case "fwhm", "hfr":
             return false
@@ -188,7 +191,7 @@ struct ColumnDefinition {
     static func headerToolTip(for columnId: String) -> String? {
         switch columnId {
         case "quality":
-            return "Quality score within group (same filter + target + exposure).\nStage 1: Red if any metric catastrophically bad (< 50% of group median).\nStage 2: Weighted z-scores of stars, FWHM, HFR, noise.\nFull green = excellent, half-green = good.\nOrange gradient (4 levels) = borderline. Red = garbage.\nHover each cell for per-metric breakdown + SNR contribution."
+            return "Quality score within group (same filter + target + exposure).\nStage 1: Red if any metric catastrophically bad (< 25% of group median).\nStage 2: Robust weighted z-scores (median/MAD) of stars, FWHM, HFR, noise.\nFull green = excellent, half-green = good.\nOrange gradient (4 levels) = borderline. Red = garbage.\nHover each cell for per-metric breakdown + SNR contribution."
         case "snrContrib":
             return "SNR Contribution: how much this frame adds to a weighted stack\nrelative to the best frame in its group.\n100% = best frame, 50% = contributes half as much.\nBased on (SNR_i / SNR_best)² — the stacking SNR formula."
         case "eccentricity":

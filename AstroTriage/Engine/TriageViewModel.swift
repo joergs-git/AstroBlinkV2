@@ -540,7 +540,7 @@ class TriageViewModel: ObservableObject {
     /// Wire session overview tap callbacks (idempotent — safe to call multiple times)
     private func wireSessionOverviewCallbacks() {
         sessionOverviewModel.onObjectTapped = { [weak self] name in self?.navigateToObject(name) }
-        sessionOverviewModel.onFilterTapped = { [weak self] obj, filter, exposure in self?.navigateToObject(obj, filter: filter, exposure: exposure) }
+        sessionOverviewModel.onFilterTapped = { [weak self] obj, filter, exposure, night in self?.navigateToObject(obj, filter: filter, exposure: exposure, night: night) }
     }
 
     // Load specific files (user selected individual files, not a folder)
@@ -905,6 +905,10 @@ class TriageViewModel: ObservableObject {
                     self.sessionOverviewModel.updateStats(from: self.images)
                     // Recompute quality scores now that noiseMAD is populated for all images
                     self.recomputeQualityScores()
+                    // Jump to first image after precaching + quality scoring complete
+                    if !self.images.isEmpty {
+                        self.selectImage(at: 0)
+                    }
                 }
             },
             onNoiseStats: { [weak self] url, stats in
@@ -2027,9 +2031,9 @@ class TriageViewModel: ObservableObject {
         displayCurrentImage()
     }
 
-    /// Navigate to the first image matching the given object name (and optionally filter).
+    /// Navigate to the first image matching the given object name (and optionally filter, exposure, night).
     /// Called from session overview when user clicks an object or filter name.
-    func navigateToObject(_ objectName: String, filter: String? = nil, exposure: Double? = nil) {
+    func navigateToObject(_ objectName: String, filter: String? = nil, exposure: Double? = nil, night: String? = nil) {
         let name = objectName.trimmingCharacters(in: .whitespaces)
         // Session overview groups nil/empty targets as "unknown" — match that here
         let isUnknownGroup = name == "unknown"
@@ -2045,6 +2049,10 @@ class TriageViewModel: ObservableObject {
             // Match exposure if provided (distinguishes e.g. L@180s vs L@300s groups)
             if let exp = exposure, exp > 0 {
                 guard let entryExp = entry.exposure, Swift.abs(entryExp - exp) < 0.5 else { return false }
+            }
+            // Match observing night if provided (multi-night sessions)
+            if let n = night {
+                guard entry.observingNight == n else { return false }
             }
             return true
         }) else { return }
@@ -2923,7 +2931,11 @@ class TriageViewModel: ObservableObject {
                     return ascending ? valA < valB : valA > valB
                 }
             }
-            return false
+            // Implicit tiebreaker: night descending (newest first), then time ascending
+            let nightA = a.observingNight ?? ""
+            let nightB = b.observingNight ?? ""
+            if nightA != nightB { return nightA > nightB }
+            return (a.dateTime ?? "") < (b.dateTime ?? "")
         }
 
         if let url = selectedURL,

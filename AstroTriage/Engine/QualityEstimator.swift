@@ -105,12 +105,12 @@ struct QualityBreakdown: Hashable {
     // Only meaningful when tier == .borderline
     var borderlineSeverity: Int {
         guard tier == .borderline else { return 0 }
-        // Range is thresholdGood (-0.3) to thresholdBorderline (-1.2), span = 0.9
-        // Split into 4 equal sub-tiers of 0.225 each
+        // Range is thresholdGood (-0.5) to thresholdBorderline (-1.5), span = 1.0
+        // Split into 4 equal sub-tiers of 0.25 each
         let z = combinedZScore
-        if z > -0.525 { return 0 }       // Nearly good
-        if z > -0.75  { return 1 }       // Middle borderline
-        if z > -0.975 { return 2 }       // Leaning towards trash
+        if z > -0.75  { return 0 }       // Nearly good
+        if z > -1.00  { return 1 }       // Middle borderline
+        if z > -1.25  { return 2 }       // Leaning towards trash
         return 3                          // Nearly trash
     }
 }
@@ -123,20 +123,29 @@ struct QualityEstimator {
     static let minGroupSize = 10
 
     // Stage 2: z-score thresholds for 4-tier relative classification
+    // Widened from original (-0.3/-1.2) to avoid penalizing normal seeing variation.
+    // In a homogeneous session, most frames should be green (good/excellent).
     static let thresholdExcellent: Double =  0.5   // Top tier: clearly above average
-    static let thresholdGood:      Double = -0.3   // Solid: near or slightly above average
-    static let thresholdBorderline: Double = -1.2  // Edge: below average, check visually
+    static let thresholdGood:      Double = -0.5   // Solid: within normal session variation
+    static let thresholdBorderline: Double = -1.5  // Edge: noticeably below average
     // Below borderline → trash (red) via Stage 2
+
+    // Stage 2: z-score cap — prevents extreme scores from normal variation.
+    // In homogeneous groups (tight MAD), a 10-15% difference can produce z > 4.
+    // Cap at ±3.0 so multiple metrics must agree for trash classification.
+    // Genuinely bad frames are already caught by Stage 1 garbage detection.
+    static let zscoreCap: Double = 3.0
 
     // Stage 1: absolute garbage detection thresholds (percentile of group)
     // If a metric is below this percentile of the group, it's garbage regardless of other metrics
     static let garbagePercentile: Double = 0.10  // Bottom 10% is suspicious
     static let garbageDropFactor: Double = 0.50  // Value < 50% of group median → definite garbage
 
-    // Narrowband filter keywords
-    static let narrowbandKeywords = ["ha", "hα", "h-alpha", "halpha",
-                                     "oiii", "o3", "sii", "s2",
-                                     "hbeta", "hb", "nii", "n2"]
+    // Broadband filters where star count is a reliable quality indicator.
+    // Everything else — narrowband (Ha, OIII, SII...), dual-band (L-eXtreme, L-Ultimate),
+    // tri-band (L-Quadband, NBZ), or unknown — gets reduced star weight (0.5).
+    // This handles all current and future filter types without maintaining a narrowband list.
+    static let broadbandCanonical: Set<String> = ["L", "R", "G", "B"]
 
     // MARK: - Public API
 
@@ -148,24 +157,54 @@ struct QualityEstimator {
         calibrationDB: CalibrationDatabase? = nil,
         fingerprint: SetupFingerprint? = nil
     ) -> [URL: QualityBreakdown] {
-        var groups: [GroupKey: [Int]] = [:]
+        // Two-pass night-aware scoring for multi-night sessions:
+        // Pass 1: combined groups (all nights merged) → every entry gets a baseline score
+        // Pass 2: per-night groups (>= minGroupSize) → overwrite with per-night scores
+        // This ensures frames in small per-night groups (e.g. 3 B frames from one night)
+        // still get scored via the combined group, while large per-night groups get
+        // more accurate per-night scoring.
+        let uniqueNights = Set(entries.compactMap { $0.observingNight })
+        let useNight = uniqueNights.count > 1
+
+        // Ordered list: combined groups first, per-night overrides second
+        var groupsList: [(key: GroupKey, indices: [Int])] = []
+
+        // Combined groups (session-wide, ignoring night) — baseline for all entries
+        var combinedGroups: [GroupKey: [Int]] = [:]
         for (index, entry) in entries.enumerated() {
-            let key = GroupKey(entry: entry)
-            groups[key, default: []].append(index)
+            let key = GroupKey(entry: entry, useNight: false)
+            combinedGroups[key, default: []].append(index)
+        }
+        groupsList.append(contentsOf: combinedGroups.map { ($0.key, $0.value) })
+
+        if useNight {
+            // Per-night groups for large enough subsets — override combined scores
+            var nightGroups: [GroupKey: [Int]] = [:]
+            for (index, entry) in entries.enumerated() {
+                let key = GroupKey(entry: entry, useNight: true)
+                nightGroups[key, default: []].append(index)
+            }
+            for (key, indices) in nightGroups where indices.count >= minGroupSize {
+                groupsList.append((key, indices))
+            }
         }
 
         var result: [URL: QualityBreakdown] = [:]
 
-        for (_, indices) in groups {
+        for (_, indices) in groupsList {
             guard indices.count >= minGroupSize else { continue }
 
             let groupEntries = indices.map { entries[$0] }
 
-            let filterName = (groupEntries.first?.filter ?? "").lowercased()
-            let isNarrowband = narrowbandKeywords.contains(where: { filterName.contains($0) })
-            // Stage 1 already catches catastrophic star count drops (< 50% of median).
-            // Stage 2 only ranks remaining reasonable images — slight elevation is enough.
-            let starWeight: Double = isNarrowband ? 0.5 : 1.2
+            let rawFilter = groupEntries.first?.filter ?? ""
+            let canonical = ColorCombineEngine.canonicalFilterName(rawFilter)
+            // Broadband (L/R/G/B): star count is reliable → weight 1.2
+            // Everything else (narrowband, dual/tri-band, unknown filters): star count
+            // varies with detection threshold → weight 0.5
+            let isBroadband = broadbandCanonical.contains(canonical)
+                || canonical.isEmpty || canonical.lowercased() == "none"
+            let isNarrowband = !isBroadband
+            var starWeight: Double = isNarrowband ? 0.5 : 1.2
 
             // Per-group source consistency
             let allHaveHeaderFWHM = groupEntries.allSatisfy { $0.fwhm != nil }
@@ -190,6 +229,20 @@ struct QualityEstimator {
             // SNR contribution: find best SNR in group for relative scoring
             let validSNRs = snrValues.compactMap { $0 }
             let snrBest = validSNRs.max() ?? 0
+
+            // Detect bimodal/unreliable star counts: if coefficient of variation > 1.0,
+            // star counts span orders of magnitude — likely galaxy/nebula contamination
+            // making the GPU detector threshold-sensitive. Ignore star count for scoring.
+            let validStarCounts = starsValues.compactMap { $0 }
+            if validStarCounts.count >= 2 {
+                let scMean = validStarCounts.reduce(0, +) / Double(validStarCounts.count)
+                if scMean > 0 {
+                    let scVar = validStarCounts.map { ($0 - scMean) * ($0 - scMean) }.reduce(0, +) / Double(validStarCounts.count)
+                    if scVar.squareRoot() / scMean > 1.0 {
+                        starWeight = 0  // Star counts unreliable — skip in scoring
+                    }
+                }
+            }
 
             // Compute group statistics for absolute garbage detection
             let starsMedian = sortedMedian(starsValues)
@@ -234,8 +287,11 @@ struct QualityEstimator {
                 }
 
                 // Rule 1: No stars or near-zero stars → garbage
-                if garbageReason == nil, let stars = starsValues[localIdx], let median = starsMedian {
-                    let dropThreshold = isNarrowband ? garbageDropFactor * 0.5 : garbageDropFactor
+                // Skip when star counts are unreliable (bimodal distribution from
+                // galaxy/nebula contamination — starWeight == 0).
+                // Broadband: < 25% of median, Narrowband: < 15% of median
+                if garbageReason == nil, starWeight > 0, let stars = starsValues[localIdx], let median = starsMedian {
+                    let dropThreshold = isNarrowband ? garbageDropFactor * 0.3 : garbageDropFactor * 0.5
                     if stars < 1 || (median > 10 && stars < median * dropThreshold) {
                         garbageReason = .noStars
                     }
@@ -280,7 +336,7 @@ struct QualityEstimator {
                 // Distinguish: tracking jumps degrade FWHM/HFR (doubled PSFs are wider),
                 // while satellite trails leave real star metrics normal. Only flag if FWHM or HFR
                 // is also elevated (>1.3× median), confirming the PSFs themselves are degraded.
-                if garbageReason == nil, let stars = starsValues[localIdx], let median = starsMedian {
+                if garbageReason == nil, starWeight > 0, let stars = starsValues[localIdx], let median = starsMedian {
                     if median > 20 && stars > median * 1.8 {
                         let fwhmElevated = fwhmValues[localIdx] != nil && fwhmMedian != nil &&
                             fwhmValues[localIdx]! > fwhmMedian! * 1.3
@@ -335,28 +391,33 @@ struct QualityEstimator {
                 }
 
                 // ── Stage 2: Relative weighted z-score comparison ──
+                // Z-scores capped at ±zscoreCap to prevent one metric from dominating
+                // in homogeneous groups where MAD is tiny.
                 var zSum: Double = 0
                 var wSum: Double = 0
+                let cap = zscoreCap
 
+                // FWHM and HFR are ~95% correlated (both measure star sharpness).
+                // Using both double-penalizes slightly-softer frames.
+                // Use FWHM when available; HFR only as fallback.
                 if let z = fwhmZscores[localIdx] {
-                    zSum += -z * 1.0     // lower FWHM = better → negate
+                    zSum += -min(cap, max(-cap, z)) * 1.0     // lower FWHM = better → negate
                     wSum += 1.0
-                }
-                if let z = hfrZscores[localIdx] {
-                    zSum += -z * 1.0     // lower HFR = better → negate
+                } else if let z = hfrZscores[localIdx] {
+                    zSum += -min(cap, max(-cap, z)) * 1.0     // lower HFR = better → negate
                     wSum += 1.0
                 }
                 if let z = starsZscores[localIdx] {
-                    zSum += z * starWeight  // higher stars = better → keep sign
+                    zSum += min(cap, max(-cap, z)) * starWeight  // higher stars = better → keep sign
                     wSum += starWeight
                 }
                 if let z = noiseMadZscores[localIdx] {
-                    zSum += -z * 1.0     // lower noise = better → negate
+                    zSum += -min(cap, max(-cap, z)) * 1.0     // lower noise = better → negate
                     wSum += 1.0
                 }
                 if let z = trailingZscores[localIdx] {
-                    zSum += z * 1.5      // Higher trailing score = worse → keep positive, weight 1.5x
-                    wSum += 1.5          // Highest weight: elongation can't be fixed by stacking
+                    zSum += -min(cap, max(-cap, z)) * 1.0     // lower trailing = better → negate
+                    wSum += 1.0          // Same weight as other metrics; Stage 1 catches severe trailing
                 }
 
                 guard wSum > 0 else { continue }
@@ -406,12 +467,32 @@ struct QualityEstimator {
     // MARK: - Private helpers
 
     /// Compute z-scores for an array of optional Doubles.
+    /// Uses median/MAD instead of mean/stddev for robustness against outliers.
+    /// One exceptional frame (superb seeing) won't skew the group statistics and
+    /// cause merely-good frames to appear bad.
+    /// The 1.4826 factor normalizes MAD to be equivalent to standard deviation
+    /// for normal distributions, so existing z-score thresholds remain valid.
+    /// Falls back to mean/stddev when MAD=0 (>50% of values identical — rare in
+    /// real data but common in synthetic test groups).
     private static func zscores(values: [Double?]) -> [Double?] {
-        let present = values.compactMap { $0 }
+        let present = values.compactMap { $0 }.sorted()
         guard present.count >= 2 else {
             return Array(repeating: nil, count: values.count)
         }
 
+        let median = present[present.count / 2]
+        let deviations = present.map { Swift.abs($0 - median) }.sorted()
+        let mad = deviations[deviations.count / 2] * 1.4826  // normalized MAD → σ estimate
+
+        if mad > 0 {
+            return values.map { val -> Double? in
+                guard let v = val else { return nil }
+                return (v - median) / mad
+            }
+        }
+
+        // MAD = 0: majority of values identical. Fall back to mean/stddev which
+        // handles this case correctly (the few different values become clear outliers).
         let mean = present.reduce(0, +) / Double(present.count)
         let variance = present.map { ($0 - mean) * ($0 - mean) }.reduce(0, +) / Double(present.count)
         let std = variance.squareRoot()
@@ -448,10 +529,12 @@ struct GroupKey: Hashable {
     let filter:   String
     let object:   String
     let exposure: Int
+    let night:    String?   // observingNight for multi-night sessions, nil for single-night
 
-    init(entry: ImageEntry) {
+    init(entry: ImageEntry, useNight: Bool = false) {
         filter   = (entry.filter   ?? "").uppercased().trimmingCharacters(in: .whitespaces)
         object   = (entry.target   ?? "").trimmingCharacters(in: .whitespaces)
         exposure = entry.exposure.map { Int($0.rounded()) } ?? 0
+        night    = useNight ? entry.observingNight : nil
     }
 }

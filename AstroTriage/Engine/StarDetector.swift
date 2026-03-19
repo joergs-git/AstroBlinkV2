@@ -267,4 +267,53 @@ enum StarDetector {
 
         return (median, threshold)
     }
+
+    /// Compute detection threshold from an already-binned MTLBuffer.
+    /// This ensures the threshold matches the exact data the GPU star detector operates on,
+    /// avoiding scale mismatches between raw and binned pixel statistics.
+    static func computeThresholdFromBuffer(
+        buffer: MTLBuffer,
+        width: Int,
+        height: Int,
+        channelCount: Int,
+        channel: Int,
+        sigmaThreshold: Float = 5.0
+    ) -> (median: Float, threshold: Float)? {
+        let planeSize = width * height
+        let ch = min(channel, channelCount - 1)
+        let channelOffset = ch * planeSize
+        let ptr = buffer.contents().bindMemory(to: UInt16.self, capacity: planeSize * channelCount)
+
+        // 5% subsample for speed
+        let sampleCount = max(1000, planeSize / 20)
+        let stride = max(1, planeSize / sampleCount)
+
+        var samples = [Float]()
+        samples.reserveCapacity(sampleCount)
+
+        var i = 0
+        while i < planeSize {
+            samples.append(Float(ptr[channelOffset + i]))
+            i += stride
+        }
+
+        let n = samples.count
+        guard n > 0 else { return nil }
+
+        vDSP_vsort(&samples, vDSP_Length(n), 1)
+        let median = samples[n / 2]
+
+        let negMedian = -median
+        vDSP_vsadd(samples, 1, [negMedian], &samples, 1, vDSP_Length(n))
+        vDSP_vabs(samples, 1, &samples, 1, vDSP_Length(n))
+        vDSP_vsort(&samples, vDSP_Length(n), 1)
+
+        let mad = samples[n / 2]
+        let sigma = 1.4826 * mad
+
+        guard sigma > 0 else { return nil }
+        let threshold = median + sigmaThreshold * sigma
+
+        return (median, threshold)
+    }
 }
