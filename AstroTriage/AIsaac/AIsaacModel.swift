@@ -368,13 +368,23 @@ class AIsaacModel: ObservableObject {
         messages.append(AIsaacMessage(role: .assistant, text: text))
     }
 
-    // Reset state tracking (e.g. when a new session is loaded)
+    // Full reset when a new session is loaded — clears ALL stale data
     func resetStateTracking() {
         lastKnownFrameCount = 0
         lastKnownCachingState = false
         lastKnownCachingDone = false
         lastKnownMarkedCount = 0
         hasGreetedSession = false
+        // Clear stale data from previous session
+        currentThumbnailBase64 = nil
+        currentImageHeaders = []
+        sessionContext = nil
+        quickReplies = []
+        lastUserMessage = nil
+        lastUserPreset = nil
+        streamingText = ""
+        isStreaming = false
+        isThinking = false
     }
 
     // Whether a session with images is loaded
