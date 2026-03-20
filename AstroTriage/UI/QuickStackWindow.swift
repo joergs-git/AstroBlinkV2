@@ -733,6 +733,7 @@ struct QuickStackV2ProgressView: View {
                     .pickerStyle(.segmented)
                     .frame(width: 150)
                     .controlSize(.mini)
+                    .help("Bilinear: fast, uses 4 pixels (2x2). Good with 15+ frames.\nLanczos-3: sharper, uses 36 pixels (6x6). Better for few frames or large dithers.")
                 }
             }
 
@@ -842,7 +843,7 @@ struct StackResultViewV2: View {
     @State private var denoise: Double = 0.0
     @State private var deconvolve: Double = 0.0
     @State private var useRL: Bool = false
-    @State private var deconvMode: DeconvMode = .wiener
+    @State private var deconvMode: DeconvMode = .rl
     @State private var displayTexture: MTLTexture?
     @State private var savedMessage: String?
     @State private var isRendering: Bool = false
@@ -876,9 +877,8 @@ struct StackResultViewV2: View {
     var body: some View {
         VStack(spacing: 0) {
             ZStack {
-                if showOriginal, let origTex = originalTexture {
-                    ZoomableMetalTextureView(texture: origTex)
-                } else if let tex = displayTexture ?? engine.resultTexture {
+                // Single view instance — swap texture to preserve zoom state
+                if let tex = (showOriginal ? originalTexture : displayTexture) ?? engine.resultTexture {
                     ZoomableMetalTextureView(texture: tex)
                 }
                 if showOriginal {
@@ -1018,17 +1018,12 @@ struct StackResultViewV2: View {
                     }
                     .frame(width: 82)
                 Rectangle().fill(Color.gray.opacity(0.3)).frame(width: 1, height: 16)
-                Button(action: { showOriginal.toggle() }) {
-                    Text(showOriginal ? "A" : "A/B")
-                        .font(.system(size: 10, weight: .bold, design: .monospaced))
-                        .foregroundColor(showOriginal ? .white : .secondary)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 3)
-                        .background(RoundedRectangle(cornerRadius: 4).fill(showOriginal ? Color.orange : Color.clear))
-                }
-                .buttonStyle(.plain)
-                .help("Click to toggle original vs processed view. No recalculation.")
-                Spacer()
+                Toggle("A/B", isOn: $showOriginal)
+                    .toggleStyle(.switch).controlSize(.mini)
+                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                    .foregroundColor(showOriginal ? .orange : .secondary)
+                    .help("Toggle original vs processed view. Preserves zoom. No recalculation.")
+                    .frame(width: 60)
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 3)
@@ -1189,10 +1184,17 @@ struct StackResultViewV2: View {
     }
 
     // Invalidate preprocessed cache — call when gradient/wiener/structure change
+    // Uses longer debounce since preprocessing is CPU-heavy
     private func invalidatePreprocess() {
         preprocessedData = nil
         preprocessNeedsUpdate = true
-        scheduleRender()
+        renderTask?.cancel()
+        isRendering = true
+        renderTask = Task {
+            try? await Task.sleep(nanoseconds: 300_000_000)  // 300ms debounce for heavy ops
+            guard !Task.isCancelled else { return }
+            await restretch()
+        }
     }
 
     @MainActor
@@ -1502,7 +1504,7 @@ struct ImagePreviewView: View {
     @State private var denoise: Double = 0.0
     @State private var deconvolve: Double = 0.0
     @State private var useRL: Bool = false
-    @State private var deconvMode: DeconvMode = .wiener
+    @State private var deconvMode: DeconvMode = .rl
     @State private var displayTexture: MTLTexture?
     @State private var savedMessage: String?
     @State private var isRendering: Bool = false

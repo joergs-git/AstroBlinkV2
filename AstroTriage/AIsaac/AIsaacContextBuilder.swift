@@ -288,6 +288,15 @@ struct AIsaacContextBuilder {
         - Culling Autopilot: Conservative (Stage 1 only), Balanced (+severe borderline), Aggressive (+all borderline).
         - Compare (C key): side-by-side with best frame in group. Synchronized zoom/pan. Star overlay shows eccentricity.
 
+        STACKING OPTIONS:
+        - Bilinear interpolation: fast (4 pixels, 2x2). Good enough with 15+ frames.
+        - Lanczos-3 interpolation: sharper (36 pixels, 6x6 sinc kernel). Better for few frames or large dithers.
+        - Min/max pixel rejection: automatic, removes satellite trails and hot pixels when ≥3 frames.
+        - Gradient removal: removes light pollution gradients via median grid + interpolation.
+        - Structure enhancement: boosts nebula/cloud detail without sharpening stars.
+        - Deconvolution modes: RL (GPU, fast, default), USM (GPU, fastest), Wiener (CPU, best quality but slow).
+        - A/B toggle: instantly compare processed vs original without recalculation.
+
         KEYBOARD SHORTCUTS (tell users when relevant):
         - Arrow keys: prev/next image. Page Up/Home: first. Page Down/End: last.
         - Space: toggle pre-delete mark. Cmd+Backspace: move marked to _predel/. Cmd+Z: undo.
