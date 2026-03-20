@@ -636,7 +636,7 @@ struct ContentView: View {
         .onChange(of: viewModel.stretchStrength) { newValue in
             sliderValue = Double(newValue)
         }
-        .navigationTitle("AstroBlinkV2 v\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?") — Fast Visual Culling for Astrophotography")
+        .navigationTitle("AstroBlink & AIsaac v\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?") — Fast Visual Culling for Astrophotography")
         .frame(minWidth: 800, minHeight: 500)
     }
 

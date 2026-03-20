@@ -18,7 +18,7 @@ struct AstroBlinkV2App: App {
         .commands {
             // Replace default About menu item
             CommandGroup(replacing: .appInfo) {
-                Button("About AstroBlinkV2") {
+                Button("About AstroBlink & AIsaac") {
                     AstroBlinkV2AppDelegate.showAboutPanel()
                 }
             }
@@ -58,7 +58,7 @@ struct AstroBlinkV2App: App {
 
             // Help menu
             CommandGroup(replacing: .help) {
-                Button("AstroBlinkV2 Help") {
+                Button("AstroBlink Help") {
                     HelpWindowController.shared.showWindow(nil)
                 }
                 .keyboardShortcut("?", modifiers: .command)
@@ -126,7 +126,7 @@ class AboutWindowController {
             backing: .buffered,
             defer: false
         )
-        win.title = "About AstroBlinkV2"
+        win.title = "About AstroBlink & AIsaac"
         win.contentView = hostingView
         win.center()
         win.isReleasedWhenClosed = false
@@ -195,7 +195,7 @@ struct AboutView: View {
             }
 
             // App name and version
-            Text("AstroBlinkV2")
+            Text("AstroBlink & AIsaac")
                 .font(.system(size: 22, weight: .bold))
             Text("v\(version) (Build \(build))")
                 .font(.system(size: 12))
@@ -286,7 +286,7 @@ struct AboutView: View {
     }
 
     private func shareApp() {
-        let shareText = "Check out AstroBlinkV2 — a fast astrophotography image triage & stacking tool for macOS with GPU-accelerated auto-stretch, quality scoring, and LightspeedStacker!\n\n\(appStoreURL)"
+        let shareText = "Check out AstroBlink — a fast astrophotography image triage & stacking tool for macOS with GPU-accelerated auto-stretch, quality scoring, and LightspeedStacker!\n\n\(appStoreURL)"
         let url = URL(string: appStoreURL)!
         let picker = NSSharingServicePicker(items: [shareText, url])
         // Show the share picker anchored to the key window
@@ -325,7 +325,7 @@ class HelpWindowController: NSWindowController {
             defer: false
         )
         let appVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
-        window.title = "AstroBlinkV2 v\(appVersion) — Help"
+        window.title = "AstroBlink v\(appVersion) — Help"
         window.center()
         window.isReleasedWhenClosed = false
         window.minSize = NSSize(width: 500, height: 500)
@@ -384,9 +384,9 @@ struct HelpContentView: View {
             VStack(alignment: .leading, spacing: 16) {
                 // Header
                 VStack(spacing: 4) {
-                    Text("AstroBlinkV2")
+                    Text("AstroBlink & AIsaac")
                         .font(.system(size: 28, weight: .bold))
-                    Text("Fast Visual Culling for Astrophotography Sessions")
+                    Text("Fast Visual Culling & AI-Powered Session Analysis")
                         .font(.system(size: 14))
                         .foregroundColor(.secondary)
                     Text("Enhanced and Inspired by PixInsight's Blink Tool")
@@ -399,8 +399,8 @@ struct HelpContentView: View {
 
                 Divider()
 
-                // How to Work with AstroBlinkV2 — shown first so users see workflow immediately
-                sectionHeader("How to Use AstroBlinkV2")
+                // How to Work with AstroBlink — shown first so users see workflow immediately
+                sectionHeader("How to Use AstroBlink")
 
                 Text("Open a folder with your FITS or XISF subs and blink through them using the arrow keys — fast key repeat lets you scan hundreds of frames in seconds. When you spot a bad sub (clouds, tracking errors, planes), hit Space to mark it for deletion. Use K to skip over already-marked frames so you can focus on the remaining candidates. When you're done, press Cmd+⌫ to move all marked files into a PRE-DELETE subfolder — nothing is ever permanently deleted, so you can always recover. Check the Session Overview for a quick integration summary and copy the Fact Sheet for your Astrobin or social media post. Have fun and clear skies!")
                     .font(.system(size: 12))
@@ -673,7 +673,7 @@ struct HelpBackgroundView: View {
                 // Quality Scoring
                 faqSection("Quality Scoring — The 4-Tier System",
                     """
-                    AstroBlinkV2 automatically scores every image relative to its group (same target + filter + exposure). \
+                    AstroBlink automatically scores every image relative to its group (same target + filter + exposure). \
                     This means a 30s Ha sub is only compared to other 30s Ha subs — never to 180s Luminance frames.
 
                     The scoring uses two stages:
@@ -824,7 +824,7 @@ struct HelpBackgroundView: View {
                 // Smart Column Sorting
                 faqSection("Smart Column Sorting",
                     """
-                    When you open a session, AstroBlinkV2 detects the session type and automatically sorts \
+                    When you open a session, AstroBlink detects the session type and automatically sorts \
                     the file list for optimal triage. The sort fires once after the initial precache completes \
                     (when all quality scores are available).
                     """)
@@ -895,7 +895,7 @@ struct HelpBackgroundView: View {
                     """
                     One-shot-color cameras use a Bayer color filter array (CFA) where each pixel only \
                     captures one color (R, G, or B). Debayering interpolates the missing colors to produce \
-                    a full RGB image. AstroBlinkV2 uses GPU-accelerated bilinear interpolation.
+                    a full RGB image. AstroBlink uses GPU-accelerated bilinear interpolation.
                     """)
 
                 faqItem("When to use debayer",
@@ -942,7 +942,7 @@ struct HelpBackgroundView: View {
 
                 faqItem("Self-Calibration",
                     """
-                    AstroBlinkV2 silently learns your equipment's quality baseline as you work. Every \
+                    AstroBlink silently learns your equipment's quality baseline as you work. Every \
                     mark/unmark action and PRE-DELETE confirmation trains the system. After 30+ frames \
                     with the same setup (telescope + camera + focal length), an absolute quality floor \
                     activates: frames meeting the learned baseline are locked as KEEP — z-scores cannot \

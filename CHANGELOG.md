@@ -1,8 +1,33 @@
 # Changelog
 
-All notable changes to AstroBlinkV2 will be documented in this file.
+All notable changes to AstroBlink & AIsaac will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
+
+## [5.0.0] — 2026-03-20
+
+### Added
+- **AIsaac AI Assistant** — in-app AI powered by Claude, with streaming responses, voice input/output, per-frame deep analysis, and app control commands
+- **Preset question chips** — Quality Summary, Smart Mark, Filter Advice, About This Object, Nearby Objects, Plan Tonight
+- **Two-tier model** — Free Sonnet Buddy (included) or Opus Superexpert (user's own API key stored in macOS Keychain)
+- **Equipment learning database** — remembers telescopes, cameras, filters, locations, and imaging history across sessions
+- **Voice interaction** — hold mic button to speak, optional TTS for responses
+- **App control via chat** — AIsaac can navigate, highlight, mark, filter, compare, open previews, and start stacking
+- **Location-aware language** — detects imaging site from FITS headers, offers to respond in local language
+- **Bortle zone awareness** — factors light pollution into all filter and target recommendations
+- **Session planning** — "Plan Tonight" generates complete imaging plans with targets, filters, exposures, and timeline
+- **Quality metrics in Header Inspector** — purple section showing all z-scores, tier, SNR contribution, reasoning
+- **SmartCull in Help panel** — comprehensive 6-item FAQ covering all 4 pipeline stages
+- **Unique session index** — # column shows stable 1-based index (not NINA frame number) for clear frame identification
+- **SITELAT/SITELONG extraction** — supports NINA, LAT-OBS, OBSLAT header variants
+- **Microphone + speech recognition entitlements**
+- **Supabase Edge Function** — proxy to Claude API with rate limiting, error handling, Pushover alerts, rolling auth token
+
+### Changed
+- **App renamed** — "AstroBlink & AIsaac" (display name, About, Help, window title)
+- **maxConcurrentDecodes** — 6 → 8 for high-core machines
+- **minGroupSize** — 10 → 6 for quality scoring of small filter groups
+- **SmartCull in README** — new section in Complete Feature List
 
 ## [4.6.0] — 2026-03-19
 

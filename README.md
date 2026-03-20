@@ -1,20 +1,40 @@
-# AstroBlinkV2
+# AstroBlink & AIsaac
 
-**Fast visual culling for astrophotography sessions on macOS.**
+**Fast visual culling for astrophotography sessions on macOS — now with AI-powered session analysis.**
 
-Blink, mark, stack - triage your astro XISF, FITS subs in seconds. GPU-stretched viewer with QuickStack,QuickLook, and fastest keyboard post processing workflow on macOS.
+Blink, mark, stack — triage your astro XISF, FITS subs in seconds. GPU-stretched viewer with LightspeedStacker, QuickLook, SmartCull quality scoring, and the fastest keyboard workflow on macOS. **NEW: AIsaac, your built-in AI astrophotography assistant.**
 
-AstroBlinkV2 lets you blink through hundreds of FITS and XISF sub-exposures in seconds, mark the bad ones, and move them out of the way — without ever permanently deleting a single file. Inspired by PixInsight's Blink, built from the ground up for Apple Silicon.
+AstroBlink lets you blink through hundreds of FITS and XISF sub-exposures in seconds, mark the bad ones, and move them out of the way — without ever permanently deleting a single file. Inspired by PixInsight's Blink, built from the ground up for Apple Silicon.
 
 Super lightweight (~5 MB app size), yet high performance — Metal GPU compute for real-time auto-stretch, star detection, and eccentricity analysis. No Electron, no bloat. Pure native Swift + Metal, engineered for Apple Silicon with zero-copy GPU buffers and concurrent decode pipelines. Loads 500+ subs in seconds on M-series Macs.
 
-Nice side effect: Finally you have a native XISF and FITS Quicklook for macOS. (press Spacebar shows a quick preview of the image). Was missing that for long ! :-)
+Nice side effect: Finally you have a native XISF and FITS Quicklook for macOS. (press Spacebar shows a quick preview of the image). Was missing that for long! :-)
 
 ![macOS](https://img.shields.io/badge/macOS-13%2B-blue) ![Apple Silicon](https://img.shields.io/badge/Apple%20Silicon-optimized-green) ![License](https://img.shields.io/badge/license-MIT-green)
 
 ---
 
-![AstroBlinkV2 — Main View with Header Inspector and Session Overview](AstroBlinkV2_screenshot2.png)
+![AstroBlink & AIsaac — Main View with AI Assistant](AstroBlinkV2_screenshot2.png)
+
+---
+
+## What's New in v5.0.0
+
+### AIsaac — Your AI Astrophotography Assistant
+
+**Meet AIsaac** — an AI assistant built right into AstroBlink, named after Isaac Newton. AIsaac understands your equipment, your session data, and every frame's quality metrics. Ask questions in any language, get actionable answers.
+
+- **Quality Summary** — instant analysis of your session with per-filter breakdown, trends, and recommendations
+- **Smart Mark** — AI suggests which frames to cull, you confirm with one click
+- **Filter Advice** — which filters need more integration time based on your data and Bortle zone
+- **Plan Tonight** — complete imaging plan with targets, filters, exposures, start/end times for your location
+- **Nearby Objects** — targets near your current object that fit your FOV
+- **Voice Input** — hold the mic button, speak your question, AIsaac answers (optional TTS)
+- **Streaming Responses** — text flows in real-time, word by word
+- **App Control** — AIsaac can navigate to frames, open previews, highlight files, set filters, start stacking
+- **Equipment Memory** — learns your telescopes, cameras, and imaging history across sessions
+- **Two Tiers** — Free Sonnet Buddy (included, rate-limited) or Opus Superexpert (bring your own API key)
+- **Location-Aware** — detects your Bortle zone from FITS coordinates, offers to respond in your language
 
 ---
 
