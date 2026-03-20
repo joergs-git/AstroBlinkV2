@@ -264,46 +264,31 @@ Uncompressed XISF: ~17ms decode (SSD limited). LZ4-compressed: ~100-300ms (CPU d
 
 ---
 
-## AIsaac — In-App AI Assistant (IN PROGRESS)
+## AIsaac — In-App AI Assistant (v5.0.0 SHIPPED)
 
-### Stage 0: UI Skeleton ✅ (2026-03-20)
-- [x] AIsaacModel.swift — ChatMessage, PresetType, SessionContext, mock logic
-- [x] AIsaacService.swift — mock responses with simulated delay
-- [x] AIsaacView.swift — purple chat UI, preset chips, input field, night mode support
-- [x] AIsaacWindowController.swift — floating window (SessionOverview pattern)
-- [x] Toolbar button (sparkles icon, purple) + notification wiring
-- [x] Context builder: extracts equipment, objects, filters, quality stats from TriageViewModel
-- [x] 6 preset question chips: Quality Summary, About This Object, Explain a Term, Filter Advice, Nearby Objects, Smart Mark
+### Stage 0+1: COMPLETE ✅ (2026-03-20)
+- [x] Purple floating chat window, streaming Claude API, Supabase Edge Function
+- [x] 6 presets: Quality Summary, Smart Mark, Filter Advice, About This Object, Nearby Objects, Plan Tonight
+- [x] Two-tier: Free Sonnet Buddy + Opus Superexpert (user's own API key via Keychain)
+- [x] Per-frame metrics, FITS headers, thumbnails sent to Claude Vision
+- [x] App control commands (navigate, highlight, mark, filter, stack, compare, open preview)
+- [x] Voice input/output, streaming responses, quick-reply buttons, retry
+- [x] Equipment learning database, iCloud sync ready, location/Bortle awareness
+- [x] Rolling hourly auth token, Pushover alerting, rate limiting
 
-### Stage 1: Supabase Edge Function + Claude API
-- [ ] AIsaacContextBuilder.swift — system prompt assembly with session data
-- [ ] Supabase Edge Function: `/functions/v1/ask-aisaac` (TypeScript)
-- [ ] Rate limiting: 20 queries/day per device UUID
-- [ ] Upgrade AIsaacService.swift — real API calls
-- [ ] SITELAT/SITELONG extraction in MetadataExtractor (location context)
-- [ ] Smart Mark: parse mark indices from response + confirmation dialog
-- [ ] Wire mark callback to TriageViewModel.togglePreDeleteForRows()
-- [ ] Custom icon asset (old man with beard, glasses, 3 stars)
+### AIsaac — Next Improvements
+- [ ] Custom icon asset (friendly old man with beard, glasses, 3 blinking stars)
+- [ ] Give AIsaac full keyboard shortcut reference in system prompt
+- [ ] Give AIsaac Help panel content knowledge for user support questions
+- [ ] iCloud sync activation (developer portal container setup)
+- [ ] Persistent rate limiting in Supabase database (survives cold starts)
+- [ ] Cache common object info queries (reduce API calls)
+- [ ] Response streaming for Opus mode (currently works, verify edge cases)
 
-### Stage 2: Quality Explanation
-- [ ] "Why is this frame borderline?" → send metrics JSON
-- [ ] Per-image quality data in system prompt for mark preset
-
-### Stage 3: Visual Analysis (Claude Vision)
-- [ ] Send 800px JPEG thumbnail for visual analysis
-- [ ] Compare two frames side by side
-- [ ] Privacy: only thumbnails, never full-res or file paths
-
-### Stage 4: Session Summary
-- [ ] "How was my night?" → narrative from per-filter metrics + temporal trends
-- [ ] "Which filter needs more data?" → integration time recommendations
-
-### Privacy & Cost Control
-- Device UUID for rate limiting (no personal data)
-- Monthly budget cap on Supabase (e.g. $50/month → alert at 80%)
-- Cache common queries (object info) → reduces API calls by ~50%
-- All AI features optional — app works fully offline
-- Never send: file paths, real names, full-resolution images, API keys
+## Future TODOs — Astrometry & Annotations
+- [ ] Superfast plate solving / astrometric solution (hassle-free for users)
+- [ ] Image annotations (object labels, constellation lines, star names)
+- [ ] RA/DEC coordinate overlay on images
 
 ---
 
