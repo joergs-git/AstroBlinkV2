@@ -170,6 +170,15 @@ class AIsaacWindowController: NSWindowController {
 
         model.nightMode = viewModel.nightMode
 
+        // Current frame identification
+        if let selectedImage = viewModel.selectedImage {
+            model.currentFrameSessionIndex = selectedImage.sessionIndex
+            model.currentFrameFilename = selectedImage.filename
+        } else {
+            model.currentFrameSessionIndex = nil
+            model.currentFrameFilename = nil
+        }
+
         // Read FITS/XISF headers for current image (for frame-specific questions)
         if let selectedImage = viewModel.selectedImage {
             let url = selectedImage.decodingURL

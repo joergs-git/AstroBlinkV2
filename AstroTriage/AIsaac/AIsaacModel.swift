@@ -170,6 +170,8 @@ class AIsaacModel: ObservableObject {
     @Published var voiceEnabled: Bool = false  // TTS for responses
     @Published var currentThumbnailBase64: String?  // JPEG thumbnail of current image for Claude Vision
     @Published var currentImageHeaders: [(key: String, value: String)] = []  // FITS/XISF headers for current image
+    @Published var currentFrameSessionIndex: Int?   // session # of currently displayed frame
+    @Published var currentFrameFilename: String?    // filename of currently displayed frame
     @Published var weatherForecast: String?  // Weather/seeing context for planning
 
     let speechManager = AIsaacSpeechManager()
@@ -400,6 +402,8 @@ class AIsaacModel: ObservableObject {
         // Clear stale data from previous session
         currentThumbnailBase64 = nil
         currentImageHeaders = []
+        currentFrameSessionIndex = nil
+        currentFrameFilename = nil
         sessionContext = nil
         quickReplies = []
         lastUserMessage = nil

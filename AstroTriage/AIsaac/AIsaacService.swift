@@ -32,13 +32,18 @@ class AIsaacService: ObservableObject {
         history: [AIsaacMessage]
     ) async -> String {
         // Build system prompt
-        let imageHeaders = AIsaacWindowController.shared.model.currentImageHeaders
-        let weather = AIsaacWindowController.shared.model.weatherForecast
+        let aisaacModel = AIsaacWindowController.shared.model
+        let imageHeaders = aisaacModel.currentImageHeaders
+        let weather = aisaacModel.weatherForecast
+        let currentIdx = aisaacModel.currentFrameSessionIndex
+        let currentName = aisaacModel.currentFrameFilename
         let systemPrompt = AIsaacContextBuilder.buildSystemPrompt(
             context: context,
             preset: preset,
             currentImageHeaders: imageHeaders,
-            weatherForecast: weather
+            weatherForecast: weather,
+            currentFrameIndex: currentIdx,
+            currentFrameFilename: currentName
         )
 
         // Build messages array (last 10 for context window management)

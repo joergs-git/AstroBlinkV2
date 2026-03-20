@@ -9,7 +9,9 @@ struct AIsaacContextBuilder {
         context: AIsaacSessionContext?,
         preset: AIsaacPreset?,
         currentImageHeaders: [(key: String, value: String)] = [],
-        weatherForecast: String? = nil
+        weatherForecast: String? = nil,
+        currentFrameIndex: Int? = nil,
+        currentFrameFilename: String? = nil
     ) -> String {
         var parts: [String] = []
 
@@ -81,6 +83,11 @@ struct AIsaacContextBuilder {
         utcDf.dateFormat = "yyyy-MM-dd HH:mm"
         utcDf.timeZone = TimeZone(identifier: "UTC")
         parts.append("CURRENT DATE/TIME: \(df.string(from: now)) \(tzName) (UTC: \(utcDf.string(from: now))). Use this for all planning, seasonal, and visibility calculations. Do NOT guess the date.")
+
+        // Current frame identification — the user is looking at this frame right now
+        if let idx = currentFrameIndex, let name = currentFrameFilename {
+            parts.append("CURRENTLY DISPLAYED FRAME: #\(idx) (\(name)). The thumbnail image you see IS this frame. When the user says \"this image\" or \"this frame\", they mean #\(idx). You know this frame's # — never ask the user which frame they're looking at.")
+        }
 
         // User equipment profile (learned from previous sessions — always available)
         let profile = AIsaacUserProfile.load()
