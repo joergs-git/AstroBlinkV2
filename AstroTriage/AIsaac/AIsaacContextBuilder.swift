@@ -7,7 +7,8 @@ struct AIsaacContextBuilder {
     // Build the full system prompt for Claude
     static func buildSystemPrompt(
         context: AIsaacSessionContext?,
-        preset: AIsaacPreset?
+        preset: AIsaacPreset?,
+        currentImageHeaders: [(key: String, value: String)] = []
     ) -> String {
         var parts: [String] = []
 
@@ -69,6 +70,17 @@ struct AIsaacContextBuilder {
         ask me anything about astrophotography, your equipment, or the cosmos!"
         """)
 
+        // Current date/time/timezone — CRITICAL for planning and seasonal context
+        let now = Date()
+        let df = DateFormatter()
+        df.dateFormat = "yyyy-MM-dd HH:mm"
+        df.timeZone = TimeZone.current
+        let tzName = TimeZone.current.identifier
+        let utcDf = DateFormatter()
+        utcDf.dateFormat = "yyyy-MM-dd HH:mm"
+        utcDf.timeZone = TimeZone(identifier: "UTC")
+        parts.append("CURRENT DATE/TIME: \(df.string(from: now)) \(tzName) (UTC: \(utcDf.string(from: now))). Use this for all planning, seasonal, and visibility calculations. Do NOT guess the date.")
+
         // User equipment profile (learned from previous sessions — always available)
         let profile = AIsaacUserProfile.load()
         if let profileContext = profile.contextSummary() {
@@ -80,9 +92,19 @@ struct AIsaacContextBuilder {
             parts.append(buildSessionBlock(ctx))
         }
 
-        // App knowledge (for terminology questions)
-        if preset == .terminology || preset == nil {
+        // App knowledge (always include for free-form questions)
+        if preset == nil {
             parts.append(buildAppKnowledge())
+        }
+
+        // Current image FITS/XISF headers (for frame-specific questions)
+        if !currentImageHeaders.isEmpty {
+            let headers = currentImageHeaders
+            var headerLines = ["CURRENT IMAGE FITS/XISF HEADERS (for the frame the user is looking at):"]
+            for h in headers.prefix(40) {  // cap at 40 most important headers
+                headerLines.append("  \(h.key) = \(h.value)")
+            }
+            parts.append(headerLines.joined(separator: "\n"))
         }
 
         // Per-frame metrics — only for presets that need deep analysis
@@ -159,7 +181,8 @@ struct AIsaacContextBuilder {
         if ctx.isCaching {
             lines.append("- STATUS: Pre-caching still in progress. Quality scores are incomplete — do NOT draw conclusions about quality yet.")
         } else if ctx.scoredCount < ctx.totalFrames {
-            lines.append("- STATUS: Only \(ctx.scoredCount) of \(ctx.totalFrames) frames have quality scores. Wait for caching to complete before quality analysis.")
+            let unscored = ctx.totalFrames - ctx.scoredCount
+            lines.append("- STATUS: \(ctx.scoredCount) of \(ctx.totalFrames) frames scored. \(unscored) frames have no quality score because their filter group has fewer than 6 frames — too few for meaningful statistical comparison (z-scores need ≥6 samples). This is NOT a caching issue — these frames are fully loaded, just in groups too small to rank.")
         }
 
         // SNR retention
@@ -209,6 +232,9 @@ struct AIsaacContextBuilder {
           * Elongation: trailing score > 0.7 (cross-checked with FWHM) → "star trailing/elongation"
           * Star count anomaly: stars > 1.8× median AND elevated FWHM/HFR → "doubled stars"
           * Background anomaly: background > 5-6.5 MAD from group median → "abnormal background"
+        - MINIMUM GROUP SIZE: Groups with fewer than 6 frames get NO quality score. \
+        Z-scores need ≥6 samples for meaningful median/MAD statistics. These frames are \
+        NOT in a queue and NOT bad — just in a group too small to compare statistically.
         - Stage 2 — Relative Z-Score Ranking (within each group):
           * Uses median/MAD robust statistics (outlier-resistant)
           * Metrics weighted: Stars 1.2× (broadband) or 0.5× (narrowband), FWHM 1.0×, HFR 1.0×, \
@@ -248,6 +274,12 @@ struct AIsaacContextBuilder {
         - Pre-delete: Files moved to _predel/ staging folder, never permanently deleted. Full Cmd+Z undo.
         - Culling Autopilot: Conservative (Stage 1 only), Balanced (+severe borderline), Aggressive (+all borderline).
         - Compare (C key): side-by-side with best frame in group. Synchronized zoom/pan. Star overlay shows eccentricity.
+
+        LINKS (reference these when users ask for more info):
+        - GitHub: https://github.com/joergs-git/AstroBlinkV2
+        - README with full feature list and changelog
+        - AstroBin profile: https://app.astrobin.com/u/joergsflow#gallery
+        - Support: https://buymeacoffee.com/joergsflow
         """
     }
 
@@ -394,14 +426,6 @@ struct AIsaacContextBuilder {
             Keep it engaging and concise.
             """
 
-        case .terminology:
-            return """
-            TASK: Explain the term the user is asking about.
-            Use the APP KNOWLEDGE section above as reference. Explain in the context of astrophotography \
-            and how AstroBlinkV2 uses it for quality scoring. Give a practical example if helpful. \
-            Keep it concise — 2-3 sentences max unless the term is complex.
-            """
-
         case .filterAdvice:
             return """
             TASK: Recommend which filters need more integration time.
@@ -433,18 +457,20 @@ struct AIsaacContextBuilder {
             The indices refer to the image array positions. The user will see a confirmation dialog.
             """
 
-        case .whatToShoot:
+        case .planTonight:
             return """
-            TASK: Suggest what the user should image tonight.
-            Use the USER EQUIPMENT PROFILE to know their telescopes, cameras, filters, location, \
-            and previously imaged objects. Consider:
-            - Current date/season: what's well-positioned in the sky tonight from their location
-            - Their equipment: FOV, focal length, filter set
-            - Their Bortle zone (from coordinates): filter vs broadband feasibility
-            - Objects they haven't imaged yet, or ones that need more integration
-            - Moon phase considerations for the current date
-            Suggest 3-5 concrete targets with reasoning. Be specific about which setup to use \
-            if they have multiple. If you don't know their location, ask.
+            TASK: Plan a complete imaging session for tonight.
+            Use the USER EQUIPMENT PROFILE for telescopes, cameras, filters, location, \
+            and previously imaged objects. Provide a CONCRETE plan with:
+            - 2-4 target objects with reasoning (why tonight, altitude, transit time)
+            - For EACH target: which filters, exposure time per sub, number of subs, total integration
+            - Suggested start and end time for each target (based on altitude/transit)
+            - Overall session timeline from dusk to dawn
+            - Moon phase and its impact on filter choice (avoid broadband near full moon)
+            - Which targets from previous sessions need more data
+            - Bortle zone considerations for filter selection
+            Format as a clear timeline the user can follow at the telescope.
+            If you don't know the location, ask. Use today's date for calculations.
             """
 
         case .gettingStarted, .workflowTips, .whatsNew:

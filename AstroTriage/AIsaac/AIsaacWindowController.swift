@@ -15,7 +15,7 @@ class AIsaacWindowController: NSWindowController {
             backing: .buffered,
             defer: false
         )
-        window.title = "AIsaac"
+        window.title = "AIsaac's AstroBlink"
         window.isReleasedWhenClosed = false
         window.level = .floating
         window.minSize = NSSize(width: 360, height: 400)
@@ -169,6 +169,19 @@ class AIsaacWindowController: NSWindowController {
         )
 
         model.nightMode = viewModel.nightMode
+
+        // Read FITS/XISF headers for current image (for frame-specific questions)
+        if let selectedImage = viewModel.selectedImage {
+            let url = selectedImage.decodingURL
+            Task.detached(priority: .userInitiated) {
+                let headers = MetadataExtractor.readHeaders(from: url)
+                let sorted = headers.sorted { a, b in a.key < b.key }
+                    .map { (key: $0.key, value: $0.value) }
+                await MainActor.run {
+                    self.model.currentImageHeaders = sorted
+                }
+            }
+        }
 
         // Generate thumbnail of current image for Claude Vision
         updateThumbnail(viewModel: viewModel)

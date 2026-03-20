@@ -19,48 +19,45 @@ struct AIsaacMessage: Identifiable {
 // MARK: - Preset Types (inspirational question chips)
 
 enum AIsaacPreset: String, CaseIterable, Identifiable {
-    // Session-aware presets
+    // Session-aware presets (ordered by usage frequency)
     case qualitySummary = "Quality Summary"
-    case objectTrivia = "About This Object"
-    case terminology = "What Does … Mean?"
-    case filterAdvice = "Filter Advice"
-    case nearbyObjects = "Nearby Objects"
     case smartMark = "Smart Mark"
+    case filterAdvice = "Filter Advice"
+    case objectTrivia = "About This Object"
+    case nearbyObjects = "Nearby Objects"
+    case planTonight = "Plan Tonight"
     // No-session presets (general help)
     case gettingStarted = "Getting Started"
     case workflowTips = "Workflow Tips"
     case whatsNew = "What's New?"
-    case whatToShoot = "What to Shoot?"
 
     var id: String { rawValue }
 
     var icon: String {
         switch self {
         case .qualitySummary: return "chart.bar.doc.horizontal"
-        case .objectTrivia:   return "star.circle"
-        case .terminology:    return "questionmark.circle"
-        case .filterAdvice:   return "camera.filters"
-        case .nearbyObjects:  return "map"
         case .smartMark:      return "hand.thumbsdown"
+        case .filterAdvice:   return "camera.filters"
+        case .objectTrivia:   return "star.circle"
+        case .nearbyObjects:  return "map"
+        case .planTonight:    return "moon.stars"
         case .gettingStarted: return "arrow.right.circle"
         case .workflowTips:   return "lightbulb"
         case .whatsNew:       return "sparkle"
-        case .whatToShoot:    return "moon.stars"
         }
     }
 
     var shortLabel: String {
         switch self {
         case .qualitySummary: return "Quality Summary"
-        case .objectTrivia:   return "About This Object"
-        case .terminology:    return "Explain a Term"
-        case .filterAdvice:   return "Filter Advice"
-        case .nearbyObjects:  return "Nearby Objects"
         case .smartMark:      return "Smart Mark"
+        case .filterAdvice:   return "Filter Advice"
+        case .objectTrivia:   return "About This Object"
+        case .nearbyObjects:  return "Nearby Objects"
+        case .planTonight:    return "Plan Tonight"
         case .gettingStarted: return "Getting Started"
         case .workflowTips:   return "Workflow Tips"
         case .whatsNew:       return "What's New?"
-        case .whatToShoot:    return "What to Shoot?"
         }
     }
 
@@ -70,24 +67,22 @@ enum AIsaacPreset: String, CaseIterable, Identifiable {
         switch self {
         case .qualitySummary:
             return "Give me a quality summary of this session."
-        case .objectTrivia:
-            return "Tell me interesting facts about \(obj)."
-        case .terminology:
-            return "What does FWHM mean?"  // placeholder — user edits or types their own term
-        case .filterAdvice:
-            return "What filters should I improve for \(obj) on my next night?"
-        case .nearbyObjects:
-            return "What deep-sky objects are close to \(obj) that I could image with my setup?"
         case .smartMark:
             return "Analyze my frames and suggest which ones to mark for deletion."
+        case .filterAdvice:
+            return "What filters should I improve for \(obj) on my next night?"
+        case .objectTrivia:
+            return "Tell me interesting facts about \(obj)."
+        case .nearbyObjects:
+            return "What deep-sky objects are close to \(obj) that I could image with my setup?"
+        case .planTonight:
+            return "Plan my imaging session for tonight: targets, filters, exposure times, number of subs, and start/end times."
         case .gettingStarted:
             return "How do I use AstroBlinkV2 to triage my imaging session?"
         case .workflowTips:
             return "What's the most efficient workflow for culling my subs?"
         case .whatsNew:
             return "What are the latest features in AstroBlinkV2?"
-        case .whatToShoot:
-            return "What should I shoot tonight with my setup?"
         }
     }
 }
@@ -170,8 +165,11 @@ class AIsaacModel: ObservableObject {
     @Published var messages: [AIsaacMessage] = []
     @Published var inputText: String = ""
     @Published var isThinking: Bool = false
+    @Published var streamingText: String = ""  // incremental text during streaming
+    @Published var isStreaming: Bool = false
     @Published var voiceEnabled: Bool = false  // TTS for responses
     @Published var currentThumbnailBase64: String?  // JPEG thumbnail of current image for Claude Vision
+    @Published var currentImageHeaders: [(key: String, value: String)] = []  // FITS/XISF headers for current image
 
     let speechManager = AIsaacSpeechManager()
     @Published var showPresets: Bool = true
@@ -202,6 +200,7 @@ class AIsaacModel: ObservableObject {
     var onHighlightFrames: (([Int]) -> Void)?           // select/highlight rows in file list (shift-click style)
     var onViewFrame: ((Int) -> Void)?                   // navigate to and display a specific frame
     var onOpenPreview: (([Int]) -> Void)?               // open image preview window(s) (double-click equivalent)
+    var onRefreshContext: (() -> Void)?                  // refresh session context before each query
 
     // Quick-reply buttons shown when AIsaac asks a question
     @Published var quickReplies: [String] = []
@@ -257,6 +256,10 @@ class AIsaacModel: ObservableObject {
         markedCount: Int,
         isConverged: Bool
     ) {
+        // Don't show static/mock reactive comments when conversation is active
+        // (they feel out of place once the user is talking to the real AI)
+        if !messages.isEmpty { return }
+
         // Session just loaded (frames appeared)
         if totalFrames > 0 && lastKnownFrameCount == 0 && !hasGreetedSession {
             hasGreetedSession = true
@@ -300,37 +303,52 @@ class AIsaacModel: ObservableObject {
         lastKnownMarkedCount = markedCount
     }
 
-    // Detect if AIsaac asked a question and generate quick-reply buttons
+    // Generate context-aware quick-reply buttons based on response content
     func updateQuickReplies(for response: String) {
         let lower = response.lowercased()
 
-        // Yes/No questions
-        if lower.contains("soll ich") || lower.contains("shall i") || lower.contains("want me to") ||
-           lower.contains("möchtest du") || lower.contains("willst du") || lower.contains("should i") {
-            if lower.contains("markieren") || lower.contains("mark") || lower.contains("löschen") || lower.contains("delete") {
-                quickReplies = ["Yes, mark them", "No, leave them", "Show me first"]
-            } else {
-                quickReplies = ["Yes", "No", "Tell me more"]
-            }
+        // Mark/delete questions
+        if (lower.contains("markieren") || lower.contains("mark") || lower.contains("löschen") || lower.contains("delete")) &&
+           (lower.contains("soll") || lower.contains("shall") || lower.contains("want") || lower.contains("?")) {
+            quickReplies = ["Yes, mark them", "No, leave them", "Show me first"]
             return
         }
 
-        // Comparison / choice questions
-        if lower.contains("oder") || lower.contains(" or ") {
-            if lower.contains("deutsch") || lower.contains("german") || lower.contains("english") {
-                quickReplies = ["Deutsch", "English"]
-            } else if lower.contains("weiterspringen") || lower.contains("vergleichen") || lower.contains("compare") || lower.contains("skip") {
-                quickReplies = ["Compare", "Skip", "Show details"]
-            } else {
-                quickReplies = ["First option", "Second option", "More info"]
-            }
+        // Language choice
+        if lower.contains("deutsch") && (lower.contains("english") || lower.contains("englisch")) {
+            quickReplies = ["Deutsch", "English"]
             return
         }
 
-        // General question (ends with ?)
+        // After quality summary — offer follow-up actions
+        if lower.contains("quality") || lower.contains("qualität") || lower.contains("ausgezeichnet") || lower.contains("excellent") {
+            quickReplies = ["Mark trash for me", "Show worst frames", "Filter advice"]
+            return
+        }
+
+        // After filter analysis — offer next steps
+        if lower.contains("filter") && (lower.contains("empfehl") || lower.contains("recommend") || lower.contains("mehr daten") || lower.contains("more data")) {
+            quickReplies = ["Plan tonight", "Show filter details", "Nearby objects"]
+            return
+        }
+
+        // Compare/view questions
+        if lower.contains("vergleichen") || lower.contains("compare") || lower.contains("anschauen") || lower.contains("look at") {
+            quickReplies = ["Yes, compare", "Skip", "Show next"]
+            return
+        }
+
+        // General yes/no question
         let trimmed = response.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.hasSuffix("?") {
-            quickReplies = ["Yes", "No", "Tell me more"]
+            // Try to extract meaningful options from the question
+            if lower.contains("weiter") || lower.contains("continue") || lower.contains("next") {
+                quickReplies = ["Yes, continue", "No, that's enough"]
+            } else if lower.contains("detail") || lower.contains("genauer") || lower.contains("closer") {
+                quickReplies = ["Yes, show details", "No thanks"]
+            } else {
+                quickReplies = ["Yes", "No"]
+            }
             return
         }
 
@@ -377,47 +395,37 @@ class AIsaacModel: ObservableObject {
     // Short summary for window header
     var sessionSummaryShort: String {
         guard let ctx = sessionContext else { return "No session" }
-        let obj = ctx.objects.first ?? "?"
+        let obj = ctx.objects.prefix(3).joined(separator: ", ")
         return "\(obj) \u{2022} \(ctx.totalFrames) frames"
     }
 
     // Available presets filtered by context
     var availablePresets: [AIsaacPreset] {
         guard let ctx = sessionContext, ctx.totalFrames > 0 else {
-            // No session — show general app help presets + planning
-            var noSessionPresets: [AIsaacPreset] = [.gettingStarted, .workflowTips, .terminology, .whatsNew]
-            // Show "What to shoot?" if we have learned equipment from previous sessions
+            // No session — show planning + general help presets
+            var noSessionPresets: [AIsaacPreset] = []
             if AIsaacUserProfile.load().equipmentSetups.count > 0 {
-                noSessionPresets.insert(.whatToShoot, at: 0)
+                noSessionPresets.append(.planTonight)
             }
+            noSessionPresets.append(contentsOf: [.gettingStarted, .workflowTips, .whatsNew])
             return noSessionPresets
         }
-        var presets: [AIsaacPreset] = [.qualitySummary]
-        if !ctx.objects.isEmpty && ctx.objects.first != "unknown" {
-            presets.append(.objectTrivia)
-        }
-        presets.append(.terminology)
+        // Session loaded — ordered by usage frequency
+        var presets: [AIsaacPreset] = [.qualitySummary, .smartMark]
         if ctx.filters.count > 1 {
             presets.append(.filterAdvice)
         }
-        if !ctx.objects.isEmpty {
+        if !ctx.objects.isEmpty && ctx.objects.first != "unknown" {
+            presets.append(.objectTrivia)
             presets.append(.nearbyObjects)
         }
-        if ctx.totalFrames > 0 {
-            presets.append(.smartMark)
-        }
+        presets.append(.planTonight)
         return presets
     }
 
     // Send a preset question
     func sendPreset(_ preset: AIsaacPreset) {
-        let text: String
-        if preset == .terminology {
-            // For terminology preset, pre-fill the input field so user can edit the term
-            inputText = "What does FWHM mean?"
-            return
-        }
-        text = preset.userPrompt(context: sessionContext)
+        let text = preset.userPrompt(context: sessionContext)
 
         messages.append(AIsaacMessage(role: .user, text: text))
         showPresets = false
@@ -456,9 +464,22 @@ class AIsaacModel: ObservableObject {
         lastUserMessage = text
         lastUserPreset = nil
 
+        // Refresh context right before query so data is current
+        onRefreshContext?()
+
         messages.append(AIsaacMessage(role: .user, text: text))
         showPresets = false
+        streamingText = ""
+        isStreaming = true
         isThinking = true
+
+        // Wire streaming callback
+        AIsaacService.shared.onStreamChunk = { [weak self] chunk in
+            DispatchQueue.main.async {
+                self?.isThinking = false  // stop dots after first chunk
+                self?.streamingText += chunk
+            }
+        }
 
         Task {
             let response = await AIsaacService.shared.ask(
@@ -467,11 +488,15 @@ class AIsaacModel: ObservableObject {
                 context: sessionContext,
                 history: messages
             )
+            AIsaacService.shared.onStreamChunk = nil
             isThinking = false
-            // Strip command blocks from displayed text
-            let displayText = Self.stripCommandBlocks(response)
+            isStreaming = false
+            // Use streamed text if available, otherwise full response
+            let fullText = streamingText.isEmpty ? response : streamingText
+            streamingText = ""
+            let displayText = Self.stripCommandBlocks(fullText)
             messages.append(AIsaacMessage(role: .assistant, text: displayText))
-            parseAndExecuteCommands(response)
+            parseAndExecuteCommands(fullText)
             if voiceEnabled { speechManager.speak(displayText) }
             updateQuickReplies(for: displayText)
             showPresets = true

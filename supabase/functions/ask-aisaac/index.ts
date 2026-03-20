@@ -157,6 +157,9 @@ serve(async (req) => {
       );
     }
 
+    // Check if client wants streaming
+    const wantStream = req.headers.get("x-stream") === "true";
+
     // Call Claude API
     const anthropicResponse = await fetch(
       "https://api.anthropic.com/v1/messages",
@@ -172,6 +175,7 @@ serve(async (req) => {
           max_tokens: MAX_TOKENS,
           system: system || "",
           messages: messages,
+          stream: wantStream,
         }),
       }
     );
@@ -208,9 +212,22 @@ serve(async (req) => {
       );
     }
 
-    // Success — clear error tracking
     clearErrorTracking();
 
+    // Streaming: pipe Claude's SSE stream through
+    if (wantStream && anthropicResponse.body) {
+      return new Response(anthropicResponse.body, {
+        headers: {
+          "Content-Type": "text/event-stream",
+          "Cache-Control": "no-cache",
+          "Connection": "keep-alive",
+          "Access-Control-Allow-Origin": "*",
+          "X-Remaining": String(remaining),
+        },
+      });
+    }
+
+    // Non-streaming fallback
     const data = await anthropicResponse.json();
     const text =
       data.content?.[0]?.text || "I couldn't generate a response. Try again.";

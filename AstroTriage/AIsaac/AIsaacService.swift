@@ -19,7 +19,9 @@ class AIsaacService: ObservableObject {
         struct Usage: Codable { let input: Int; let output: Int }
     }
 
-    // Ask AIsaac a question. Returns the assistant's response text.
+    // Streaming callback — called on main thread with each text chunk
+    var onStreamChunk: ((String) -> Void)?
+
     // Current thumbnail for vision (set by AIsaacWindowController)
     var currentThumbnailBase64: String?
 
@@ -30,9 +32,11 @@ class AIsaacService: ObservableObject {
         history: [AIsaacMessage]
     ) async -> String {
         // Build system prompt
+        let imageHeaders = AIsaacWindowController.shared.model.currentImageHeaders
         let systemPrompt = AIsaacContextBuilder.buildSystemPrompt(
             context: context,
-            preset: preset
+            preset: preset,
+            currentImageHeaders: imageHeaders
         )
 
         // Build messages array (last 10 for context window management)
@@ -98,7 +102,8 @@ class AIsaacService: ObservableObject {
         request.setValue(MachineInfo.machineHash, forHTTPHeaderField: "x-device-id")
         request.setValue(Self.computeRollingToken(), forHTTPHeaderField: "x-aisaac-token")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.timeoutInterval = 30
+        request.setValue("true", forHTTPHeaderField: "x-stream")
+        request.timeoutInterval = 60
 
         let body: [String: Any] = [
             "system": system,
@@ -106,26 +111,69 @@ class AIsaacService: ObservableObject {
         ]
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (bytes, response) = try await URLSession.shared.bytes(for: request)
 
         guard let http = response as? HTTPURLResponse else {
             throw AIsaacError.networkError
         }
 
         if http.statusCode == 429 {
-            let decoded = try? JSONDecoder().decode(AIsaacResponse.self, from: data)
-            remainingQueries = 0
-            throw AIsaacError.rateLimited(decoded?.error ?? "Daily limit reached")
+            throw AIsaacError.rateLimited("Daily limit reached")
         }
 
         guard (200...299).contains(http.statusCode) else {
-            let decoded = try? JSONDecoder().decode(AIsaacResponse.self, from: data)
-            throw AIsaacError.serverError(http.statusCode, decoded?.error ?? "Unknown error")
+            // Collect error body
+            var errorData = Data()
+            for try await byte in bytes { errorData.append(byte) }
+            let errorText = String(data: errorData, encoding: .utf8) ?? "Unknown error"
+            throw AIsaacError.serverError(http.statusCode, errorText)
         }
 
-        let decoded = try JSONDecoder().decode(AIsaacResponse.self, from: data)
-        remainingQueries = decoded.remaining
-        return decoded.text
+        // Check remaining from header
+        if let remStr = http.value(forHTTPHeaderField: "X-Remaining"), let rem = Int(remStr) {
+            remainingQueries = rem
+        }
+
+        // Check if response is SSE stream or JSON
+        let contentType = http.value(forHTTPHeaderField: "Content-Type") ?? ""
+
+        if contentType.contains("text/event-stream") {
+            return try await parseSSEStream(bytes)
+        } else {
+            // Non-streaming fallback (collect all data)
+            var allData = Data()
+            for try await byte in bytes { allData.append(byte) }
+            let decoded = try JSONDecoder().decode(AIsaacResponse.self, from: allData)
+            remainingQueries = decoded.remaining
+            return decoded.text
+        }
+    }
+
+    // Parse Claude SSE stream and call onStreamChunk for each text delta
+    private func parseSSEStream(_ bytes: URLSession.AsyncBytes) async throws -> String {
+        var fullText = ""
+
+        for try await line in bytes.lines {
+            // SSE format: "data: {...}" or "event: ..."
+            guard line.hasPrefix("data: ") else { continue }
+            let jsonStr = String(line.dropFirst(6))
+            guard jsonStr != "[DONE]" else { break }
+
+            guard let data = jsonStr.data(using: .utf8),
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { continue }
+
+            let eventType = json["type"] as? String ?? ""
+
+            // content_block_delta contains text chunks
+            if eventType == "content_block_delta",
+               let delta = json["delta"] as? [String: Any],
+               let text = delta["text"] as? String {
+                fullText += text
+                onStreamChunk?(text)
+            }
+        }
+
+        return fullText
     }
 
     // MARK: - Direct Claude API (Pro/Opus mode — user's own key)
@@ -140,17 +188,18 @@ class AIsaacService: ObservableObject {
         request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
         request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.timeoutInterval = 60  // Opus can be slower
+        request.timeoutInterval = 90  // Opus can be slower
 
         let body: [String: Any] = [
             "model": "claude-opus-4-20250514",
-            "max_tokens": 2048,  // Opus gets more room for deeper analysis
+            "max_tokens": 2048,
             "system": system,
-            "messages": messages
+            "messages": messages,
+            "stream": true
         ]
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (bytes, response) = try await URLSession.shared.bytes(for: request)
 
         guard let http = response as? HTTPURLResponse else {
             throw AIsaacError.networkError
@@ -161,19 +210,14 @@ class AIsaacService: ObservableObject {
         }
 
         guard (200...299).contains(http.statusCode) else {
-            let errorText = String(data: data, encoding: .utf8) ?? "Unknown error"
+            var errorData = Data()
+            for try await byte in bytes { errorData.append(byte) }
+            let errorText = String(data: errorData, encoding: .utf8) ?? "Unknown error"
             throw AIsaacError.serverError(http.statusCode, errorText)
         }
 
-        // Parse Anthropic response
-        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let content = json["content"] as? [[String: Any]],
-              let text = content.first?["text"] as? String else {
-            throw AIsaacError.serverError(200, "Failed to parse response")
-        }
-
         remainingQueries = nil  // no limit on user's own key
-        return text
+        return try await parseSSEStream(bytes)
     }
 
     // MARK: - Rolling Token
@@ -217,7 +261,7 @@ class AIsaacService: ObservableObject {
         // Handle no-session and general presets first
         if let preset = preset {
             switch preset {
-            case .whatToShoot:
+            case .planTonight:
                 return mockWhatToShoot()
             case .gettingStarted:
                 return mockGettingStarted()
@@ -225,8 +269,6 @@ class AIsaacService: ObservableObject {
                 return mockWorkflowTips()
             case .whatsNew:
                 return mockWhatsNew()
-            case .terminology:
-                return mockTerminology(message)
             default:
                 break
             }
@@ -246,15 +288,13 @@ class AIsaacService: ObservableObject {
             return mockQualitySummary(ctx)
         case .objectTrivia:
             return mockObjectTrivia(ctx)
-        case .terminology:
-            return mockTerminology(message)
         case .filterAdvice:
             return mockFilterAdvice(ctx)
         case .nearbyObjects:
             return mockNearbyObjects(ctx)
         case .smartMark:
             return mockSmartMark(ctx)
-        case .gettingStarted, .workflowTips, .whatsNew, .whatToShoot:
+        case .gettingStarted, .workflowTips, .whatsNew, .planTonight:
             return "" // already handled above
         }
     }
@@ -294,28 +334,6 @@ class AIsaacService: ObservableObject {
         tips for your \(ctx.telescope ?? "telescope") setup.
 
         *[Full AI-powered object encyclopedia coming in the next update.]*
-        """
-    }
-
-    private func mockTerminology(_ message: String) -> String {
-        // Extract the term from the message
-        let term = message
-            .replacingOccurrences(of: "What does ", with: "")
-            .replacingOccurrences(of: "what does ", with: "")
-            .replacingOccurrences(of: " mean?", with: "")
-            .replacingOccurrences(of: " mean", with: "")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-
-        return """
-        **\(term)**
-
-        I'll explain "\(term)" in the context of astrophotography and how AstroBlinkV2 \
-        uses it for quality scoring once I'm connected to Claude.
-
-        Common terms I can explain: FWHM, HFR, z-score, MAD, SNR, eccentricity, \
-        trailing consensus, Bayer pattern, STF stretch, sigma clipping, and more.
-
-        *[Full terminology engine coming in the next update.]*
         """
     }
 

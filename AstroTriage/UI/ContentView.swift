@@ -834,6 +834,10 @@ struct ContentView: View {
             vm.selectMultipleRows(indexSet)
         }
         aisaac.onViewFrame = { [weak viewModel] idx in viewModel?.selectImage(at: idx) }
+        aisaac.onRefreshContext = { [weak viewModel] in
+            guard let vm = viewModel else { return }
+            AIsaacWindowController.shared.updateContext(images: vm.images, viewModel: vm)
+        }
         aisaac.onOpenPreview = { [weak viewModel] indices in
             guard let vm = viewModel, let device = vm.renderer?.device else { return }
             for idx in indices where idx >= 0 && idx < vm.images.count {

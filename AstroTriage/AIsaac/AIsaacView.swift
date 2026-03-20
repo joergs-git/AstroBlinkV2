@@ -104,8 +104,13 @@ struct AIsaacView: View {
                             }
                         }
 
-                        // Thinking indicator
-                        if model.isThinking {
+                        // Streaming response (live-updating text)
+                        if model.isStreaming && !model.streamingText.isEmpty {
+                            assistantBubble(model.streamingText, id: "streaming")
+                        }
+
+                        // Thinking indicator (dots before first chunk arrives)
+                        if model.isThinking && model.streamingText.isEmpty {
                             thinkingIndicator
                                 .id("thinking")
                         }
@@ -126,6 +131,12 @@ struct AIsaacView: View {
                         withAnimation(.easeOut(duration: 0.3)) {
                             proxy.scrollTo("thinking", anchor: .bottom)
                         }
+                    }
+                }
+                .onChange(of: model.streamingText) { _ in
+                    // Auto-scroll as streaming text grows
+                    withAnimation(.easeOut(duration: 0.1)) {
+                        proxy.scrollTo("streaming", anchor: .bottom)
                     }
                 }
             }
@@ -218,7 +229,7 @@ struct AIsaacView: View {
                 .shadow(color: accentColor.opacity(0.6), radius: 4)
 
             VStack(alignment: .leading, spacing: 1) {
-                Text("AIsaac")
+                Text("AIsaac's AstroBlink")
                     .font(.system(size: 16, weight: .bold))
                     .foregroundColor(textColor)
 

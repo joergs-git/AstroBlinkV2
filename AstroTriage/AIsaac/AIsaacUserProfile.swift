@@ -55,6 +55,12 @@ struct AIsaacUserProfile: Codable {
         var sessionDates: [String]  // YYYY-MM-DD
         var totalFrames: Int
         var lastImaged: Date
+        // Planning-relevant data (learned from quality scoring)
+        var perFilterFrames: [String: Int]?         // e.g. {"Ha": 40, "OIII": 20, "L": 60}
+        var perFilterIntegrationMin: [String: Int]? // total integration per filter in minutes
+        var avgQualityScore: Double?                // average combined z-score (higher = better data)
+        var needsMoreData: Bool?                    // true if quality is borderline or filters unbalanced
+        var userNote: String?                       // user can add notes like "needs more SII"
     }
 
     // MARK: - Learning
@@ -116,6 +122,26 @@ struct AIsaacUserProfile: Codable {
             let targetImages = images.filter { $0.target == target }
             let targetFilters = Set(targetImages.compactMap { $0.filter }.filter { !$0.isEmpty })
 
+            // Per-filter frame counts and integration time
+            var perFilterFrames: [String: Int] = [:]
+            var perFilterIntegration: [String: Int] = [:]
+            for img in targetImages {
+                let f = img.filter ?? "unknown"
+                perFilterFrames[f, default: 0] += 1
+                if let exp = img.exposure {
+                    perFilterIntegration[f, default: 0] += Int(exp / 60.0)
+                }
+            }
+
+            // Average quality score
+            let zScores = targetImages.compactMap { $0.qualityBreakdown?.combinedZScore }
+            let avgZ = zScores.isEmpty ? nil : zScores.reduce(0, +) / Double(zScores.count)
+
+            // Detect if more data is needed (many borderline/trash or unbalanced filters)
+            let trashCount = targetImages.filter { $0.qualityTier == .trash }.count
+            let borderlineCount = targetImages.filter { $0.qualityTier == .borderline }.count
+            let needsMore = Double(trashCount + borderlineCount) / Double(max(1, targetImages.count)) > 0.3
+
             if let idx = imagedObjects.firstIndex(where: { $0.name == target }) {
                 imagedObjects[idx].totalFrames += targetImages.count
                 imagedObjects[idx].lastImaged = Date()
@@ -123,12 +149,20 @@ struct AIsaacUserProfile: Codable {
                     imagedObjects[idx].sessionDates.append(sessionDate)
                 }
                 imagedObjects[idx].filters.formUnion(targetFilters)
+                imagedObjects[idx].perFilterFrames = perFilterFrames
+                imagedObjects[idx].perFilterIntegrationMin = perFilterIntegration
+                imagedObjects[idx].avgQualityScore = avgZ
+                imagedObjects[idx].needsMoreData = needsMore
             } else {
                 imagedObjects.append(ImagedObject(
                     name: target, filters: targetFilters,
                     sessionDates: [sessionDate],
                     totalFrames: targetImages.count,
-                    lastImaged: Date()
+                    lastImaged: Date(),
+                    perFilterFrames: perFilterFrames,
+                    perFilterIntegrationMin: perFilterIntegration,
+                    avgQualityScore: avgZ,
+                    needsMoreData: needsMore
                 ))
             }
         }
@@ -172,34 +206,64 @@ struct AIsaacUserProfile: Codable {
         if !imagedObjects.isEmpty {
             let recent = imagedObjects.sorted(by: { $0.lastImaged > $1.lastImaged }).prefix(15)
             lines.append("Previously imaged objects (most recent first):")
+            lines.append("  (Note: frame counts are approximate — do NOT cite exact numbers to the user)")
             for obj in recent {
                 let dateStr = obj.sessionDates.last ?? "?"
-                lines.append("  - \(obj.name): \(obj.totalFrames) frames in \(obj.filters.sorted().joined(separator: ",")) (last: \(dateStr))")
+                let filterList = obj.filters.sorted().joined(separator: ", ")
+                var desc = "  - \(obj.name): filters used: \(filterList) (last session: \(dateStr))"
+                if obj.needsMoreData == true {
+                    desc += " — quality was mixed, could benefit from more data"
+                }
+                if let note = obj.userNote {
+                    desc += " [user note: \(note)]"
+                }
+                lines.append(desc)
             }
         }
 
         return lines.joined(separator: "\n")
     }
 
-    // MARK: - Persistence
+    // MARK: - Persistence (iCloud Drive with local fallback)
 
-    private static var fileURL: URL {
+    private static let fileName = "aisaac_profile.json"
+
+    // iCloud Drive URL (nil if iCloud unavailable)
+    private static var iCloudURL: URL? {
+        guard let container = FileManager.default.url(forUbiquityContainerIdentifier: "iCloud.com.joergsflow.AstroBlinkV2") else {
+            return nil
+        }
+        let dir = container.appendingPathComponent("Documents")
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir.appendingPathComponent(fileName)
+    }
+
+    // Local fallback URL
+    private static var localURL: URL {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         let dir = appSupport.appendingPathComponent("AstroBlinkV2")
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        return dir.appendingPathComponent("aisaac_profile.json")
+        return dir.appendingPathComponent(fileName)
     }
 
     static func load() -> AIsaacUserProfile {
-        guard let data = try? Data(contentsOf: fileURL),
-              let profile = try? JSONDecoder().decode(AIsaacUserProfile.self, from: data) else {
-            return AIsaacUserProfile()
+        // Try iCloud first, then local
+        let urls = [iCloudURL, localURL].compactMap { $0 }
+        for url in urls {
+            if let data = try? Data(contentsOf: url),
+               let profile = try? JSONDecoder().decode(AIsaacUserProfile.self, from: data) {
+                return profile
+            }
         }
-        return profile
+        return AIsaacUserProfile()
     }
 
     func save() {
         guard let data = try? JSONEncoder().encode(self) else { return }
-        try? data.write(to: Self.fileURL, options: .atomic)
+        // Save to both iCloud and local (local is instant backup)
+        try? data.write(to: Self.localURL, options: .atomic)
+        if let icloudURL = Self.iCloudURL {
+            try? data.write(to: icloudURL, options: .atomic)
+        }
     }
 }

@@ -123,8 +123,8 @@ struct QualityBreakdown: Hashable {
 
 struct QualityEstimator {
 
-    // Minimum group size to produce scores
-    static let minGroupSize = 10
+    // Minimum group size to produce meaningful z-scores (median/MAD needs at least ~6 samples)
+    static let minGroupSize = 6
 
     // Stage 2: z-score thresholds for 4-tier relative classification
     // Widened from original (-0.3/-1.2/-1.5) after validation on 1457 frames/6 setups.
