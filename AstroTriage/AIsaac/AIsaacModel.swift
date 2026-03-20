@@ -170,6 +170,7 @@ class AIsaacModel: ObservableObject {
     @Published var voiceEnabled: Bool = false  // TTS for responses
     @Published var currentThumbnailBase64: String?  // JPEG thumbnail of current image for Claude Vision
     @Published var currentImageHeaders: [(key: String, value: String)] = []  // FITS/XISF headers for current image
+    @Published var weatherForecast: String?  // Weather/seeing context for planning
 
     let speechManager = AIsaacSpeechManager()
     @Published var showPresets: Bool = true
@@ -368,6 +369,27 @@ class AIsaacModel: ObservableObject {
         messages.append(AIsaacMessage(role: .assistant, text: text))
     }
 
+    // Fetch weather/seeing forecast if coordinates are available
+    private func fetchWeatherIfNeeded() async {
+        // Try session coordinates first, then profile locations
+        let lat: Double
+        let lon: Double
+        if let ctx = sessionContext, let sLat = ctx.siteLatitude, let sLon = ctx.siteLongitude {
+            lat = sLat; lon = sLon
+        } else {
+            let profile = AIsaacUserProfile.load()
+            guard let loc = profile.locations.first else {
+                weatherForecast = nil
+                return
+            }
+            lat = loc.latitude; lon = loc.longitude
+        }
+
+        if let forecast = await AIsaacWeatherService.shared.getForecast(lat: lat, lon: lon) {
+            weatherForecast = forecast.contextSummary(timezone: TimeZone.current)
+        }
+    }
+
     // Full reset when a new session is loaded — clears ALL stale data
     func resetStateTracking() {
         lastKnownFrameCount = 0
@@ -385,6 +407,7 @@ class AIsaacModel: ObservableObject {
         streamingText = ""
         isStreaming = false
         isThinking = false
+        weatherForecast = nil
     }
 
     // Whether a session with images is loaded
@@ -437,11 +460,19 @@ class AIsaacModel: ObservableObject {
     func sendPreset(_ preset: AIsaacPreset) {
         let text = preset.userPrompt(context: sessionContext)
 
+        // Refresh context before query
+        onRefreshContext?()
+
         messages.append(AIsaacMessage(role: .user, text: text))
         showPresets = false
         isThinking = true
 
         Task {
+            // Fetch weather for planning presets (if coordinates available)
+            if preset == .planTonight || preset == .filterAdvice {
+                await fetchWeatherIfNeeded()
+            }
+
             let response = await AIsaacService.shared.ask(
                 userMessage: text,
                 preset: preset,

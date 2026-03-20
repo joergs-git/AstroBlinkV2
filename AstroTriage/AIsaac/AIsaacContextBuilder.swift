@@ -8,7 +8,8 @@ struct AIsaacContextBuilder {
     static func buildSystemPrompt(
         context: AIsaacSessionContext?,
         preset: AIsaacPreset?,
-        currentImageHeaders: [(key: String, value: String)] = []
+        currentImageHeaders: [(key: String, value: String)] = [],
+        weatherForecast: String? = nil
     ) -> String {
         var parts: [String] = []
 
@@ -105,6 +106,11 @@ struct AIsaacContextBuilder {
                 headerLines.append("  \(h.key) = \(h.value)")
             }
             parts.append(headerLines.joined(separator: "\n"))
+        }
+
+        // Weather/seeing forecast (for planning presets)
+        if let weather = weatherForecast {
+            parts.append(weather)
         }
 
         // Per-frame metrics — only for presets that need deep analysis

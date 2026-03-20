@@ -51,6 +51,7 @@
 		9D950EBF4E4EBC1A00430834 /* StarAnalyzerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C73F68266BEC1BE0872283EB /* StarAnalyzerTests.swift */; };
 		A25E05A896A91A675B10AB27 /* AIsaacUserProfile.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BC8D6B7579B8D8EE0A8190B /* AIsaacUserProfile.swift */; };
 		A404D91B8F156794B11A8ECC /* AIsaacService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76A68D583C36500C4A7BD068 /* AIsaacService.swift */; };
+		A4F9C54A9D8BDA57CA1126FE /* AIsaacWeather.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6F15B76878AB89E64790D0D4 /* AIsaacWeather.swift */; };
 		A5EE486F27D98657DB57A781 /* ImageDecoderBridge in Frameworks */ = {isa = PBXBuildFile; productRef = 8A263D3D8B89B08DB446B5AB /* ImageDecoderBridge */; };
 		A799E8B23AAF9BD60D73D16F /* QuickLookSTF.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD2457C0829FBD7832C880DF /* QuickLookSTF.swift */; };
 		AF2D1D16D710F786CE5B7279 /* AIsaacWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B79046A0EF170F63FA87EED /* AIsaacWindowController.swift */; };
@@ -149,6 +150,7 @@
 		5D45AA5729C0A57A6C12C9C2 /* HeaderInspectorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HeaderInspectorView.swift; sourceTree = "<group>"; };
 		5D9A7A3939A213218612E649 /* QuickLookRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickLookRenderer.swift; sourceTree = "<group>"; };
 		6A3C4F920C008F3B9EEA4CED /* BenchmarkSharing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BenchmarkSharing.swift; sourceTree = "<group>"; };
+		6F15B76878AB89E64790D0D4 /* AIsaacWeather.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIsaacWeather.swift; sourceTree = "<group>"; };
 		72BFE1A73BD5AD652BD34CB8 /* SessionCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionCache.swift; sourceTree = "<group>"; };
 		740CADC7ADA01E2160E95DCC /* QuickStackWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickStackWindow.swift; sourceTree = "<group>"; };
 		763931350538CED5EA81290D /* KeyboardHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardHandler.swift; sourceTree = "<group>"; };
@@ -244,6 +246,7 @@
 				08F0D2BEEDC92E723A57A4DE /* AIsaacSpeech.swift */,
 				1BC8D6B7579B8D8EE0A8190B /* AIsaacUserProfile.swift */,
 				4EC26299CC364924D0AF79AC /* AIsaacView.swift */,
+				6F15B76878AB89E64790D0D4 /* AIsaacWeather.swift */,
 				5B79046A0EF170F63FA87EED /* AIsaacWindowController.swift */,
 			);
 			path = AIsaac;
@@ -611,6 +614,7 @@
 				6A70C46FBC8628846E42189A /* AIsaacSpeech.swift in Sources */,
 				A25E05A896A91A675B10AB27 /* AIsaacUserProfile.swift in Sources */,
 				BF9CBFE8BFFC1A572EE95211 /* AIsaacView.swift in Sources */,
+				A4F9C54A9D8BDA57CA1126FE /* AIsaacWeather.swift in Sources */,
 				AF2D1D16D710F786CE5B7279 /* AIsaacWindowController.swift in Sources */,
 				B2444CC3BD5AB4C5BC49A87E /* AppSettings.swift in Sources */,
 				8B9102B9DEB924145CD66AAA /* AstroTriageApp.swift in Sources */,
