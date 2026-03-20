@@ -14,7 +14,27 @@ Nice side effect: Finally you have a native XISF and FITS Quicklook for macOS. (
 
 ---
 
-![AstroBlink & AIsaac — Main View with AI Assistant](AstroBlinkV2_screenshot2.png)
+![AstroBlink & AIsaac — Color Image with AI Quality Analysis](screenshots/AstroBlink_v5_color_aisaac.png)
+
+*Rosette Nebula in full color with AIsaac's quality breakdown — per-filter analysis, recommendations, and actionable next steps.*
+
+---
+
+![AstroBlink & AIsaac — Compare View with Star Overlay](screenshots/AstroBlink_v5_compare_aisaac.png)
+
+*Side-by-side comparison with star eccentricity overlay. AIsaac explains what to look for and guides your culling decisions.*
+
+---
+
+## Why "AIsaac"?
+
+Named after **Isaac Newton** — astronomer, physicist, and the father of reflecting telescopes. Newton didn't just observe the stars, he built the tools to understand them. AIsaac carries that spirit: an AI that doesn't just look at your data, but understands it, explains it, and helps you make better decisions.
+
+AIsaac knows your equipment, remembers your imaging history, understands light pollution at your location, and speaks your language. He's a knowledgeable friend who happens to know everything about astrophotography — with a sense of humor.
+
+**We'd love to hear from you!** AIsaac is brand new and we're actively improving him based on real-world feedback. If you try it, let us know what works, what doesn't, and what you'd like to see next:
+- [GitHub Issues](https://github.com/joergs-git/AstroBlinkV2/issues)
+- [AstroBin](https://app.astrobin.com/u/joergsflow#gallery)
 
 ---
 
@@ -22,19 +42,31 @@ Nice side effect: Finally you have a native XISF and FITS Quicklook for macOS. (
 
 ### AIsaac — Your AI Astrophotography Assistant
 
-**Meet AIsaac** — an AI assistant built right into AstroBlink, named after Isaac Newton. AIsaac understands your equipment, your session data, and every frame's quality metrics. Ask questions in any language, get actionable answers.
+**Meet AIsaac** — an AI assistant built right into AstroBlink, powered by Claude. AIsaac has access to every frame's FWHM, HFR, star count, noise, eccentricity, trailing score, and quality reasoning. He sees the image you're looking at. He knows your equipment and your Bortle zone. Ask him anything — in any language.
 
-- **Quality Summary** — instant analysis of your session with per-filter breakdown, trends, and recommendations
-- **Smart Mark** — AI suggests which frames to cull, you confirm with one click
-- **Filter Advice** — which filters need more integration time based on your data and Bortle zone
-- **Plan Tonight** — complete imaging plan with targets, filters, exposures, start/end times for your location
-- **Nearby Objects** — targets near your current object that fit your FOV
-- **Voice Input** — hold the mic button, speak your question, AIsaac answers (optional TTS)
-- **Streaming Responses** — text flows in real-time, word by word
-- **App Control** — AIsaac can navigate to frames, open previews, highlight files, set filters, start stacking
-- **Equipment Memory** — learns your telescopes, cameras, and imaging history across sessions
-- **Two Tiers** — Free Sonnet Buddy (included, rate-limited) or Opus Superexpert (bring your own API key)
-- **Location-Aware** — detects your Bortle zone from FITS coordinates, offers to respond in your language
+![AstroBlink & AIsaac — Quality Summary](screenshots/AstroBlink_v5_quality_aisaac.png)
+
+*AIsaac's quality summary with streaming responses, quick-reply buttons, and preset question chips.*
+
+**What AIsaac can do:**
+
+- **Quality Summary** — instant per-filter analysis with trends, warnings, and "what to do next"
+- **Smart Mark** — AI analyzes every frame and suggests which ones to cull. You confirm with one click. Fully undoable.
+- **Filter Advice** — which filters need more data? Factors in your object type, Bortle zone, and current integration
+- **Plan Tonight** — complete imaging plan: targets, filters, exposure per sub, number of subs, start/end times from dusk to dawn
+- **Nearby Objects** — "what else can I image with this setup tonight?" with FOV-aware suggestions
+- **App Control** — tell AIsaac "show me #42" or "highlight the trash frames" or "stack the best 7" — he controls the app for you
+- **Voice Input/Output** — hold the mic button, speak your question. Optional text-to-speech for hands-free operation at the telescope
+- **Streaming** — responses flow in word-by-word, first token in ~500ms
+- **Equipment Memory** — learns your telescopes, cameras, filters, and imaging history. Persists across sessions.
+- **Location-Aware** — reads SITELAT/SITELONG from FITS headers, infers Bortle zone, offers to respond in your language
+- **Two Tiers:**
+  - **Free Sonnet Buddy** — included with the app, 20 queries/day, powered by Claude Sonnet
+  - **Opus Superexpert** — bring your own Anthropic API key for Claude Opus. Deeper analysis, no rate limit. Key stored securely in macOS Keychain.
+
+![AstroBlink & AIsaac — Inspector with Quality Metrics](screenshots/AstroBlink_v5_inspector_aisaac.png)
+
+*Header Inspector showing FITS keywords alongside computed quality metrics (z-scores, tier, reasoning).*
 
 ---
 
@@ -488,13 +520,24 @@ After a night of imaging you might have 200-600 sub-exposures. Some have clouds,
 
 ## Screenshots
 
-### macOS — AstroBlinkV2
+### macOS — AstroBlink & AIsaac v5.0
+
+**Color Image with AI Quality Analysis:**
+![AstroBlink Color + AIsaac](screenshots/AstroBlink_v5_color_aisaac.png)
+
+**Compare View with Star Eccentricity Overlay:**
+![AstroBlink Compare + AIsaac](screenshots/AstroBlink_v5_compare_aisaac.png)
+
+**Quality Summary with AIsaac Chat:**
+![AstroBlink Quality + AIsaac](screenshots/AstroBlink_v5_quality_aisaac.png)
+
+**Header Inspector with Quality Metrics:**
+![AstroBlink Inspector + AIsaac](screenshots/AstroBlink_v5_inspector_aisaac.png)
+
+### Classic Views
 
 **Session Overview with Header Inspector:**
 ![AstroBlinkV2 Main View](screenshots/AstroBlinkV2_main.png)
-
-**Image Viewer with Session Overview:**
-![AstroBlinkV2 Session View](screenshots/AstroBlinkV2_session.png)
 
 **Night Mode — red-on-black for dark-adapted vision:**
 ![AstroBlinkV2 Night Mode](screenshots/AstroBlinkV2_night.png)
