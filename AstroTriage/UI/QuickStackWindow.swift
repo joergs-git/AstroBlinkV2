@@ -818,6 +818,8 @@ struct QuickStackV2ProgressView: View {
     }
 }
 
+enum DeconvMode: String, CaseIterable { case usm = "USM", rl = "RL", wiener = "Wiener" }
+
 struct StackResultViewV2: View {
     let engine: QuickStackEngineV2
     let nightMode: Bool
@@ -825,6 +827,9 @@ struct StackResultViewV2: View {
     // Gradient removal state
     @State private var removeGradient: Bool = false
     @State private var gradientCorrectedData: [Float]?
+    // Wiener deconvolution cache
+    @State private var wienerCorrectedData: [Float]?
+    @State private var lastWienerStrength: Float = 0
     @State private var stretchValue: Double = 0.25
     @State private var sharpening: Double = 0.0
     @State private var contrast: Double = 0.0
@@ -834,6 +839,7 @@ struct StackResultViewV2: View {
     @State private var denoise: Double = 0.0
     @State private var deconvolve: Double = 0.0
     @State private var useRL: Bool = false
+    @State private var deconvMode: DeconvMode = .wiener
     @State private var displayTexture: MTLTexture?
     @State private var savedMessage: String?
     @State private var isRendering: Bool = false
@@ -954,14 +960,21 @@ struct StackResultViewV2: View {
                     .help("Two-pass GPU denoise: bilateral (pixel noise) + chrominance (color patches).\n0 = off, 100%+ = aggressive.")
                 resultSlider("Deconv", value: $deconvolve, range: 0.0...2.0, step: 0.02,
                              display: deconvolve < 0.01 ? "Off" : String(format: "%.1f", deconvolve))
-                    .help("Deconvolution sharpening to recover detail.\nUSM = multi-scale unsharp mask, RL = Richardson-Lucy iterative.")
-                Toggle(useRL ? "RL" : "USM", isOn: $useRL)
-                    .toggleStyle(.switch).controlSize(.mini)
-                    .font(.system(size: 10, weight: .medium, design: .monospaced))
-                    .foregroundColor(useRL ? .orange : .secondary)
-                    .help("USM = Multi-scale Unsharp Mask (fast).\nRL = Richardson-Lucy deconvolution (better quality, slower).")
-                    .onChange(of: useRL) { _ in scheduleRender() }
-                    .frame(width: 52)
+                    .help("Deconvolution: Wiener (frequency-domain, best quality),\nRL (Richardson-Lucy iterative), USM (multi-scale unsharp mask).")
+                Picker("", selection: $deconvMode) {
+                    ForEach(DeconvMode.allCases, id: \.self) { mode in
+                        Text(mode.rawValue).tag(mode)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .frame(width: 120)
+                .font(.system(size: 9))
+                .help("Wiener = frequency-domain optimal (best, uses FWHM).\nRL = Richardson-Lucy iterative.\nUSM = multi-scale unsharp mask (fastest).")
+                .onChange(of: deconvMode) { newMode in
+                    useRL = (newMode == .rl)
+                    wienerCorrectedData = nil
+                    scheduleRender()
+                }
                 Rectangle().fill(Color.gray.opacity(0.3)).frame(width: 1, height: 16)
                 Toggle("Gradient", isOn: $removeGradient)
                     .toggleStyle(.switch).controlSize(.mini)
@@ -1143,27 +1156,52 @@ struct StackResultViewV2: View {
         let dev = engine.device
         let doGradient = removeGradient
 
-        // Apply gradient removal if enabled (operates on raw float data before STF)
-        let dataToRender: [Float]
+        // Step 1: Gradient removal (if enabled, on raw linear data)
+        let afterGradient: [Float]
         if doGradient {
             if let cached = gradientCorrectedData {
-                dataToRender = cached
+                afterGradient = cached
             } else {
                 let corrected = await Task.detached(priority: .userInitiated) {
                     GradientRemoval.removeGradient(data: floatData, width: w, height: h, channelCount: ch)
                 }.value
                 gradientCorrectedData = corrected
+                afterGradient = corrected
+            }
+        } else {
+            afterGradient = floatData
+        }
+
+        // Step 2: Wiener deconvolution (if selected, on raw linear data before STF)
+        let dataToRender: [Float]
+        let currentDeconvMode = deconvMode
+        if currentDeconvMode == .wiener && dc > 0.01 {
+            let fwhm = engine.averageFWHM ?? 3.0  // fallback to 3px if no measurement
+            let strength = dc
+            if let cached = wienerCorrectedData, Swift.abs(lastWienerStrength - strength) < 0.01 && !doGradient {
+                dataToRender = cached
+            } else {
+                let inputData = afterGradient
+                let corrected = await Task.detached(priority: .userInitiated) {
+                    WienerDeconvolution.deconvolve(data: inputData, width: w, height: h,
+                                                   channelCount: ch, fwhm: Float(fwhm), strength: strength)
+                }.value
+                wienerCorrectedData = corrected
+                lastWienerStrength = strength
                 dataToRender = corrected
             }
         } else {
-            dataToRender = floatData
+            dataToRender = afterGradient
         }
+
+        // Skip GPU deconv if Wiener is handling it (already applied above)
+        let gpuDeconv: Float = currentDeconvMode == .wiener ? 0 : dc
 
         let tex = await Task.detached(priority: .userInitiated) {
             renderFloatToTexture(data: dataToRender, width: w, height: h,
                                 channelCount: ch, targetBackground: target,
                                 sharpening: sharp, contrast: cont, darkLevel: dark,
-                                saturation: sat, linkedStretch: linked, denoise: dn, deconvolve: dc, useRL: rl, device: dev)
+                                saturation: sat, linkedStretch: linked, denoise: dn, deconvolve: gpuDeconv, useRL: rl, device: dev)
         }.value
 
         displayTexture = tex
@@ -1407,6 +1445,7 @@ struct ImagePreviewView: View {
     @State private var denoise: Double = 0.0
     @State private var deconvolve: Double = 0.0
     @State private var useRL: Bool = false
+    @State private var deconvMode: DeconvMode = .wiener
     @State private var displayTexture: MTLTexture?
     @State private var savedMessage: String?
     @State private var isRendering: Bool = false

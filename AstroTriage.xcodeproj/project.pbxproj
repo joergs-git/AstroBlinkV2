@@ -61,6 +61,7 @@
 		B54934C587552F12AB659721 /* PrefetchCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B4C4D1E3CA9608F6E41582A /* PrefetchCache.swift */; };
 		B6A89CE09C96403D52C0CAE5 /* MetalRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8840EA9D612D56DC3123EC77 /* MetalRenderer.swift */; };
 		B6FAD33DBA5A722B4EC6F6AA /* Shaders.metal in Sources */ = {isa = PBXBuildFile; fileRef = ADBD75B471EEBE3262306C84 /* Shaders.metal */; };
+		BB2883D764B3CBC10EBB66BB /* WienerDeconvolution.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5DAC3DD9E30EB2E746271068 /* WienerDeconvolution.swift */; };
 		BD7A31D9AF626FB19873EC7E /* SessionOverviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D35D584AE1D7CFEB4B41638 /* SessionOverviewView.swift */; };
 		BF9CBFE8BFFC1A572EE95211 /* AIsaacView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EC26299CC364924D0AF79AC /* AIsaacView.swift */; };
 		BFD9D646DC78249F8654CC1D /* PreviewGenerator.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0EFA1508203190F9C1216AE /* PreviewGenerator.swift */; };
@@ -151,6 +152,7 @@
 		5B79046A0EF170F63FA87EED /* AIsaacWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIsaacWindowController.swift; sourceTree = "<group>"; };
 		5D45AA5729C0A57A6C12C9C2 /* HeaderInspectorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HeaderInspectorView.swift; sourceTree = "<group>"; };
 		5D9A7A3939A213218612E649 /* QuickLookRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickLookRenderer.swift; sourceTree = "<group>"; };
+		5DAC3DD9E30EB2E746271068 /* WienerDeconvolution.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WienerDeconvolution.swift; sourceTree = "<group>"; };
 		6A3C4F920C008F3B9EEA4CED /* BenchmarkSharing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BenchmarkSharing.swift; sourceTree = "<group>"; };
 		6F15B76878AB89E64790D0D4 /* AIsaacWeather.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIsaacWeather.swift; sourceTree = "<group>"; };
 		72BFE1A73BD5AD652BD34CB8 /* SessionCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionCache.swift; sourceTree = "<group>"; };
@@ -345,6 +347,7 @@
 				0BFB130B08CCDD11AC1018A7 /* StarMetricsCalculator.swift */,
 				B8942CE397AE911C7346F9D1 /* TrailingAnalyzer.swift */,
 				B4F0D3CE86492EF1F5EF6BB7 /* TriageViewModel.swift */,
+				5DAC3DD9E30EB2E746271068 /* WienerDeconvolution.swift */,
 			);
 			path = Engine;
 			sourceTree = "<group>";
@@ -661,6 +664,7 @@
 				7A69119E8C46AEEEC3903EDA /* TexturePool.swift in Sources */,
 				7025BB820EB0394F1BD3F5B8 /* TrailingAnalyzer.swift in Sources */,
 				C26CB03B2AE2C731BC2B72BF /* TriageViewModel.swift in Sources */,
+				BB2883D764B3CBC10EBB66BB /* WienerDeconvolution.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

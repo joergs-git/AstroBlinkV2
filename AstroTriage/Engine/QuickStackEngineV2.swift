@@ -51,6 +51,12 @@ class QuickStackEngineV2: ObservableObject {
     var resultFloatData: [Float]?
     var resultChannelCount: Int = 1
     var stackedEntries: [ImageEntry] = []
+    // Average FWHM from stacked frames (for Wiener deconvolution PSF estimation)
+    var averageFWHM: Double? {
+        let fwhms = stackedEntries.compactMap { $0.computedFWHM ?? $0.fwhm.map { Double($0) } }
+        guard !fwhms.isEmpty else { return nil }
+        return fwhms.reduce(0, +) / Double(fwhms.count) / 2.0  // bin2x halves the FWHM
+    }
     var interpolationMode: InterpolationMode = .bilinear
 
     let device: MTLDevice
