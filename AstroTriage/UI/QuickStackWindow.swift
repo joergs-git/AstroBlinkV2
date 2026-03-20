@@ -832,6 +832,8 @@ struct StackResultViewV2: View {
     @State private var lastWienerStrength: Float = 0
     // Structure enhancement (nebula/cloud detail)
     @State private var structureAmount: Double = 0.0
+    @State private var showOriginal: Bool = false  // A/B toggle for before/after comparison
+    @State private var originalTexture: MTLTexture?  // cached unprocessed render
     @State private var stretchValue: Double = 0.25
     @State private var sharpening: Double = 0.0
     @State private var contrast: Double = 0.0
@@ -875,8 +877,25 @@ struct StackResultViewV2: View {
     var body: some View {
         VStack(spacing: 0) {
             ZStack {
-                if let tex = displayTexture ?? engine.resultTexture {
+                if showOriginal, let origTex = originalTexture {
+                    ZoomableMetalTextureView(texture: origTex)
+                } else if let tex = displayTexture ?? engine.resultTexture {
                     ZoomableMetalTextureView(texture: tex)
+                }
+                if showOriginal {
+                    VStack {
+                        HStack {
+                            Text("ORIGINAL")
+                                .font(.system(size: 14, weight: .bold, design: .monospaced))
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 4)
+                                .background(RoundedRectangle(cornerRadius: 6).fill(Color.black.opacity(0.7)))
+                            Spacer()
+                        }
+                        .padding(12)
+                        Spacer()
+                    }
                 }
                 if isRendering {
                     VStack {
@@ -996,10 +1015,22 @@ struct StackResultViewV2: View {
                     .help("Remove background gradient (light pollution, vignetting).\nUses median grid + bicubic interpolation.")
                     .onChange(of: removeGradient) { _ in
                         gradientCorrectedData = nil
-                        wienerCorrectedData = nil  // depends on gradient output
+                        wienerCorrectedData = nil
                         scheduleRender()
                     }
                     .frame(width: 82)
+                Rectangle().fill(Color.gray.opacity(0.3)).frame(width: 1, height: 16)
+                Button(action: { showOriginal.toggle() }) {
+                    Text(showOriginal ? "A" : "A/B")
+                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .foregroundColor(showOriginal ? .white : .secondary)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(RoundedRectangle(cornerRadius: 4).fill(showOriginal ? Color.orange : Color.clear))
+                }
+                .buttonStyle(.plain)
+                .help("Click to toggle original vs processed view. No recalculation.")
+                Spacer()
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 3)
@@ -1230,6 +1261,13 @@ struct StackResultViewV2: View {
         }.value
 
         displayTexture = tex
+        // Cache original on first render for A/B toggle
+        if originalTexture == nil {
+            originalTexture = await Task.detached(priority: .utility) {
+                renderFloatToTexture(data: floatData, width: w, height: h,
+                                    channelCount: ch, targetBackground: 0.25, device: dev)
+            }.value
+        }
         isRendering = false
     }
 
@@ -1572,7 +1610,7 @@ struct ImagePreviewView: View {
             Text(label).font(.system(size: 10, design: .monospaced)).foregroundColor(fgDim)
                 .frame(width: 55, alignment: .trailing)
             Slider(value: value, in: range, step: step)
-                .frame(minWidth: 80, maxWidth: 140)
+                .frame(minWidth: 80, maxWidth: .infinity)
                 .onChange(of: value.wrappedValue) { _ in scheduleRender() }
             Text(display).font(.system(size: 10, design: .monospaced)).foregroundColor(fgDim)
                 .frame(width: 32, alignment: .leading)

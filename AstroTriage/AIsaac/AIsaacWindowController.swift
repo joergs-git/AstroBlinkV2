@@ -67,19 +67,19 @@ class AIsaacWindowController: NSWindowController {
                 self.window?.makeFirstResponder(nil)
                 // Find the NSTextField in the hosting view and focus it
                 if let contentView = self.window?.contentView {
-                    self.focusFirstTextField(in: contentView)
+                    self.focusInput(in: contentView)
                 }
             }
         }
     }
 
-    private func focusFirstTextField(in view: NSView) {
+    func focusInput(in view: NSView) {
         for subview in view.subviews {
             if let textField = subview as? NSTextField, textField.isEditable {
                 window?.makeFirstResponder(textField)
                 return
             }
-            focusFirstTextField(in: subview)
+            focusInput(in: subview)
         }
     }
 
