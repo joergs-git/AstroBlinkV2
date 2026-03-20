@@ -1,133 +1,106 @@
-// Gradient removal via median grid + bicubic interpolation
-// Subtracts smooth background model from stacked image data
-// Operates on raw float pixel data (planar format: RRRR...GGGG...BBBB...)
+// GPU gradient removal via median grid + Metal compute kernel
+// CPU: compute 64 tile medians (fast, subsampled)
+// GPU: interpolate grid and subtract background (instant)
 import Foundation
-import Accelerate
+import Metal
 
 enum GradientRemoval {
 
-    // Grid size for background sampling (8x8 = 64 tiles)
     private static let gridSize = 8
 
-    // Remove background gradient from planar float data
-    // Returns corrected data with flat background
-    static func removeGradient(data: [Float], width: Int, height: Int, channelCount: Int) -> [Float] {
-        let planeSize = width * height
-        var result = data
-
-        // Process channels in parallel
-        let planes = (0..<channelCount).map { ch -> (Int, [Float]) in
-            let offset = ch * planeSize
-            let plane = Array(data[offset..<offset + planeSize])
-            return (offset, removeGradientFromPlane(plane, width: width, height: height))
+    static func removeGradient(data: [Float], width: Int, height: Int, channelCount: Int,
+                                device: MTLDevice? = nil) -> [Float] {
+        // Try GPU path first
+        if let device = device ?? MTLCreateSystemDefaultDevice() {
+            if let result = gpuRemoveGradient(data: data, width: width, height: height,
+                                              channelCount: channelCount, device: device) {
+                return result
+            }
         }
-        for (offset, corrected) in planes {
-            result.replaceSubrange(offset..<offset + planeSize, with: corrected)
-        }
-
-        return result
+        return data  // fallback: return unchanged
     }
 
-    // Remove gradient from a single channel plane
-    private static func removeGradientFromPlane(_ plane: [Float], width: Int, height: Int) -> [Float] {
+    private static func gpuRemoveGradient(data: [Float], width: Int, height: Int,
+                                           channelCount: Int, device: MTLDevice) -> [Float]? {
+        let planeSize = width * height
+        let totalSize = planeSize * channelCount
         let tileW = width / gridSize
         let tileH = height / gridSize
 
-        // Step 1: Compute sigma-clipped median for each grid tile
-        // (sigma-clip removes stars, leaving only background)
-        var gridMedians = [[Float]](repeating: [Float](repeating: 0, count: gridSize), count: gridSize)
+        // Step 1 (CPU): Compute sigma-clipped median for each grid tile (subsampled — fast)
+        var gridMedians = [Float](repeating: 0, count: gridSize * gridSize * channelCount)
+        for ch in 0..<channelCount {
+            let offset = ch * planeSize
+            for gy in 0..<gridSize {
+                for gx in 0..<gridSize {
+                    let startX = gx * tileW
+                    let startY = gy * tileH
+                    let endX = min(startX + tileW, width)
+                    let endY = min(startY + tileH, height)
 
-        for gy in 0..<gridSize {
-            for gx in 0..<gridSize {
-                let startX = gx * tileW
-                let startY = gy * tileH
-                let endX = min(startX + tileW, width)
-                let endY = min(startY + tileH, height)
-
-                // Subsample tile pixels (every 4th pixel — background is smooth)
-                var tilePixels = [Float]()
-                let step = 4
-                tilePixels.reserveCapacity((tileW / step + 1) * (tileH / step + 1))
-                for y in stride(from: startY, to: endY, by: step) {
-                    for x in stride(from: startX, to: endX, by: step) {
-                        tilePixels.append(plane[y * width + x])
+                    var samples = [Float]()
+                    let step = 4
+                    for y in stride(from: startY, to: endY, by: step) {
+                        for x in stride(from: startX, to: endX, by: step) {
+                            samples.append(data[offset + y * width + x])
+                        }
                     }
+                    gridMedians[ch * gridSize * gridSize + gy * gridSize + gx] = sigmaClippedMedian(samples)
                 }
-
-                // Sigma-clipped median (2 iterations, 2.5 sigma)
-                gridMedians[gy][gx] = sigmaClippedMedian(tilePixels)
             }
         }
 
-        // Step 2: Bicubic interpolation of grid medians to full resolution
-        var background = [Float](repeating: 0, count: width * height)
+        // Global median (for shift)
+        let allMedians = gridMedians.prefix(gridSize * gridSize)
+        let sorted = allMedians.sorted()
+        let globalMedian = sorted[sorted.count / 2]
 
-        for y in 0..<height {
-            let gy = Float(y) / Float(tileH) - 0.5
-            for x in 0..<width {
-                let gx = Float(x) / Float(tileW) - 0.5
-                background[y * width + x] = bicubicInterpolate(gridMedians, gx: gx, gy: gy)
-            }
-        }
+        // Step 2 (GPU): Interpolate grid and subtract
+        guard let library = device.makeDefaultLibrary(),
+              let function = library.makeFunction(name: "gradient_remove"),
+              let pipeline = try? device.makeComputePipelineState(function: function),
+              let queue = device.makeCommandQueue(),
+              let cmdBuf = queue.makeCommandBuffer() else { return nil }
 
-        // Step 3: Subtract background, shift to keep median the same
-        // result = pixel - background + global_median
-        var result = [Float](repeating: 0, count: width * height)
-        let globalMedian = gridMedians.flatMap { $0 }.sorted()[gridSize * gridSize / 2]
+        let inputBuf = device.makeBuffer(bytes: data, length: totalSize * 4, options: .storageModeShared)!
+        let outputBuf = device.makeBuffer(length: totalSize * 4, options: .storageModeShared)!
+        let gridBuf = device.makeBuffer(bytes: gridMedians, length: gridMedians.count * 4, options: .storageModeShared)!
 
-        for i in 0..<width * height {
-            result[i] = max(0, plane[i] - background[i] + globalMedian)
-        }
+        var params = (Int32(width), Int32(height), Int32(channelCount), Int32(gridSize), globalMedian)
+        let paramsBuf = device.makeBuffer(bytes: &params, length: MemoryLayout.size(ofValue: params), options: .storageModeShared)!
 
-        return result
+        let encoder = cmdBuf.makeComputeCommandEncoder()!
+        encoder.setComputePipelineState(pipeline)
+        encoder.setBuffer(inputBuf, offset: 0, index: 0)
+        encoder.setBuffer(outputBuf, offset: 0, index: 1)
+        encoder.setBuffer(paramsBuf, offset: 0, index: 2)
+        encoder.setBuffer(gridBuf, offset: 0, index: 3)
+
+        let tg = MTLSize(width: 32, height: 32, depth: 1)
+        let g = MTLSize(width: (width + 31) / 32, height: (height + 31) / 32, depth: 1)
+        encoder.dispatchThreadgroups(g, threadsPerThreadgroup: tg)
+        encoder.endEncoding()
+        cmdBuf.commit()
+        cmdBuf.waitUntilCompleted()
+
+        let ptr = outputBuf.contents().bindMemory(to: Float.self, capacity: totalSize)
+        return Array(UnsafeBufferPointer(start: ptr, count: totalSize))
     }
 
-    // Sigma-clipped median: reject outliers (stars) before computing median
-    private static func sigmaClippedMedian(_ pixels: [Float], iterations: Int = 2, sigma: Float = 2.5) -> Float {
+    private static func sigmaClippedMedian(_ pixels: [Float]) -> Float {
         guard !pixels.isEmpty else { return 0 }
-        var filtered = pixels
-
-        for _ in 0..<iterations {
+        var filtered = pixels.sorted()
+        for _ in 0..<2 {
             guard filtered.count > 10 else { break }
-            filtered.sort()
             let median = filtered[filtered.count / 2]
-
-            // MAD-based sigma estimate
             let deviations = filtered.map { Swift.abs($0 - median) }
             let mad = deviations.sorted()[deviations.count / 2] * 1.4826
             guard mad > 0 else { break }
-
-            let low = median - sigma * mad
-            let high = median + sigma * mad
+            let low = median - 2.5 * mad
+            let high = median + 2.5 * mad
             filtered = filtered.filter { $0 >= low && $0 <= high }
         }
-
         guard !filtered.isEmpty else { return pixels.sorted()[pixels.count / 2] }
         return filtered[filtered.count / 2]
-    }
-
-    // Bicubic interpolation on the grid
-    private static func bicubicInterpolate(_ grid: [[Float]], gx: Float, gy: Float) -> Float {
-        let gs = gridSize
-
-        // Clamp to grid bounds
-        let x = max(0, min(Float(gs - 1), gx))
-        let y = max(0, min(Float(gs - 1), gy))
-
-        let xi = Int(x)
-        let yi = Int(y)
-        let fx = x - Float(xi)
-        let fy = y - Float(yi)
-
-        // Bilinear interpolation (simpler, nearly as good for smooth gradients)
-        let x0 = max(0, min(gs - 1, xi))
-        let x1 = max(0, min(gs - 1, xi + 1))
-        let y0 = max(0, min(gs - 1, yi))
-        let y1 = max(0, min(gs - 1, yi + 1))
-
-        let a = grid[y0][x0] * (1 - fx) + grid[y0][x1] * fx
-        let b = grid[y1][x0] * (1 - fx) + grid[y1][x1] * fx
-
-        return a * (1 - fy) + b * fy
     }
 }

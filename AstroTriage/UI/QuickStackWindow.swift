@@ -1217,24 +1217,25 @@ struct StackResultViewV2: View {
             let wienerFwhm = Float(engine.averageFWHM ?? 3.0)
             let structAmt = Float(structureAmount)
 
+            let gpuDevice = dev
             let result = await Task.detached(priority: .userInitiated) { () -> [Float] in
                 var data = floatData
 
-                // Gradient removal
+                // Gradient removal (GPU)
                 if doGradient {
-                    data = GradientRemoval.removeGradient(data: data, width: w, height: h, channelCount: ch)
+                    data = GradientRemoval.removeGradient(data: data, width: w, height: h, channelCount: ch, device: gpuDevice)
                 }
 
-                // Wiener deconvolution
+                // Wiener deconvolution (GPU)
                 if doWiener {
                     data = WienerDeconvolution.deconvolve(data: data, width: w, height: h,
-                                                          channelCount: ch, fwhm: wienerFwhm, strength: wienerStrength)
+                                                          channelCount: ch, fwhm: wienerFwhm, strength: wienerStrength, device: gpuDevice)
                 }
 
-                // Structure enhancement
+                // Structure enhancement (GPU)
                 if structAmt > 0.01 {
                     data = StructureEnhancement.enhance(data: data, width: w, height: h,
-                                                        channelCount: ch, amount: structAmt)
+                                                        channelCount: ch, amount: structAmt, device: gpuDevice)
                 }
 
                 return data

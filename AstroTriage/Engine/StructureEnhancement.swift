@@ -1,135 +1,92 @@
-// Structure enhancement for nebula/cloud detail
-// Large-radius local contrast boost that enhances extended features without sharpening stars.
-// Uses multi-scale approach: extract detail at nebula-scale frequencies, amplify, add back.
+// GPU structure enhancement — multi-scale local contrast boost for nebula/cloud detail
+// Uses Metal compute kernels: separable box blur at two scales + detail blend
 import Foundation
-import Accelerate
+import Metal
 
 enum StructureEnhancement {
 
-    // Enhance extended structure (nebula, clouds) in planar float data
-    // amount: 0.0 = off, 1.0 = moderate, 2.0 = strong
     static func enhance(data: [Float], width: Int, height: Int,
-                        channelCount: Int, amount: Float) -> [Float] {
+                        channelCount: Int, amount: Float,
+                        device: MTLDevice? = nil) -> [Float] {
         guard amount > 0.01 else { return data }
-        let planeSize = width * height
-        var result = data
-
-        for ch in 0..<channelCount {
-            let offset = ch * planeSize
-            let plane = Array(data[offset..<offset + planeSize])
-            let enhanced = enhancePlane(plane, width: width, height: height, amount: amount)
-            result.replaceSubrange(offset..<offset + planeSize, with: enhanced)
-        }
-
-        return result
-    }
-
-    // Enhance structure in a single channel
-    // Approach: subtract large-blur (nebula scale), amplify mid-frequency detail, add back
-    // Stars are point sources and get removed by the large blur → not amplified
-    private static func enhancePlane(_ plane: [Float], width: Int, height: Int,
-                                     amount: Float) -> [Float] {
-        let planeSize = width * height
-
-        // Two-scale approach:
-        // Scale 1: radius ~40px (large nebula structure)
-        // Scale 2: radius ~15px (smaller cloud detail)
-        let blur1 = boxBlur(plane, width: width, height: height, radius: 40)
-        let blur2 = boxBlur(plane, width: width, height: height, radius: 15)
-
-        // Extract detail layers
-        // Layer 1: mid-frequency (between 15px and 40px) — nebula texture
-        // Layer 2: high-mid-frequency (between original and 15px) — fine structure
-        var detail1 = [Float](repeating: 0, count: planeSize)
-        var detail2 = [Float](repeating: 0, count: planeSize)
-
-        // detail1 = blur2 - blur1 (medium scale structure)
-        vDSP_vsub(blur1, 1, blur2, 1, &detail1, 1, vDSP_Length(planeSize))
-        // detail2 = original - blur2 (fine structure, includes stars)
-        vDSP_vsub(blur2, 1, plane, 1, &detail2, 1, vDSP_Length(planeSize))
-
-        // Only boost detail1 (nebula scale) — detail2 contains stars
-        // Boost factor: amount * 1.5 for mid-frequency, amount * 0.3 for fine
-        let midBoost = amount * 1.5
-        let fineBoost = amount * 0.3  // gentle fine structure boost (stars are here)
-
-        // result = blur1 + detail1 * (1 + midBoost) + detail2 * (1 + fineBoost)
-        var result = [Float](repeating: 0, count: planeSize)
-        for i in 0..<planeSize {
-            result[i] = max(0, blur1[i] + detail1[i] * (1.0 + midBoost) + detail2[i] * (1.0 + fineBoost))
-        }
-
-        return result
-    }
-
-    // Fast box blur (separable: horizontal pass + vertical pass)
-    // Approximates Gaussian blur, runs in O(n) regardless of radius
-    private static func boxBlur(_ plane: [Float], width: Int, height: Int, radius: Int) -> [Float] {
-        let r = min(radius, min(width, height) / 4)
-        guard r > 0 else { return plane }
-
-        // Two-pass box blur (approximates Gaussian well)
-        var temp = horizontalBlur(plane, width: width, height: height, radius: r)
-        temp = verticalBlur(temp, width: width, height: height, radius: r)
-        // Second pass for smoother result
-        temp = horizontalBlur(temp, width: width, height: height, radius: r)
-        temp = verticalBlur(temp, width: width, height: height, radius: r)
-        return temp
-    }
-
-    private static func horizontalBlur(_ plane: [Float], width: Int, height: Int, radius: Int) -> [Float] {
-        var result = [Float](repeating: 0, count: width * height)
-        let kernelSize = Float(2 * radius + 1)
-
-        for y in 0..<height {
-            let rowStart = y * width
-
-            // Initialize running sum for first pixel
-            var sum: Float = 0
-            for x in 0...min(radius, width - 1) {
-                sum += plane[rowStart + x]
-            }
-            // Mirror left edge
-            for x in 1...radius {
-                sum += plane[rowStart + min(x, width - 1)]
-            }
-
-            result[rowStart] = sum / kernelSize
-
-            for x in 1..<width {
-                let addIdx = min(x + radius, width - 1)
-                let removeIdx = max(x - radius - 1, 0)
-                sum += plane[rowStart + addIdx] - plane[rowStart + removeIdx]
-                result[rowStart + x] = sum / kernelSize
+        if let device = device ?? MTLCreateSystemDefaultDevice() {
+            if let result = gpuEnhance(data: data, width: width, height: height,
+                                       channelCount: channelCount, amount: amount, device: device) {
+                return result
             }
         }
-
-        return result
+        return data
     }
 
-    private static func verticalBlur(_ plane: [Float], width: Int, height: Int, radius: Int) -> [Float] {
-        var result = [Float](repeating: 0, count: width * height)
-        let kernelSize = Float(2 * radius + 1)
+    private static func gpuEnhance(data: [Float], width: Int, height: Int,
+                                    channelCount: Int, amount: Float, device: MTLDevice) -> [Float]? {
+        let totalSize = width * height * channelCount
 
-        for x in 0..<width {
-            var sum: Float = 0
-            for y in 0...min(radius, height - 1) {
-                sum += plane[y * width + x]
-            }
-            for y in 1...radius {
-                sum += plane[min(y, height - 1) * width + x]
-            }
+        guard let library = device.makeDefaultLibrary(),
+              let blurFunc = library.makeFunction(name: "box_blur_pass"),
+              let blendFunc = library.makeFunction(name: "structure_blend"),
+              let blurPipeline = try? device.makeComputePipelineState(function: blurFunc),
+              let blendPipeline = try? device.makeComputePipelineState(function: blendFunc),
+              let queue = device.makeCommandQueue() else { return nil }
 
-            result[x] = sum / kernelSize
+        let inputBuf = device.makeBuffer(bytes: data, length: totalSize * 4, options: .storageModeShared)!
+        let tempBuf1 = device.makeBuffer(length: totalSize * 4, options: .storageModeShared)!
+        let tempBuf2 = device.makeBuffer(length: totalSize * 4, options: .storageModeShared)!
+        let blurSmallBuf = device.makeBuffer(length: totalSize * 4, options: .storageModeShared)!
+        let blurLargeBuf = device.makeBuffer(length: totalSize * 4, options: .storageModeShared)!
+        let outputBuf = device.makeBuffer(length: totalSize * 4, options: .storageModeShared)!
 
-            for y in 1..<height {
-                let addIdx = min(y + radius, height - 1)
-                let removeIdx = max(y - radius - 1, 0)
-                sum += plane[addIdx * width + x] - plane[removeIdx * width + x]
-                result[y * width + x] = sum / kernelSize
-            }
+        let tg = MTLSize(width: 32, height: 32, depth: 1)
+        let g = MTLSize(width: (width + 31) / 32, height: (height + 31) / 32, depth: 1)
+
+        // Helper: run one blur pass (direction: 0=horizontal, 1=vertical)
+        func blurPass(input: MTLBuffer, output: MTLBuffer, radius: Int, direction: Int, cmdBuf: MTLCommandBuffer) {
+            var params = (Int32(width), Int32(height), Int32(channelCount), Int32(radius), Int32(direction))
+            let paramsBuf = device.makeBuffer(bytes: &params, length: MemoryLayout.size(ofValue: params), options: .storageModeShared)!
+            let encoder = cmdBuf.makeComputeCommandEncoder()!
+            encoder.setComputePipelineState(blurPipeline)
+            encoder.setBuffer(input, offset: 0, index: 0)
+            encoder.setBuffer(output, offset: 0, index: 1)
+            encoder.setBuffer(paramsBuf, offset: 0, index: 2)
+            encoder.dispatchThreadgroups(g, threadsPerThreadgroup: tg)
+            encoder.endEncoding()
         }
 
-        return result
+        // Small blur (radius 15): 2-pass box blur = H→V→H→V
+        guard let cmd1 = queue.makeCommandBuffer() else { return nil }
+        blurPass(input: inputBuf, output: tempBuf1, radius: 15, direction: 0, cmdBuf: cmd1)
+        blurPass(input: tempBuf1, output: tempBuf2, radius: 15, direction: 1, cmdBuf: cmd1)
+        blurPass(input: tempBuf2, output: tempBuf1, radius: 15, direction: 0, cmdBuf: cmd1)
+        blurPass(input: tempBuf1, output: blurSmallBuf, radius: 15, direction: 1, cmdBuf: cmd1)
+        cmd1.commit()
+        cmd1.waitUntilCompleted()
+
+        // Large blur (radius 40): 2-pass box blur
+        guard let cmd2 = queue.makeCommandBuffer() else { return nil }
+        blurPass(input: inputBuf, output: tempBuf1, radius: 40, direction: 0, cmdBuf: cmd2)
+        blurPass(input: tempBuf1, output: tempBuf2, radius: 40, direction: 1, cmdBuf: cmd2)
+        blurPass(input: tempBuf2, output: tempBuf1, radius: 40, direction: 0, cmdBuf: cmd2)
+        blurPass(input: tempBuf1, output: blurLargeBuf, radius: 40, direction: 1, cmdBuf: cmd2)
+        cmd2.commit()
+        cmd2.waitUntilCompleted()
+
+        // Blend: combine detail layers
+        guard let cmd3 = queue.makeCommandBuffer() else { return nil }
+        var blendParams = (Int32(width), Int32(height), Int32(channelCount), amount * 1.5, amount * 0.3)
+        let blendParamsBuf = device.makeBuffer(bytes: &blendParams, length: MemoryLayout.size(ofValue: blendParams), options: .storageModeShared)!
+        let encoder = cmd3.makeComputeCommandEncoder()!
+        encoder.setComputePipelineState(blendPipeline)
+        encoder.setBuffer(inputBuf, offset: 0, index: 0)
+        encoder.setBuffer(blurLargeBuf, offset: 0, index: 1)
+        encoder.setBuffer(blurSmallBuf, offset: 0, index: 2)
+        encoder.setBuffer(outputBuf, offset: 0, index: 3)
+        encoder.setBuffer(blendParamsBuf, offset: 0, index: 4)
+        encoder.dispatchThreadgroups(g, threadsPerThreadgroup: tg)
+        encoder.endEncoding()
+        cmd3.commit()
+        cmd3.waitUntilCompleted()
+
+        let ptr = outputBuf.contents().bindMemory(to: Float.self, capacity: totalSize)
+        return Array(UnsafeBufferPointer(start: ptr, count: totalSize))
     }
 }

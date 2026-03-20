@@ -1052,3 +1052,178 @@ fragment float4 quad_fragment(
 {
     return tex.sample(samp, in.texCoord);
 }
+
+// MARK: - Gradient Removal (GPU)
+// Interpolates background model from grid medians and subtracts from image
+
+struct GradientParams {
+    int width;
+    int height;
+    int channelCount;
+    int gridSize;       // typically 8
+    float globalMedian; // median of grid medians (to shift result)
+};
+
+kernel void gradient_remove(
+    device const float* data [[buffer(0)]],
+    device float* output [[buffer(1)]],
+    constant GradientParams& params [[buffer(2)]],
+    device const float* gridMedians [[buffer(3)]],  // gridSize * gridSize * channelCount
+    uint2 gid [[thread_position_in_grid]])
+{
+    int x = (int)gid.x;
+    int y = (int)gid.y;
+    if (x >= params.width || y >= params.height) return;
+
+    int idx = y * params.width + x;
+    int planeSize = params.width * params.height;
+    int gs = params.gridSize;
+    float tileW = float(params.width) / float(gs);
+    float tileH = float(params.height) / float(gs);
+
+    // Grid position (continuous)
+    float gx = clamp(float(x) / tileW - 0.5, 0.0, float(gs - 1));
+    float gy = clamp(float(y) / tileH - 0.5, 0.0, float(gs - 1));
+
+    int gx0 = clamp(int(gx), 0, gs - 1);
+    int gx1 = clamp(gx0 + 1, 0, gs - 1);
+    int gy0 = clamp(int(gy), 0, gs - 1);
+    int gy1 = clamp(gy0 + 1, 0, gs - 1);
+    float fx = gx - float(gx0);
+    float fy = gy - float(gy0);
+
+    for (int ch = 0; ch < params.channelCount; ch++) {
+        int offset = ch * planeSize;
+        int gOffset = ch * gs * gs;
+
+        // Bilinear interpolation of grid medians
+        float a = gridMedians[gOffset + gy0 * gs + gx0] * (1.0 - fx) + gridMedians[gOffset + gy0 * gs + gx1] * fx;
+        float b = gridMedians[gOffset + gy1 * gs + gx0] * (1.0 - fx) + gridMedians[gOffset + gy1 * gs + gx1] * fx;
+        float bg = a * (1.0 - fy) + b * fy;
+
+        output[offset + idx] = max(0.0, data[offset + idx] - bg + params.globalMedian);
+    }
+}
+
+// MARK: - Structure Enhancement (GPU)
+// Large-radius local contrast boost for nebula/cloud detail
+
+struct StructureParams {
+    int width;
+    int height;
+    int channelCount;
+    int radius;       // blur radius
+    int direction;    // 0 = horizontal, 1 = vertical
+};
+
+kernel void box_blur_pass(
+    device const float* input [[buffer(0)]],
+    device float* output [[buffer(1)]],
+    constant StructureParams& params [[buffer(2)]],
+    uint2 gid [[thread_position_in_grid]])
+{
+    int x = (int)gid.x;
+    int y = (int)gid.y;
+    if (x >= params.width || y >= params.height) return;
+
+    int planeSize = params.width * params.height;
+    int r = params.radius;
+    float kernelSize = float(2 * r + 1);
+
+    for (int ch = 0; ch < params.channelCount; ch++) {
+        int offset = ch * planeSize;
+        float sum = 0.0;
+
+        if (params.direction == 0) {
+            // Horizontal blur
+            for (int dx = -r; dx <= r; dx++) {
+                int sx = clamp(x + dx, 0, params.width - 1);
+                sum += input[offset + y * params.width + sx];
+            }
+        } else {
+            // Vertical blur
+            for (int dy = -r; dy <= r; dy++) {
+                int sy = clamp(y + dy, 0, params.height - 1);
+                sum += input[offset + sy * params.width + x];
+            }
+        }
+
+        output[offset + y * params.width + x] = sum / kernelSize;
+    }
+}
+
+struct StructureBlendParams {
+    int width;
+    int height;
+    int channelCount;
+    float midBoost;   // boost for mid-frequency (nebula scale)
+    float fineBoost;  // boost for fine detail
+};
+
+kernel void structure_blend(
+    device const float* original [[buffer(0)]],
+    device const float* blur_large [[buffer(1)]],
+    device const float* blur_small [[buffer(2)]],
+    device float* output [[buffer(3)]],
+    constant StructureBlendParams& params [[buffer(4)]],
+    uint2 gid [[thread_position_in_grid]])
+{
+    int x = (int)gid.x;
+    int y = (int)gid.y;
+    if (x >= params.width || y >= params.height) return;
+
+    int idx = y * params.width + x;
+    int planeSize = params.width * params.height;
+
+    for (int ch = 0; ch < params.channelCount; ch++) {
+        int offset = ch * planeSize;
+        float orig = original[offset + idx];
+        float bLarge = blur_large[offset + idx];
+        float bSmall = blur_small[offset + idx];
+
+        // detail1 = blur_small - blur_large (mid-frequency: nebula texture)
+        float detail1 = bSmall - bLarge;
+        // detail2 = original - blur_small (fine detail: includes stars)
+        float detail2 = orig - bSmall;
+
+        output[offset + idx] = max(0.0, bLarge + detail1 * (1.0 + params.midBoost) + detail2 * (1.0 + params.fineBoost));
+    }
+}
+
+// MARK: - Wiener-like Deconvolution (GPU)
+// Noise-regularized sharpening at PSF-matched scale
+
+struct WienerParams {
+    int width;
+    int height;
+    int channelCount;
+    float strength;     // sharpening amount
+    float noiseLevel;   // estimated noise for regularization
+};
+
+kernel void wiener_sharpen(
+    device const float* original [[buffer(0)]],
+    device const float* blurred [[buffer(1)]],
+    device float* output [[buffer(2)]],
+    constant WienerParams& params [[buffer(3)]],
+    uint2 gid [[thread_position_in_grid]])
+{
+    int x = (int)gid.x;
+    int y = (int)gid.y;
+    if (x >= params.width || y >= params.height) return;
+
+    int idx = y * params.width + x;
+    int planeSize = params.width * params.height;
+    float noise2 = params.noiseLevel * params.noiseLevel * 10.0;
+
+    for (int ch = 0; ch < params.channelCount; ch++) {
+        int offset = ch * planeSize;
+        float orig = original[offset + idx];
+        float blur = blurred[offset + idx];
+        float detail = orig - blur;
+        float signal = abs(detail);
+        // Wiener-like: suppress sharpening where signal ≈ noise
+        float regularized = detail * signal / (signal + noise2);
+        output[offset + idx] = max(0.0, orig + params.strength * regularized);
+    }
+}
