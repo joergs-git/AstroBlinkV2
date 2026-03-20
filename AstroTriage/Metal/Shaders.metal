@@ -1181,12 +1181,17 @@ kernel void structure_blend(
         float bLarge = blur_large[offset + idx];
         float bSmall = blur_small[offset + idx];
 
-        // detail1 = blur_small - blur_large (mid-frequency: nebula texture)
+        // detail1 = blur_small - blur_large (mid-frequency: nebula texture, dust lanes)
         float detail1 = bSmall - bLarge;
-        // detail2 = original - blur_small (fine detail: includes stars)
+        // detail2 = original - blur_small (fine detail: stars live here — don't boost)
         float detail2 = orig - bSmall;
 
-        output[offset + idx] = max(0.0, bLarge + detail1 * (1.0 + params.midBoost) + detail2 * (1.0 + params.fineBoost));
+        // Only boost mid-frequency (nebula). Stars are in fine layer — leave untouched.
+        // Clamp mid-frequency boost to prevent artifacts on bright nebula edges
+        float boostedMid = detail1 * (1.0 + params.midBoost);
+        boostedMid = clamp(boostedMid, detail1 - abs(detail1) * params.midBoost, detail1 + abs(detail1) * params.midBoost);
+
+        output[offset + idx] = max(0.0, bLarge + boostedMid + detail2);
     }
 }
 

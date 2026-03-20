@@ -72,7 +72,7 @@ enum StructureEnhancement {
 
         // Blend: combine detail layers
         guard let cmd3 = queue.makeCommandBuffer() else { return nil }
-        var blendParams = (Int32(width), Int32(height), Int32(channelCount), amount * 1.5, amount * 0.3)
+        var blendParams = (Int32(width), Int32(height), Int32(channelCount), amount * 1.5, Float(0.0))
         let blendParamsBuf = device.makeBuffer(bytes: &blendParams, length: MemoryLayout.size(ofValue: blendParams), options: .storageModeShared)!
         let encoder = cmd3.makeComputeCommandEncoder()!
         encoder.setComputePipelineState(blendPipeline)
