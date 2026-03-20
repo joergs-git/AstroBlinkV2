@@ -826,14 +826,13 @@ struct StackResultViewV2: View {
     let stackTimeMs: Int
     // Gradient removal state
     @State private var removeGradient: Bool = false
-    @State private var gradientCorrectedData: [Float]?
-    // Wiener deconvolution cache
-    @State private var wienerCorrectedData: [Float]?
-    @State private var lastWienerStrength: Float = 0
-    // Structure enhancement (nebula/cloud detail)
     @State private var structureAmount: Double = 0.0
-    @State private var showOriginal: Bool = false  // A/B toggle for before/after comparison
-    @State private var originalTexture: MTLTexture?  // cached unprocessed render
+    @State private var showOriginal: Bool = false
+    @State private var originalTexture: MTLTexture?
+    // Preprocessed data cache: gradient + wiener + structure applied to raw floats.
+    // Only recomputed when these specific controls change — NOT on stretch/dark/sharp etc.
+    @State private var preprocessedData: [Float]?
+    @State private var preprocessNeedsUpdate: Bool = true
     @State private var stretchValue: Double = 0.25
     @State private var sharpening: Double = 0.0
     @State private var contrast: Double = 0.0
@@ -989,7 +988,8 @@ struct StackResultViewV2: View {
             HStack(spacing: 4) {
                 resultSlider("Deconv", value: $deconvolve, range: 0.0...2.0, step: 0.02,
                              display: deconvolve < 0.01 ? "Off" : String(format: "%.1f", deconvolve))
-                    .help("Deconvolution: Wiener (frequency-domain, best quality),\nRL (Richardson-Lucy iterative), USM (multi-scale unsharp mask).")
+                    .help("Deconvolution: Wiener (noise-aware, best quality),\nRL (Richardson-Lucy iterative), USM (multi-scale unsharp mask).")
+                    .onChange(of: deconvolve) { _ in if deconvMode == .wiener { invalidatePreprocess() } }
                 Picker("", selection: $deconvMode) {
                     ForEach(DeconvMode.allCases, id: \.self) { mode in
                         Text(mode.rawValue).tag(mode)
@@ -1001,12 +1001,12 @@ struct StackResultViewV2: View {
                 .help("Wiener = frequency-domain optimal (best, uses FWHM).\nRL = Richardson-Lucy iterative.\nUSM = multi-scale unsharp mask (fastest).")
                 .onChange(of: deconvMode) { newMode in
                     useRL = (newMode == .rl)
-                    wienerCorrectedData = nil
-                    scheduleRender()
+                    invalidatePreprocess()
                 }
                 resultSlider("Structure", value: $structureAmount, range: 0.0...2.0, step: 0.02,
                              display: structureAmount < 0.01 ? "Off" : String(format: "%.0f%%", structureAmount * 100))
                     .help("Enhance nebula/cloud detail without sharpening stars.\nLarge-radius local contrast boost for extended structures.")
+                    .onChange(of: structureAmount) { _ in invalidatePreprocess() }
                 Rectangle().fill(Color.gray.opacity(0.3)).frame(width: 1, height: 16)
                 Toggle("Gradient", isOn: $removeGradient)
                     .toggleStyle(.switch).controlSize(.mini)
@@ -1014,9 +1014,7 @@ struct StackResultViewV2: View {
                     .foregroundColor(removeGradient ? .cyan : .secondary)
                     .help("Remove background gradient (light pollution, vignetting).\nUses median grid + bicubic interpolation.")
                     .onChange(of: removeGradient) { _ in
-                        gradientCorrectedData = nil
-                        wienerCorrectedData = nil
-                        scheduleRender()
+                        invalidatePreprocess()
                     }
                     .frame(width: 82)
                 Rectangle().fill(Color.gray.opacity(0.3)).frame(width: 1, height: 16)
@@ -1128,6 +1126,8 @@ struct StackResultViewV2: View {
 
     private func resetSliders() {
         stretchValue = 0.25; sharpening = 0.0; contrast = 0.0; darkLevel = 0.0; saturation = 1.0; linkedStretch = false; denoise = 0.0; deconvolve = 0.0; useRL = false
+        removeGradient = false; structureAmount = 0.0
+        preprocessedData = nil; preprocessNeedsUpdate = true
         scheduleRender()
     }
 
@@ -1188,6 +1188,13 @@ struct StackResultViewV2: View {
         }
     }
 
+    // Invalidate preprocessed cache — call when gradient/wiener/structure change
+    private func invalidatePreprocess() {
+        preprocessedData = nil
+        preprocessNeedsUpdate = true
+        scheduleRender()
+    }
+
     @MainActor
     private func restretch() async {
         guard let floatData = engine.resultFloatData else { isRendering = false; return }
@@ -1199,62 +1206,49 @@ struct StackResultViewV2: View {
         let dc = Float(deconvolve)
         let rl = useRL
         let dev = engine.device
-        let doGradient = removeGradient
 
-        // Step 1: Gradient removal (if enabled, on raw linear data)
-        let afterGradient: [Float]
-        if doGradient {
-            if let cached = gradientCorrectedData {
-                afterGradient = cached
-            } else {
-                let corrected = await Task.detached(priority: .userInitiated) {
-                    GradientRemoval.removeGradient(data: floatData, width: w, height: h, channelCount: ch)
-                }.value
-                gradientCorrectedData = corrected
-                afterGradient = corrected
-            }
-        } else {
-            afterGradient = floatData
-        }
+        // Preprocess: gradient + wiener + structure (CACHED — only recomputed when needed)
+        if preprocessNeedsUpdate || preprocessedData == nil {
+            let doGradient = removeGradient
+            let doWiener = deconvMode == .wiener && dc > 0.01
+            let wienerStrength = dc
+            let wienerFwhm = Float(engine.averageFWHM ?? 3.0)
+            let structAmt = Float(structureAmount)
 
-        // Step 2: Wiener deconvolution (cached — only recomputes when strength changes)
-        let currentDeconvMode = deconvMode
-        if currentDeconvMode == .wiener && dc > 0.01 {
-            if wienerCorrectedData == nil || Swift.abs(lastWienerStrength - dc) > 0.005 {
-                let fwhm = engine.averageFWHM ?? 3.0
-                let inputData = afterGradient
-                let strength = dc
-                let corrected = await Task.detached(priority: .userInitiated) {
-                    WienerDeconvolution.deconvolve(data: inputData, width: w, height: h,
-                                                   channelCount: ch, fwhm: Float(fwhm), strength: strength)
-                }.value
-                wienerCorrectedData = corrected
-                lastWienerStrength = dc
-            }
-        }
+            let result = await Task.detached(priority: .userInitiated) { () -> [Float] in
+                var data = floatData
 
-        let afterDeconv = (currentDeconvMode == .wiener && dc > 0.01)
-            ? (wienerCorrectedData ?? afterGradient)
-            : afterGradient
+                // Gradient removal
+                if doGradient {
+                    data = GradientRemoval.removeGradient(data: data, width: w, height: h, channelCount: ch)
+                }
 
-        // Step 3: Structure enhancement (only when slider > 0)
-        let structAmt = Float(structureAmount)
-        let finalData: [Float]
-        if structAmt > 0.01 {
-            let inputData = afterDeconv
-            finalData = await Task.detached(priority: .userInitiated) {
-                StructureEnhancement.enhance(data: inputData, width: w, height: h,
-                                             channelCount: ch, amount: structAmt)
+                // Wiener deconvolution
+                if doWiener {
+                    data = WienerDeconvolution.deconvolve(data: data, width: w, height: h,
+                                                          channelCount: ch, fwhm: wienerFwhm, strength: wienerStrength)
+                }
+
+                // Structure enhancement
+                if structAmt > 0.01 {
+                    data = StructureEnhancement.enhance(data: data, width: w, height: h,
+                                                        channelCount: ch, amount: structAmt)
+                }
+
+                return data
             }.value
-        } else {
-            finalData = afterDeconv
+
+            preprocessedData = result
+            preprocessNeedsUpdate = false
         }
 
-        // Skip GPU deconv if Wiener is handling it (already applied above)
-        let gpuDeconv: Float = currentDeconvMode == .wiener ? 0 : dc
+        let dataToRender = preprocessedData ?? floatData
+
+        // GPU render: STF + sharp + contrast + dark + denoise + GPU deconv (FAST — <16ms)
+        let gpuDeconv: Float = deconvMode == .wiener ? 0 : dc
 
         let tex = await Task.detached(priority: .userInitiated) {
-            renderFloatToTexture(data: finalData, width: w, height: h,
+            renderFloatToTexture(data: dataToRender, width: w, height: h,
                                 channelCount: ch, targetBackground: target,
                                 sharpening: sharp, contrast: cont, darkLevel: dark,
                                 saturation: sat, linkedStretch: linked, denoise: dn, deconvolve: gpuDeconv, useRL: rl, device: dev)
