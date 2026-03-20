@@ -967,7 +967,7 @@ struct StackResultViewV2: View {
             .background(nightMode ? Color(red: 0.06, green: 0, blue: 0) : Color(NSColor.underPageBackgroundColor))
 
             // Row 2: Advanced — deconvolution, structure, gradient
-            HStack(spacing: 2) {
+            HStack(spacing: 4) {
                 resultSlider("Deconv", value: $deconvolve, range: 0.0...2.0, step: 0.02,
                              display: deconvolve < 0.01 ? "Off" : String(format: "%.1f", deconvolve))
                     .help("Deconvolution: Wiener (frequency-domain, best quality),\nRL (Richardson-Lucy iterative), USM (multi-scale unsharp mask).")
@@ -1185,38 +1185,37 @@ struct StackResultViewV2: View {
             afterGradient = floatData
         }
 
-        // Step 2: Wiener deconvolution (if selected, on raw linear data before STF)
-        let dataToRender: [Float]
+        // Step 2: Wiener deconvolution (cached — only recomputes when strength changes)
         let currentDeconvMode = deconvMode
         if currentDeconvMode == .wiener && dc > 0.01 {
-            let fwhm = engine.averageFWHM ?? 3.0  // fallback to 3px if no measurement
-            let strength = dc
-            if let cached = wienerCorrectedData, Swift.abs(lastWienerStrength - strength) < 0.01 && !doGradient {
-                dataToRender = cached
-            } else {
+            if wienerCorrectedData == nil || Swift.abs(lastWienerStrength - dc) > 0.005 {
+                let fwhm = engine.averageFWHM ?? 3.0
                 let inputData = afterGradient
+                let strength = dc
                 let corrected = await Task.detached(priority: .userInitiated) {
                     WienerDeconvolution.deconvolve(data: inputData, width: w, height: h,
                                                    channelCount: ch, fwhm: Float(fwhm), strength: strength)
                 }.value
                 wienerCorrectedData = corrected
-                lastWienerStrength = strength
-                dataToRender = corrected
+                lastWienerStrength = dc
             }
-        } else {
-            dataToRender = afterGradient
         }
 
-        // Step 3: Structure enhancement (nebula/cloud detail)
+        let afterDeconv = (currentDeconvMode == .wiener && dc > 0.01)
+            ? (wienerCorrectedData ?? afterGradient)
+            : afterGradient
+
+        // Step 3: Structure enhancement (only when slider > 0)
         let structAmt = Float(structureAmount)
         let finalData: [Float]
         if structAmt > 0.01 {
+            let inputData = afterDeconv
             finalData = await Task.detached(priority: .userInitiated) {
-                StructureEnhancement.enhance(data: dataToRender, width: w, height: h,
+                StructureEnhancement.enhance(data: inputData, width: w, height: h,
                                              channelCount: ch, amount: structAmt)
             }.value
         } else {
-            finalData = dataToRender
+            finalData = afterDeconv
         }
 
         // Skip GPU deconv if Wiener is handling it (already applied above)
