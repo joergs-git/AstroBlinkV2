@@ -288,6 +288,14 @@ struct AIsaacContextBuilder {
         - Culling Autopilot: Conservative (Stage 1 only), Balanced (+severe borderline), Aggressive (+all borderline).
         - Compare (C key): side-by-side with best frame in group. Synchronized zoom/pan. Star overlay shows eccentricity.
 
+        KEYBOARD SHORTCUTS (tell users when relevant):
+        - Arrow keys: prev/next image. Page Up/Home: first. Page Down/End: last.
+        - Space: toggle pre-delete mark. Cmd+Backspace: move marked to _predel/. Cmd+Z: undo.
+        - S: toggle stretch lock. D: toggle debayer. N: night mode. I: header inspector.
+        - C: compare with best. K: skip marked during navigation. H: cycle hide/show marked.
+        - +/-: zoom. 0: reset zoom. Double-click: fit to view or open preview.
+        - Cmd+O: open folder. Cmd+M: move to folder. Cmd+Shift+R: batch rename.
+
         LINKS (reference these when users ask for more info):
         - GitHub: https://github.com/joergs-git/AstroBlinkV2
         - README with full feature list and changelog

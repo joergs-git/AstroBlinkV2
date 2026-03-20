@@ -822,6 +822,9 @@ struct StackResultViewV2: View {
     let engine: QuickStackEngineV2
     let nightMode: Bool
     let stackTimeMs: Int
+    // Gradient removal state
+    @State private var removeGradient: Bool = false
+    @State private var gradientCorrectedData: [Float]?
     @State private var stretchValue: Double = 0.25
     @State private var sharpening: Double = 0.0
     @State private var contrast: Double = 0.0
@@ -959,6 +962,17 @@ struct StackResultViewV2: View {
                     .help("USM = Multi-scale Unsharp Mask (fast).\nRL = Richardson-Lucy deconvolution (better quality, slower).")
                     .onChange(of: useRL) { _ in scheduleRender() }
                     .frame(width: 52)
+                Rectangle().fill(Color.gray.opacity(0.3)).frame(width: 1, height: 16)
+                Toggle("Gradient", isOn: $removeGradient)
+                    .toggleStyle(.switch).controlSize(.mini)
+                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                    .foregroundColor(removeGradient ? .cyan : .secondary)
+                    .help("Remove background gradient (light pollution, vignetting).\nUses median grid + bicubic interpolation.")
+                    .onChange(of: removeGradient) { _ in
+                        gradientCorrectedData = nil  // force recompute
+                        scheduleRender()
+                    }
+                    .frame(width: 82)
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
@@ -1127,9 +1141,26 @@ struct StackResultViewV2: View {
         let dc = Float(deconvolve)
         let rl = useRL
         let dev = engine.device
+        let doGradient = removeGradient
+
+        // Apply gradient removal if enabled (operates on raw float data before STF)
+        let dataToRender: [Float]
+        if doGradient {
+            if let cached = gradientCorrectedData {
+                dataToRender = cached
+            } else {
+                let corrected = await Task.detached(priority: .userInitiated) {
+                    GradientRemoval.removeGradient(data: floatData, width: w, height: h, channelCount: ch)
+                }.value
+                gradientCorrectedData = corrected
+                dataToRender = corrected
+            }
+        } else {
+            dataToRender = floatData
+        }
 
         let tex = await Task.detached(priority: .userInitiated) {
-            renderFloatToTexture(data: floatData, width: w, height: h,
+            renderFloatToTexture(data: dataToRender, width: w, height: h,
                                 channelCount: ch, targetBackground: target,
                                 sharpening: sharp, contrast: cont, darkLevel: dark,
                                 saturation: sat, linkedStretch: linked, denoise: dn, deconvolve: dc, useRL: rl, device: dev)

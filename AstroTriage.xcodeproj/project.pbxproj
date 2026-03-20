@@ -36,6 +36,7 @@
 		5EBF03BBD7C5676AA602ECF7 /* QuickLookRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D9A7A3939A213218612E649 /* QuickLookRenderer.swift */; };
 		5FAD6705D12685E27FBBE43A /* ColumnDefinitionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E46927C78C5F676909307325 /* ColumnDefinitionTests.swift */; };
 		6293E36CA5F5A530DFE8F0B9 /* CalibrationDatabaseTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8B1B8C7785F451D0AB30D571 /* CalibrationDatabaseTests.swift */; };
+		685E7112D4AC89C6C0A2F693 /* GradientRemoval.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BCBBE41D0B90CC98443F843 /* GradientRemoval.swift */; };
 		6A70C46FBC8628846E42189A /* AIsaacSpeech.swift in Sources */ = {isa = PBXBuildFile; fileRef = 08F0D2BEEDC92E723A57A4DE /* AIsaacSpeech.swift */; };
 		6A801D391463BD0101AE4EAA /* BatchOperations.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC91195CA425D12B99F20516 /* BatchOperations.swift */; };
 		6F0B663C43C9629F2CE3C655 /* GPUStarDetectionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 107592623F603E84A4E408A9 /* GPUStarDetectionTests.swift */; };
@@ -138,6 +139,7 @@
 		1C26D1D4C5DFA7795B28D750 /* AstroTriageTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AstroTriageTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		218287CA9A583C11D2A4196E /* AIsaacKeychain.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIsaacKeychain.swift; sourceTree = "<group>"; };
 		24F8E2016E26D881862A1E76 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		3BCBBE41D0B90CC98443F843 /* GradientRemoval.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GradientRemoval.swift; sourceTree = "<group>"; };
 		3E84C4C954C1B6E8C561713D /* ThumbnailProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThumbnailProvider.swift; sourceTree = "<group>"; };
 		40D54AA4B026ABD4997C7758 /* STFCalculator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = STFCalculator.swift; sourceTree = "<group>"; };
 		4B576ECA4D0080E5D97856E1 /* ImageDecoder */ = {isa = PBXFileReference; lastKnownFileType = folder; name = ImageDecoder; path = Packages/ImageDecoder; sourceTree = SOURCE_ROOT; };
@@ -331,6 +333,7 @@
 				511D5503EE634473FF2EC433 /* CalibrationDatabase.swift */,
 				01FF98B4BC98399919553F34 /* ColorCombineEngine.swift */,
 				4EC5D8FEF949DAD6CA5217B2 /* ConvergenceDetector.swift */,
+				3BCBBE41D0B90CC98443F843 /* GradientRemoval.swift */,
 				EAC4AFD3D3784B02004BA98D /* MetadataExtractor.swift */,
 				958EAAFB0801AA6BF89E7E57 /* NINAFilenameParser.swift */,
 				1B4C4D1E3CA9608F6E41582A /* PrefetchCache.swift */,
@@ -633,6 +636,7 @@
 				2356F4E612C0145A8DAD2063 /* ConvergenceDetector.swift in Sources */,
 				FF242D8AC80D34562D5B296A /* DecodedImage.swift in Sources */,
 				1864DE963C0E5E7717212E46 /* FileListView.swift in Sources */,
+				685E7112D4AC89C6C0A2F693 /* GradientRemoval.swift in Sources */,
 				37DA495A008C7E13F6D23D6C /* HeaderInspectorView.swift in Sources */,
 				D8490084CA833D518635A281 /* ImageDecoder.swift in Sources */,
 				5BEA8CB806944696DA8FF49D /* ImageEntry.swift in Sources */,
