@@ -52,21 +52,21 @@ enum StructureEnhancement {
             encoder.endEncoding()
         }
 
-        // Small blur (radius 15): 2-pass box blur = H→V→H→V
+        // Small blur (radius 30): stars fully smoothed at this scale
         guard let cmd1 = queue.makeCommandBuffer() else { return nil }
-        blurPass(input: inputBuf, output: tempBuf1, radius: 15, direction: 0, cmdBuf: cmd1)
-        blurPass(input: tempBuf1, output: tempBuf2, radius: 15, direction: 1, cmdBuf: cmd1)
-        blurPass(input: tempBuf2, output: tempBuf1, radius: 15, direction: 0, cmdBuf: cmd1)
-        blurPass(input: tempBuf1, output: blurSmallBuf, radius: 15, direction: 1, cmdBuf: cmd1)
+        blurPass(input: inputBuf, output: tempBuf1, radius: 30, direction: 0, cmdBuf: cmd1)
+        blurPass(input: tempBuf1, output: tempBuf2, radius: 30, direction: 1, cmdBuf: cmd1)
+        blurPass(input: tempBuf2, output: tempBuf1, radius: 30, direction: 0, cmdBuf: cmd1)
+        blurPass(input: tempBuf1, output: blurSmallBuf, radius: 30, direction: 1, cmdBuf: cmd1)
         cmd1.commit()
         cmd1.waitUntilCompleted()
 
-        // Large blur (radius 40): 2-pass box blur
+        // Large blur (radius 60): captures only the broadest gradients
         guard let cmd2 = queue.makeCommandBuffer() else { return nil }
-        blurPass(input: inputBuf, output: tempBuf1, radius: 40, direction: 0, cmdBuf: cmd2)
-        blurPass(input: tempBuf1, output: tempBuf2, radius: 40, direction: 1, cmdBuf: cmd2)
-        blurPass(input: tempBuf2, output: tempBuf1, radius: 40, direction: 0, cmdBuf: cmd2)
-        blurPass(input: tempBuf1, output: blurLargeBuf, radius: 40, direction: 1, cmdBuf: cmd2)
+        blurPass(input: inputBuf, output: tempBuf1, radius: 60, direction: 0, cmdBuf: cmd2)
+        blurPass(input: tempBuf1, output: tempBuf2, radius: 60, direction: 1, cmdBuf: cmd2)
+        blurPass(input: tempBuf2, output: tempBuf1, radius: 60, direction: 0, cmdBuf: cmd2)
+        blurPass(input: tempBuf1, output: blurLargeBuf, radius: 60, direction: 1, cmdBuf: cmd2)
         cmd2.commit()
         cmd2.waitUntilCompleted()
 

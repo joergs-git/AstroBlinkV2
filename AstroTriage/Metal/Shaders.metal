@@ -1219,7 +1219,8 @@ kernel void wiener_sharpen(
 
     int idx = y * params.width + x;
     int planeSize = params.width * params.height;
-    float noise2 = params.noiseLevel * params.noiseLevel * 10.0;
+    // Scale noise for regularization — lower = more aggressive sharpening
+    float noise2 = params.noiseLevel * params.noiseLevel * 0.5;
 
     for (int ch = 0; ch < params.channelCount; ch++) {
         int offset = ch * planeSize;
@@ -1227,8 +1228,8 @@ kernel void wiener_sharpen(
         float blur = blurred[offset + idx];
         float detail = orig - blur;
         float signal = abs(detail);
-        // Wiener-like: suppress sharpening where signal ≈ noise
-        float regularized = detail * signal / (signal + noise2);
-        output[offset + idx] = max(0.0, orig + params.strength * regularized);
+        // Wiener-like: sharpen where signal >> noise, suppress where signal ≈ noise
+        float regularized = detail * signal / max(signal + noise2, 0.0001);
+        output[offset + idx] = max(0.0, orig + params.strength * 0.7 * regularized);
     }
 }

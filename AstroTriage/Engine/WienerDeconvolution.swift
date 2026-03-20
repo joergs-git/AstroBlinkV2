@@ -23,7 +23,8 @@ enum WienerDeconvolution {
                                        channelCount: Int, fwhm: Float, strength: Float,
                                        device: MTLDevice) -> [Float]? {
         let totalSize = width * height * channelCount
-        let radius = max(1, Int(ceil(fwhm / 2.355 * 2)))
+        // Use FWHM directly as radius — the PSF extends well beyond sigma
+        let radius = max(2, Int(ceil(fwhm)))
 
         // Estimate noise (CPU, subsampled — instant)
         let noiseLevel = estimateNoise(data, planeSize: width * height)
@@ -65,22 +66,47 @@ enum WienerDeconvolution {
         cmd1.commit()
         cmd1.waitUntilCompleted()
 
-        // Wiener sharpen
+        // Pass 1: Primary sharpening at PSF radius
         guard let cmd2 = queue.makeCommandBuffer() else { return nil }
         var wienerParams = (Int32(width), Int32(height), Int32(channelCount), strength, noiseLevel)
         let wpBuf = device.makeBuffer(bytes: &wienerParams, length: MemoryLayout.size(ofValue: wienerParams), options: .storageModeShared)!
-        let enc = cmd2.makeComputeCommandEncoder()!
-        enc.setComputePipelineState(wienerPipeline)
-        enc.setBuffer(inputBuf, offset: 0, index: 0)
-        enc.setBuffer(blurredBuf, offset: 0, index: 1)
-        enc.setBuffer(outputBuf, offset: 0, index: 2)
-        enc.setBuffer(wpBuf, offset: 0, index: 3)
-        enc.dispatchThreadgroups(g, threadsPerThreadgroup: tg)
-        enc.endEncoding()
+        let enc2 = cmd2.makeComputeCommandEncoder()!
+        enc2.setComputePipelineState(wienerPipeline)
+        enc2.setBuffer(inputBuf, offset: 0, index: 0)
+        enc2.setBuffer(blurredBuf, offset: 0, index: 1)
+        enc2.setBuffer(outputBuf, offset: 0, index: 2)
+        enc2.setBuffer(wpBuf, offset: 0, index: 3)
+        enc2.dispatchThreadgroups(g, threadsPerThreadgroup: tg)
+        enc2.endEncoding()
         cmd2.commit()
         cmd2.waitUntilCompleted()
 
-        let ptr = outputBuf.contents().bindMemory(to: Float.self, capacity: totalSize)
+        // Pass 2: Halo reduction at 2x radius (gentler)
+        let haloRadius = radius * 2
+        guard let cmd3 = queue.makeCommandBuffer() else { return nil }
+        blurPass(input: outputBuf, output: tempBuf, r: haloRadius, dir: 0, cmdBuf: cmd3)
+        blurPass(input: tempBuf, output: blurredBuf, r: haloRadius, dir: 1, cmdBuf: cmd3)
+        blurPass(input: blurredBuf, output: tempBuf, r: haloRadius, dir: 0, cmdBuf: cmd3)
+        blurPass(input: tempBuf, output: blurredBuf, r: haloRadius, dir: 1, cmdBuf: cmd3)
+        cmd3.commit()
+        cmd3.waitUntilCompleted()
+
+        // Apply halo pass at reduced strength
+        guard let cmd4 = queue.makeCommandBuffer() else { return nil }
+        var haloParams = (Int32(width), Int32(height), Int32(channelCount), strength * 0.3, noiseLevel)
+        let hpBuf = device.makeBuffer(bytes: &haloParams, length: MemoryLayout.size(ofValue: haloParams), options: .storageModeShared)!
+        let enc4 = cmd4.makeComputeCommandEncoder()!
+        enc4.setComputePipelineState(wienerPipeline)
+        enc4.setBuffer(outputBuf, offset: 0, index: 0)  // use pass 1 output as input
+        enc4.setBuffer(blurredBuf, offset: 0, index: 1)
+        enc4.setBuffer(tempBuf, offset: 0, index: 2)     // write to temp
+        enc4.setBuffer(hpBuf, offset: 0, index: 3)
+        enc4.dispatchThreadgroups(g, threadsPerThreadgroup: tg)
+        enc4.endEncoding()
+        cmd4.commit()
+        cmd4.waitUntilCompleted()
+
+        let ptr = tempBuf.contents().bindMemory(to: Float.self, capacity: totalSize)
         return Array(UnsafeBufferPointer(start: ptr, count: totalSize))
     }
 
