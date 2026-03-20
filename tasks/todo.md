@@ -285,6 +285,15 @@ Uncompressed XISF: ~17ms decode (SSD limited). LZ4-compressed: ~100-300ms (CPU d
 - [ ] Cache common object info queries (reduce API calls)
 - [ ] Response streaming for Opus mode (currently works, verify edge cases)
 
+## Future TODOs — Deconvolution & Structure Enhancement (needs R&D)
+- [ ] Research BlurXTerminator approach — spatially varying PSF, trained neural network, star masking
+- [ ] Consider CoreML model for learned deconvolution (Apple Neural Engine = fast on M-series)
+- [ ] Metal FFT via MPSGraph for proper frequency-domain Wiener on GPU
+- [ ] Star masking via threshold + morphological operations for cleaner structure boost
+- [ ] Iterative GPU deconvolution (conjugate gradient method)
+- [ ] Test current implementation with more diverse data (different FL, seeing)
+- [ ] Current Wiener and Structure work but results are "not convincing" — needs proper R&D before marketing
+
 ## Future TODOs — Astrometry & Annotations
 - [ ] Superfast plate solving / astrometric solution (hassle-free for users)
 - [ ] Image annotations (object labels, constellation lines, star names)

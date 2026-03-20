@@ -988,7 +988,7 @@ struct StackResultViewV2: View {
             HStack(spacing: 4) {
                 resultSlider("Deconv", value: $deconvolve, range: 0.0...2.0, step: 0.02,
                              display: deconvolve < 0.01 ? "Off" : String(format: "%.1f", deconvolve))
-                    .help("Deconvolution: Wiener (noise-aware, best quality),\nRL (Richardson-Lucy iterative), USM (multi-scale unsharp mask).")
+                    .help("Star deconvolution — recovers detail lost to atmospheric seeing.\nRL = Richardson-Lucy (GPU, fast, default).\nUSM = Unsharp Mask (GPU, fastest).\nWiener = noise-aware (GPU, experimental).")
                     .onChange(of: deconvolve) { _ in if deconvMode == .wiener { invalidatePreprocess() } }
                 Picker("", selection: $deconvMode) {
                     ForEach(DeconvMode.allCases, id: \.self) { mode in
@@ -998,7 +998,7 @@ struct StackResultViewV2: View {
                 .pickerStyle(.segmented)
                 .frame(width: 130)
                 .font(.system(size: 9))
-                .help("Wiener = frequency-domain optimal (best, uses FWHM).\nRL = Richardson-Lucy iterative.\nUSM = multi-scale unsharp mask (fastest).")
+                .help("RL = Richardson-Lucy iterative (GPU, recommended).\nUSM = multi-scale unsharp mask (GPU, fastest).\nWiener = noise-regularized sharpening using measured FWHM (GPU, experimental).")
                 .onChange(of: deconvMode) { newMode in
                     useRL = (newMode == .rl)
                     invalidatePreprocess()
