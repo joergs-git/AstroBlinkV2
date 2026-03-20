@@ -996,6 +996,7 @@ struct StackResultViewV2: View {
                     .help("Remove background gradient (light pollution, vignetting).\nUses median grid + bicubic interpolation.")
                     .onChange(of: removeGradient) { _ in
                         gradientCorrectedData = nil
+                        wienerCorrectedData = nil  // depends on gradient output
                         scheduleRender()
                     }
                     .frame(width: 82)

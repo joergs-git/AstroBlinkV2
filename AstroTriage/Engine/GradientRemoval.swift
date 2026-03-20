@@ -15,10 +15,13 @@ enum GradientRemoval {
         let planeSize = width * height
         var result = data
 
-        for ch in 0..<channelCount {
+        // Process channels in parallel
+        let planes = (0..<channelCount).map { ch -> (Int, [Float]) in
             let offset = ch * planeSize
             let plane = Array(data[offset..<offset + planeSize])
-            let corrected = removeGradientFromPlane(plane, width: width, height: height)
+            return (offset, removeGradientFromPlane(plane, width: width, height: height))
+        }
+        for (offset, corrected) in planes {
             result.replaceSubrange(offset..<offset + planeSize, with: corrected)
         }
 
@@ -41,11 +44,12 @@ enum GradientRemoval {
                 let endX = min(startX + tileW, width)
                 let endY = min(startY + tileH, height)
 
-                // Collect tile pixels
+                // Subsample tile pixels (every 4th pixel — background is smooth)
                 var tilePixels = [Float]()
-                tilePixels.reserveCapacity(tileW * tileH)
-                for y in startY..<endY {
-                    for x in startX..<endX {
+                let step = 4
+                tilePixels.reserveCapacity((tileW / step + 1) * (tileH / step + 1))
+                for y in stride(from: startY, to: endY, by: step) {
+                    for x in stride(from: startX, to: endX, by: step) {
                         tilePixels.append(plane[y * width + x])
                     }
                 }

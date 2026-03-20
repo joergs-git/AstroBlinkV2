@@ -15,6 +15,7 @@ enum WienerDeconvolution {
         let planeSize = width * height
         var result = data
 
+        // Process channels (could parallelize but sequential is fine for 1-3 channels)
         for ch in 0..<channelCount {
             let offset = ch * planeSize
             let plane = Array(data[offset..<offset + planeSize])
