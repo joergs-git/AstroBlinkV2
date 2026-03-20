@@ -934,6 +934,7 @@ struct StackResultViewV2: View {
                     .help("Undo last freeze — go back one step")
                 }
 
+                // Row 1: Basic processing
                 resultSlider("Stretch", value: $stretchValue, range: 0.0...1.0, step: 0.01,
                              display: "\(Int(stretchValue * 100))%")
                     .help("STF auto-stretch target background level.\n0% = linear (no stretch), 25% = default, higher = brighter.")
@@ -960,6 +961,13 @@ struct StackResultViewV2: View {
                 resultSlider("Denoise", value: $denoise, range: 0.0...2.0, step: 0.02,
                              display: denoise < 0.01 ? "Off" : String(format: "%.0f%%", denoise * 100))
                     .help("Two-pass GPU denoise: bilateral (pixel noise) + chrominance (color patches).\n0 = off, 100%+ = aggressive.")
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(nightMode ? Color(red: 0.06, green: 0, blue: 0) : Color(NSColor.underPageBackgroundColor))
+
+            // Row 2: Advanced — deconvolution, structure, gradient
+            HStack(spacing: 2) {
                 resultSlider("Deconv", value: $deconvolve, range: 0.0...2.0, step: 0.02,
                              display: deconvolve < 0.01 ? "Off" : String(format: "%.1f", deconvolve))
                     .help("Deconvolution: Wiener (frequency-domain, best quality),\nRL (Richardson-Lucy iterative), USM (multi-scale unsharp mask).")
@@ -969,7 +977,7 @@ struct StackResultViewV2: View {
                     }
                 }
                 .pickerStyle(.segmented)
-                .frame(width: 120)
+                .frame(width: 130)
                 .font(.system(size: 9))
                 .help("Wiener = frequency-domain optimal (best, uses FWHM).\nRL = Richardson-Lucy iterative.\nUSM = multi-scale unsharp mask (fastest).")
                 .onChange(of: deconvMode) { newMode in
@@ -987,13 +995,13 @@ struct StackResultViewV2: View {
                     .foregroundColor(removeGradient ? .cyan : .secondary)
                     .help("Remove background gradient (light pollution, vignetting).\nUses median grid + bicubic interpolation.")
                     .onChange(of: removeGradient) { _ in
-                        gradientCorrectedData = nil  // force recompute
+                        gradientCorrectedData = nil
                         scheduleRender()
                     }
                     .frame(width: 82)
             }
             .padding(.horizontal, 8)
-            .padding(.vertical, 4)
+            .padding(.vertical, 3)
             .background(nightMode ? Color(red: 0.06, green: 0, blue: 0) : Color(NSColor.underPageBackgroundColor))
 
             // Best frame comparison — shows what the best single frame had vs the stack
@@ -1562,9 +1570,9 @@ struct ImagePreviewView: View {
                                range: ClosedRange<Double>, step: Double, display: String) -> some View {
         HStack(spacing: 3) {
             Text(label).font(.system(size: 10, design: .monospaced)).foregroundColor(fgDim)
-                .frame(width: 48, alignment: .trailing)
+                .frame(width: 55, alignment: .trailing)
             Slider(value: value, in: range, step: step)
-                .frame(minWidth: 60, maxWidth: 100)
+                .frame(minWidth: 80, maxWidth: 140)
                 .onChange(of: value.wrappedValue) { _ in scheduleRender() }
             Text(display).font(.system(size: 10, design: .monospaced)).foregroundColor(fgDim)
                 .frame(width: 32, alignment: .leading)
