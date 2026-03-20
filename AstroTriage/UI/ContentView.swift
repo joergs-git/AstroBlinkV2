@@ -1009,26 +1009,25 @@ struct AutoMarkPopover: View {
         let images = viewModel.images
         let totalExposure = images.reduce(0.0) { $0 + ($1.exposure ?? 0.0) }
 
-        // Conservative: only trash tier
-        let trashOnly = images.filter { !$0.isMarkedForDeletion && $0.qualityTier == .trash }
-        let trashExp = trashOnly.reduce(0.0) { $0 + ($1.exposure ?? 0.0) }
-
-        // Balanced: trash + severe borderline (severity 2-3)
-        let balanced = images.filter {
-            !$0.isMarkedForDeletion && (
-                $0.qualityTier == .trash ||
-                ($0.qualityTier == .borderline && ($0.qualityBreakdown?.borderlineSeverity ?? 0) >= 2)
-            )
+        // Count what each level WOULD mark (total target state, not delta)
+        let conservativeTarget = images.filter { $0.qualityTier == .trash }
+        let balancedTarget = images.filter {
+            $0.qualityTier == .trash ||
+            ($0.qualityTier == .borderline && ($0.qualityBreakdown?.borderlineSeverity ?? 0) >= 2)
         }
-        let balancedExp = balanced.reduce(0.0) { $0 + ($1.exposure ?? 0.0) }
-
-        // Aggressive: trash + all borderline
-        let aggressive = images.filter {
-            !$0.isMarkedForDeletion && (
-                $0.qualityTier == .trash || $0.qualityTier == .borderline
-            )
+        let aggressiveTarget = images.filter {
+            $0.qualityTier == .trash || $0.qualityTier == .borderline
         }
-        let aggressiveExp = aggressive.reduce(0.0) { $0 + ($1.exposure ?? 0.0) }
+
+        let currentlyMarked = images.filter { $0.isMarkedForDeletion }.count
+        let trashExp = conservativeTarget.reduce(0.0) { $0 + ($1.exposure ?? 0.0) }
+        let balancedExp = balancedTarget.reduce(0.0) { $0 + ($1.exposure ?? 0.0) }
+        let aggressiveExp = aggressiveTarget.reduce(0.0) { $0 + ($1.exposure ?? 0.0) }
+
+        // Show target count — user sees what the result will be
+        let trashOnly = conservativeTarget
+        let balanced = balancedTarget
+        let aggressive = aggressiveTarget
 
         func lossStr(_ exp: Double) -> String {
             guard totalExposure > 0 else { return "" }
@@ -1095,8 +1094,8 @@ struct AutoMarkPopover: View {
         let title = option.title
         for i in viewModel.images.indices {
             let entry = viewModel.images[i]
-            guard !entry.isMarkedForDeletion else { continue }
 
+            // Determine if this frame SHOULD be marked at this autopilot level
             let shouldMark: Bool
             if title == "Conservative" {
                 shouldMark = entry.qualityTier == .trash
@@ -1107,8 +1106,13 @@ struct AutoMarkPopover: View {
                 shouldMark = entry.qualityTier == .trash || entry.qualityTier == .borderline
             }
 
-            if shouldMark {
+            // Bidirectional: mark what should be marked, UNMARK what shouldn't
+            // (only unmark autopilot-eligible frames — don't touch manually marked excellent/good)
+            let isAutopilotEligible = entry.qualityTier == .trash || entry.qualityTier == .borderline
+            if shouldMark && !entry.isMarkedForDeletion {
                 viewModel.images[i].isMarkedForDeletion = true
+            } else if !shouldMark && entry.isMarkedForDeletion && isAutopilotEligible {
+                viewModel.images[i].isMarkedForDeletion = false
             }
         }
         viewModel.needsTableRefresh = true
