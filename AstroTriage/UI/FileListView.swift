@@ -211,6 +211,15 @@ struct FileListView: NSViewRepresentable {
             }
             viewModel.needsTableRefresh = false
 
+            // Handle programmatic multi-row selection from AIsaac
+            if let highlightRows = viewModel.pendingHighlightRows {
+                tableView.selectRowIndexes(highlightRows, byExtendingSelection: false)
+                if let first = highlightRows.first {
+                    tableView.scrollRowToVisible(first)
+                }
+                viewModel.pendingHighlightRows = nil
+            }
+
             // After first load, make file list the first responder for arrow key navigation
             if wasEmpty && newCount > 0 {
                 tableView.window?.makeFirstResponder(tableView)

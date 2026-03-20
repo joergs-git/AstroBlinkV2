@@ -96,7 +96,7 @@ struct ColumnDefinition {
     // The "quality" column returns "" — its cell is rendered as an SF Symbol icon, not text.
     static func value(for columnId: String, from entry: ImageEntry) -> String {
         switch columnId {
-        case "frameNumber": return entry.frameNumber.map { String($0) } ?? ""
+        case "frameNumber": return entry.sessionIndex > 0 ? String(entry.sessionIndex) : (entry.frameNumber.map { String($0) } ?? "")
         case "filter":      return entry.filter ?? ""
         case "quality":     return ""  // Icon cell; handled separately in FileListView
         case "time":        return entry.time ?? ""
@@ -135,7 +135,7 @@ struct ColumnDefinition {
     // Get a numeric value for sorting (returns nil for non-numeric / non-sortable columns)
     static func numericValue(for columnId: String, from entry: ImageEntry) -> Double? {
         switch columnId {
-        case "frameNumber": return entry.frameNumber.map { Double($0) }
+        case "frameNumber": return entry.sessionIndex > 0 ? Double(entry.sessionIndex) : entry.frameNumber.map { Double($0) }
         case "exposure":    return entry.exposure
         case "hfr":         return entry.displayHFR
         case "starCount":   return entry.displayStarCount.map { Double($0) }

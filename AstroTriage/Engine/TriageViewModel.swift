@@ -71,6 +71,17 @@ class TriageViewModel: ObservableObject {
     @Published var needsTableRefresh: Bool = false
     // Force single selection after filter toggle (prevents multi-selection carryover)
     @Published var needsForceSingleSelection: Bool = false
+    // Programmatic multi-row selection (AIsaac highlight command)
+    @Published var pendingHighlightRows: IndexSet?
+
+    func selectMultipleRows(_ rows: IndexSet) {
+        pendingHighlightRows = rows
+        needsTableRefresh = true
+        // Navigate to the first highlighted row
+        if let first = rows.first, first >= 0, first < images.count {
+            selectImage(at: first)
+        }
+    }
 
     // Recommended column order after header enrichment (set once per session load)
     // FileListView consumes and clears this after applying
@@ -208,6 +219,11 @@ class TriageViewModel: ObservableObject {
     // Check if a specific image URL has been cached (for table UI indicator)
     func isImageCached(_ url: URL) -> Bool {
         prefetchCache?.isCached(url) ?? false
+    }
+
+    // Get cached preview texture for a URL (used by AIsaac for thumbnail generation)
+    func getCachedTexture(for url: URL) -> MTLTexture? {
+        prefetchCache?.getPreview(for: url)?.texture
     }
 
     // Count of images marked for deletion
@@ -617,6 +633,7 @@ class TriageViewModel: ObservableObject {
                 guard let self = self else { return }
                 self.benchmarkStats.markScanComplete(fileCount: entries.count, totalBytes: entries.reduce(Int64(0)) { $0 + ($1.fileSize ?? 0) })
                 self.images = entries
+                self.assignSessionIndices()
                 self.isLoading = false
                 self.needsTableRefresh = true
                 self.needsQualityResort = false  // Reset for new session
@@ -688,6 +705,7 @@ class TriageViewModel: ObservableObject {
                 guard let self = self else { return }
                 self.benchmarkStats.markScanComplete(fileCount: allEntries.count, totalBytes: allEntries.reduce(Int64(0)) { $0 + ($1.fileSize ?? 0) })
                 self.images = allEntries
+                self.assignSessionIndices()
                 self.isLoading = false
                 self.needsTableRefresh = true
                 self.needsQualityResort = false
@@ -735,6 +753,7 @@ class TriageViewModel: ObservableObject {
                 guard let self = self else { return }
                 self.benchmarkStats.markScanComplete(fileCount: entries.count, totalBytes: entries.reduce(Int64(0)) { $0 + ($1.fileSize ?? 0) })
                 self.images = entries
+                self.assignSessionIndices()
                 self.isLoading = false
                 self.needsTableRefresh = true
 
@@ -1130,6 +1149,24 @@ class TriageViewModel: ObservableObject {
                     if let px = headers["XPIXSZ"], let val = Double(px), val > 0 {
                         self.images[index].pixelSizeMicrons = val
                     }
+                    // Site coordinates for AIsaac location-aware language detection
+                    // NINA writes SITELAT/SITELONG, some software uses LAT-OBS/LONG-OBS or OBSLAT/OBSLONG
+                    if self.images[index].siteLatitude == nil {
+                        for key in ["SITELAT", "LAT-OBS", "OBSLAT", "SITELAT "] {
+                            if let raw = headers[key], let val = Double(raw) {
+                                self.images[index].siteLatitude = val
+                                break
+                            }
+                        }
+                    }
+                    if self.images[index].siteLongitude == nil {
+                        for key in ["SITELONG", "LONG-OBS", "OBSLONG", "SITELONG"] {
+                            if let raw = headers[key], let val = Double(raw) {
+                                self.images[index].siteLongitude = val
+                                break
+                            }
+                        }
+                    }
                     // DATE-LOC (NINA local capture time) is authoritative — always overrides filename date.
                     // DATE-OBS is only used as fallback when no date exists yet (it may contain
                     // unexpected values in some FITS writers, e.g. session-start or file-creation date).
@@ -1208,6 +1245,11 @@ class TriageViewModel: ObservableObject {
                 // Compute relative quality scores now that all header metadata is available
                 self.recomputeQualityScores()
                 self.detectMeridianFlip()
+
+                // Learn equipment/location/targets for AIsaac user profile
+                var profile = AIsaacUserProfile.load()
+                profile.learnFrom(images: self.images)
+                profile.save()
 
                 // Auto-reorder columns based on session composition (4 cases)
                 // Always apply — each session type needs its own layout
@@ -1663,6 +1705,16 @@ class TriageViewModel: ObservableObject {
         let shouldRotate = shouldRotateForMeridian(entry)
         renderer?.rotate180 = shouldRotate
         if let mtkView = findMTKView() { mtkView.needsDisplay = true }
+    }
+
+    // Assign unique 1-based session indices to all images
+    private func assignSessionIndices() {
+        for i in images.indices {
+            images[i].sessionIndex = i + 1  // 1-based for user display
+        }
+        // Reset AIsaac state tracking when a new session is loaded
+        AIsaacWindowController.shared.model.resetStateTracking()
+        AIsaacWindowController.shared.model.clearConversation()
     }
 
     // Detect meridian flip in session after headers are loaded.
@@ -2740,6 +2792,7 @@ class TriageViewModel: ObservableObject {
         showInspector.toggle()
         if showInspector, let image = selectedImage {
             headerInspectorModel.update(for: image.decodingURL, filename: image.filename)
+            headerInspectorModel.updateQualityMetrics(from: image.qualityBreakdown)
         }
     }
 
@@ -3010,6 +3063,7 @@ class TriageViewModel: ObservableObject {
 
         // Update header inspector model (panel updates reactively via SwiftUI)
         headerInspectorModel.update(for: image.decodingURL, filename: image.filename)
+        headerInspectorModel.updateQualityMetrics(from: image.qualityBreakdown)
 
         // Update meridian rotation for this image (zero-cost UV flip)
         updateMeridianRotation()

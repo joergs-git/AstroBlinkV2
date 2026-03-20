@@ -413,9 +413,19 @@ After a night of imaging you might have 200-600 sub-exposures. Some have clouds,
 ### Computed Star Metrics (HFR & FWHM)
 - **GPU-accelerated star detection** — during session loading, every frame is analyzed for stars using a Metal compute kernel on the GPU (~3-5ms per image)
 - **HFR & FWHM measurement** — Half-Flux Radius and Full Width at Half Maximum are computed via Gaussian fitting for the brightest unsaturated stars in each frame
-- **Automatic quality scoring** — computed metrics feed into the quality estimator for z-score based frame ranking (good/uncertain/trash)
+- **Automatic quality scoring** — computed metrics feed into the SmartCull quality engine for multi-stage frame ranking
 - **Works without NINA** — even if your capture software doesn't provide HFR/FWHM, AstroBlinkV2 computes them from the actual image data
 - **Per-group source consistency** — when mixing images with and without capture-software HFR, quality scoring uses a single consistent measurement method per group to ensure fair comparison
+
+### SmartCull Quality Engine
+- **4-stage quality pipeline** — garbage detection, z-score ranking, pattern-based rescue rules, and sanity checks. Handles ~99% of quality decisions automatically
+- **Orientation consensus trailing detection** — industry first: detects tracking errors by analyzing whether star elongation directions agree (tracking error) or are random (optical aberration)
+- **Focal-length-adaptive thresholds** — automatically adjusts eccentricity tolerance based on FOCALLEN from headers (short FL = more tolerance)
+- **Stage 3 rescue rules** — frames with good FWHM + acceptable noise rescued from trash; star count dips recognized as transient events
+- **Quality reasoning ("Why?")** — hover any quality icon for a human-readable explanation of the scoring decision
+- **Culling Autopilot** — one-click auto-marking with Conservative/Balanced/Aggressive modes, each showing impact before applying
+- **Per-setup self-calibration** — learns your equipment's quality baseline over time; after 30+ frames, calibrated frames are locked as KEEP
+- **SSWEIGHT export** — writes PixInsight-compatible weight keyword (0-100) into FITS/XISF headers for WBPP weighted integration
 
 ### Metadata & Session Overview
 - NINA filename parsing — automatically extracts target, filter, exposure, gain, temperature, HFR, star count, and more

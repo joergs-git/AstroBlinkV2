@@ -25,7 +25,7 @@ class PrefetchCache {
 
     // Adaptive concurrency: background gets up to 6, priority gets 2
     // Total max = 8 on machines with ≥16 active processors
-    private let maxBackgroundDecodes: Int = min(ProcessInfo.processInfo.activeProcessorCount / 2, 6)
+    private let maxBackgroundDecodes: Int = min(ProcessInfo.processInfo.activeProcessorCount / 2, 8)
     private static let maxPriorityDecodes: Int = 2
 
     // Callback for when a priority-queued preview completes (notifies ViewModel to refresh display)

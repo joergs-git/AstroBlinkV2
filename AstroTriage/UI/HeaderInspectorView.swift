@@ -127,6 +127,7 @@ class HeaderInspectorModel: ObservableObject {
     @Published var filename: String = ""
     @Published var isLoading: Bool = false
     @Published var searchText: String = ""
+    @Published var qualityMetrics: [(label: String, value: String)] = []
 
     var filteredHeaders: [HeaderEntry] {
         if searchText.isEmpty { return headers }
@@ -134,6 +135,52 @@ class HeaderInspectorModel: ObservableObject {
         return headers.filter {
             $0.key.lowercased().contains(query) || $0.value.lowercased().contains(query)
         }
+    }
+
+    // Update quality metrics section from QualityBreakdown
+    func updateQualityMetrics(from bd: QualityBreakdown?) {
+        guard let bd = bd else {
+            qualityMetrics = []
+            return
+        }
+        var metrics: [(label: String, value: String)] = []
+
+        // Tier and combined z-score
+        let tierName: String
+        switch bd.tier {
+        case .excellent: tierName = "Excellent"
+        case .good: tierName = "Good"
+        case .borderline: tierName = "Borderline"
+        case .trash: tierName = "Trash"
+        }
+        metrics.append(("Tier", tierName))
+        metrics.append(("Combined Z", String(format: "%+.2fσ", bd.combinedZScore)))
+
+        // Per-metric z-scores
+        func zStr(_ z: Double?) -> String {
+            guard let z = z else { return "n/a" }
+            return String(format: "%+.2fσ", z)
+        }
+        metrics.append(("Stars Z", zStr(bd.starsZ)))
+        metrics.append(("FWHM Z", zStr(bd.fwhmZ)))
+        metrics.append(("HFR Z", zStr(bd.hfrZ)))
+        metrics.append(("Noise Z", zStr(bd.noiseZ)))
+        metrics.append(("Trailing Z", zStr(bd.trailingZ)))
+
+        if let contrib = bd.snrContribution {
+            metrics.append(("SNR Contrib", String(format: "%.0f%%", contrib)))
+        }
+        if bd.isLockedKeep {
+            metrics.append(("Calibration", "Locked KEEP"))
+        }
+        if let reason = bd.garbageReason {
+            metrics.append(("Garbage", reason.rawValue))
+        }
+        if let why = bd.reasoningText {
+            metrics.append(("Why", why))
+        }
+
+        qualityMetrics = metrics
     }
 
     // Update headers for a new image (can be called directly without the window controller)
@@ -341,6 +388,32 @@ struct HeaderInspectorContentView: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
             .background(Color(NSColor.textBackgroundColor))
+
+            // Quality metrics section (computed z-scores, tier, reasoning)
+            if !model.qualityMetrics.isEmpty {
+                Divider()
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Quality Metrics")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(Color(NSColor.systemPurple))
+                        .padding(.bottom, 2)
+                    ForEach(Array(model.qualityMetrics.enumerated()), id: \.offset) { _, metric in
+                        HStack(alignment: .top) {
+                            Text(metric.label)
+                                .font(.system(size: 11, weight: .medium, design: .monospaced))
+                                .foregroundColor(Color(NSColor.systemPurple))
+                                .frame(width: 90, alignment: .trailing)
+                            Text(metric.value)
+                                .font(.system(size: 11, design: .monospaced))
+                                .foregroundColor(Color(NSColor.labelColor))
+                                .lineLimit(2)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+            }
 
             Divider()
 

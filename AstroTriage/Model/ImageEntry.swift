@@ -21,6 +21,9 @@ struct ImageEntry: Identifiable, Hashable {
     // URL used for decoding: points to local cache for network files, same as url for local
     var decodingURL: URL
 
+    // Session index — unique 1-based position in the loaded session (used by AIsaac and # column)
+    var sessionIndex: Int = 0
+
     // Parsed metadata (from filename, headers, or CSV)
     var frameNumber: Int?
     var filter: String?
@@ -62,6 +65,8 @@ struct ImageEntry: Identifiable, Hashable {
     var computedEccentricity: Double?  // Median star eccentricity [0..1] from 2D image moments
     var focalLength: Double?           // From FOCALLEN header (mm) — for adaptive trailing thresholds
     var pixelSizeMicrons: Double?      // From XPIXSZ header (microns) — for arcsec/pixel computation
+    var siteLatitude: Double?          // From SITELAT header — imaging site latitude
+    var siteLongitude: Double?         // From SITELONG header — imaging site longitude
 
     // Trailing analysis (computed by TrailingAnalyzer after star metrics)
     var trailingScore: Double?         // 0 = no trailing, 1 = severe trailing (consensus-weighted, FL-adaptive)

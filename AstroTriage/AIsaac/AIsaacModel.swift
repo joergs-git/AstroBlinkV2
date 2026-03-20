@@ -1,0 +1,659 @@
+// AIsaac — In-app AI assistant for astrophotography session analysis
+// Stage 0: UI skeleton with mock responses
+import Foundation
+
+// MARK: - Chat Message
+
+struct AIsaacMessage: Identifiable {
+    let id = UUID()
+    let role: Role
+    let text: String
+    let timestamp = Date()
+
+    enum Role {
+        case user
+        case assistant
+    }
+}
+
+// MARK: - Preset Types (inspirational question chips)
+
+enum AIsaacPreset: String, CaseIterable, Identifiable {
+    // Session-aware presets
+    case qualitySummary = "Quality Summary"
+    case objectTrivia = "About This Object"
+    case terminology = "What Does … Mean?"
+    case filterAdvice = "Filter Advice"
+    case nearbyObjects = "Nearby Objects"
+    case smartMark = "Smart Mark"
+    // No-session presets (general help)
+    case gettingStarted = "Getting Started"
+    case workflowTips = "Workflow Tips"
+    case whatsNew = "What's New?"
+    case whatToShoot = "What to Shoot?"
+
+    var id: String { rawValue }
+
+    var icon: String {
+        switch self {
+        case .qualitySummary: return "chart.bar.doc.horizontal"
+        case .objectTrivia:   return "star.circle"
+        case .terminology:    return "questionmark.circle"
+        case .filterAdvice:   return "camera.filters"
+        case .nearbyObjects:  return "map"
+        case .smartMark:      return "hand.thumbsdown"
+        case .gettingStarted: return "arrow.right.circle"
+        case .workflowTips:   return "lightbulb"
+        case .whatsNew:       return "sparkle"
+        case .whatToShoot:    return "moon.stars"
+        }
+    }
+
+    var shortLabel: String {
+        switch self {
+        case .qualitySummary: return "Quality Summary"
+        case .objectTrivia:   return "About This Object"
+        case .terminology:    return "Explain a Term"
+        case .filterAdvice:   return "Filter Advice"
+        case .nearbyObjects:  return "Nearby Objects"
+        case .smartMark:      return "Smart Mark"
+        case .gettingStarted: return "Getting Started"
+        case .workflowTips:   return "Workflow Tips"
+        case .whatsNew:       return "What's New?"
+        case .whatToShoot:    return "What to Shoot?"
+        }
+    }
+
+    // User-facing prompt text sent as user message
+    func userPrompt(context: AIsaacSessionContext?) -> String {
+        let obj = context?.objects.first ?? "this object"
+        switch self {
+        case .qualitySummary:
+            return "Give me a quality summary of this session."
+        case .objectTrivia:
+            return "Tell me interesting facts about \(obj)."
+        case .terminology:
+            return "What does FWHM mean?"  // placeholder — user edits or types their own term
+        case .filterAdvice:
+            return "What filters should I improve for \(obj) on my next night?"
+        case .nearbyObjects:
+            return "What deep-sky objects are close to \(obj) that I could image with my setup?"
+        case .smartMark:
+            return "Analyze my frames and suggest which ones to mark for deletion."
+        case .gettingStarted:
+            return "How do I use AstroBlinkV2 to triage my imaging session?"
+        case .workflowTips:
+            return "What's the most efficient workflow for culling my subs?"
+        case .whatsNew:
+            return "What are the latest features in AstroBlinkV2?"
+        case .whatToShoot:
+            return "What should I shoot tonight with my setup?"
+        }
+    }
+}
+
+// MARK: - Session Context (built from TriageViewModel)
+
+struct AIsaacSessionContext {
+    let objects: [String]
+    let filters: [String]
+    let totalFrames: Int
+    let markedCount: Int
+    let perFilterStats: [FilterStat]
+    let qualityDistribution: QualityDist
+    let totalIntegrationSeconds: Double
+    let telescope: String?
+    let camera: String?
+    let focalLength: Double?
+    let pixelSize: Double?
+    let siteLatitude: Double?
+    let siteLongitude: Double?
+    let sessionDate: String?
+    let snrRetention: Double
+    let isConverged: Bool
+    let isCaching: Bool
+    let scoredCount: Int  // frames with quality scores computed
+
+    // Per-frame metrics for deep analysis (compact representation)
+    let frameMetrics: [FrameMetric]
+
+    struct FrameMetric {
+        let index: Int
+        let filename: String
+        let filter: String
+        let exposure: Double
+        let tier: String        // "excellent", "good", "borderline", "trash", "unscored"
+        let zScore: Double?
+        let fwhm: Double?
+        let hfr: Double?
+        let stars: Int?
+        let noise: Double?      // noiseMAD
+        let ecc: Double?        // eccentricity
+        let trailing: Double?   // trailing score
+        let isMarked: Bool
+        let garbageReason: String?
+        let reasoning: String?
+    }
+
+    struct FilterStat {
+        let filter: String
+        let count: Int
+        let exposure: Double
+        let excellent: Int
+        let good: Int
+        let borderline: Int
+        let trash: Int
+    }
+
+    struct QualityDist {
+        let excellent: Int
+        let good: Int
+        let borderline: Int
+        let trash: Int
+    }
+}
+
+// MARK: - Model
+
+@MainActor
+class AIsaacModel: ObservableObject {
+    // AIsaac mode: free Sonnet or pro Opus with user's own API key
+    enum AIsaacMode: String {
+        case free = "free"     // Sonnet via Edge Function (rate limited)
+        case pro = "pro"       // Opus via direct API (user's own key)
+    }
+
+    @Published var mode: AIsaacMode = AIsaacKeychain.hasAPIKey ? .pro : .free
+    @Published var showAPIKeyEntry: Bool = false
+    @Published var apiKeyInput: String = ""
+
+    @Published var messages: [AIsaacMessage] = []
+    @Published var inputText: String = ""
+    @Published var isThinking: Bool = false
+    @Published var voiceEnabled: Bool = false  // TTS for responses
+    @Published var currentThumbnailBase64: String?  // JPEG thumbnail of current image for Claude Vision
+
+    let speechManager = AIsaacSpeechManager()
+    @Published var showPresets: Bool = true
+    @Published var sessionContext: AIsaacSessionContext?
+    @Published var nightMode: Bool = false
+
+    // Callback for Smart Mark: provides indices and reason, expects confirmation
+    var onMarkRequested: (([Int], String) -> Void)?
+
+    // App control callbacks — wired from ContentView to TriageViewModel
+    var onNavigateToImage: ((Int) -> Void)?             // selectImage(at:)
+    var onNavigateToFilter: ((String) -> Void)?         // filterText = "filter:X"
+    var onNavigateToFirst: (() -> Void)?                // navigateToFirst()
+    var onNavigateToLast: (() -> Void)?                 // navigateToLast()
+    var onOpenCompare: (() -> Void)?                    // compare current with best
+    var onOpenFolder: (() -> Void)?                     // openFolder()
+    var onSetFilter: ((String) -> Void)?                // set search filter text
+    var onStartStack: (() -> Void)?                     // startQuickStackV2()
+    var onStackFrames: (([Int]) -> Void)?               // select specific frames then stack
+    var onSetLanguage: ((String) -> Void)?              // save preferred language
+    var onHideMarked: (() -> Void)?                     // hideMarked toggle
+    var onShowOnlyMarked: (() -> Void)?                 // showOnlyMarked toggle
+    var onShowAll: (() -> Void)?                        // reset hide/show filters
+    var onSkipMarked: (() -> Void)?                     // toggle skip marked during nav
+    var onMarkCurrent: (() -> Void)?                    // toggle mark on current image
+    var onMarkFrames: (([Int]) -> Void)?                // mark specific frames for pre-delete
+    var onNightMode: (() -> Void)?                      // toggle night mode
+    var onHighlightFrames: (([Int]) -> Void)?           // select/highlight rows in file list (shift-click style)
+    var onViewFrame: ((Int) -> Void)?                   // navigate to and display a specific frame
+    var onOpenPreview: (([Int]) -> Void)?               // open image preview window(s) (double-click equivalent)
+
+    // Quick-reply buttons shown when AIsaac asks a question
+    @Published var quickReplies: [String] = []
+
+    // Last user message for retry
+    @Published var lastUserMessage: String?
+    @Published var lastUserPreset: AIsaacPreset?
+
+    // Show "switch language" pill after AIsaac detects location
+    @Published var showLanguageSwitchPill: Bool = false
+    @Published var detectedLanguage: String = ""        // e.g. "German", "Dutch"
+    @Published var detectedLanguageCode: String = ""    // e.g. "de", "nl"
+
+    // Track state transitions for reactive comments
+    private var lastKnownFrameCount: Int = 0
+    private var lastKnownCachingState: Bool = false
+    private var lastKnownCachingDone: Bool = false
+    private var lastKnownMarkedCount: Int = 0
+    private var hasGreetedSession: Bool = false
+
+    // State change comments — witty, contextual, brief
+    private static let sessionLoadedComments = [
+        "Nice, %d frames just landed! Let's see what the sky had for dinner tonight.",
+        "Alright, %d frames loaded — time to separate the gems from the space junk.",
+        "%d subs? Challenge accepted. Let's find the keepers.",
+        "Oh, %d frames! That's a serious night of photon collecting. Let's dig in.",
+    ]
+
+    private static let cachingStartedComments = [
+        "Pre-caching in progress — the CPU is sweating like hell counting pixels. Hang tight.",
+        "Crunching numbers... every star is being interrogated right now.",
+        "GPU is warming up — give it a moment to stretch all those photons.",
+        "Analyzing frames... this is where the magic happens behind the scenes.",
+    ]
+
+    private static let cachingDoneComments = [
+        "All frames analyzed! Quality scores are in — check the Q column.",
+        "Done! Every frame has been measured, scored, and judged. Tap 'Quality Summary' for the full picture.",
+        "Caching complete. Your session is fully loaded — let's triage.",
+    ]
+
+    private static let markingComments: [(threshold: Int, comment: String)] = [
+        (5, "You've marked %d frames so far — cleaning house!"),
+        (20, "%d frames marked. You're on a culling spree."),
+        (50, "%d marked! That's some serious quality control."),
+    ]
+
+    // Called by AIsaacWindowController when app state changes
+    func handleStateChange(
+        totalFrames: Int,
+        isCaching: Bool,
+        cacheProgress: Double,
+        markedCount: Int,
+        isConverged: Bool
+    ) {
+        // Session just loaded (frames appeared)
+        if totalFrames > 0 && lastKnownFrameCount == 0 && !hasGreetedSession {
+            hasGreetedSession = true
+            let template = Self.sessionLoadedComments.randomElement()!
+            let comment = String(format: template, totalFrames)
+            postStateComment(comment)
+        }
+
+        // Caching started
+        if isCaching && !lastKnownCachingState {
+            let comment = Self.cachingStartedComments.randomElement()!
+            postStateComment(comment)
+        }
+
+        // Caching finished
+        if !isCaching && lastKnownCachingState && cacheProgress >= 0.99 && !lastKnownCachingDone {
+            lastKnownCachingDone = true
+            let comment = Self.cachingDoneComments.randomElement()!
+            postStateComment(comment)
+        }
+
+        // Marking milestones
+        for milestone in Self.markingComments {
+            if markedCount >= milestone.threshold && lastKnownMarkedCount < milestone.threshold {
+                let comment = String(format: milestone.comment, markedCount)
+                postStateComment(comment)
+                break
+            }
+        }
+
+        // Convergence reached
+        if isConverged && markedCount > lastKnownMarkedCount && markedCount > 0 {
+            // Only announce once when convergence is first achieved
+            if lastKnownMarkedCount == 0 || !lastKnownCachingDone {
+                // skip — too early
+            }
+        }
+
+        lastKnownFrameCount = totalFrames
+        lastKnownCachingState = isCaching
+        lastKnownMarkedCount = markedCount
+    }
+
+    // Detect if AIsaac asked a question and generate quick-reply buttons
+    func updateQuickReplies(for response: String) {
+        let lower = response.lowercased()
+
+        // Yes/No questions
+        if lower.contains("soll ich") || lower.contains("shall i") || lower.contains("want me to") ||
+           lower.contains("möchtest du") || lower.contains("willst du") || lower.contains("should i") {
+            if lower.contains("markieren") || lower.contains("mark") || lower.contains("löschen") || lower.contains("delete") {
+                quickReplies = ["Yes, mark them", "No, leave them", "Show me first"]
+            } else {
+                quickReplies = ["Yes", "No", "Tell me more"]
+            }
+            return
+        }
+
+        // Comparison / choice questions
+        if lower.contains("oder") || lower.contains(" or ") {
+            if lower.contains("deutsch") || lower.contains("german") || lower.contains("english") {
+                quickReplies = ["Deutsch", "English"]
+            } else if lower.contains("weiterspringen") || lower.contains("vergleichen") || lower.contains("compare") || lower.contains("skip") {
+                quickReplies = ["Compare", "Skip", "Show details"]
+            } else {
+                quickReplies = ["First option", "Second option", "More info"]
+            }
+            return
+        }
+
+        // General question (ends with ?)
+        let trimmed = response.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.hasSuffix("?") {
+            quickReplies = ["Yes", "No", "Tell me more"]
+            return
+        }
+
+        quickReplies = []
+    }
+
+    // Send a quick reply
+    func sendQuickReply(_ text: String) {
+        quickReplies = []
+        inputText = text
+        sendMessage()
+    }
+
+    func postStateComment(_ text: String) {
+        // Don't interrupt while user is typing or AI is thinking
+        guard !isThinking else { return }
+        messages.append(AIsaacMessage(role: .assistant, text: text))
+    }
+
+    // Reset state tracking (e.g. when a new session is loaded)
+    func resetStateTracking() {
+        lastKnownFrameCount = 0
+        lastKnownCachingState = false
+        lastKnownCachingDone = false
+        lastKnownMarkedCount = 0
+        hasGreetedSession = false
+    }
+
+    // Whether a session with images is loaded
+    var hasSession: Bool {
+        guard let ctx = sessionContext else { return false }
+        return ctx.totalFrames > 0
+    }
+
+    // Welcome message adapts to session state
+    var welcomeMessage: String {
+        if let ctx = sessionContext, ctx.totalFrames > 0 {
+            let obj = ctx.objects.joined(separator: ", ")
+            return "Hello! I'm AIsaac. I see you're working on \(obj) — \(ctx.totalFrames) frames across \(ctx.filters.count) filter\(ctx.filters.count == 1 ? "" : "s"). How can I help?"
+        }
+        return "Hello! I'm AIsaac, your astrophotography assistant. No session loaded yet — open a folder with your subs to unlock full analysis. In the meantime, ask me anything about the app or astrophotography!"
+    }
+
+    // Short summary for window header
+    var sessionSummaryShort: String {
+        guard let ctx = sessionContext else { return "No session" }
+        let obj = ctx.objects.first ?? "?"
+        return "\(obj) \u{2022} \(ctx.totalFrames) frames"
+    }
+
+    // Available presets filtered by context
+    var availablePresets: [AIsaacPreset] {
+        guard let ctx = sessionContext, ctx.totalFrames > 0 else {
+            // No session — show general app help presets + planning
+            var noSessionPresets: [AIsaacPreset] = [.gettingStarted, .workflowTips, .terminology, .whatsNew]
+            // Show "What to shoot?" if we have learned equipment from previous sessions
+            if AIsaacUserProfile.load().equipmentSetups.count > 0 {
+                noSessionPresets.insert(.whatToShoot, at: 0)
+            }
+            return noSessionPresets
+        }
+        var presets: [AIsaacPreset] = [.qualitySummary]
+        if !ctx.objects.isEmpty && ctx.objects.first != "unknown" {
+            presets.append(.objectTrivia)
+        }
+        presets.append(.terminology)
+        if ctx.filters.count > 1 {
+            presets.append(.filterAdvice)
+        }
+        if !ctx.objects.isEmpty {
+            presets.append(.nearbyObjects)
+        }
+        if ctx.totalFrames > 0 {
+            presets.append(.smartMark)
+        }
+        return presets
+    }
+
+    // Send a preset question
+    func sendPreset(_ preset: AIsaacPreset) {
+        let text: String
+        if preset == .terminology {
+            // For terminology preset, pre-fill the input field so user can edit the term
+            inputText = "What does FWHM mean?"
+            return
+        }
+        text = preset.userPrompt(context: sessionContext)
+
+        messages.append(AIsaacMessage(role: .user, text: text))
+        showPresets = false
+        isThinking = true
+
+        Task {
+            let response = await AIsaacService.shared.ask(
+                userMessage: text,
+                preset: preset,
+                context: sessionContext,
+                history: messages
+            )
+            isThinking = false
+            // Strip command blocks from displayed text
+            let displayText = Self.stripCommandBlocks(response)
+            messages.append(AIsaacMessage(role: .assistant, text: displayText))
+            parseAndExecuteCommands(response)
+            if voiceEnabled { speechManager.speak(displayText) }
+            updateQuickReplies(for: displayText)
+            showPresets = true
+        }
+    }
+
+    // Send free-form message
+    // Retry last message
+    func retryLast() {
+        guard let lastMsg = lastUserMessage else { return }
+        inputText = lastMsg
+        sendMessage()
+    }
+
+    func sendMessage() {
+        let text = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        inputText = ""
+        lastUserMessage = text
+        lastUserPreset = nil
+
+        messages.append(AIsaacMessage(role: .user, text: text))
+        showPresets = false
+        isThinking = true
+
+        Task {
+            let response = await AIsaacService.shared.ask(
+                userMessage: text,
+                preset: nil,
+                context: sessionContext,
+                history: messages
+            )
+            isThinking = false
+            // Strip command blocks from displayed text
+            let displayText = Self.stripCommandBlocks(response)
+            messages.append(AIsaacMessage(role: .assistant, text: displayText))
+            parseAndExecuteCommands(response)
+            if voiceEnabled { speechManager.speak(displayText) }
+            updateQuickReplies(for: displayText)
+            showPresets = true
+        }
+    }
+
+    // Switch language and repeat last response
+    func switchLanguageAndRepeat() {
+        showLanguageSwitchPill = false
+
+        // Save preference
+        var profile = AIsaacUserProfile.load()
+        profile.preferredLanguage = detectedLanguageCode
+        profile.save()
+
+        // Ask AIsaac to repeat in the preferred language
+        let text = "Please switch to \(detectedLanguage) and repeat your last answer."
+        messages.append(AIsaacMessage(role: .user, text: text))
+        showPresets = false
+        isThinking = true
+
+        Task {
+            let response = await AIsaacService.shared.ask(
+                userMessage: text,
+                preset: nil,
+                context: sessionContext,
+                history: messages
+            )
+            isThinking = false
+            // Strip command blocks from displayed text
+            let displayText = Self.stripCommandBlocks(response)
+            messages.append(AIsaacMessage(role: .assistant, text: displayText))
+            parseAndExecuteCommands(response)
+            if voiceEnabled { speechManager.speak(displayText) }
+            updateQuickReplies(for: displayText)
+            showPresets = true
+        }
+    }
+
+    // Detect language from coordinates and show pill
+    func detectLanguageFromLocation() {
+        guard let ctx = sessionContext,
+              let lat = ctx.siteLatitude, let lon = ctx.siteLongitude else { return }
+        // Already has a saved preference — don't ask again
+        let profile = AIsaacUserProfile.load()
+        if profile.preferredLanguage != nil { return }
+
+        // Simple country detection from coordinates (rough bounding boxes)
+        let lang: (name: String, code: String)?
+        if lat > 47 && lat < 55 && lon > 5.5 && lon < 15.5 { lang = ("German", "de") }
+        else if lat > 50.5 && lat < 53.7 && lon > 3.2 && lon < 7.3 { lang = ("Dutch", "nl") }
+        else if lat > 41 && lat < 51.5 && lon > -5.5 && lon < 8.3 { lang = ("French", "fr") }
+        else if lat > 36 && lat < 44 && lon > -10 && lon < -6 { lang = ("Portuguese", "pt") }
+        else if lat > 36 && lat < 44 && lon > -10 && lon < 4 { lang = ("Spanish", "es") }
+        else if lat > 36 && lat < 47 && lon > 6 && lon < 19 { lang = ("Italian", "it") }
+        else if lat > 55 && lat < 70 && lon > 4 && lon < 30 { lang = ("Swedish", "sv") }
+        else { lang = nil }
+
+        if let lang = lang, lang.code != "en" {
+            detectedLanguage = lang.name
+            detectedLanguageCode = lang.code
+            showLanguageSwitchPill = true
+        }
+    }
+
+    // Strip ```command``` blocks from displayed text so user doesn't see raw JSON
+    private static func stripCommandBlocks(_ text: String) -> String {
+        let pattern = "```command\\s*\\n?\\{[^`]+\\}\\s*\\n?```\\s*"
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: .dotMatchesLineSeparators) else { return text }
+        let range = NSRange(text.startIndex..., in: text)
+        return regex.stringByReplacingMatches(in: text, range: range, withTemplate: "")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    // Parse and execute command blocks from AIsaac responses
+    func parseAndExecuteCommands(_ response: String) {
+        // Look for ```command ... ``` blocks
+        let pattern = "```command\\s*\\n?(\\{[^`]+\\})\\s*\\n?```"
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: .dotMatchesLineSeparators) else { return }
+        let range = NSRange(response.startIndex..., in: response)
+
+        regex.enumerateMatches(in: response, range: range) { match, _, _ in
+            guard let match = match,
+                  let jsonRange = Range(match.range(at: 1), in: response) else { return }
+            let jsonStr = String(response[jsonRange])
+            guard let data = jsonStr.data(using: .utf8),
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let action = json["action"] as? String else { return }
+            let params = json["params"] as? [String: Any]
+
+            executeCommand(action: action, params: params)
+        }
+    }
+
+    // Resolve 1-based session # to array index (handles sorted/filtered lists)
+    var resolveSessionIndex: ((Int) -> Int?)? // maps session# → array index
+
+    private func executeCommand(action: String, params: [String: Any]?) {
+        switch action {
+        case "navigate", "view":
+            if let sessionNum = params?["index"] as? Int,
+               let arrayIdx = resolveSessionIndex?(sessionNum) {
+                onNavigateToImage?(arrayIdx)
+            }
+        case "navigate_first":
+            onNavigateToFirst?()
+        case "navigate_last":
+            onNavigateToLast?()
+        case "filter":
+            if let text = params?["text"] as? String {
+                onSetFilter?(text)
+            }
+        case "clear_filter":
+            onSetFilter?("")
+        case "compare":
+            onOpenCompare?()
+        case "open_folder":
+            onOpenFolder?()
+        case "stack":
+            onStartStack?()
+        case "hide_marked":
+            onHideMarked?()
+        case "show_only_marked":
+            onShowOnlyMarked?()
+        case "show_all":
+            onShowAll?()
+        case "skip_marked":
+            onSkipMarked?()
+        case "mark_current":
+            onMarkCurrent?()
+        case "mark_frames":
+            if let sessionNums = params?["indices"] as? [Int] {
+                let arrayIndices = sessionNums.compactMap { resolveSessionIndex?($0) }
+                if !arrayIndices.isEmpty { onMarkFrames?(arrayIndices) }
+            }
+        case "highlight":
+            if let sessionNums = params?["indices"] as? [Int] {
+                let arrayIndices = sessionNums.compactMap { resolveSessionIndex?($0) }
+                if !arrayIndices.isEmpty { onHighlightFrames?(arrayIndices) }
+            }
+        case "stack_frames":
+            if let sessionNums = params?["indices"] as? [Int] {
+                let arrayIndices = sessionNums.compactMap { resolveSessionIndex?($0) }
+                if arrayIndices.count >= 3 { onStackFrames?(arrayIndices) }
+            }
+        case "open_preview":
+            if let sessionNums = params?["indices"] as? [Int] {
+                let arrayIndices = sessionNums.compactMap { resolveSessionIndex?($0) }
+                if !arrayIndices.isEmpty { onOpenPreview?(arrayIndices) }
+            } else if let sessionNum = params?["index"] as? Int,
+                      let arrayIdx = resolveSessionIndex?(sessionNum) {
+                onOpenPreview?([arrayIdx])
+            }
+        case "night_mode":
+            onNightMode?()
+        default:
+            break
+        }
+    }
+
+    // Switch to pro mode with user's API key
+    func activateProMode() {
+        let key = apiKeyInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !key.isEmpty, key.hasPrefix("sk-ant-") else { return }
+        if AIsaacKeychain.saveAPIKey(key) {
+            mode = .pro
+            apiKeyInput = ""
+            showAPIKeyEntry = false
+            postStateComment("🌟 Opus Superexpert activated! Your own API key is stored securely in macOS Keychain.")
+        }
+    }
+
+    // Switch back to free mode
+    func deactivateProMode() {
+        AIsaacKeychain.deleteAPIKey()
+        mode = .free
+        postStateComment("Switched back to free Sonnet mode.")
+    }
+
+    // Clear conversation history
+    func clearConversation() {
+        messages.removeAll()
+        showPresets = true
+    }
+}

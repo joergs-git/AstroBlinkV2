@@ -70,18 +70,16 @@ Uncompressed XISF: ~17ms decode (SSD limited). LZ4-compressed: ~100-300ms (CPU d
   - Partially in place (cache-miss fast path exists), but no reprioritization
 
 **Tier 3 — More workers (~10-15% gain)**
-- [ ] Bump maxConcurrentDecodes from 6 to 8-10 on high-core-count machines
+- [x] Bump maxConcurrentDecodes from 6 to 8 on high-core-count machines
   - Diminishing returns: cfitsio internal lock contention increases at high concurrency
   - SSD bandwidth not bottleneck (local), but NAS might saturate at 6 streams
   - Easy experiment: just change the cap and benchmark
 
-**Tier 4 — Minor gains (<5% each)**
-- [ ] Async GPU completion: `addCompletedHandler` instead of `waitUntilCompleted` (~5-7%)
-  - Can implement standalone without full pipeline restructure
-- [ ] GPU histogram for STF stats instead of CPU vDSP sort (~2ms saved, ~2%)
-  - Metal kernel computes 65536-bin histogram, CPU derives median/MAD from it
-- [ ] nth_element O(n) median instead of full sort (vDSP_vsort is already ~3x faster than stdlib)
-- [ ] mmap for uncompressed FITS (~10-20% on uncompressed only, not worth for compressed)
+**Tier 4 — Minor gains (<5% each) — CLOSED, not worth complexity**
+- [x] Async GPU completion: `addCompletedHandler` instead of `waitUntilCompleted` — shipped in v4.5.0
+- [x] ~~GPU histogram for STF stats~~ — <2% gain, not worth
+- [x] ~~nth_element O(n) median~~ — vDSP already fast enough
+- [x] ~~mmap for uncompressed FITS~~ — only helps uncompressed, not worth
 
 **Not feasible**
 - GPU-accelerated decompression: LZ4/zlib are inherently sequential stream algorithms
@@ -114,8 +112,8 @@ Uncompressed XISF: ~17ms decode (SSD limited). LZ4-compressed: ~100-300ms (CPU d
 - [x] Quality column: SF Symbol icon cell (checkmark/minus/xmark + green/orange/red)
 - [x] Tier 2: Background anomaly detection (>5 MAD from group median — clouds/gradient/fog)
 - [x] Tier 3: Star eccentricity via 2nd moment fitting (done in v4.0.0, trailing consensus in v4.2.0)
-- [ ] Tier 4: Dither offset histogram (pairwise centroid offset clustering)
-- [ ] Show noiseMAD z-score (and available metrics) in header inspector for current image
+- [x] ~~Tier 4: Dither offset histogram~~ — complex, unclear user value, closed
+- [x] Show noiseMAD z-score (and available metrics) in header inspector for current image
 - [x] "Auto-mark all reds in current filter group" → replaced by Culling Autopilot (v4.3.0)
 
 ### C) Column Reorder — New Default ✅
@@ -222,6 +220,7 @@ Uncompressed XISF: ~17ms decode (SSD limited). LZ4-compressed: ~100-300ms (CPU d
 
 ## Future TODOs — UI Polish
 - [ ] Smooth arrow-key scrolling: holding up/down should pin selection at visible edge while rows scroll past (like Finder). Current behavior still stutters — likely needs NSTableView subclass override of `moveDown:`/`moveUp:` to control scroll position directly instead of relying on `scrollRowToVisible`.
+- [ ] User-adjustable font size for file list table (currently hardcoded: 11pt columns, 12pt filename, 22pt row height). Cmd+/- or preferences slider. Needs to scale row height proportionally.
 
 ---
 
@@ -259,84 +258,59 @@ Uncompressed XISF: ~17ms decode (SSD limited). LZ4-compressed: ~100-300ms (CPU d
 - [x] All 106 non-batch tests pass, 0 failures
 
 ### Remaining — SmartCull Polish
-- [ ] Update Help panel with SmartCull explanation
-- [ ] Update README + App Store description with SmartCull marketing copy
-- [ ] Run validation on more user setups (different software: SGP, Voyager, APT)
+- [x] Update Help panel with SmartCull explanation
+- [x] Update README + App Store description with SmartCull marketing copy
+- [ ] Run validation on more user setups (different software: SGP, Voyager, APT) — when data is available
 
 ---
 
-## AIsaac — In-App AI Assistant (NEXT UP)
+## AIsaac — In-App AI Assistant (IN PROGRESS)
 
-### Concept
-"Ask AIsaac" — AI-powered assistant for astrophotography quality analysis.
-Named after Isaac Newton (astronomer, optics). Backend proxy via Supabase Edge Function
-calling Claude API. Rate-limited per user to control costs.
+### Stage 0: UI Skeleton ✅ (2026-03-20)
+- [x] AIsaacModel.swift — ChatMessage, PresetType, SessionContext, mock logic
+- [x] AIsaacService.swift — mock responses with simulated delay
+- [x] AIsaacView.swift — purple chat UI, preset chips, input field, night mode support
+- [x] AIsaacWindowController.swift — floating window (SessionOverview pattern)
+- [x] Toolbar button (sparkles icon, purple) + notification wiring
+- [x] Context builder: extracts equipment, objects, filters, quality stats from TriageViewModel
+- [x] 6 preset question chips: Quality Summary, About This Object, Explain a Term, Filter Advice, Nearby Objects, Smart Mark
 
-### Architecture: Supabase Backend Proxy
-- App → Supabase Edge Function → Claude API → response back
-- User authenticates via anonymous Supabase auth (no signup required)
-- Rate limit: N queries per day per device UUID (e.g. 20/day free, more with account)
-- Cost control: set monthly Claude API budget cap on Supabase side
-- Estimated cost: ~$0.01/query text, ~$0.02/query with image → at 1000 users × 5 queries/day = ~$3/day
-- Cache common queries (object info) → reduces API calls by ~50%
+### Stage 1: Supabase Edge Function + Claude API
+- [ ] AIsaacContextBuilder.swift — system prompt assembly with session data
+- [ ] Supabase Edge Function: `/functions/v1/ask-aisaac` (TypeScript)
+- [ ] Rate limiting: 20 queries/day per device UUID
+- [ ] Upgrade AIsaacService.swift — real API calls
+- [ ] SITELAT/SITELONG extraction in MetadataExtractor (location context)
+- [ ] Smart Mark: parse mark indices from response + confirmation dialog
+- [ ] Wire mark callback to TriageViewModel.togglePreDeleteForRows()
+- [ ] Custom icon asset (old man with beard, glasses, 3 stars)
 
-### Phase 1: Object Info (mostly free)
-- [ ] Local object database (Messier, NGC, IC — name, type, constellation, mag, size)
-- [ ] "Tell me about [OBJECT]" from FITS header → local DB first, Claude API fallback
-- [ ] Supabase Edge Function: `/ask-aisaac` endpoint
-- [ ] Swift client: `AIsaacClient.swift` — URLSession to Supabase, Keychain for device ID
-- [ ] UI: "Ask AIsaac" button in toolbar or session overview panel
+### Stage 2: Quality Explanation
+- [ ] "Why is this frame borderline?" → send metrics JSON
+- [ ] Per-image quality data in system prompt for mark preset
 
-### Phase 2: Quality Explanation
-- [ ] "Why is this frame borderline?" → send metrics JSON (no image needed)
-- [ ] "What's wrong with my marked frames?" → send tier distribution + reasons
-- [ ] Pre-prepared system prompts with astrophotography context
-- [ ] Claude responds with natural language explanation
+### Stage 3: Visual Analysis (Claude Vision)
+- [ ] Send 800px JPEG thumbnail for visual analysis
+- [ ] Compare two frames side by side
+- [ ] Privacy: only thumbnails, never full-res or file paths
 
-### Phase 3: Visual Analysis (Claude Vision)
-- [ ] "What's the problem with this image?" → send 800px JPEG thumbnail
-- [ ] "Compare these two frames" → send pair of thumbnails
-- [ ] Star shape analysis, trailing detection, background gradient identification
-- [ ] Privacy: only thumbnails (800px), never full-res, never file paths
-
-### Phase 4: Session Summary
+### Stage 4: Session Summary
 - [ ] "How was my night?" → narrative from per-filter metrics + temporal trends
 - [ ] "Which filter needs more data?" → integration time recommendations
-- [ ] Auto-generate after session load (opt-in)
-
-### Pre-Prepared Prompts (system prompt templates)
-```
-OBJECT_INFO: "You are AIsaac, an expert astrophotography advisor. The user is imaging
-{OBJECT} with {TELESCOPE} ({FOCAL_LENGTH}mm) and {CAMERA}. Filter: {FILTER}.
-Provide: 1) What this object is, 2) Recommended filters and exposure,
-3) Common challenges, 4) Tips for this specific setup. Be concise."
-
-QUALITY_EXPLAIN: "You are AIsaac. The user has {TOTAL} frames of {OBJECT}.
-Quality distribution: {EXCELLENT} excellent, {GOOD} good, {BORDERLINE} borderline,
-{TRASH} trash. The highlighted frame has: FWHM={FWHM}, Stars={STARS}, SNR={SNR},
-TrailingScore={TRAIL}. Group median FWHM={MED_FWHM}. Explain why this frame
-is rated {TIER} and whether the user should keep or delete it."
-
-IMAGE_ANALYSIS: "You are AIsaac analyzing an astrophotography subframe.
-Setup: {TELESCOPE} + {CAMERA}, {FOCAL_LENGTH}mm, {FILTER} filter.
-Metrics: FWHM={FWHM}, Stars={STARS}, Ecc={ECC}, Trail={TRAIL}.
-Look at the image and describe: star shapes, trailing, background uniformity,
-any artifacts. Is this a good frame for stacking?"
-```
 
 ### Privacy & Cost Control
 - Device UUID for rate limiting (no personal data)
 - Monthly budget cap on Supabase (e.g. $50/month → alert at 80%)
-- Cache object info responses for 30 days (same object = same answer)
+- Cache common queries (object info) → reduces API calls by ~50%
 - All AI features optional — app works fully offline
 - Never send: file paths, real names, full-resolution images, API keys
 
 ---
 
 ## Future TODOs — Batch Operations
-- [ ] Test batch rename with real FITS/XISF files (manual verification)
+- [x] ~~Test batch rename with real FITS/XISF files~~ — validated by shipping since v3.11.0
 - [ ] Batch undo integration with Cmd+Z (currently separate undoBatchRename method)
-- [ ] Cleanup old batch backups on app quit or session reload
+- [x] ~~Cleanup old batch backups on app quit or session reload~~ — not needed, no user reports
 
 ## Future TODOs — Master Calibration Stacking
 
@@ -366,5 +340,5 @@ median or averaged sigma-clipped for flats.
 
 ## Future TODOs — Testing
 - [ ] Fix pre-existing DecoderTests.testMetalBufferCreation failure
-- [ ] CI: GitHub Actions workflow running tests on push
+- [x] ~~CI: GitHub Actions workflow~~ — Metal required, won't work on GitHub runners
 - [ ] Consider SPM-only test target for pure-logic tests (~5s vs ~30s)

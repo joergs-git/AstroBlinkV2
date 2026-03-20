@@ -303,6 +303,7 @@ extension Notification.Name {
     static let resetSettingsRequest = Notification.Name("resetSettingsRequest")
     static let showBenchmarkStats = Notification.Name("showBenchmarkStats")
     static let showBatchRename = Notification.Name("showBatchRename")
+    static let showAIsaac = Notification.Name("showAIsaac")
 }
 
 // AppDelegate extension for help window
@@ -947,6 +948,63 @@ struct HelpBackgroundView: View {
                     activates: frames meeting the learned baseline are locked as KEEP — z-scores cannot \
                     override them. This prevents the \"death spiral\" where repeated culling removes \
                     good frames. Calibration data is stored per-setup in Application Support.
+                    """)
+
+                Divider()
+
+                // SmartCull
+                faqSection("SmartCull — Multi-Stage Quality Engine",
+                    """
+                    SmartCull is a 4-stage pipeline that handles ~99% of quality decisions \
+                    automatically, leaving only genuine edge cases for you. Validated on 1,457 frames \
+                    across 6 setups (3 telescopes, mono+OSC, narrowband+broadband).
+                    """)
+
+                faqItem("Stage 1 — Garbage Detection",
+                    """
+                    Absolute thresholds catch catastrophic failures immediately: near-zero stars, \
+                    SNR below 50% of group median, FWHM/HFR over 2x median, severe trailing \
+                    (cross-checked against FWHM), star count anomalies from tracking jumps, \
+                    and background anomalies from clouds or fog.
+                    """)
+
+                faqItem("Stage 2 — Z-Score Ranking",
+                    """
+                    Per-group (target + filter + exposure + night) robust z-scores using median/MAD. \
+                    Metrics: Stars (1.2x broadband, 0.5x narrowband), FWHM, HFR, Noise, Trailing (1.5x). \
+                    Individual z-scores capped at ±3.0 to prevent one extreme value from dominating.
+                    """)
+
+                faqItem("Stage 3 — Rescue Rules",
+                    """
+                    Pattern-based rules rescue frames that z-scores unfairly penalize: \
+                    (A) Good FWHM + acceptable noise → rescued to Good, even if stars dipped. \
+                    (B) Star count dip with sharp stars → recognized as transient event (clouds, dew). \
+                    (C) FWHM-only penalty → promoted to Borderline with lower SSWEIGHT \
+                    (softer seeing still adds signal in weighted stacking).
+                    """)
+
+                faqItem("Stage 4 — Sanity Check",
+                    """
+                    Z-score trash frames with FWHM within the Good range are promoted to Borderline. \
+                    This catches the rare case where overall z-score dips below threshold but the \
+                    frame has perfectly sharp stars worth keeping.
+                    """)
+
+                faqItem("Quality Reasoning (\"Why?\")",
+                    """
+                    Hover any quality icon to see a human-readable explanation of why the frame \
+                    received its tier. The tooltip shows per-metric z-scores, the SNR contribution, \
+                    and a specific reason like \"FWHM worst in group\" or \"Star count dip — \
+                    likely transient event\". SmartCull is not a black box.
+                    """)
+
+                faqItem("Culling Autopilot",
+                    """
+                    Click the quality status in the bottom bar for one-click auto-marking: \
+                    Conservative (only Stage 1 garbage), Balanced (+ severe borderline), \
+                    Aggressive (+ all borderline). Each mode shows frame count and integration \
+                    impact before applying.
                     """)
 
                 Divider()

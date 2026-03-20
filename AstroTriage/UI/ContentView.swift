@@ -77,6 +77,7 @@ struct ContentView: View {
                     sfToolbarButton("square.and.arrow.up", "SSWEIGHT\nExport", "Export quality weights to FITS/XISF headers for WBPP.\nAlso creates CSV backup.") {
                         viewModel.exportSSWEIGHT()
                     }
+                    aisaacToolbarButton
                     toolbarDivider
 
                     // Apply All toggle: bakes current settings into all cached previews
@@ -350,6 +351,19 @@ struct ContentView: View {
                                     Spacer()
                                 }
                             }
+
+                            // AIsaac collapsed teaser bar — always visible unless dismissed
+                            if !aisaacTeaserDismissed {
+                                VStack {
+                                    HStack {
+                                        Spacer()
+                                        aisaacTeaserBar
+                                            .padding(.top, 8)
+                                            .padding(.trailing, 12)
+                                    }
+                                    Spacer()
+                                }
+                            }
                         }
                         .frame(minHeight: 200)
 
@@ -582,6 +596,7 @@ struct ContentView: View {
         }
         .onAppear {
             keyboardMonitor = KeyboardHandler.install(viewModel: viewModel)
+            wireAIsaacCallbacks(viewModel: viewModel)
         }
         .onReceive(NotificationCenter.default.publisher(for: .showBatchRename)) { _ in
             BatchRenameWindowController.shared.show(viewModel: viewModel)
@@ -589,6 +604,12 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: .showBenchmarkStats)) { _ in
             BenchmarkStatsWindowController.shared.show(stats: viewModel.benchmarkStats, sessionRootURL: viewModel.sessionRootURL)
         }
+        .onReceive(NotificationCenter.default.publisher(for: .showAIsaac)) { _ in
+            AIsaacWindowController.shared.updateContext(images: viewModel.images, viewModel: viewModel)
+            AIsaacWindowController.shared.toggleWindow()
+        }
+        // AIsaac state observers extracted to reduce type-check pressure
+        .modifier(AIsaacStateObserver(viewModel: viewModel))
         .onReceive(NotificationCenter.default.publisher(for: .resetSettingsRequest)) { _ in
             let alert = NSAlert()
             alert.messageText = "Reset all settings to defaults?"
@@ -649,6 +670,180 @@ struct ContentView: View {
         .buttonStyle(.plain)
         .help(tooltip)
         .contentShape(Rectangle())
+    }
+
+    // AIsaac collapsed teaser bar
+    @State private var aisaacTeaserDismissed: Bool = false
+
+    // AIsaac collapsed teaser bar — floating pill that opens the full chat window
+    @State private var teaserGlow: Bool = false
+    private var aisaacTeaserBar: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "sparkles")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundColor(.purple)
+                .opacity(teaserGlow ? 0.9 : 0.5)
+                .scaleEffect(teaserGlow ? 1.15 : 1.0)
+
+            Text("I am AIsaac — ask me about your stars")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundColor(.white.opacity(0.8))
+
+            // Dismiss button
+            Button(action: { withAnimation(.easeOut(duration: 0.3)) { aisaacTeaserDismissed = true } }) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 8, weight: .bold))
+                    .foregroundColor(.white.opacity(0.4))
+            }
+            .buttonStyle(.plain)
+            .help("Dismiss — reopen via Ask AIsaac button")
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 7)
+        .background(
+            Capsule()
+                .fill(
+                    LinearGradient(
+                        colors: [
+                            Color(red: 0.20, green: 0.05, blue: 0.35).opacity(0.85),
+                            Color(red: 0.10, green: 0.02, blue: 0.20).opacity(0.85)
+                        ],
+                        startPoint: .leading, endPoint: .trailing
+                    )
+                )
+                .shadow(color: .purple.opacity(teaserGlow ? 0.5 : 0.2), radius: teaserGlow ? 8 : 4)
+        )
+        .onTapGesture {
+            AIsaacWindowController.shared.updateContext(images: viewModel.images, viewModel: viewModel)
+            AIsaacWindowController.shared.toggleWindow()
+        }
+        .onAppear {
+            withAnimation(.easeInOut(duration: 2.5).repeatForever(autoreverses: true)) {
+                teaserGlow = true
+            }
+        }
+        .transition(.opacity.combined(with: .move(edge: .trailing)))
+    }
+
+    // AIsaac toolbar button with continuous sparkle animation
+    @State private var aisaacGlow: Bool = false
+    private var aisaacToolbarButton: some View {
+        Button(action: {
+            AIsaacWindowController.shared.updateContext(images: viewModel.images, viewModel: viewModel)
+            AIsaacWindowController.shared.toggleWindow()
+        }) {
+            VStack(spacing: 2) {
+                ZStack {
+                    // Base sparkles icon
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 24, weight: .light))
+                        .foregroundColor(.purple)
+
+                    // Glow pulse overlay
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 24, weight: .light))
+                        .foregroundColor(.purple)
+                        .opacity(aisaacGlow ? 0.9 : 0.1)
+                        .scaleEffect(aisaacGlow ? 1.25 : 0.9)
+                        .blur(radius: aisaacGlow ? 3.5 : 0.0)
+                }
+                Spacer(minLength: 0)
+                Text("Ask\nAIsaac")
+                    .font(.system(size: 8, weight: .medium))
+                    .foregroundColor(nightFgDim)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(width: 56, height: 48)
+        }
+        .buttonStyle(.plain)
+        .help("AI assistant for astrophotography session analysis")
+        .contentShape(Rectangle())
+        .onAppear {
+            withAnimation(.easeInOut(duration: 2.0).repeatForever(autoreverses: true)) {
+                aisaacGlow = true
+            }
+        }
+    }
+
+    // Wire AIsaac app control callbacks (extracted to reduce body complexity)
+    private func wireAIsaacCallbacks(viewModel: TriageViewModel) {
+        let aisaac = AIsaacWindowController.shared.model
+        // Resolve session # (1-based) to array index (handles sort order)
+        aisaac.resolveSessionIndex = { [weak viewModel] sessionNum in
+            viewModel?.images.firstIndex(where: { $0.sessionIndex == sessionNum })
+        }
+        aisaac.onNavigateToImage = { [weak viewModel] idx in viewModel?.selectImage(at: idx) }
+        aisaac.onNavigateToFirst = { [weak viewModel] in viewModel?.navigateToFirst() }
+        aisaac.onNavigateToLast = { [weak viewModel] in viewModel?.navigateToLast() }
+        aisaac.onSetFilter = { [weak viewModel] text in
+            viewModel?.filterText = text
+            // Safety: if filter results in zero visible images, auto-clear after a short delay
+            if !text.isEmpty {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    if viewModel?.visibleImages.isEmpty == true {
+                        viewModel?.filterText = ""
+                        AIsaacWindowController.shared.model.postStateComment(
+                            "Oops, that filter didn't match anything — showing all files again."
+                        )
+                    }
+                }
+            }
+        }
+        aisaac.onOpenCompare = { [weak viewModel] in viewModel?.compareWithBest() }
+        aisaac.onOpenFolder = { [weak viewModel] in viewModel?.openFolder() }
+        aisaac.onStartStack = { [weak viewModel] in viewModel?.startQuickStackV2() }
+        aisaac.onStackFrames = { [weak viewModel] indices in
+            guard let vm = viewModel else { return }
+            // Select the specified frames then start stacking
+            let indexSet = IndexSet(indices.filter { $0 >= 0 && $0 < vm.images.count })
+            vm.selectMultipleRows(indexSet)
+            // Small delay to let selection take effect before stacking
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                vm.startQuickStackV2()
+            }
+        }
+        aisaac.onHideMarked = { [weak viewModel] in
+            viewModel?.hideMarked = true
+            viewModel?.showOnlyMarked = false
+        }
+        aisaac.onShowOnlyMarked = { [weak viewModel] in
+            viewModel?.hideMarked = false
+            viewModel?.showOnlyMarked = true
+        }
+        aisaac.onShowAll = { [weak viewModel] in
+            viewModel?.hideMarked = false
+            viewModel?.showOnlyMarked = false
+        }
+        aisaac.onSkipMarked = { [weak viewModel] in viewModel?.skipMarked.toggle() }
+        aisaac.onMarkCurrent = { [weak viewModel] in viewModel?.togglePreDelete() }
+        aisaac.onMarkFrames = { [weak viewModel] indices in
+            guard let vm = viewModel else { return }
+            for idx in indices where idx >= 0 && idx < vm.images.count {
+                if !vm.images[idx].isMarkedForDeletion {
+                    vm.togglePreDelete(at: idx)
+                }
+            }
+        }
+        aisaac.onNightMode = { [weak viewModel] in viewModel?.nightMode.toggle() }
+        aisaac.onHighlightFrames = { [weak viewModel] indices in
+            guard let vm = viewModel else { return }
+            // Select rows in the file list without marking them
+            let indexSet = IndexSet(indices.filter { $0 >= 0 && $0 < vm.images.count })
+            vm.selectMultipleRows(indexSet)
+        }
+        aisaac.onViewFrame = { [weak viewModel] idx in viewModel?.selectImage(at: idx) }
+        aisaac.onOpenPreview = { [weak viewModel] indices in
+            guard let vm = viewModel, let device = vm.renderer?.device else { return }
+            for idx in indices where idx >= 0 && idx < vm.images.count {
+                let entry = vm.images[idx]
+                ImagePreviewWindowController.open(
+                    entry: entry, device: device,
+                    nightMode: vm.nightMode, debayerEnabled: vm.debayerEnabled
+                )
+            }
+        }
     }
 
     // Format byte count as human-readable string (e.g. "1.2 GB", "384 MB")
@@ -916,5 +1111,33 @@ struct AutoMarkPopover: View {
         viewModel.recomputeSNRRetention()
         viewModel.updateConvergence()
         viewModel.statusMessage = "Auto-marked \(option.count) frames (\(option.title))"
+    }
+}
+
+// MARK: - AIsaac State Observer (extracted to reduce type-check complexity)
+
+struct AIsaacStateObserver: ViewModifier {
+    @ObservedObject var viewModel: TriageViewModel
+
+    func body(content: Content) -> some View {
+        content
+            .onChange(of: viewModel.isCaching) { isCaching in
+                AIsaacWindowController.shared.pushStateUpdate(from: viewModel)
+                if !isCaching {
+                    AIsaacWindowController.shared.updateContext(images: viewModel.images, viewModel: viewModel)
+                    AIsaacWindowController.shared.model.detectLanguageFromLocation()
+                }
+            }
+            .onChange(of: viewModel.cacheProgress) { progress in
+                if progress > 0.99 || Int(progress * 10) > Int((progress - 0.1) * 10) {
+                    AIsaacWindowController.shared.pushStateUpdate(from: viewModel)
+                }
+            }
+            .onChange(of: viewModel.images.count) { _ in
+                AIsaacWindowController.shared.pushStateUpdate(from: viewModel)
+            }
+            .onChange(of: viewModel.needsTableRefresh) { _ in
+                AIsaacWindowController.shared.pushStateUpdate(from: viewModel)
+            }
     }
 }
