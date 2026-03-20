@@ -830,6 +830,8 @@ struct StackResultViewV2: View {
     // Wiener deconvolution cache
     @State private var wienerCorrectedData: [Float]?
     @State private var lastWienerStrength: Float = 0
+    // Structure enhancement (nebula/cloud detail)
+    @State private var structureAmount: Double = 0.0
     @State private var stretchValue: Double = 0.25
     @State private var sharpening: Double = 0.0
     @State private var contrast: Double = 0.0
@@ -975,6 +977,9 @@ struct StackResultViewV2: View {
                     wienerCorrectedData = nil
                     scheduleRender()
                 }
+                resultSlider("Structure", value: $structureAmount, range: 0.0...2.0, step: 0.02,
+                             display: structureAmount < 0.01 ? "Off" : String(format: "%.0f%%", structureAmount * 100))
+                    .help("Enhance nebula/cloud detail without sharpening stars.\nLarge-radius local contrast boost for extended structures.")
                 Rectangle().fill(Color.gray.opacity(0.3)).frame(width: 1, height: 16)
                 Toggle("Gradient", isOn: $removeGradient)
                     .toggleStyle(.switch).controlSize(.mini)
@@ -1194,11 +1199,23 @@ struct StackResultViewV2: View {
             dataToRender = afterGradient
         }
 
+        // Step 3: Structure enhancement (nebula/cloud detail)
+        let structAmt = Float(structureAmount)
+        let finalData: [Float]
+        if structAmt > 0.01 {
+            finalData = await Task.detached(priority: .userInitiated) {
+                StructureEnhancement.enhance(data: dataToRender, width: w, height: h,
+                                             channelCount: ch, amount: structAmt)
+            }.value
+        } else {
+            finalData = dataToRender
+        }
+
         // Skip GPU deconv if Wiener is handling it (already applied above)
         let gpuDeconv: Float = currentDeconvMode == .wiener ? 0 : dc
 
         let tex = await Task.detached(priority: .userInitiated) {
-            renderFloatToTexture(data: dataToRender, width: w, height: h,
+            renderFloatToTexture(data: finalData, width: w, height: h,
                                 channelCount: ch, targetBackground: target,
                                 sharpening: sharp, contrast: cont, darkLevel: dark,
                                 saturation: sat, linkedStretch: linked, denoise: dn, deconvolve: gpuDeconv, useRL: rl, device: dev)

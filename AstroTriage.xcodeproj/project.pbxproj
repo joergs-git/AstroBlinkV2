@@ -48,6 +48,7 @@
 		8B28123AE5CD7FA6D046CD8A /* AstroTriageQuickLookPreview.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = C17E45E7EC559D0FCD362808 /* AstroTriageQuickLookPreview.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		8B9102B9DEB924145CD66AAA /* AstroTriageApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = D60FDB5923A652383E3ABEB7 /* AstroTriageApp.swift */; };
 		90E172D08A289E6C51298EAE /* QuickLookSTF.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD2457C0829FBD7832C880DF /* QuickLookSTF.swift */; };
+		970927BE4AF96FBF6FE430EE /* StructureEnhancement.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC55336CE3C3552EF83E3A21 /* StructureEnhancement.swift */; };
 		9B91613EEB76EB27A7DCB3FC /* CalibrationDatabase.swift in Sources */ = {isa = PBXBuildFile; fileRef = 511D5503EE634473FF2EC433 /* CalibrationDatabase.swift */; };
 		9D950EBF4E4EBC1A00430834 /* StarAnalyzerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C73F68266BEC1BE0872283EB /* StarAnalyzerTests.swift */; };
 		A25E05A896A91A675B10AB27 /* AIsaacUserProfile.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BC8D6B7579B8D8EE0A8190B /* AIsaacUserProfile.swift */; };
@@ -182,6 +183,7 @@
 		B6D16C070C8599AC5C5A265B /* FileListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileListView.swift; sourceTree = "<group>"; };
 		B7D54DB9FE9BF17CD5203F2D /* SessionScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionScanner.swift; sourceTree = "<group>"; };
 		B8942CE397AE911C7346F9D1 /* TrailingAnalyzer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrailingAnalyzer.swift; sourceTree = "<group>"; };
+		BC55336CE3C3552EF83E3A21 /* StructureEnhancement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StructureEnhancement.swift; sourceTree = "<group>"; };
 		C0EFA1508203190F9C1216AE /* PreviewGenerator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreviewGenerator.swift; sourceTree = "<group>"; };
 		C17E45E7EC559D0FCD362808 /* AstroTriageQuickLookPreview.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = AstroTriageQuickLookPreview.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		C3E8644313598CB076771595 /* ColorCombineWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ColorCombineWindow.swift; sourceTree = "<group>"; };
@@ -345,6 +347,7 @@
 				B7D54DB9FE9BF17CD5203F2D /* SessionScanner.swift */,
 				B15B13B846B735B87DB35B31 /* StarDetector.swift */,
 				0BFB130B08CCDD11AC1018A7 /* StarMetricsCalculator.swift */,
+				BC55336CE3C3552EF83E3A21 /* StructureEnhancement.swift */,
 				B8942CE397AE911C7346F9D1 /* TrailingAnalyzer.swift */,
 				B4F0D3CE86492EF1F5EF6BB7 /* TriageViewModel.swift */,
 				5DAC3DD9E30EB2E746271068 /* WienerDeconvolution.swift */,
@@ -661,6 +664,7 @@
 				B6FAD33DBA5A722B4EC6F6AA /* Shaders.metal in Sources */,
 				FF2D352047518183D1FF4073 /* StarDetector.swift in Sources */,
 				C66ED07D541C5E62EC36991E /* StarMetricsCalculator.swift in Sources */,
+				970927BE4AF96FBF6FE430EE /* StructureEnhancement.swift in Sources */,
 				7A69119E8C46AEEEC3903EDA /* TexturePool.swift in Sources */,
 				7025BB820EB0394F1BD3F5B8 /* TrailingAnalyzer.swift in Sources */,
 				C26CB03B2AE2C731BC2B72BF /* TriageViewModel.swift in Sources */,
