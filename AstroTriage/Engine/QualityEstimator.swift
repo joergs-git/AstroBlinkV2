@@ -381,14 +381,14 @@ struct QualityEstimator {
                 }
 
                 // Rule 7: Background anomaly — clouds, light pollution gradient, or fog
-                // If background level deviates by >5 MADs from group median, it's anomalous.
-                // Clouds raise background level significantly; only flag strong deviations.
+                // Clouds/gradient RAISE background level; only flag positive deviations.
+                // Lower background = clearer sky = good — never penalize that.
                 // Scale threshold for small groups: tight MAD in <20 frames causes false positives.
                 // 20+ frames → 5.0 MAD, 15 → 5.75, 10 → 6.5 (linear interpolation)
                 if garbageReason == nil, let bg = bgValues[localIdx],
                    let median = bgMedian, let mad = bgMAD, mad > 0 {
                     let bgThreshold = max(5.0, 5.0 + (20.0 - Double(min(groupEntries.count, 20))) * 0.15)
-                    let deviation = Swift.abs(bg - median) / mad
+                    let deviation = (bg - median) / mad
                     if deviation > bgThreshold {
                         garbageReason = .backgroundAnomaly
                     }

@@ -142,7 +142,12 @@ class AboutWindowController {
             splashClickMonitor = NSEvent.addLocalMonitorForEvents(
                 matching: [.leftMouseDown, .rightMouseDown, .keyDown]
             ) { [weak self] event in
-                // Dismiss splash on any click or key press, anywhere.
+                // Don't dismiss when clicking the "Don't show on startup" checkbox
+                if let clickedView = event.window?.contentView?.hitTest(event.locationInWindow),
+                   clickedView is NSButton {
+                    return event
+                }
+                // Dismiss splash on any other click or key press.
                 // Button/link click handlers fire before this monitor,
                 // so links still work — splash just closes after.
                 self?.dismissSplash()
