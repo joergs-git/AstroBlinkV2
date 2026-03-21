@@ -1,10 +1,12 @@
-// v3.2.0
+// v5.1.2
 import Foundation
 
-// Centralized UserDefaults wrapper for persistent app settings
-// Saves user preferences (column config, slider values, toggle states) across sessions
+// Centralized settings wrapper with iCloud sync via NSUbiquitousKeyValueStore.
+// All settings sync across devices automatically when iCloud is available.
+// Falls back to UserDefaults-only when iCloud is unavailable.
 struct AppSettings {
     static let defaults = UserDefaults.standard
+    static let cloud = NSUbiquitousKeyValueStore.default
 
     // UserDefaults keys
     enum Key: String {
@@ -23,25 +25,47 @@ struct AppSettings {
         case hideSplash           // Bool — never show splash screen on launch
     }
 
-    // MARK: - Save
+    // Start observing iCloud changes (call once at app launch)
+    static func startCloudSync() {
+        NotificationCenter.default.addObserver(
+            forName: NSUbiquitousKeyValueStore.didChangeExternallyNotification,
+            object: cloud,
+            queue: .main
+        ) { notification in
+            // Merge cloud changes into UserDefaults
+            guard let changedKeys = notification.userInfo?[NSUbiquitousKeyValueStoreChangedKeysKey] as? [String] else { return }
+            for key in changedKeys {
+                if let value = cloud.object(forKey: key) {
+                    defaults.set(value, forKey: key)
+                }
+            }
+        }
+        cloud.synchronize()
+    }
+
+    // MARK: - Save (dual-write: UserDefaults + iCloud)
 
     static func save(_ value: Any, for key: Key) {
         defaults.set(value, forKey: key.rawValue)
+        cloud.set(value, forKey: key.rawValue)
     }
 
     static func saveBool(_ value: Bool, for key: Key) {
         defaults.set(value, forKey: key.rawValue)
+        cloud.set(value, forKey: key.rawValue)
     }
 
     static func saveFloat(_ value: Float, for key: Key) {
         defaults.set(value, forKey: key.rawValue)
+        cloud.set(Double(value), forKey: key.rawValue)  // NSUbiquitousKeyValueStore uses Double
     }
 
     static func saveStrings(_ value: [String], for key: Key) {
         defaults.set(value, forKey: key.rawValue)
+        cloud.set(value, forKey: key.rawValue)
     }
 
-    // MARK: - Load
+    // MARK: - Load (UserDefaults is primary, cloud merges on change notification)
 
     static func loadBool(for key: Key) -> Bool? {
         guard defaults.object(forKey: key.rawValue) != nil else { return nil }
@@ -65,6 +89,7 @@ struct AppSettings {
                     .nightMode, .debayerEnabled, .skipMarked, .hideMarked,
                     .autoMeridian] {
             defaults.removeObject(forKey: key.rawValue)
+            cloud.removeObject(forKey: key.rawValue)
         }
     }
 }

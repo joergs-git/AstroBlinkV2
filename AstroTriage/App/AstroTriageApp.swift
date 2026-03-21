@@ -88,6 +88,9 @@ class AstroBlinkV2AppDelegate: NSObject, NSApplicationDelegate {
 
     // Show splash screen on launch (unless user opted out)
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Start iCloud key-value sync for app settings
+        AppSettings.startCloudSync()
+
         if AppSettings.loadBool(for: .hideSplash) != true {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                 AboutWindowController.shared.show(asSplash: true)

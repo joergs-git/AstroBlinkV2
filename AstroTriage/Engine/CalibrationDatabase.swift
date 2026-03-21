@@ -168,19 +168,27 @@ final class CalibrationDatabase {
     /// In-memory cache of profiles keyed by setup hash
     private var profiles: [String: CalibrationProfile] = [:]
 
-    /// Directory for JSON persistence
+    /// Directory for JSON persistence (local)
     private let storageDirectory: URL
+    /// iCloud directory for cross-device sync (nil if iCloud unavailable)
+    private let iCloudDirectory: URL?
 
     private init() {
-        // ~/Library/Containers/com.joergsflow.AstroBlinkV2/Data/Library/Application Support/Calibration/
-        // (sandboxed) or ~/Library/Application Support/AstroBlinkV2/Calibration/ (non-sandboxed)
+        // Local: ~/Library/Containers/.../Application Support/AstroBlinkV2/Calibration/
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         storageDirectory = appSupport.appendingPathComponent("AstroBlinkV2/Calibration", isDirectory: true)
-
-        // Create directory if needed
         try? FileManager.default.createDirectory(at: storageDirectory, withIntermediateDirectories: true)
 
-        // Load all existing profiles
+        // iCloud: syncs calibration data across devices
+        if let container = FileManager.default.url(forUbiquityContainerIdentifier: "iCloud.com.joergsflow.AstroBlinkV2") {
+            let dir = container.appendingPathComponent("Documents/Calibration", isDirectory: true)
+            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            iCloudDirectory = dir
+        } else {
+            iCloudDirectory = nil
+        }
+
+        // Load profiles from both locations (iCloud takes precedence for newer data)
         loadAllProfiles()
     }
 
@@ -315,32 +323,52 @@ final class CalibrationDatabase {
     // MARK: - Persistence
 
     private func save(profile: CalibrationProfile) {
-        let fileURL = storageDirectory.appendingPathComponent("\(profile.fingerprint.hash).json")
+        let filename = "\(profile.fingerprint.hash).json"
         do {
             let encoder = JSONEncoder()
             encoder.dateEncodingStrategy = .iso8601
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
             let data = try encoder.encode(profile)
-            try data.write(to: fileURL, options: .atomic)
+            // Local (instant backup)
+            try data.write(to: storageDirectory.appendingPathComponent(filename), options: .atomic)
+            // iCloud (cross-device sync)
+            if let icloudDir = iCloudDirectory {
+                try data.write(to: icloudDir.appendingPathComponent(filename), options: .atomic)
+            }
         } catch {
             print("CalibrationDatabase: failed to save profile \(profile.fingerprint.hash): \(error)")
         }
     }
 
     private func loadAllProfiles() {
-        let fm = FileManager.default
-        guard let files = try? fm.contentsOfDirectory(at: storageDirectory, includingPropertiesForKeys: nil) else {
-            return
-        }
-
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
 
+        // Load from local first
+        loadProfiles(from: storageDirectory, decoder: decoder)
+        // Then merge iCloud (more frames = newer data wins)
+        if let icloudDir = iCloudDirectory {
+            loadProfiles(from: icloudDir, decoder: decoder)
+        }
+    }
+
+    private func loadProfiles(from directory: URL, decoder: JSONDecoder) {
+        let fm = FileManager.default
+        guard let files = try? fm.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil) else {
+            return
+        }
         for file in files where file.pathExtension == "json" {
             do {
                 let data = try Data(contentsOf: file)
                 let profile = try decoder.decode(CalibrationProfile.self, from: data)
-                profiles[profile.fingerprint.hash] = profile
+                // Keep the version with more data (more frames analyzed = more learning)
+                if let existing = profiles[profile.fingerprint.hash] {
+                    if profile.totalFramesAnalyzed > existing.totalFramesAnalyzed {
+                        profiles[profile.fingerprint.hash] = profile
+                    }
+                } else {
+                    profiles[profile.fingerprint.hash] = profile
+                }
             } catch {
                 print("CalibrationDatabase: failed to load \(file.lastPathComponent): \(error)")
             }

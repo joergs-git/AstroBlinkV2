@@ -632,6 +632,29 @@ struct ContentView: View {
                             .foregroundColor(nightFgDim)
                             .lineLimit(1)
                             .textSelection(.enabled)
+
+                        // iCloud sync indicator (rightmost, always visible)
+                        statusDivider
+                        HStack(spacing: 2) {
+                            if FileManager.default.ubiquityIdentityToken != nil {
+                                Image(systemName: "checkmark.icloud")
+                                    .font(.system(size: 10))
+                                    .foregroundColor(viewModel.nightMode ? .red : .green)
+                                Text("iCloud")
+                                    .font(.system(size: 9, design: .monospaced))
+                                    .foregroundColor(nightFgDim.opacity(0.6))
+                            } else {
+                                Image(systemName: "xmark.icloud")
+                                    .font(.system(size: 10))
+                                    .foregroundColor(.red.opacity(0.7))
+                                Text("iCloud")
+                                    .font(.system(size: 9, design: .monospaced))
+                                    .foregroundColor(nightFgDim.opacity(0.4))
+                            }
+                        }
+                        .help(FileManager.default.ubiquityIdentityToken != nil
+                            ? "iCloud active — settings, calibration data, and equipment profile sync across devices"
+                            : "iCloud unavailable — data is stored locally only. Sign in to iCloud in System Settings to enable sync.")
                     }
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)

@@ -123,7 +123,7 @@ struct ColumnDefinition {
             // SNR = median / MAD (same formula as Quality Overview)
             guard let med = entry.noiseMedian, let mad = entry.noiseMAD, mad > 0 else { return "" }
             let snr = med / mad
-            return String(format: "%.0f", snr)
+            return String(format: "%.1f", snr)
         case "snrContrib":
             return entry.qualityBreakdown?.snrContribution.map { String(format: "%.0f%%", $0) } ?? ""
         case "eccentricity":

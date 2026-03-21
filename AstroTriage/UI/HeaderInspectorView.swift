@@ -128,6 +128,7 @@ class HeaderInspectorModel: ObservableObject {
     @Published var isLoading: Bool = false
     @Published var searchText: String = ""
     @Published var qualityMetrics: [(label: String, value: String)] = []
+    @Published var showQualityHelp: Bool = false
 
     var filteredHeaders: [HeaderEntry] {
         if searchText.isEmpty { return headers }
@@ -393,10 +394,51 @@ struct HeaderInspectorContentView: View {
             if !model.qualityMetrics.isEmpty {
                 Divider()
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Quality Metrics")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundColor(Color(NSColor.systemPurple))
-                        .padding(.bottom, 2)
+                    HStack {
+                        Text("Quality Metrics")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundColor(Color(NSColor.systemPurple))
+                        Button(action: { model.showQualityHelp.toggle() }) {
+                            Image(systemName: "questionmark.circle")
+                                .font(.system(size: 10))
+                                .foregroundColor(Color(NSColor.systemPurple).opacity(0.6))
+                        }
+                        .buttonStyle(.plain)
+                        .popover(isPresented: Binding(
+                            get: { model.showQualityHelp },
+                            set: { model.showQualityHelp = $0 }
+                        )) {
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text("Quality Metrics Guide")
+                                    .font(.system(size: 12, weight: .bold))
+                                    .padding(.bottom, 2)
+
+                                Text("Z-scores show how this frame compares to its group\n(same filter + target + exposure).")
+                                    .font(.system(size: 11))
+
+                                Divider()
+
+                                Text("\u{03C3} = standard deviation from group average\n+1.0\u{03C3} = one sigma better than average\n\u{2212}1.0\u{03C3} = one sigma worse than average")
+                                    .font(.system(size: 11, design: .monospaced))
+
+                                Divider()
+
+                                VStack(alignment: .leading, spacing: 3) {
+                                    metricHelpRow("Stars", "Detected star count", "more = better")
+                                    metricHelpRow("FWHM", "Star width in pixels", "lower = sharper")
+                                    metricHelpRow("HFR", "Half-flux radius", "lower = tighter")
+                                    metricHelpRow("Noise", "Background noise level", "lower = cleaner")
+                                    metricHelpRow("Trail", "Star elongation score", "lower = rounder")
+                                    metricHelpRow("Combined Z", "Weighted average", "overall quality")
+                                    metricHelpRow("SNR Contrib", "Signal contribution", "vs best frame")
+                                }
+                            }
+                            .padding(12)
+                            .frame(width: 300)
+                            .textSelection(.enabled)
+                        }
+                    }
+                    .padding(.bottom, 2)
                     ForEach(Array(model.qualityMetrics.enumerated()), id: \.offset) { _, metric in
                         HStack(alignment: .top) {
                             Text(metric.label)
@@ -444,6 +486,18 @@ struct HeaderInspectorContentView: View {
                     .background(Color(NSColor.windowBackgroundColor).opacity(0.8))
                 }
             }
+        }
+    }
+
+    // Helper row for quality metrics help popover
+    private func metricHelpRow(_ name: String, _ desc: String, _ direction: String) -> some View {
+        HStack(alignment: .top, spacing: 4) {
+            Text(name)
+                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                .frame(width: 85, alignment: .trailing)
+            Text("\(desc) (\(direction))")
+                .font(.system(size: 11))
+                .foregroundColor(.secondary)
         }
     }
 }

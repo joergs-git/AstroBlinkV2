@@ -661,6 +661,19 @@ struct FileListView: NSViewRepresentable {
                 lines.append("  \(reasoning)")
             }
 
+            // Legend explaining z-scores and metrics
+            lines.append("")
+            lines.append("  \u{2500}\u{2500} Legend \u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}")
+            lines.append("  \u{03C3} = standard deviation from group average")
+            lines.append("  +1.0\u{03C3} = one \u{03C3} better than average")
+            lines.append("  -1.0\u{03C3} = one \u{03C3} worse than average")
+            lines.append("  Stars  : detected star count (more = better)")
+            lines.append("  FWHM   : star width in px (lower = sharper)")
+            lines.append("  HFR    : half-flux radius (lower = tighter)")
+            lines.append("  Noise  : background noise level (lower = cleaner)")
+            lines.append("  Trail  : star elongation score (lower = rounder)")
+            lines.append("  Group  : compared within same filter+target+exposure")
+
             return lines.joined(separator: "\n")
         }
 

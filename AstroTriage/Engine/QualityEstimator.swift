@@ -725,7 +725,8 @@ struct QualityEstimator {
             } else if rescueReason == nil {
                 // Good tier but with a notable penalty — explain what was compensated
                 if let worst = sorted.first {
-                    parts.append("\(worst.0) slightly below average, compensated by other metrics")
+                    let direction = worst.0 == "Stars" ? "below" : "above"
+                    parts.append("\(worst.0) slightly \(direction) average, compensated by other metrics")
                 }
             }
         } else {
@@ -753,9 +754,20 @@ struct QualityEstimator {
                 default: break
                 }
 
-                // Secondary penalty
+                // Secondary penalty — use correct wording per metric direction
                 for penalty in sorted.dropFirst().prefix(1) {
-                    parts.append("\(penalty.0.lowercased()) also below average")
+                    switch penalty.0 {
+                    case "Stars":
+                        parts.append("star count also below average")
+                    case "Noise":
+                        parts.append("noise also elevated")
+                    case "FWHM":
+                        parts.append("FWHM also elevated")
+                    case "Trailing":
+                        parts.append("some trailing detected")
+                    default:
+                        parts.append("\(penalty.0.lowercased()) also degraded")
+                    }
                 }
             }
         }
