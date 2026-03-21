@@ -21,6 +21,7 @@ enum GarbageReason: String, Hashable {
     case elongated         = "star trailing/elongation"
     case starCountAnomaly  = "doubled stars (tracking jump)"
     case backgroundAnomaly = "abnormal background (clouds/gradient)"
+    case trackingHop       = "tracking hops (star chains)"
 }
 
 // Full quality breakdown per image — replaces the old (tier, zScore) tuple.
@@ -380,6 +381,14 @@ struct QualityEstimator {
                     if deviation > bgThreshold {
                         garbageReason = .backgroundAnomaly
                     }
+                }
+
+                // Rule 8: Star chain detection — tracking hops create parallel chains of discrete dots.
+                // Each dot looks like a real star (round, good FWHM), but the spatial pattern
+                // (many parallel short chains scattered across the frame) is unmistakable.
+                // Detection runs in StarMetricsCalculator on all refined star positions.
+                if garbageReason == nil, let chainFrac = entry.starChainFraction, chainFrac > 0.25 {
+                    garbageReason = .trackingHop
                 }
 
                 // Cap individual z-scores at ±3 for display consistency.

@@ -18,6 +18,10 @@ struct StarMetrics {
     let medianEccentricity: Double?  // Median star eccentricity [0..1], nil if < 5 measured
     // Per-star details for problem visualization and trailing consensus analysis
     let starDetails: [StarDetail]
+    // Fraction of stars participating in parallel close-neighbor chains [0..1].
+    // Tracking hops create chains of discrete dots — each dot looks round,
+    // but the spatial pattern (many parallel short chains) is unmistakable.
+    let starChainFraction: Double
 }
 
 // Result of 2D moment analysis on a single star: eccentricity + position angle + axis ratio
@@ -157,6 +161,10 @@ enum StarMetricsCalculator {
         let medianHFR = hfrValues[hfrValues.count / 2]
         let medianFWHM = fwhmValues[fwhmValues.count / 2]
 
+        // ── Star chain detection: tracking hop pattern (parallel short chains) ──
+        // Must run after Pass 1 (needs medianFWHM) and on all refined stars (before crowding filter).
+        let chainFraction = detectStarChains(stars: refinedClean, medianFWHM: medianFWHM)
+
         // ── Pass 2: Compute eccentricity with FWHM-adaptive aperture ──
         // Use median FWHM to determine a consistent aperture across all stars in this image.
         // This captures the full PSF wings where trailing is visible.
@@ -238,8 +246,110 @@ enum StarMetricsCalculator {
             measuredStarCount: totalDetected,
             totalStarCount: correctedTotal,
             medianEccentricity: medianEcc,
-            starDetails: details
+            starDetails: details,
+            starChainFraction: chainFraction
         )
+    }
+
+    // MARK: - Star Chain Detection (tracking hop pattern)
+
+    /// Detect tracking hop pattern: many stars have close neighbors aligned in parallel directions.
+    /// When a mount has periodic error or loses tracking briefly, each real star becomes a chain
+    /// of 3-10 discrete dots. Each dot looks like a real star (round, good FWHM), but the spatial
+    /// pattern — many parallel short chains scattered across the frame — is unmistakable.
+    ///
+    /// Algorithm: find ALL close pairs (not just nearest neighbor), compute connecting directions,
+    /// and check for directional consensus. In normal images, close pairs are rare and have random
+    /// directions. In tracking-hop images, many close pairs exist and all point the same way.
+    ///
+    /// Returns the fraction of stars participating in consensus-direction close pairs [0..1].
+    /// Values > 0.25 indicate tracking hops. Values near 0 indicate normal star field.
+    private static func detectStarChains(
+        stars: [DetectedStar], medianFWHM: Double
+    ) -> Double {
+        let n = stars.count
+        guard n >= 10 else { return 0 }
+
+        // Close neighbor threshold: mount PE at 2455mm FL with 3.76µm pixels
+        // creates gaps of 30-100+ pixels between chain dots. Use generous threshold
+        // to catch various PE magnitudes. Normal star-to-star distances in a 50-star
+        // field of 9576x6388 average ~1100px, so 120px is still highly discriminating.
+        let closeThreshold = max(80.0, Float(medianFWHM) * 12.0)
+        let closeThresholdSq = closeThreshold * closeThreshold
+
+        // PA tolerance for consensus: close pairs within this range count as "agreeing"
+        let consensusToleranceDeg = 25.0
+
+        // Find ALL close pairs (not just nearest neighbor) — captures more chain evidence.
+        // Each star can have multiple close neighbors from the same or different chains.
+        // Dedup by only recording pairs where i < j to avoid double-counting.
+        struct ClosePair {
+            let starIdxA: Int
+            let starIdxB: Int
+            let pa: Double         // Position angle of connecting vector [0..180°)
+        }
+        var closePairs: [ClosePair] = []
+
+        for i in 0..<n {
+            for j in (i + 1)..<n {
+                let dx = stars[j].x - stars[i].x
+                let dy = stars[j].y - stars[i].y
+                let distSq = dx * dx + dy * dy
+                if distSq < closeThresholdSq && distSq > 4.0 {  // Min 2px apart (not same detection)
+                    var pa = atan2(Double(dy), Double(dx)) * 180.0 / .pi
+                    if pa < 0 { pa += 180.0 }
+                    if pa >= 180.0 { pa -= 180.0 }
+                    closePairs.append(ClosePair(starIdxA: i, starIdxB: j, pa: pa))
+                }
+            }
+        }
+
+        guard closePairs.count >= 3 else { return 0 }
+
+        // Circular statistics on close-pair PAs (doubled-angle method, same as TrailingAnalyzer)
+        let doubled = closePairs.map { $0.pa * 2.0 * .pi / 180.0 }
+        let sumSin = doubled.map { sin($0) }.reduce(0, +)
+        let sumCos = doubled.map { cos($0) }.reduce(0, +)
+        let count = Double(doubled.count)
+
+        // Resultant vector length R: 0 = random PAs, 1 = all same direction
+        let R = ((sumSin * sumSin + sumCos * sumCos).squareRoot()) / count
+
+        // Require minimum consensus strength — random close pairs in dense fields
+        // will have low R. Threshold 0.35 is lenient enough for partial chain visibility.
+        guard R > 0.35 else { return 0 }
+
+        // Compute circular mean PA
+        var meanDoubled = atan2(sumSin / count, sumCos / count)
+        if meanDoubled < 0 { meanDoubled += 2.0 * .pi }
+        let consensusPA = meanDoubled * 0.5 * 180.0 / .pi
+
+        // Count stars that participate in consensus-direction close pairs
+        var consensusStarIndices = Set<Int>()
+        for pair in closePairs {
+            let d = Swift.abs(pair.pa - consensusPA)
+            let diff = min(d, 180.0 - d)
+            if diff < consensusToleranceDeg {
+                consensusStarIndices.insert(pair.starIdxA)
+                consensusStarIndices.insert(pair.starIdxB)
+            }
+        }
+
+        let chainFraction = Double(consensusStarIndices.count) / Double(n)
+
+        // Also require that a significant fraction of close pairs agree
+        let agreeingPairs = closePairs.filter { pair in
+            let d = Swift.abs(pair.pa - consensusPA)
+            return min(d, 180.0 - d) < consensusToleranceDeg
+        }.count
+        let pairConsensusFraction = Double(agreeingPairs) / Double(closePairs.count)
+
+        // Both conditions must hold: many stars in chains AND strong directional consensus
+        // Lower pairConsensus threshold (0.3) because with all-pairs approach, there are
+        // more cross-chain pairs that don't align but are still within threshold distance
+        guard pairConsensusFraction > 0.3 else { return 0 }
+
+        return chainFraction
     }
 
     // MARK: - Satellite Trail Detection (collinear point pattern)

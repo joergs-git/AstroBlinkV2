@@ -42,6 +42,15 @@ final class BatchQualityAnalysisTests: XCTestCase {
         try analyzeSetup(name: "M82", path: setupDir)
     }
 
+    /// Analyze M82-January setup (64 images with tracking hops — should be flagged as garbage)
+    func testAnalyzeM82January() throws {
+        let setupDir = testDataRoot + "/M82-January"
+        guard FileManager.default.fileExists(atPath: setupDir) else {
+            throw XCTSkip("M82-January test data not available at \(setupDir)")
+        }
+        try analyzeSetup(name: "M82-January", path: setupDir)
+    }
+
     /// Analyze ALL setups under QUALITYCHECKDATA
     func testAnalyzeAllSetups() throws {
         let fm = FileManager.default
@@ -197,6 +206,7 @@ final class BatchQualityAnalysisTests: XCTestCase {
             entry.computedStarCount = m.measuredStarCount > 0 ? m.totalStarCount : nil
             entry.computedEccentricity = m.medianEccentricity
             entry.starDetails = m.starDetails
+            entry.starChainFraction = m.starChainFraction
         }
 
         // Step 6: Trailing analysis (consensus-based, FL-adaptive)
@@ -286,7 +296,8 @@ final class BatchQualityAnalysisTests: XCTestCase {
         let fwhm = entry.displayFWHM.map { String(format: "%.2f", $0) } ?? "n/a"
         let ecc = entry.computedEccentricity.map { String(format: "%.3f", $0) } ?? "n/a"
         let trail = entry.trailingScore.map { String(format: "%.2f", $0) } ?? "n/a"
-        print("    Stars:\(entry.displayStarCount ?? 0) FWHM:\(fwhm) SNR:\(snr) Ecc:\(ecc) Trail:\(trail)")
+        let chain = entry.starChainFraction.map { String(format: "%.2f", $0) } ?? "n/a"
+        print("    Stars:\(entry.displayStarCount ?? 0) FWHM:\(fwhm) SNR:\(snr) Ecc:\(ecc) Trail:\(trail) Chain:\(chain)")
 
         return PerImageData(
             entry: entry,
@@ -406,7 +417,7 @@ final class BatchQualityAnalysisTests: XCTestCase {
     private func buildCSV(entries: [ImageEntry], perImageData: [URL: PerImageData]) -> String {
         let header = [
             "filename", "filter", "night", "stars", "fwhm", "hfr", "snr", "ecc",
-            "trailingScore", "trailingConsensus", "noiseMedian", "noiseMAD",
+            "trailingScore", "trailingConsensus", "starChainFraction", "noiseMedian", "noiseMAD",
             "qualityTier", "combinedZ", "starsZ", "fwhmZ", "hfrZ", "noiseZ", "trailingZ",
             "garbageReason", "snrContrib", "isNarrowband", "starWeight"
         ].joined(separator: ",")
@@ -436,6 +447,7 @@ final class BatchQualityAnalysisTests: XCTestCase {
                 entry.computedEccentricity.map { String(format: "%.4f", $0) } ?? "",
                 entry.trailingScore.map { String(format: "%.4f", $0) } ?? "",
                 entry.trailingConsensus.map { String(format: "%.4f", $0) } ?? "",
+                entry.starChainFraction.map { String(format: "%.4f", $0) } ?? "",
                 entry.noiseMedian.map { String(format: "%.6f", $0) } ?? "",
                 entry.noiseMAD.map { String(format: "%.6f", $0) } ?? "",
                 bd.map { tierLabel($0.tier) } ?? "",

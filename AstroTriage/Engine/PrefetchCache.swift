@@ -152,7 +152,8 @@ class PrefetchCache {
                             medianHFR: 0, medianFWHM: 0,
                             measuredStarCount: 0, totalStarCount: totalStarCount,
                             medianEccentricity: nil,
-                            starDetails: []
+                            starDetails: [],
+                            starChainFraction: 0
                         )
                         Task { @MainActor in onStarMetrics(url, finalMetrics) }
                     }
@@ -311,7 +312,8 @@ class PrefetchCache {
                                 medianHFR: 0, medianFWHM: 0,
                                 measuredStarCount: 0, totalStarCount: totalStarCount,
                                 medianEccentricity: nil,
-                                starDetails: []
+                                starDetails: [],
+                                starChainFraction: 0
                             )
                             Task { @MainActor in onStarMetrics(url, finalMetrics) }
                         }

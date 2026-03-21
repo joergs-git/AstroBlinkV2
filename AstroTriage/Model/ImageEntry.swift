@@ -74,6 +74,9 @@ struct ImageEntry: Identifiable, Hashable {
     var trailingAxisRatio: Double?     // Median minor/major axis ratio (1 = round, 0 = line)
     var trailingConsensus: Double?     // Fraction of stars agreeing on PA direction [0..1]
 
+    // Star chain detection (tracking hop pattern)
+    var starChainFraction: Double?     // Fraction of stars in parallel close-neighbor chains [0..1]
+
     // Pixel scale for display (computed from focal length + pixel size)
     var arcsecPerPixel: Double? {
         guard let fl = focalLength, fl > 0, let px = pixelSizeMicrons, px > 0 else { return nil }

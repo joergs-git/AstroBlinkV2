@@ -945,6 +945,7 @@ class TriageViewModel: ObservableObject {
                     if metrics.medianFWHM > 0 { self.images[idx].computedFWHM = metrics.medianFWHM }
                     self.images[idx].computedStarCount = metrics.totalStarCount
                     self.images[idx].computedEccentricity = metrics.medianEccentricity
+                    self.images[idx].starChainFraction = metrics.starChainFraction
                     if !metrics.starDetails.isEmpty {
                         self.images[idx].starDetails = metrics.starDetails
                     }
