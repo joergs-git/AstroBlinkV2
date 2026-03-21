@@ -67,6 +67,28 @@ class TriageViewModel: ObservableObject {
     @Published var cachingTotal: Int = 0
     @Published var isCaching: Bool = false
 
+    // Time estimates for loading and caching progress bars
+    @Published var headerEstimatedSecondsRemaining: Int?
+    @Published var cachingEstimatedSecondsRemaining: Int?
+    var headerReadStartTime: Date?
+    var cachingStartTime: Date?
+
+    // Network file download progress (separate from header reading — runs concurrently)
+    // Callback to update thread-safe URL map in the prefetch pipeline
+    var networkURLUpdater: ((URL, URL) -> Void)?
+    // Cancellation flag for network downloads (checked per-file in concurrentPerform)
+    private let downloadCancelled = NSLock()
+    private var _downloadCancelled = false
+    @Published var isDownloading: Bool = false
+    @Published var downloadCount: Int = 0
+    @Published var downloadTotal: Int = 0
+    @Published var downloadProgress: Double = 0
+    @Published var downloadEstimatedSecondsRemaining: Int?
+    var downloadStartTime: Date?
+
+    // Scroll file list to top after loading a new session
+    @Published var needsScrollToTop: Bool = false
+
     // Triggers a table reload in updateNSView (for checkbox/mark changes)
     @Published var needsTableRefresh: Bool = false
     // Force single selection after filter toggle (prevents multi-selection carryover)
@@ -297,17 +319,28 @@ class TriageViewModel: ObservableObject {
         let query = filterText.trimmingCharacters(in: .whitespaces)
         guard !query.isEmpty else { return true }
 
-        // Check for "column:value" syntax (e.g. "filter:Ha", "fwhm:>4.0")
+        // Check for "column:value" syntax (e.g. "filter:Ha", "fwhm:>4.0", "q:trash")
         if let colonIdx = query.firstIndex(of: ":") {
             let prefix = String(query[query.startIndex..<colonIdx]).lowercased()
-            let value = String(query[query.index(after: colonIdx)...]).trimmingCharacters(in: .whitespaces)
+            let value = String(query[query.index(after: colonIdx)...]).trimmingCharacters(in: .whitespaces).lowercased()
+
+            // Quality tier filter: q:trash, q:borderline, q:good, q:excellent (+ color aliases)
+            if (prefix == "q" || prefix == "quality") && !value.isEmpty {
+                return matchesQualityFilter(entry, query: value)
+            }
+
+            // Trailing score filter: trail:>0.5
+            if (prefix == "trail" || prefix == "trailing") && !value.isEmpty {
+                guard let score = entry.trailingScore else { return false }
+                return matchesNumericValue(score, query: value)
+            }
 
             if let columnId = Self.columnAliases[prefix], !value.isEmpty {
                 if ColumnDefinition.isNumericColumn(columnId) {
                     return matchesNumericFilter(entry, column: columnId, query: value)
                 } else {
                     return ColumnDefinition.value(for: columnId, from: entry)
-                        .lowercased().contains(value.lowercased())
+                        .lowercased().contains(value)
                 }
             }
         }
@@ -363,6 +396,38 @@ class TriageViewModel: ObservableObject {
         default:
             // Approximate equality for floating point comparison
             return Swift.abs(entryValue - threshold) < 0.001
+        }
+    }
+
+    // Match quality tier by name or color alias
+    private func matchesQualityFilter(_ entry: ImageEntry, query: String) -> Bool {
+        guard let tier = entry.qualityTier else { return query == "unscored" }
+        switch query {
+        case "trash", "red":        return tier == .trash
+        case "borderline", "orange": return tier == .borderline
+        case "good", "yellow":      return tier == .good
+        case "excellent", "green":  return tier == .excellent
+        case "unscored":            return false  // has a tier, so not unscored
+        default:                    return false
+        }
+    }
+
+    // Match a raw numeric value against ">X", "<X", ">=X", "<=X", or "=X" query
+    private func matchesNumericValue(_ value: Double, query: String) -> Bool {
+        var op = ">"
+        var numStr = query
+        if query.hasPrefix(">=")      { op = ">="; numStr = String(query.dropFirst(2)) }
+        else if query.hasPrefix("<=") { op = "<="; numStr = String(query.dropFirst(2)) }
+        else if query.hasPrefix(">")  { op = ">";  numStr = String(query.dropFirst(1)) }
+        else if query.hasPrefix("<")  { op = "<";  numStr = String(query.dropFirst(1)) }
+        else if query.hasPrefix("=")  { op = "=";  numStr = String(query.dropFirst(1)) }
+        guard let threshold = Double(numStr.trimmingCharacters(in: .whitespaces)) else { return false }
+        switch op {
+        case ">":  return value > threshold
+        case "<":  return value < threshold
+        case ">=": return value >= threshold
+        case "<=": return value <= threshold
+        default:   return Swift.abs(value - threshold) < 0.001
         }
     }
 
@@ -590,6 +655,8 @@ class TriageViewModel: ObservableObject {
 
         sessionRootURL = rootURL
         prefetchCache?.clear()
+        downloadCancelled.lock(); _downloadCancelled = true; downloadCancelled.unlock()
+        isDownloading = false; isCaching = false
 
         statusMessage = "Loading \(imageURLs.count) files..."
 
@@ -640,6 +707,7 @@ class TriageViewModel: ObservableObject {
 
                 if !entries.isEmpty {
                     self.selectImage(at: 0)
+                    self.needsScrollToTop = true
                 }
 
                 self.sessionOverviewModel.updateStats(from: entries)
@@ -688,6 +756,8 @@ class TriageViewModel: ObservableObject {
         sessionRootURL = rootURL
         accessedURL = urls[0]  // Keep first one for PRE-DELETE operations
         prefetchCache?.clear()
+        downloadCancelled.lock(); _downloadCancelled = true; downloadCancelled.unlock()
+        isDownloading = false; isCaching = false
 
         let folderNames = urls.map { $0.lastPathComponent }.joined(separator: ", ")
         statusMessage = "Scanning \(urls.count) folders: \(folderNames)..."
@@ -712,6 +782,7 @@ class TriageViewModel: ObservableObject {
 
                 if !allEntries.isEmpty {
                     self.selectImage(at: 0)
+                    self.needsScrollToTop = true
                 }
 
                 self.sessionOverviewModel.updateStats(from: allEntries)
@@ -741,6 +812,12 @@ class TriageViewModel: ObservableObject {
 
         sessionRootURL = url
         prefetchCache?.clear()
+        // Cancel any in-progress NAS downloads
+        downloadCancelled.lock()
+        _downloadCancelled = true
+        downloadCancelled.unlock()
+        isDownloading = false
+        isCaching = false
 
         let accessed = url.startAccessingSecurityScopedResource()
         if accessed { accessedURL = url }
@@ -759,6 +836,7 @@ class TriageViewModel: ObservableObject {
 
                 if !entries.isEmpty {
                     self.selectImage(at: 0)
+                    self.needsScrollToTop = true
                 }
 
                 // Show both side panels with session data
@@ -771,8 +849,10 @@ class TriageViewModel: ObservableObject {
 
                 if isNetwork {
                     self.statusMessage = "Downloading \(entries.count) images to local cache..."
-                    // Enrich headers so metadata columns populate and loading overlay dismisses
-                    self.enrichWithHeaders()
+                    // Clear scanning overlay — download fuel bar takes over from here
+                    self.loadingPhase = .none
+                    // Header enrichment deferred to after downloads complete — reading headers
+                    // from local SSD cache is 100x faster than reading from NAS over SMB
                 } else {
                     // Check memory budget — if over budget, shows alert and calls back
                     self.checkMemoryBudgetAndCache(for: entries)
@@ -787,10 +867,9 @@ class TriageViewModel: ObservableObject {
             }
 
             if isNetwork {
+                // Interleaved pipeline: cacheNetworkFiles starts pre-caching
+                // automatically after first 4 files download — no separate triggerApplyAll
                 await self?.cacheNetworkFiles()
-                await MainActor.run {
-                    self?.triggerApplyAll()
-                }
             }
         }
     }
@@ -876,6 +955,8 @@ class TriageViewModel: ObservableObject {
         cachingTotal = images.count
         cachingCount = 0
         cacheProgress = 0
+        cachingStartTime = Date()
+        cachingEstimatedSecondsRemaining = nil
 
         // Disable App Nap during caching so background processing continues
         appNapAssertion = ProcessInfo.processInfo.beginActivity(
@@ -909,12 +990,21 @@ class TriageViewModel: ObservableObject {
                 // Refresh table periodically so cache checkmarks appear (every 4 images)
                 if completed % 4 == 0 || completed == total {
                     self.needsTableRefresh = true
+                    // Compute caching time estimate after 20 items
+                    if completed >= 20, let startTime = self.cachingStartTime {
+                        let elapsed = Date().timeIntervalSince(startTime)
+                        let avgPerItem = elapsed / Double(completed)
+                        let remaining = Int(avgPerItem * Double(total - completed))
+                        self.cachingEstimatedSecondsRemaining = max(1, remaining)
+                    }
                 }
 
                 if completed < total {
                     self.statusMessage = "Pre-caching \(completed)/\(total)..."
                 } else {
                     self.isCaching = false
+                    self.cachingEstimatedSecondsRemaining = nil
+                    self.cachingStartTime = nil
                     self.needsTableRefresh = true
                     self.statusMessage = "instant navigation ready"
                     self.benchmarkStats.markCachingEnd()
@@ -990,8 +1080,9 @@ class TriageViewModel: ObservableObject {
         startFullPrefetch()
     }
 
-    // Cache all image files from network to local disk using parallel streams
-    // 4 concurrent copies to saturate 10GbE / multi-stream SMB connections
+    // Interleaved NAS pipeline: download files and pre-cache concurrently.
+    // As each file downloads to local SSD, it becomes available for pre-caching.
+    // Pre-caching starts after the first 4 files are downloaded.
     private func cacheNetworkFiles() async {
         guard let rootURL = sessionRootURL else { return }
         sessionCache.prepareSession(rootURL: rootURL)
@@ -999,19 +1090,49 @@ class TriageViewModel: ObservableObject {
         let total = images.count
         let sourceURLs = images.map { $0.url }
 
-        // Thread-safe results array
-        let results = UnsafeMutableBufferPointer<URL?>.allocate(capacity: total)
-        results.initialize(repeating: nil)
-        let progressCounter = NSLock()
-        var progressCount = 0
+        // Reset cancellation flag for new download session
+        downloadCancelled.lock()
+        _downloadCancelled = false
+        downloadCancelled.unlock()
+
+        // Set up dedicated download fuel bar
+        isDownloading = true
+        downloadCount = 0
+        downloadTotal = total
+        downloadProgress = 0
+        downloadStartTime = Date()
+        downloadEstimatedSecondsRemaining = nil
 
         let sessionCacheRef = sessionCache
+        let progressCounter = NSLock()
+        var progressCount = 0
+        var precacheStarted = false
 
-        // Parallel copy with 4 concurrent streams (SSD/NAS sweet spot)
-        await Task.detached(priority: .utility) {
+        // Parallel download with 4 concurrent streams
+        let cancelledRef = self.downloadCancelled
+        var cancelledFlag: Bool { cancelledRef.lock(); defer { cancelledRef.unlock() }; return self._downloadCancelled }
+
+        await Task.detached(priority: .utility) { [weak self] in
             DispatchQueue.concurrentPerform(iterations: total) { index in
+                // Early exit if session changed (user opened another folder)
+                self?.downloadCancelled.lock()
+                let cancelled = self?._downloadCancelled ?? true
+                self?.downloadCancelled.unlock()
+                guard !cancelled else { return }
+
                 let localURL = sessionCacheRef.cacheFile(sourceURL: sourceURLs[index])
-                results[index] = localURL
+
+                // Update decodingURL + thread-safe URL map for prefetch pipeline
+                if let localURL = localURL {
+                    Task { @MainActor [weak self] in
+                        guard let self = self, index < self.images.count else { return }
+                        self.images[index].decodingURL = localURL
+                    }
+                    // Update thread-safe URL map (no main-thread hop needed)
+                    Task { @MainActor [weak self] in
+                        self?.networkURLUpdater?(sourceURLs[index], localURL)
+                    }
+                }
 
                 progressCounter.lock()
                 progressCount += 1
@@ -1020,25 +1141,191 @@ class TriageViewModel: ObservableObject {
 
                 if current % 4 == 0 || current == total {
                     Task { @MainActor [weak self] in
-                        self?.statusMessage = "Downloading to local cache \(current)/\(total)..."
+                        guard let self = self else { return }
+                        self.downloadCount = current
+                        self.downloadTotal = total
+                        self.downloadProgress = total > 0 ? Double(current) / Double(total) : 0
+                        // Time estimate after 20 files
+                        if current >= 20, let startTime = self.downloadStartTime {
+                            let elapsed = Date().timeIntervalSince(startTime)
+                            let avgPerItem = elapsed / Double(current)
+                            let remaining = Int(avgPerItem * Double(total - current))
+                            self.downloadEstimatedSecondsRemaining = max(1, remaining)
+                        }
+
+                        // Start pre-caching after first 4 files are downloaded
+                        if !precacheStarted && current >= 4 {
+                            precacheStarted = true
+                            self.applyAllEnabled = true
+                            self.startFullPrefetchInterleaved()
+                        }
                     }
                 }
             }
         }.value
 
-        // Apply all cached URLs in one batch on main actor
-        for index in 0..<total {
-            if let localURL = results[index], index < images.count {
-                images[index].decodingURL = localURL
-            }
+        isDownloading = false
+        downloadEstimatedSecondsRemaining = nil
+        downloadStartTime = nil
+        networkURLUpdater = nil  // Release closure + captured URL map
+
+        // Bail out if session was cancelled (user opened another folder)
+        downloadCancelled.lock()
+        let wasCancelled = _downloadCancelled
+        downloadCancelled.unlock()
+        guard !wasCancelled else { return }
+
+        // If fewer than 4 files (small session), start prefetch now
+        if !precacheStarted {
+            applyAllEnabled = true
+            triggerApplyAll()
         }
 
-        results.deallocate()
-        statusMessage = "ready"
+        // Now that files are local, enrich headers from SSD cache (instant vs NAS)
+        // This populates filter, gain, temp, etc. from FITS/XISF headers
+        enrichWithHeaders()
 
         Task.detached(priority: .background) {
             SessionCache.cleanupOldCaches()
         }
+    }
+
+    // Start pre-caching with late URL resolution for interleaved NAS pipeline.
+    // Operations resolve decodingURL at execution time, so they use the local
+    // cache file even if it was downloaded after the operation was created.
+    private func startFullPrefetchInterleaved() {
+        guard let prefetchCache = prefetchCache else { return }
+
+        // Update applied settings so cacheMatchesCurrentSettings returns true
+        // after prefetch completes (same as triggerApplyAll does)
+        appliedStretch = stretchStrength
+        appliedSharpening = sharpening
+        appliedContrast = contrast
+        appliedDarkLevel = darkLevel
+        appliedLocked = isSTFLocked
+
+        benchmarkStats.markCachingStart()
+        isCaching = true
+        cachingStopped = false
+        cachingTotal = images.count
+        cachingCount = 0
+        cacheProgress = 0
+        cachingStartTime = Date()
+        cachingEstimatedSecondsRemaining = nil
+
+        appNapAssertion = ProcessInfo.processInfo.beginActivity(
+            options: [.userInitiated, .idleSystemSleepDisabled],
+            reason: "Pre-caching astrophotography images"
+        )
+
+        let targetBg: Float? = abs(appliedStretch - STFCalculator.defaultTargetBackground) > 0.001
+            ? appliedStretch : nil
+        let lockedParams: [STFParams]? = appliedLocked ? renderer?.lockedSTFParams : nil
+        let ppParams: (sharpening: Float, contrast: Float, darkLevel: Float)?
+        if abs(appliedSharpening) > 0.001 || abs(appliedContrast) > 0.001 || appliedDarkLevel > 0.001 {
+            ppParams = (appliedSharpening, appliedContrast, appliedDarkLevel)
+        } else {
+            ppParams = nil
+        }
+
+        // Thread-safe URL lookup for late resolution — avoids DispatchQueue.main.sync
+        // bottleneck that would serialize background operations.
+        // Downloads update this dictionary as files arrive; prefetch reads it lock-free-ish.
+        let urlLock = NSLock()
+        var urlMap: [URL: URL] = [:]
+        for entry in images {
+            urlMap[entry.url] = entry.decodingURL
+        }
+        // Expose updater for download callback
+        networkURLUpdater = { url, localURL in
+            urlLock.lock()
+            urlMap[url] = localURL
+            urlLock.unlock()
+        }
+
+        let resolveURL: (URL) -> URL = { originalURL in
+            urlLock.lock()
+            let resolved = urlMap[originalURL] ?? originalURL
+            urlLock.unlock()
+            return resolved
+        }
+
+        prefetchCache.prefetchAll(
+            images: images,
+            debayerEnabled: debayerEnabled,
+            targetBackground: lockedParams != nil ? nil : targetBg,
+            lockedSTFParams: lockedParams,
+            postProcessParams: ppParams,
+            resolveDecodingURL: resolveURL,
+            onProgress: { [weak self] completed, total in
+                guard let self = self else { return }
+                self.cachingCount = completed
+                self.cachingTotal = total
+                self.cacheProgress = total > 0 ? Double(completed) / Double(total) : 0
+
+                if completed % 4 == 0 || completed == total {
+                    self.needsTableRefresh = true
+                    if completed >= 20, let startTime = self.cachingStartTime {
+                        let elapsed = Date().timeIntervalSince(startTime)
+                        let avgPerItem = elapsed / Double(completed)
+                        let remaining = Int(avgPerItem * Double(total - completed))
+                        self.cachingEstimatedSecondsRemaining = max(1, remaining)
+                    }
+                }
+
+                if completed < total {
+                    self.statusMessage = "Pre-caching \(completed)/\(total)..."
+                } else {
+                    self.isCaching = false
+                    self.cachingEstimatedSecondsRemaining = nil
+                    self.cachingStartTime = nil
+                    self.needsTableRefresh = true
+                    self.statusMessage = "instant navigation ready"
+                    self.benchmarkStats.markCachingEnd()
+                    self.appNapAssertion = nil
+                    // Don't compute quality scores here — header enrichment hasn't run yet
+                    // for NAS sessions. enrichWithHeaders() completion handles quality scoring
+                    // + session overview update after all header data is available.
+                    if !self.images.isEmpty {
+                        self.selectImage(at: 0)
+                    }
+                }
+            },
+            onNoiseStats: { [weak self] url, stats in
+                guard let self = self else { return }
+                if let idx = self.images.firstIndex(where: { $0.url == url }) {
+                    self.images[idx].noiseMedian = stats.median
+                    self.images[idx].noiseMAD = stats.normalizedMAD
+                }
+            },
+            onStarMetrics: { [weak self] url, metrics in
+                guard let self = self else { return }
+                if let idx = self.images.firstIndex(where: { $0.url == url }) {
+                    if metrics.medianHFR > 0 { self.images[idx].computedHFR = metrics.medianHFR }
+                    if metrics.medianFWHM > 0 { self.images[idx].computedFWHM = metrics.medianFWHM }
+                    self.images[idx].computedStarCount = metrics.totalStarCount
+                    self.images[idx].computedEccentricity = metrics.medianEccentricity
+                    self.images[idx].starChainFraction = metrics.starChainFraction
+                    if !metrics.starDetails.isEmpty {
+                        self.images[idx].starDetails = metrics.starDetails
+                    }
+                    // Trailing analysis
+                    if !metrics.starDetails.isEmpty {
+                        let trailing = TrailingAnalyzer.analyze(
+                            starDetails: metrics.starDetails,
+                            focalLength: self.images[idx].focalLength,
+                            pixelSizeMicrons: self.images[idx].pixelSizeMicrons
+                        )
+                        if let t = trailing {
+                            self.images[idx].trailingScore = t.trailingScore
+                            self.images[idx].trailingPA = t.consensusPA
+                            self.images[idx].trailingAxisRatio = t.medianAxisRatio
+                            self.images[idx].trailingConsensus = t.consensusFraction
+                        }
+                    }
+                }
+            }
+        )
     }
 
     // MARK: - Background Header Enrichment
@@ -1055,13 +1342,18 @@ class TriageViewModel: ObservableObject {
 
     private func enrichWithHeaders() {
         headerEnrichmentTask?.cancel()
+        // Use decodingURL for actual file I/O (points to local cache for NAS files)
+        // but keep original url as the dictionary key for matching
         let urls = images.map { $0.url }
+        let readURLs = images.map { $0.decodingURL }
         let total = urls.count
         loadingPhase = .readingHeaders
         benchmarkStats.markHeaderEnrichStart()
         headerReadCount = 0
         headerReadTotal = total
         headerProgress = 0
+        headerReadStartTime = Date()
+        headerEstimatedSecondsRemaining = nil
 
         // Cap concurrency: ~8 for local SSD (queue depth), ~4 for network
         let concurrency = min(8, ProcessInfo.processInfo.activeProcessorCount)
@@ -1074,7 +1366,7 @@ class TriageViewModel: ObservableObject {
             var progressCount = 0
 
             DispatchQueue.concurrentPerform(iterations: total) { index in
-                let headers = MetadataExtractor.readHeaders(from: urls[index])
+                let headers = MetadataExtractor.readHeaders(from: readURLs[index])
                 headerLock.lock()
                 allHeaders[index] = headers
                 headerLock.unlock()
@@ -1090,21 +1382,33 @@ class TriageViewModel: ObservableObject {
                         guard let self = self else { return }
                         self.headerReadCount = currentProgress
                         self.headerProgress = total > 0 ? Double(currentProgress) / Double(total) : 0
+                        // Compute time estimate after 20 items (enough for stable average)
+                        if currentProgress >= 20, let startTime = self.headerReadStartTime {
+                            let elapsed = Date().timeIntervalSince(startTime)
+                            let avgPerItem = elapsed / Double(currentProgress)
+                            let remaining = Int(avgPerItem * Double(total - currentProgress))
+                            self.headerEstimatedSecondsRemaining = max(1, remaining)
+                        }
                     }
                 }
             }
 
-            // Apply all headers in one batch on main actor
+            // Apply all headers in one batch on main actor.
+            // Use URL-based lookup instead of index-based to handle reordering:
+            // images may get sorted by quality scoring while headers are being read.
+            var headersByURL: [URL: [String: String]] = [:]
+            headersByURL.reserveCapacity(total)
+            for index in 0..<total {
+                let headers = allHeaders[index]
+                if !headers.isEmpty { headersByURL[urls[index]] = headers }
+            }
+
             await MainActor.run {
                 guard let self = self else { return }
                 var foundOSC = false
 
-                for index in 0..<total {
-                    guard index < self.images.count,
-                          self.images[index].url == urls[index] else { continue }
-
-                    let headers = allHeaders[index]
-                    guard !headers.isEmpty else { continue }
+                for index in self.images.indices {
+                    guard let headers = headersByURL[self.images[index].url] else { continue }
 
                     // Apply header values (authoritative over filename)
                     if let filter = headers["FILTER"], !filter.isEmpty {
@@ -1240,6 +1544,8 @@ class TriageViewModel: ObservableObject {
 
                 self.needsTableRefresh = true
                 self.loadingPhase = .none
+                self.headerEstimatedSecondsRemaining = nil
+                self.headerReadStartTime = nil
                 self.benchmarkStats.markHeaderEnrichEnd()
                 self.sessionOverviewModel.updateStats(from: self.images)
                 self.hasOSCImages = foundOSC
@@ -2233,6 +2539,23 @@ class TriageViewModel: ObservableObject {
         needsTableRefresh = true
         statusMessage = "Unmarked \(count) images"
         recomputeSNRRetention()
+    }
+
+    // Clear all deletion marks across the entire session
+    func unmarkAll() {
+        var count = 0
+        for i in images.indices where images[i].isMarkedForDeletion {
+            images[i].isMarkedForDeletion = false
+            count += 1
+        }
+        guard count > 0 else {
+            statusMessage = "No marks to clear"
+            return
+        }
+        needsTableRefresh = true
+        recomputeSNRRetention()
+        updateConvergence()
+        statusMessage = "Cleared \(count) marks"
     }
 
     // MARK: - Skip/Hide Marked

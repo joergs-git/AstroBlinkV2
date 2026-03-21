@@ -36,12 +36,28 @@ class PreviewViewController: NSViewController, QLPreviewingController {
             }
 
             // Decode the image file via C bridge
-            guard let imageData = QuickLookDecoder.decode(url: url) else {
+            guard let rawData = QuickLookDecoder.decode(url: url) else {
                 logger.error("Decode failed for \(url.lastPathComponent)")
                 handler(QuickLookError.decodeFailed)
                 return
             }
-            defer { imageData.free() }
+
+            // Debayer OSC images: if mono + BAYERPAT header, convert to RGB
+            let imageData: QuickLookImageData
+            var debayeredData: QuickLookImageData?
+            if rawData.channelCount == 1,
+               let pattern = QuickLookDebayer.readBayerPattern(url: url),
+               let rgb = QuickLookDebayer.debayer(pixels: rawData.pixels, width: rawData.width, height: rawData.height, pattern: pattern) {
+                debayeredData = rgb
+                imageData = rgb
+                rawData.free()
+            } else {
+                imageData = rawData
+            }
+            defer {
+                if debayeredData != nil { debayeredData?.free() }
+                else { imageData.free() }
+            }
 
             // Calculate STF parameters for auto-stretch
             let stfParams = QuickLookSTF.calculate(

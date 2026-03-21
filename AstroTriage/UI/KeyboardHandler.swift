@@ -169,6 +169,12 @@ struct KeyboardHandler {
             return true
         }
 
+        // U: Unmark all — clear all deletion marks across the session
+        if modifiers.isEmpty, chars == "u" {
+            Task { @MainActor in viewModel.unmarkAll() }
+            return true
+        }
+
         // S: Toggle Lock STF (freeze exact stretch params from current image)
         if modifiers.isEmpty, chars == "s" {
             Task { @MainActor in viewModel.toggleLockSTF() }

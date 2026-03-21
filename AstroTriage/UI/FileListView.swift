@@ -226,6 +226,15 @@ struct FileListView: NSViewRepresentable {
             }
         }
 
+        // Scroll to top on new session load
+        if viewModel.needsScrollToTop {
+            viewModel.needsScrollToTop = false
+            if newCount > 0 {
+                tableView.scrollRowToVisible(0)
+                tableView.selectRowIndexes(IndexSet(integer: 0), byExtendingSelection: false)
+            }
+        }
+
         // Sync selection from viewModel — map to visible index when filtering.
         // Disable scroll animation during programmatic changes to prevent flicker
         // when holding arrow keys (rapid key repeat fights NSTableView's scroll animation).

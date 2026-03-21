@@ -108,6 +108,7 @@ struct AIsaacSessionContext {
     let isConverged: Bool
     let isCaching: Bool
     let scoredCount: Int  // frames with quality scores computed
+    let loadingStatus: String?  // Human-readable loading/caching status for AIsaac context
 
     // Per-frame metrics for deep analysis (compact representation)
     let frameMetrics: [FrameMetric]
@@ -199,6 +200,7 @@ class AIsaacModel: ObservableObject {
     var onSkipMarked: (() -> Void)?                     // toggle skip marked during nav
     var onMarkCurrent: (() -> Void)?                    // toggle mark on current image
     var onMarkFrames: (([Int]) -> Void)?                // mark specific frames for pre-delete
+    var onUnmarkAll: (() -> Void)?                      // clear all deletion marks
     var onNightMode: (() -> Void)?                      // toggle night mode
     var onHighlightFrames: (([Int]) -> Void)?           // select/highlight rows in file list (shift-click style)
     var onViewFrame: ((Int) -> Void)?                   // navigate to and display a specific frame
@@ -677,6 +679,8 @@ class AIsaacModel: ObservableObject {
                 let arrayIndices = sessionNums.compactMap { resolveSessionIndex?($0) }
                 if !arrayIndices.isEmpty { onMarkFrames?(arrayIndices) }
             }
+        case "unmark_all":
+            onUnmarkAll?()
         case "highlight":
             if let sessionNums = params?["indices"] as? [Int] {
                 let arrayIndices = sessionNums.compactMap { resolveSessionIndex?($0) }

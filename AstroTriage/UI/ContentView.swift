@@ -197,6 +197,40 @@ struct ContentView: View {
                     )
                     .frame(minWidth: 150, maxWidth: 300)
 
+                    // Filter presets dropdown
+                    Menu {
+                        Section("Quality") {
+                            Button("Excellent") { viewModel.filterText = "q:excellent" }
+                            Button("Good") { viewModel.filterText = "q:good" }
+                            Button("Borderline") { viewModel.filterText = "q:borderline" }
+                            Button("Trash") { viewModel.filterText = "q:trash" }
+                            Button("Unscored") { viewModel.filterText = "q:unscored" }
+                        }
+                        Section("Common Filters") {
+                            Button("Luminance") { viewModel.filterText = "filter:L" }
+                            Button("Red") { viewModel.filterText = "filter:R" }
+                            Button("Green") { viewModel.filterText = "filter:G" }
+                            Button("Blue") { viewModel.filterText = "filter:B" }
+                            Button("Ha") { viewModel.filterText = "filter:Ha" }
+                            Button("OIII") { viewModel.filterText = "filter:OIII" }
+                            Button("SII") { viewModel.filterText = "filter:SII" }
+                        }
+                        Section("Metrics") {
+                            Button("FWHM > 5") { viewModel.filterText = "fwhm:>5" }
+                            Button("Stars < 100") { viewModel.filterText = "stars:<100" }
+                            Button("Trailing > 0.5") { viewModel.filterText = "trail:>0.5" }
+                        }
+                        Divider()
+                        Button("Clear Filter") { viewModel.filterText = "" }
+                    } label: {
+                        Image(systemName: "line.3.horizontal.decrease.circle")
+                            .font(.system(size: 13))
+                            .foregroundColor(nightFg.opacity(0.7))
+                    }
+                    .menuStyle(.borderlessButton)
+                    .frame(width: 20)
+                    .help("Filter presets — click to apply a predefined filter")
+
                     Spacer()
 
                     // Night mode toggle
@@ -400,25 +434,58 @@ struct ContentView: View {
                         .frame(minHeight: 150, idealHeight: 250)
                     }
 
-                    // Pre-cache progress bar with stop/continue controls
-                    if viewModel.isCaching || viewModel.cachingStopped {
-                        HStack(spacing: 8) {
-                            if viewModel.isCaching {
-                                VStack(spacing: 2) {
-                                    ProgressView(value: viewModel.cacheProgress)
-                                        .progressViewStyle(.linear)
-                                        .tint(viewModel.nightMode ? .red : nil)
-
-                                    Text("Pre-caching \(viewModel.cachingCount)/\(viewModel.cachingTotal) images...")
-                                        .font(.system(size: 10, design: .monospaced))
-                                        .foregroundColor(nightFgDim)
+                    // Red fuel bar: shows during loading phases, NAS download, or caching
+                    if viewModel.loadingPhase != .none || viewModel.isDownloading || viewModel.isCaching || viewModel.cachingStopped {
+                        HStack(spacing: 6) {
+                            VStack(spacing: 1) {
+                                // Top bar: pre-caching (only when both download + cache are active, or cache-only)
+                                if viewModel.isCaching || viewModel.cachingStopped {
+                                    fuelBar(
+                                        progress: viewModel.cacheProgress,
+                                        label: {
+                                            if viewModel.isCaching {
+                                                let est = viewModel.cachingEstimatedSecondsRemaining.map { " — Est: \($0)s" } ?? ""
+                                                return "Pre-caching \(viewModel.cachingCount)/\(viewModel.cachingTotal)\(est)"
+                                            } else {
+                                                return "Caching paused — \(viewModel.prefetchCachedCount)/\(viewModel.images.count)"
+                                            }
+                                        }(),
+                                        color: Color(red: 0.25, green: 0.5, blue: 0.9),
+                                        height: (viewModel.isDownloading) ? 11 : 22,
+                                        isNight: viewModel.nightMode
+                                    )
                                 }
-                            } else {
-                                Text("Caching paused — \(viewModel.prefetchCachedCount)/\(viewModel.images.count)")
-                                    .font(.system(size: 10, design: .monospaced))
-                                    .foregroundColor(nightFgDim)
-                            }
 
+                                // Bottom bar: download or loading phase
+                                if viewModel.isDownloading {
+                                    fuelBar(
+                                        progress: viewModel.downloadProgress,
+                                        label: {
+                                            let est = viewModel.downloadEstimatedSecondsRemaining.map { " — Est: \($0)s" } ?? ""
+                                            return "Downloading \(viewModel.downloadCount)/\(viewModel.downloadTotal)\(est)"
+                                        }(),
+                                        color: Color(red: 0.15, green: 0.35, blue: 0.7),
+                                        height: viewModel.isCaching ? 11 : 22,
+                                        isNight: viewModel.nightMode
+                                    )
+                                } else if viewModel.loadingPhase == .scanning {
+                                    fuelBar(progress: 0, label: "Scanning folder...", color: Color(red: 0.15, green: 0.35, blue: 0.7), height: 22, isNight: viewModel.nightMode)
+                                } else if viewModel.loadingPhase == .readingHeaders {
+                                    fuelBar(
+                                        progress: viewModel.headerProgress,
+                                        label: {
+                                            let est = viewModel.headerEstimatedSecondsRemaining.map { " — Est: \($0)s" } ?? ""
+                                            return "Loading headers \(viewModel.headerReadCount)/\(viewModel.headerReadTotal)\(est)"
+                                        }(),
+                                        color: Color(red: 0.15, green: 0.35, blue: 0.7),
+                                        height: 22,
+                                        isNight: viewModel.nightMode
+                                    )
+                                }
+                            }
+                            .cornerRadius(3)
+
+                            // Stop / Continue buttons
                             if viewModel.isCaching {
                                 Button(action: { viewModel.stopCaching() }) {
                                     Image(systemName: "stop.fill")
@@ -429,7 +496,6 @@ struct ContentView: View {
                                 .controlSize(.small)
                                 .help("Stop caching")
                             }
-
                             if viewModel.cachingStopped {
                                 Button(action: { viewModel.continueCaching() }) {
                                     Image(systemName: "play.fill")
@@ -442,8 +508,8 @@ struct ContentView: View {
                             }
                         }
                         .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(nightControlBg)
+                        .padding(.vertical, 3)
+                        .background(nightBg)
                     }
 
                     // Status bar: LEFT = styled pills, RIGHT = dimensions + status
@@ -818,6 +884,7 @@ struct ContentView: View {
         }
         aisaac.onSkipMarked = { [weak viewModel] in viewModel?.skipMarked.toggle() }
         aisaac.onMarkCurrent = { [weak viewModel] in viewModel?.togglePreDelete() }
+        aisaac.onUnmarkAll = { [weak viewModel] in viewModel?.unmarkAll() }
         aisaac.onMarkFrames = { [weak viewModel] indices in
             guard let vm = viewModel else { return }
             for idx in indices where idx >= 0 && idx < vm.images.count {
@@ -871,6 +938,34 @@ struct ContentView: View {
                 RoundedRectangle(cornerRadius: 4)
                     .fill(bg)
             )
+    }
+
+    // Fuel bar: a colored progress bar with centered white text label
+    private func fuelBar(progress: Double, label: String, color: Color, height: CGFloat, isNight: Bool) -> some View {
+        ZStack(alignment: .leading) {
+            Rectangle()
+                .fill(isNight ? Color(red: 0.15, green: 0, blue: 0) : Color(white: 0.2))
+            GeometryReader { geo in
+                Rectangle()
+                    .fill(
+                        LinearGradient(
+                            colors: [color.opacity(0.9), color.opacity(0.7)],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+                    .frame(width: geo.size.width * CGFloat(min(progress, 1.0)))
+            }
+            HStack {
+                Spacer()
+                Text(label)
+                    .font(.system(size: height > 15 ? 11 : 9, weight: .bold, design: .monospaced))
+                    .foregroundColor(.white)
+                    .lineLimit(1)
+                Spacer()
+            }
+        }
+        .frame(height: height)
     }
 
     // Compact slider — uniform style for all sliders in the toolbar

@@ -147,6 +147,11 @@ struct AIsaacContextBuilder {
     private static func buildSessionBlock(_ ctx: AIsaacSessionContext) -> String {
         var lines: [String] = ["CURRENT SESSION:"]
 
+        // Loading/caching status — tell AIsaac what the app is currently doing
+        if let status = ctx.loadingStatus {
+            lines.append("- APP STATUS: \(status)")
+        }
+
         // Equipment
         if let t = ctx.telescope { lines.append("- Telescope: \(t)") }
         if let c = ctx.camera { lines.append("- Camera: \(c)") }
@@ -387,6 +392,7 @@ struct AIsaacContextBuilder {
         - {"action": "highlight", "params": {"indices": [3, 7, 12]}} — select/highlight frames by # (NO marking)
         - {"action": "mark_current"} — toggle mark on current image
         - {"action": "mark_frames", "params": {"indices": [3, 7, 12]}} — mark frames by # for deletion
+        - {"action": "unmark_all"} — clear ALL deletion marks (reset to unmarked)
         - {"action": "filter", "params": {"text": "filter:Ha"}} — set search filter
         - {"action": "clear_filter"} — clear search filter, show all
         - {"action": "compare"} — open Compare window for current image vs best
@@ -402,15 +408,15 @@ struct AIsaacContextBuilder {
         IMPORTANT FILTER SAFETY:
         - After any filter/navigate/mark action, the file list updates automatically.
         - If you use a filter and the list becomes empty, immediately follow with clear_filter.
-        - There is NO "quality:trash" filter. To show bad frames, use show_only_marked (if marked) \
-        or navigate to specific frame indices.
+        - Quality filter syntax: "q:trash", "q:borderline", "q:good", "q:excellent", "q:unscored"
+        - Trailing filter: "trail:>0.5" (frames with trailing score above threshold)
 
         CRITICAL: When the user asks you to "show", "view", "open", "highlight", "go to", \
         "navigate", "mark", "filter", or any action verb — you MUST include the corresponding \
         command block. Don't just TALK about the frame — actually DO IT. \
         Example: user says "show me #19" → you MUST include a view command AND your text.
 
-        Valid filter syntax: "filter:Ha", "filter:L", "fwhm:>4", "stars:<500", "file:NGC", "snr:<20"
+        Valid filter syntax: "filter:Ha", "filter:L", "fwhm:>4", "stars:<500", "file:NGC", "snr:<20", "q:trash", "q:excellent", "trail:>0.5"
 
         Examples:
         User: "show me the Ha frames" → filter + "Here are your Ha frames."

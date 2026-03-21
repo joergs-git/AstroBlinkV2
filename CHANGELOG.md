@@ -4,6 +4,32 @@ All notable changes to AstroBlink & AIsaac will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [5.1.2] — 2026-03-21
+
+### Added
+- **Progress fuel bars** — blue progress bars in the status bar for scanning, header loading, downloading (NAS), and pre-caching with time estimates
+- **Interleaved NAS pipeline** — downloads and pre-caching run concurrently; pre-caching starts after first 4 files download instead of waiting for all
+- **Split fuel bar** — when both downloading and pre-caching are active, two stacked bars show both progress simultaneously
+- **Unmark All (U key)** — clear all deletion marks across the session; also available as AIsaac command
+- **Quality filter presets** — dropdown menu next to search field with Quality (q:trash/excellent), Filter (filter:Ha), and Metrics (fwhm:>5) presets
+- **Quality tier filter syntax** — `q:trash`, `q:borderline`, `q:good`, `q:excellent`, `q:unscored` + color aliases (`q:red`, `q:orange`, `q:green`)
+- **Trailing score filter** — `trail:>0.5` filters by trailing score
+- **QuickLook OSC debayer** — Finder previews and thumbnails now show debayered color for one-shot-color (Bayer pattern) FITS/XISF files
+- **Scroll to top on folder open** — file list scrolls to first image when opening a new session
+
+### Fixed
+- **NAS filter mismatch** — header enrichment deferred to after downloads complete (reads from local SSD cache instead of NAS); uses URL-based lookup instead of index-based to prevent sort-induced header misassignment
+- **Slow navigation after caching** — applied stretch/settings now properly synced for interleaved prefetch path; `cacheMatchesCurrentSettings` returns true after caching completes
+- **Prefetch main-thread stalling** — replaced `DispatchQueue.main.sync` cache checks with thread-safe `NSLock`-protected URL set; background operations no longer block on main thread
+- **Quality icons before analysis** — frames show empty quality icon until actually measured during pre-caching (was falsely showing trash icon for unmeasured frames)
+- **Download cancellation** — opening a new folder immediately cancels in-progress NAS downloads and pre-caching
+- **Scanning overlay stuck** — loading phase properly cleared for NAS sessions after scan completes
+- **Quality scoring race** — interleaved prefetch completion defers quality scoring to header enrichment completion, ensuring full header data is available
+
+### Changed
+- **AIsaac context** — loading/downloading/caching status included in session context; quality filter syntax documented in command help
+- Progress bars use light blue (pre-caching) and dark blue (download/loading) instead of previous style
+
 ## [5.0.0] — 2026-03-20
 
 ### Added

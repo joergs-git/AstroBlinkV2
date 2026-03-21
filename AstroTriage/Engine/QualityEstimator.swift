@@ -276,6 +276,13 @@ struct QualityEstimator {
             for (localIdx, globalIdx) in indices.enumerated() {
                 let entry = entries[globalIdx]
 
+                // Skip frames that haven't been cached/measured yet — noiseMAD is populated
+                // during pre-caching and is the definitive signal that the image was analyzed.
+                // Without this guard, frames show misleading quality icons before analysis.
+                if entry.noiseMAD == nil && entry.computedStarCount == nil {
+                    continue
+                }
+
                 // Compute SNR² for this frame (cached for live retention bar)
                 let snr = snrValues[localIdx]
                 let snrSq = snr.map { $0 * $0 }
@@ -290,10 +297,14 @@ struct QualityEstimator {
                 // Any single metric catastrophically bad → immediate red
                 var garbageReason: GarbageReason? = nil
 
-                // Rule 0: Pitch black / no data — no stars AND no noise stats
+                // Rule 0: Pitch black / no data — no stars AND no noise stats.
+                // Only apply when the image has actually been measured (noiseMAD is populated
+                // during caching). Before caching, noiseMAD is nil which means "not yet analyzed",
+                // not "no signal". Without this guard, uncached frames get falsely flagged as trash.
+                let hasBeenMeasured = entry.noiseMAD != nil
                 let hasNoStars = starsValues[localIdx] == nil || starsValues[localIdx] == 0
-                let hasNoNoise = entry.noiseMAD == nil || entry.noiseMAD == 0
-                if hasNoStars && hasNoNoise {
+                let hasNoNoise = (entry.noiseMAD ?? 0) == 0
+                if hasBeenMeasured && hasNoStars && hasNoNoise {
                     garbageReason = .noData
                 }
 

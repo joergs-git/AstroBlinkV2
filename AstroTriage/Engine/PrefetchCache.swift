@@ -16,6 +16,11 @@ class PrefetchCache {
     private let device: MTLDevice
     private let previewGenerator: PreviewGenerator?
 
+    // Thread-safe set of cached URLs — updated alongside cache, readable from background threads
+    // Eliminates DispatchQueue.main.sync calls from background operations
+    private let cachedURLsLock = NSLock()
+    private var cachedURLsSet = Set<URL>()
+
     // Background fill queue for bulk prefetching
     private var backgroundQueue: OperationQueue?
     private var prefetchTask: Task<Void, Never>?
@@ -119,8 +124,10 @@ class PrefetchCache {
 
             priorityQueue?.addOperation { [weak self] in
                 // Double-check cache (may have been filled by background queue)
-                var alreadyCached = false
-                DispatchQueue.main.sync { alreadyCached = self?.isCached(url) ?? true }
+                // Uses thread-safe set instead of DispatchQueue.main.sync
+                self?.cachedURLsLock.lock()
+                let alreadyCached = self?.cachedURLsSet.contains(url) ?? true
+                self?.cachedURLsLock.unlock()
                 guard !alreadyCached else { return }
 
                 // Full pipeline: decode → debayer → noise → stars → STF → GPU preview
@@ -206,6 +213,7 @@ class PrefetchCache {
         targetBackground: Float? = nil,
         lockedSTFParams: [STFParams]? = nil,
         postProcessParams: (sharpening: Float, contrast: Float, darkLevel: Float)? = nil,
+        resolveDecodingURL: ((URL) -> URL)? = nil,  // Late-resolve URL at execution time (for NAS pipeline)
         onProgress: @escaping (Int, Int) -> Void,
         onNoiseStats: ((URL, STFCalculator.NoiseStats) -> Void)? = nil,
         onStarMetrics: ((URL, StarMetrics) -> Void)? = nil
@@ -258,19 +266,36 @@ class PrefetchCache {
                 }
 
                 let url = entry.url
-                let decodingURL = entry.decodingURL
+                let fallbackDecodingURL = entry.decodingURL
                 let bayerPattern = bayerPatterns[entry.url]
+
+                let urlsLock = self?.cachedURLsLock
+                let urlsSetRef = self
 
                 queue.addOperation {
                     guard !queue.isSuspended else { return }
 
-                    // Skip if priority queue already cached this image
-                    var alreadyCached = false
-                    DispatchQueue.main.sync { alreadyCached = self?.isCached(url) ?? false }
-                    if alreadyCached {
-                        let completed = completedCount.increment()
-                        Task { @MainActor in onProgress(completed, total) }
-                        return
+                    // Skip if priority queue already cached this image (thread-safe set check
+                    // instead of DispatchQueue.main.sync to avoid stalling on main thread)
+                    if let lock = urlsLock {
+                        lock.lock()
+                        let alreadyCached = urlsSetRef?.cachedURLsSet.contains(url) ?? false
+                        lock.unlock()
+                        if alreadyCached {
+                            let completed = completedCount.increment()
+                            Task { @MainActor in onProgress(completed, total) }
+                            return
+                        }
+                    }
+
+                    // Resolve decodingURL at execution time — for NAS pipeline, the file
+                    // may have been downloaded to local cache since the operation was created.
+                    // The resolver uses a thread-safe dictionary (no main-thread hop needed).
+                    let decodingURL: URL
+                    if let resolver = resolveDecodingURL {
+                        decodingURL = resolver(url)
+                    } else {
+                        decodingURL = fallbackDecodingURL
                     }
 
                     // 1. Decode full-res uint16
@@ -358,14 +383,20 @@ class PrefetchCache {
         }
     }
 
-    // Store a preview in the cache
+    // Store a preview in the cache (also updates thread-safe URL set)
     func storePreview(_ preview: CachedPreview, for url: URL) {
         cache[url] = preview
+        cachedURLsLock.lock()
+        cachedURLsSet.insert(url)
+        cachedURLsLock.unlock()
     }
 
     // Invalidate all cached previews (e.g. when stretch mode changes)
     func invalidateAll() {
         cache.removeAll()
+        cachedURLsLock.lock()
+        cachedURLsSet.removeAll()
+        cachedURLsLock.unlock()
     }
 
     // Stop prefetch but keep already-cached previews
@@ -382,6 +413,9 @@ class PrefetchCache {
         prefetchTask?.cancel()
         prefetchTask = nil
         cache.removeAll()
+        cachedURLsLock.lock()
+        cachedURLsSet.removeAll()
+        cachedURLsLock.unlock()
     }
 }
 

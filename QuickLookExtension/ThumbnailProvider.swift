@@ -17,11 +17,27 @@ class ThumbnailProvider: QLThumbnailProvider {
         let scale = request.scale
 
         // Decode the image file via C bridge
-        guard let imageData = QuickLookDecoder.decode(url: fileURL) else {
+        guard let rawData = QuickLookDecoder.decode(url: fileURL) else {
             handler(nil, QuickLookError.decodeFailed)
             return
         }
-        defer { imageData.free() }
+
+        // Debayer OSC images: if mono + BAYERPAT header, convert to RGB
+        let imageData: QuickLookImageData
+        var debayeredData: QuickLookImageData?
+        if rawData.channelCount == 1,
+           let pattern = QuickLookDebayer.readBayerPattern(url: fileURL),
+           let rgb = QuickLookDebayer.debayer(pixels: rawData.pixels, width: rawData.width, height: rawData.height, pattern: pattern) {
+            debayeredData = rgb
+            imageData = rgb
+            rawData.free()
+        } else {
+            imageData = rawData
+        }
+        defer {
+            if debayeredData != nil { debayeredData?.free() }
+            else { imageData.free() }
+        }
 
         // Calculate STF parameters for auto-stretch
         let stfParams = QuickLookSTF.calculate(

@@ -144,6 +144,23 @@ class AIsaacWindowController: NSWindowController {
         // Marked count
         let markedCount = allImages.filter { $0.isMarkedForDeletion }.count
 
+        // Build loading status description for AIsaac context
+        let loadingStatus: String? = {
+            if viewModel.isDownloading {
+                let est = viewModel.downloadEstimatedSecondsRemaining.map { ", ~\($0)s remaining" } ?? ""
+                return "Downloading files to local cache (\(viewModel.downloadCount)/\(viewModel.downloadTotal)\(est))"
+            } else if viewModel.loadingPhase == .scanning {
+                return "Scanning folder for images..."
+            } else if viewModel.loadingPhase == .readingHeaders {
+                let est = viewModel.headerEstimatedSecondsRemaining.map { ", ~\($0)s remaining" } ?? ""
+                return "Loading file headers (\(viewModel.headerReadCount)/\(viewModel.headerReadTotal)\(est))"
+            } else if viewModel.isCaching {
+                let est = viewModel.cachingEstimatedSecondsRemaining.map { ", ~\($0)s remaining" } ?? ""
+                return "Pre-caching images (\(viewModel.cachingCount)/\(viewModel.cachingTotal)\(est)). Quality scores may be incomplete."
+            }
+            return nil
+        }()
+
         model.sessionContext = AIsaacSessionContext(
             objects: objects.isEmpty ? ["unknown"] : objects,
             filters: filters.isEmpty ? ["none"] : filters,
@@ -165,6 +182,7 @@ class AIsaacWindowController: NSWindowController {
             isConverged: viewModel.isConverged,
             isCaching: viewModel.isCaching,
             scoredCount: allImages.filter { $0.qualityTier != nil }.count,
+            loadingStatus: loadingStatus,
             frameMetrics: Self.buildFrameMetrics(from: allImages)
         )
 

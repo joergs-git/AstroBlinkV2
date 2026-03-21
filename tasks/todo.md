@@ -285,6 +285,90 @@ Uncompressed XISF: ~17ms decode (SSD limited). LZ4-compressed: ~100-300ms (CPU d
 - [ ] Cache common object info queries (reduce API calls)
 - [ ] Response streaming for Opus mode (currently works, verify edge cases)
 
+## v5.1.0 — UX Improvements (COMPLETE)
+
+### a. Scroll to top on folder open ✅
+- [x] `needsScrollToTop` flag set after session load in all 3 load paths
+- [x] FileListView observes flag, calls `scrollRowToVisible(0)` + select row 0
+
+### b. Red fuel bar for loading/caching progress ✅
+- [x] Red gradient fuel bar replaces old ProgressView during loading AND caching
+- [x] Shows scanning, header loading count/total, and precaching count/total
+- [x] White bold text centered over bar, stop/continue buttons preserved
+- [x] Replaces old separate progress bar section
+
+### c. Time estimates for loading AND precaching ✅
+- [x] `headerEstimatedSecondsRemaining` computed after 20 headers read
+- [x] `cachingEstimatedSecondsRemaining` computed after 20 images cached
+- [x] Displayed in fuel bar as "— Est: Xs"
+- [x] Reset to nil when phase completes
+
+### d. AIsaac awareness of loading/precache state ✅
+- [x] `loadingStatus` field on AIsaacSessionContext
+- [x] Built from loadingPhase/caching state in AIsaacWindowController
+- [x] Prepended to session block in AIsaacContextBuilder
+
+### e. Unmark all (U key) ✅
+- [x] `unmarkAll()` on TriageViewModel — clears all marks, updates SNR retention + convergence
+- [x] U key in KeyboardHandler
+- [x] `unmark_all` AIsaac command + callback wired in ContentView
+
+### f. Quality filter presets ✅
+- [x] `q:trash`, `q:borderline`, `q:good`, `q:excellent`, `q:unscored` filter syntax
+- [x] `trail:>0.5` trailing score filter
+- [x] Color aliases: `q:red` = trash, `q:orange` = borderline, `q:green` = excellent
+- [x] Filter preset dropdown menu next to search field (Quality / Filters / Metrics sections)
+- [x] AIsaac prompt updated with new filter syntax
+
+---
+
+---
+
+## PixInsight Bridge — "AstroBlink Importer" (SIDE PROJECT, feature/pixinsight-bridge)
+
+Separate GitHub repo: `pixinsight-astroblink`. PJSR Script (ES5/SpiderMonkey 24) for
+PixInsight that imports AstroBlink triage results and preconfigures WBPP workflow.
+Distributed via PI Update Repository on GitHub Raw URLs.
+
+### Phase 1: PJSR Script
+- [ ] Project structure (`src/scripts/AstroBlinkImporter/`)
+- [ ] CSV import (`AstroBlinkV2_SSWEIGHT.csv` parser, fallback to FITS/XISF header)
+- [ ] Triage table UI (TreeBox widget, color-coded quality tiers, sortable columns)
+- [ ] SSWEIGHT header sync (write CSV weights into FITS/XISF headers via FITSKeyword API)
+- [ ] Summary stats (total frames, kept, rejected, integration time)
+
+### Platform & Prerequisite Checks
+- [ ] Detect macOS vs Windows (`CoreApplication.platform` or `File.systemTempDirectory` path check)
+- [ ] Windows: show error dialog "AstroBlink is macOS only" with App Store + GitHub wiki links
+- [ ] Check if AstroBlink is installed (`/Applications/AstroBlinkV2.app` or `~/Applications/`)
+- [ ] Not installed: friendly dialog with download links (Mac App Store URL + GitHub wiki)
+
+### Phase 2: PI Update Repository
+- [ ] `updates.xri` manifest + `.tar.gz` package
+- [ ] GitHub Raw URL: `https://raw.githubusercontent.com/joergs-git/pixinsight-astroblink/main/`
+- [ ] One-click install via PI Resources → Updates → Manage Repositories
+- [ ] Script appears under Script → Batch Processing → AstroBlink Importer
+
+### Phase 3: Extensions (post-V1)
+- [ ] WBPP integration (process icon export with SSWEIGHT weighting)
+- [ ] Quality visualizer (FWHM/Stars/SNR timeline plot)
+- [ ] JSON triage report (richer than CSV)
+- [ ] SubframeSelector comparison (correlate PI metrics with AstroBlink)
+
+### Phase 4: Community & Marketing
+- [ ] PI Forum post (New Scripts and Modules)
+- [ ] AstroBlink Wiki page: "PixInsight Integration"
+- [ ] README with install screenshots + example session
+
+### Key Technical Notes
+- PJSR = SpiderMonkey 24 (ES5 only): NO let/const, NO arrow functions, NO template literals
+- `Console.writeln()` not `console.log()`
+- File I/O synchronous, UI via Dialog/Sizer system (Qt-like)
+- XISF header writing: test if `FileFormatInstance.setKeywords()` works for XISF
+- Estimated effort: ~12-15h for V1
+
+---
+
 ## Future TODOs — Deconvolution & Structure Enhancement (needs R&D)
 - [ ] Research BlurXTerminator approach — spatially varying PSF, trained neural network, star masking
 - [ ] Consider CoreML model for learned deconvolution (Apple Neural Engine = fast on M-series)
