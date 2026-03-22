@@ -26,7 +26,7 @@ Nice side effect: Finally you have a native XISF and FITS Quicklook for macOS. (
 
 ---
 
-## Why "AIsaac"?
+## AIsaac — Your AI Astrophotography Assistant
 
 Named after **Isaac Newton** — astronomer, physicist, and the father of reflecting telescopes. Newton didn't just observe the stars, he built the tools to understand them. AIsaac carries that spirit: an AI that doesn't just look at your data, but understands it, explains it, and helps you make better decisions.
 
@@ -38,330 +38,20 @@ AIsaac knows your equipment, remembers your imaging history, understands light p
 
 ---
 
-## What's New in v5.0.0
-
-### AIsaac — Your AI Astrophotography Assistant
-
-**Meet AIsaac** — an AI assistant built right into AstroBlink, powered by Claude. AIsaac has access to every frame's FWHM, HFR, star count, noise, eccentricity, trailing score, and quality reasoning. He sees the image you're looking at. He knows your equipment and your Bortle zone. Ask him anything — in any language.
-
-![AstroBlink & AIsaac — Quality Summary](screenshots/AstroBlink_v5_quality_aisaac.png)
-
-*AIsaac's quality summary with streaming responses, quick-reply buttons, and preset question chips.*
-
-**What AIsaac can do:**
-
-- **Quality Summary** — instant per-filter analysis with trends, warnings, and "what to do next"
-- **Smart Mark** — AI analyzes every frame and suggests which ones to cull. You confirm with one click. Fully undoable.
-- **Filter Advice** — which filters need more data? Factors in your object type, Bortle zone, and current integration
-- **Plan Tonight** — complete imaging plan: targets, filters, exposure per sub, number of subs, start/end times from dusk to dawn
-- **Nearby Objects** — "what else can I image with this setup tonight?" with FOV-aware suggestions
-- **App Control** — tell AIsaac "show me #42" or "highlight the trash frames" or "stack the best 7" — he controls the app for you
-- **Voice Input/Output** — hold the mic button, speak your question. Optional text-to-speech for hands-free operation at the telescope
-- **Streaming** — responses flow in word-by-word, first token in ~500ms
-- **Equipment Memory** — learns your telescopes, cameras, filters, and imaging history. Persists across sessions.
-- **Location-Aware** — reads SITELAT/SITELONG from FITS headers, infers Bortle zone, offers to respond in your language
-- **Two Tiers:**
-  - **Free Sonnet Buddy** — included with the app, 20 queries/day, powered by Claude Sonnet
-  - **Opus Superexpert** — bring your own Anthropic API key for Claude Opus. Deeper analysis, no rate limit. Key stored securely in macOS Keychain.
-
-![AstroBlink & AIsaac — Inspector with Quality Metrics](screenshots/AstroBlink_v5_inspector_aisaac.png)
-
-*Header Inspector showing FITS keywords alongside computed quality metrics (z-scores, tier, reasoning).*
-
----
-
-## What's New in v4.6.0
-
-### SmartCull Quality Engine
-
-Multi-stage quality scoring validated on 1,457 frames across 6 setups (3 telescopes, mono+OSC, narrowband+broadband). Handles 99% of quality decisions automatically.
-
-**"1,457 frames. 14 decisions."**
-
-- **Stage 3 rescue rules** — Frames with good FWHM + acceptable noise rescued from trash. Star count dips with sharp stars recognized as transient events (clouds, dew), not quality issues.
-- **Quality reasoning ("Why?")** — Hover any quality icon for a human-readable explanation: "FWHM worst in group", "Star count dip — likely transient", "Elevated noise — background brightening".
-- **FWHM cross-check for trailing** — The trailing detector now verifies that flagged frames actually have degraded FWHM. Sharp stars can't be genuinely trailed — this eliminates false positives from optical coma being misidentified as tracking errors.
-- **Wider trash threshold** — Only frames 2σ below group average become z-score trash (was 1.5σ). Stage 1 garbage detection catches truly bad frames regardless. The Autopilot button gives you control over borderline frames.
-
-### Bug Fixes
-- Individual z-scores capped at ±3.0 (extreme values in homogeneous groups)
-- Background anomaly scales with group size (fewer false positives in small filter groups)
-- Sort tiebreaker: time always ascending within quality tiers
-
----
-
-### How the SmartCull Algorithm Works
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                    SmartCull Quality Pipeline                    │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│  Stage 1: Garbage Detection (absolute thresholds)               │
-│  ├── Zero/near-zero stars (< 15-25% of group median)           │
-│  ├── SNR catastrophically low (< 50% of group median)          │
-│  ├── FWHM/HFR catastrophically high (> 2× group median)        │
-│  ├── Star trailing (score > 0.7, cross-checked with FWHM)      │
-│  ├── Star count anomaly (doubled stars from tracking jump)      │
-│  └── Background anomaly (clouds/gradient, > 5 MAD deviation)   │
-│                                                                 │
-│  Stage 2: Relative Z-Score Scoring (within filter+night group)  │
-│  ├── Median/MAD robust statistics (outlier-resistant)           │
-│  ├── Metrics: FWHM, HFR, star count, noise, trailing           │
-│  ├── Per-metric z-scores capped at ±3.0                        │
-│  ├── Weighted combination (stars: 1.2× broadband, 0.5× NB)     │
-│  └── Tier: Excellent (>0.5σ), Good (>-0.5σ), Border, Trash     │
-│                                                                 │
-│  Stage 3: Pattern-Based Rescue Rules                            │
-│  ├── Rule A: FWHM + noise OK → rescued to Good                 │
-│  ├── Rule B: Star dip + good FWHM → transient event            │
-│  └── Rule C: FWHM-only penalty → promoted to Borderline        │
-│                                                                 │
-│  Stage 4: Group-Level Sanity Check                              │
-│  └── Z-score trash with FWHM within GOOD range → Borderline    │
-│                                                                 │
-│  User Control: Culling Autopilot                                │
-│  ├── Conservative: Only Stage 1 garbage                         │
-│  ├── Balanced: + severe borderline (severity ≥ 2)               │
-│  └── Aggressive: + all borderline                               │
-│                                                                 │
-│  Result: ~99% auto-classified, ~1% shown with "Why?" tooltip    │
-└─────────────────────────────────────────────────────────────────┘
-```
-
----
-
-## What's New in v4.5.0
-
-### Caching Pipeline Optimization
-- **Priority navigation queue** — When browsing to an uncached image during initial caching, a high-priority queue immediately decodes the current image and ±2 neighbors. No more waiting for your current image to reach the front of the background queue.
-- **Async GPU completion** — Worker threads are freed instantly after dispatching GPU work instead of blocking on `waitUntilCompleted()`. More decode throughput with the same thread count.
-- **Faster file list** — Reduced scroll stutter during caching: visible-row-only reloads instead of full table rebuilds.
-
----
-
-## What's New in v4.3.0
-
-### Self-Calibration & Intelligent Culling
-
-- **Per-setup calibration database** — AstroBlinkV2 silently learns your equipment's quality baseline as you work. After 30+ frames with the same setup (telescope + camera + focal length), an absolute quality floor activates: frames meeting the learned baseline are locked as KEEP — z-scores cannot override them. Prevents the "death spiral" where repeated culling removes good frames.
-- **Culling autopilot** — Click the status indicator in the bottom bar for one-click auto-marking: **Conservative** (Nebula — only trash), **Balanced** (trash + worst borderline), or **Aggressive** (Stars — all questionable). Each shows frame count and integration impact before applying.
-- **SSWEIGHT export** — Writes PixInsight-compatible SSWEIGHT keyword (0-100) into FITS/XISF headers for seamless WBPP weighted integration. CSV backup included.
-- **Background anomaly detection** — Catches clouds, light pollution gradients, and fog by detecting frames with abnormal background levels (>5 MADs from group median).
-- **Actionable culling status** — Replaces abstract readiness percentage with clear messages: "5x trash remaining", "Culling complete", or SNR warnings.
-
-### Compare Window Improvements
-
-- **Bold recommendation styling** — KEEP shown in bold green, DELETE in bold red, REVIEW in bold orange for instant visual recognition.
-- **PA direction arrows** — Elongated stars show position angle lines through the circle. Yellow consensus arrow with degree label when trailing direction is detected.
-- **Full-field star coverage** — Stars detected and displayed across 90% of the image (was 70%), covering edge regions.
-
-### Stacking Alignment Fix
-
-- **Ghost image elimination** — False triangle matches that produced 73-166° rotation artifacts are now rejected via minimum 6-inlier threshold and dual-axis scale validation.
-- **Alignment info display** — Stack result window shows "Aligned X of Y frames (Z skipped)" in the bottom bar.
-- **More robust matching** — 80 detected stars (was 50) for better field coverage across dither offsets.
-
-### Polish
-
-- **Status bar tooltips** — All status pills (Skip, Hide, Locked STF, Night, etc.) now have descriptive tooltips with keyboard shortcuts.
-- **Scroll flicker fix** — File list highlight no longer jumps during fast arrow key navigation.
-
----
-
-## What's New in v4.2.0
-
-### Star Trailing Detection with Orientation Consensus (Industry First)
-
-AstroBlinkV2 is the first astrophotography tool to use **orientation consensus analysis** for star trailing detection. When a mount has tracking errors, ALL stars trail in the SAME direction — this uniform signal is far more reliable than measuring individual star shapes.
-
-- **Adaptive measurement aperture** — Eccentricity measured at FWHM-scaled radius (up to 15px) instead of a fixed 3px core. Captures the full PSF wings where trailing is actually visible.
-- **Position angle (PA) extraction** — Each star's elongation direction computed from eigenvalue decomposition of 2D image moments.
-- **Orientation consensus** — Circular statistics detect when >50% of stars agree on trailing direction. Strong consensus = tracking error. Random directions = normal optical aberration.
-- **Focal-length-adaptive thresholds** — Short focal length optics (e.g., 85mm f/5.5) naturally produce rounder-looking stars with higher optical aberration. Long focal length (e.g., 2400mm f/8) shows tracking issues more clearly. Thresholds adapt automatically using FOCALLEN from FITS headers.
-- **Star count anomaly detection** — Flags frames where star count is >1.8x the group median (doubled stars from tracking/dithering jumps).
-- **Validated across 5 optical setups** — RC12 (2423mm), refractor 140mm (904mm), refractor 85mm (468mm), RASA 11" (620mm) with ASI6200MM, ASI2600MC, and ASI6200MC cameras.
-
-### Compare Window Enhancements
-
-- **Star problem overlay** — Colored circles on measured stars (green=round, orange=borderline, red=elongated) with PA direction lines showing elongation angle. Toggle on/off.
-- **"Why worse" info bar** — Metric-by-metric comparison (Stars, FWHM, HFR, Ecc, SNR) between selected and best frame.
-- **Fit-to-view default** — Opens at 1x zoom when star overlay is active for full visibility.
-- **Loading indicator** — Floating progress panel while images are decoded.
-
-### Workflow Features
-
-- **Global Quarantine (Q key)** — Move marked files to ~/Desktop/Astro-Quarantine/ from any session. Same undo with Cmd+Z.
-- **Freeze-stamp processing** — Bake current adjustments in stack result window, then apply further processing on top. Full undo stack.
-- **Best frame metrics** — Stack result shows comparison of stacked result vs best single frame (Stars, FWHM, HFR, Ecc, estimated SNR improvement).
-- **Improved formatting** — Better pre-delete dialog layout, richer quality tooltips with section headers.
-
----
-
-## What's New in v4.0.0
-
-### Smart Culling: Eccentricity, SNR Contribution & Live Impact Analysis
-
-- **SNR contribution score** — New "Contrib" column shows how much each frame adds to a weighted stack: `(SNR/SNR_best)^2`. 100% = best frame, 49% = 70% of best SNR. Hidden for trash frames.
-- **Per-metric quality tooltip** — Hover any quality icon for detailed z-score breakdown per metric with arrows, SNR contribution %, and **KEEP/DELETE** recommendation.
-- **Orange gradient icons** — Borderline tier split into 4 visual sub-levels from light amber (nearly good) to deep orange (nearly trash).
-- **Live SNR retention bar** — Status bar health bar updates in real-time as you mark frames. Shows exact SNR impact of your triage decisions.
-- **Deletion impact dialog** — Before moving to PRE-DELETE: integration time lost, SNR impact %, quality tier breakdown.
-- **Research-backed recommendations** — Based on Svalgaard comparison tests: round stars = always KEEP (even with worse seeing). FWHM of final stack barely changes. Only elongated stars should be deleted.
-
----
-
-## What's New in v3.13.0
-
-### Help Overhaul, Quality Scoring & Compare Tool
-- **Two-tab help** — Usage (shortcuts & features) + Background (comprehensive FAQ covering quality scoring, metrics, sorting, stretching, debayering, denoise, deconvolution, and triage workflow tips).
-- **4-tier quality icons** — Full green (excellent), half-green (good), orange (borderline), red (garbage). Z-score on hover for fine-grained comparison.
-- **Compare with Best (C key)** — Side-by-side with synchronized zoom/pan against the best frame in the same group. Opens maximized at 300% zoom.
-- **Metric bars** — Red-to-green bars below Stars/FWHM/HFR/SNR, scoped per target+filter+exposure group.
-- **Pitch-black detection** — Frames with no stars and no noise data auto-flagged as garbage.
-- **Smart 4-case sorting** — Auto-sort by session type with exposure as grouping element.
-
----
-
-## What's New in v3.12.0
-
-### Image Preview, GPU Denoise & Deconvolution
-- **Double-click preview** — Open any image in a floating window with stretch, sharpening, contrast, saturation, denoise, and deconvolution controls. Compare multiple images side by side.
-- **GPU bilateral denoise** — Two-pass noise reduction: bilateral filter for pixel noise + chrominance denoise in YCbCr to eliminate green/magenta patches. 0-200% slider.
-- **Richardson-Lucy deconvolution** — GPU-accelerated iterative ML deconvolution with Gaussian PSF. Toggle between RL and multi-scale USM.
-- **OSC color stacking** — Color camera images debayered before stacking for full-color results. Color saturation slider for OSC images.
-- **Hot/cold pixel rejection** — GPU cosmetic correction before stacking, using sigma-clipped 3x3 median.
-- **True star count** — Stars column shows actual total from GPU detection, not the capped measurement subset.
-- **Center-crop quality** — HFR, FWHM, noise measured from center 70% to exclude edge optical effects.
-- **Dynamic column order** — 4-case auto-reorder based on target/filter count.
-- **Compare with Best** — Right-click any non-excellent image to open a side-by-side comparison with the best frame from the same group. Synchronized zoom/pan.
-- **4-tier quality scoring** — Full green (excellent), half-green (good), orange (borderline), red (garbage). Two-stage detection: Stage 1 catches catastrophic outliers, Stage 2 does relative z-score ranking.
-- **Context menu** — "Open With..." (PixInsight, etc.), "Show in Finder", "Compare with Best"
-- **FITS special characters** — Files with brackets, parentheses in names now open correctly (uses cfitsio diskfile API).
-
-### Quality Scoring Icons
-
-| Icon | Tier | Meaning |
-|------|------|---------|
-| Full green circle | Excellent | Best frames — clearly above average |
-| Half-green circle | Good | Solid frames — near average, definitely keep |
-| Orange warning | Borderline | On the edge — worth checking visually |
-| Red X | Garbage | Catastrophic (Stage 1) or statistically worst |
-
----
-
-## What's New in v3.9.0
-
-### Anti-Moiré & Leaderboard Polish
-- **Trilinear filtering** — GPU mipmap-based anti-moiré eliminates shimmer artifacts on MacBook screens when images are zoomed out. Pixel-accurate zoom preserved when zoomed in.
-- **Leaderboard layout** — proper column alignment, larger fonts, consistent spacing, copy-to-clipboard button
-- **1000 entries** — leaderboard now fetches up to 1000 benchmarks (was 200), ordered newest first
-- **Flexible calibration detection** — DARK/FLAT/BIAS filtering now matches any case/position in filenames and folder names
-
----
-
-## What's New in v3.8.0
-
-### Lights-Only Folder Scan
-- **Calibration frames excluded automatically** — when opening a folder, DARK, FLAT, and BIAS frames are skipped so you only see your light frames
-- **Smart detection** — works via NINA filename tokens (`_DARK_`, `_FLAT_`, `_BIAS_`) and calibration subfolder names (`DARK/`, `FLAT/`, `DARKS/`, `FLATS/`, `BIAS/`, etc.)
-- **Individual file selection unaffected** — you can still open any file type directly via file picker
-
----
-
-## What's New in v3.7.0
-
-### Benchmark Sharing & Community Leaderboard
-- **Share & Compare** — upload your stacking and session load benchmarks anonymously and see how your machine ranks against other AstroBlinkV2 users worldwide
-- **Two leaderboard tabs** — "Stacking" (ranked by seconds/frame) and "Session Load" (ranked by MB/s throughput)
-- **Sortable columns** — click any column header to sort ascending/descending, secondary sort on ties
-- **Privacy-first** — only hardware specs and timing data are shared; machine identity is a non-reversible SHA256 hash
-- **Duplicate prevention** — identical benchmarks are detected and silently skipped
-- **Auto-detects local SSD vs network storage** for fair session load comparison
-
-### Toolbar & UI improvements
-- **Speedometer icon** in toolbar for quick access to Benchmark Stats
-- **Separator line** between toolbar icons and image settings row
-- **Centered image settings** (stretch, sharp, contrast, dark) aligned with the image frame
-- **MeridianFlip toggle** moved to toolbar row 1 (between Lock STF and Apply All)
-- **Release Notes** — see what's new directly in the app via Help > What's New
-
----
-
-## What's New in v3.6.0
-
-### GPU Star Metrics & Meridian Flip Detection
-- **GPU HFR/FWHM** — automatic star metrics computed during session load, no external tools needed
-- **ROTATOR-based flip detection** — works with mounts that don't report PIERSIDE (e.g. ZWO ASIAIR on AM5)
-- **Observing night grouping** — sessions spanning midnight attributed correctly
-
----
-
-## What's New in v4.4.0
-
-### Color Combine — Mono filters to RGB
-- **Auto-detect filters** — recognizes Ha, OIII, SII, L, R, G, B with broad alias matching (H, O, S, O3, S2, etc.)
-- **Palette presets** — SHO, HOO, HSO, LRGB, HaRGB, Custom — auto-selected based on available filters
-- **Per-channel weights** — adjust R/G/B balance with on-release recombine (<100ms)
-- **Luminance blending** — optional L channel injection for LRGB with adjustable blend
-- **Full post-processing** — stretch, dark, sharp, contrast, color, denoise, deconvolution
-
-### LightspeedStacker improvements
-- **Min/max pixel rejection** — automatically removes satellite trails and hot pixels (always active when ≥3 frames)
-- **Lanczos-3 interpolation** — optional sharper kernel for large dithers (bilinear/Lanczos picker)
-- **Adaptive alignment retry** — wider triangle set + looser threshold on failure, dramatically fewer alignment failures
-- **V1 NormalStacker removed** — LightspeedStacker is now the sole stacking engine
-
----
-
-## What's New in v3.4.0
-
-### LightspeedStacker — GPU stacking
-- **GPU warp+accumulate** — 10-20x faster than CPU stacking
-- **Hash-based triangle matching** — O(1) star matching with full centroid refinement
-- **GPU restretch** — result window sliders respond in <16ms via Metal compute
-- **Benchmark Stats** — see loading phase timings and memory usage
-
----
-
-## What's New in v3.2.0
-
-### Quick Stack — GPU-accelerated live stacking
-- **Quick Stack** — select 3+ subs and stack them instantly with star-alignment (no plate solving needed)
-- **Triangle pattern matching** — scale-invariant star matching with affine alignment
-- **GPU bin2x** — halves resolution before stacking for ~4x speed improvement
-- **Blue star crosses** — live visualization of detected stars during processing
-- **Full result window** — zoomable stacked result with all 4 sliders (stretch, sharp, contrast, dark)
-- **Save as PNG** — exports with current adjustments, smart filename from session metadata
-- **Same-target validation** — prevents accidental stacking of different objects (checks name + RA/DEC)
-
-### Slider improvements
-- **Doubled slider ranges** — Stretch 0–100%, Sharp -4/+4, Contrast -2/+2, Dark 0–1.0
-- **vDSP-optimized rendering** — Quick Stack result slider adjustments ~5-10x faster
-
-### Quality Overview
-- **Interactive help** — click the ? icon for a comprehensive beginner-friendly guide with real-world examples
-- **More space** — expanded quality section, compact fact sheet area
-- **Brown replaces yellow** — better readability for medium noise/SNR values
-
-### Other improvements
-- **Zoom keys keep focus** — +/- no longer loses keyboard focus on file list
-- **Inspector scroll preserved** — header inspector scroll position persists across image navigation
-
----
-
-## What's New in v3.0.0
-
-- **Spotlight-style search** — real-time filtering with `column:value` syntax (e.g. `filter:Ha`, `fwhm:>4`, `file:Veil`)
-- **Cmd+M — Move to folder** — move checkmarked files to any destination folder (with "Create New Folder" support)
-- **Full undo for all moves** — Cmd+Z undoes both PRE-DELETE and Cmd+M operations
-- **H cycles 3 view states** — all files → hide marked → show only marked → all
-- **Lock STF + Apply All** — freeze stretch params or bake settings into all cached previews
-- **GPU post-processing** — real-time sharpening, contrast, and dark level sliders (Metal compute)
-- **OSC debayer fix** — proper mono/color toggle with correct stretch for both modes
-- **Persistent settings** — sliders, toggles, column order remembered across sessions
-- **19 default-visible columns** — Date, Time, Type, Camera now shown by default
-- **Mark/Unmark filtered** — batch checkmark all search results for quick triage
+## Highlights
+
+- **AIsaac AI Assistant** — built-in astrophotography AI powered by Claude. Quality summaries, smart culling suggestions, filter advice, imaging plans, voice input, equipment memory. Free Sonnet tier included; bring your own API key for Opus.
+- **SmartCull Quality Engine** — 4-stage pipeline (garbage detection → z-score ranking → rescue rules → sanity checks) auto-classifies ~99% of frames. Orientation consensus trailing detection (industry first). Self-calibrating per-setup quality baseline.
+- **LightspeedStacker** — GPU warp+accumulate stacking, 10-20x faster than CPU. Hash-based triangle matching, Lanczos-3 interpolation, min/max pixel rejection. Color Combine for mono filter palettes (SHO, HOO, LRGB).
+- **GPU Post-Processing** — real-time stretch, sharpening, contrast, dark level, color saturation, bilateral denoise, Richardson-Lucy deconvolution, gradient removal, Wiener deconvolution, structure enhancement.
+- **Metal GPU Rendering** — PixInsight-compatible STF auto-stretch, zero-copy Apple Silicon buffers, <32ms navigation on cache hit.
+- **Compare with Best (C key)** — side-by-side synchronized zoom/pan with star eccentricity overlay and PA direction arrows.
+- **Culling Autopilot** — one-click auto-marking (Conservative/Balanced/Aggressive) with integration impact preview.
+- **SSWEIGHT Export** — writes PixInsight-compatible weight keywords into FITS/XISF headers for WBPP.
+- **Native FITS/XISF QuickLook** — Finder thumbnails and spacebar previews with debayer support for color cameras.
+- **iCloud Settings Sync** — all preferences and calibration data sync across Macs.
+
+For the full version-by-version changelog, see [CHANGELOG.md](CHANGELOG.md).
 
 ---
 
@@ -403,7 +93,7 @@ After a night of imaging you might have 200-600 sub-exposures. Some have clouds,
 5. **Pre-delete** — Cmd+Backspace moves all marked files to a `PRE-DELETE` subfolder — nothing is ever permanently deleted
 6. **Undo if needed** — full undo stack lets you restore any pre-delete operation (Cmd+Z)
 7. **Review your session** — Session Overview shows per-filter integration times and generates a shareable Fact Sheet
-8. **Stack** — select your best subs and hit LightspeedStacker or NormalStacker for an instant stacked preview
+8. **Stack** — select your best subs and hit LightspeedStacker for an instant stacked preview
 
 ---
 
@@ -426,12 +116,15 @@ After a night of imaging you might have 200-600 sub-exposures. Some have clouds,
 - Select 3+ images and stack with one click — no plate solving required
 - Triangle pattern matching for scale-invariant star alignment
 - Affine transform alignment (rotation + translation + scale)
+- Min/max pixel rejection — automatically removes satellite trails and hot pixels
+- Lanczos-3 interpolation — optional sharper kernel for large dithers
 - GPU bin2x pre-processing for ~4x faster stacking
 - Live blue star crosses showing detected stars during processing
-- Full result window with Photoshop-style zoom and all 4 adjustment sliders
+- Full result window with Photoshop-style zoom and all adjustment sliders
 - GPU Metal compute kernel for instant slider response in result window
 - Save as PNG with smart filename (object_date_filters_camera.png)
 - Same-target validation — warns if you accidentally select images of different objects
+- Color Combine — mono filter stacks to RGB (SHO, HOO, HSO, LRGB, HaRGB, Custom presets)
 
 ### OSC Debayer
 - Automatic Bayer pattern detection (RGGB, GRBG, GBRG, BGGR) from FITS/XISF headers
@@ -447,6 +140,7 @@ After a night of imaging you might have 200-600 sub-exposures. Some have clouds,
 - Spotlight-style search — real-time filtering in the toolbar, reduces file list as you type
 - Plain text search — searches across all columns (filename, object, filter, camera, etc.)
 - Column syntax — `filter:Ha`, `file:Veil`, `type:LIGHT`, `fwhm:>4`, `stars:<500`, `exp:300`
+- Quality filter presets — `q:trash`, `q:excellent`, `q:borderline`, `trail:>0.5`
 - Column aliases — short forms like `fil`, `obj`, `cam` work as column prefixes
 - Numeric operators — `>`, `<`, `>=`, `<=`, `=` for FWHM, HFR, stars, exp, gain, etc.
 - Mark/Unmark filtered — batch checkmark all search results, then move or delete
@@ -515,12 +209,13 @@ After a night of imaging you might have 200-600 sub-exposures. Some have clouds,
 ### QuickLook Extensions
 - Thumbnail provider — FITS/XISF thumbnails in Finder
 - Preview provider — full-size FITS/XISF preview in QuickLook (press Space in Finder)
+- OSC debayer support — color camera previews show debayered color
 
 ---
 
 ## Screenshots
 
-### macOS — AstroBlink & AIsaac v5.0
+### macOS — AstroBlink & AIsaac
 
 **Color Image with AI Quality Analysis:**
 ![AstroBlink Color + AIsaac](screenshots/AstroBlink_v5_color_aisaac.png)
@@ -572,6 +267,8 @@ After a night of imaging you might have 200-600 sub-exposures. Some have clouds,
 | `I` | Toggle FITS/XISF header inspector |
 | `D` | Toggle OSC debayer (when Bayer images detected) |
 | `N` | Toggle night mode (red-on-black) |
+| `C` | Compare with best frame |
+| `U` | Unmark all |
 | `Cmd+O` | Open folder or select files |
 | `Double-click` | Reset zoom to fit-to-view |
 
@@ -610,8 +307,8 @@ The iOS app source code is included in this repository under [`AstroFileViewer-i
 
 ### macOS (AstroBlinkV2)
 - **macOS 13 Ventura** or later
-- **Apple Silicon** recommended (M1/M2/M3/M4) — runs on Intel but optimized for unified memory architecture
-- Metal-capable GPU (all Macs since 2012)
+- **Apple Silicon** required (M1/M2/M3/M4) — engineered for unified memory architecture
+- Metal-capable GPU
 
 ### iOS (AstroFileViewer)
 - **iOS 16.4** or later
@@ -653,7 +350,7 @@ AstroBlinkV2 decodes FITS and XISF files using cfitsio and libxisf through a C b
 
 The workflow is non-destructive by design: marking a file only sets a flag in memory, and the "pre-delete" action physically moves files to a dedicated subfolder — never to Trash, never permanently deleted. A full undo stack allows you to reverse any pre-delete operation.
 
-Both stackers use triangle pattern matching on the brightest stars in each frame, compute affine transforms for alignment, and mean-combine aligned frames — all without external plate solving. LightspeedStacker runs the warp+accumulate step on the GPU via a Metal compute kernel and uses hash-based triangle lookup for near-instant matching. NormalStacker uses CPU warping with more stars for potentially higher accuracy on sparse star fields.
+LightspeedStacker uses triangle pattern matching on the brightest stars in each frame, computes affine transforms for alignment, and mean-combines aligned frames — all without external plate solving. The warp+accumulate step runs on the GPU via a Metal compute kernel with hash-based triangle lookup for near-instant matching.
 
 Floating windows (Session Overview, Header Inspector, Quick Stack Result) stay above the main AstroBlinkV2 window while working but go behind other apps when you switch away.
 
@@ -675,13 +372,13 @@ Extracted tokens: date, target, time, telescope, camera, frame type, filter, exp
 
 ### Why is LightspeedStacker so fast — and is it accurate?
 
-LightspeedStacker is ~7x faster than NormalStacker (15s vs 102s for 16 frames) while achieving near-identical alignment quality. Here's how:
+LightspeedStacker achieves 10-20x speedup over CPU stacking while maintaining near-identical alignment quality:
 
-1. **GPU warp+accumulate** — The biggest bottleneck in stacking is warping each frame to match the reference. NormalStacker does this on the CPU: a nested loop over millions of pixels with bilinear interpolation. LightspeedStacker offloads this to a Metal compute kernel that runs thousands of GPU threads in parallel, achieving 10-20x speedup on the warp step alone. This single change accounts for most of the speed difference.
+1. **GPU warp+accumulate** — The biggest bottleneck in stacking is warping each frame to match the reference. LightspeedStacker offloads this to a Metal compute kernel that runs thousands of GPU threads in parallel.
 
 2. **Parallel star detection + full-res centroid refinement** — All frames are analyzed simultaneously via Swift TaskGroup. After coarse detection on subsampled data, each star position is refined using a 9×9 weighted centroid on the full binned-resolution image — the same approach used by professional astrometry tools (SExtractor, DAOPHOT).
 
-3. **Hash-based triangle matching** — NormalStacker compares every triangle pair (O(N²)). LightspeedStacker quantizes triangle shape ratios into hash buckets for O(1) lookups — same 455 triangles from 50 stars, but matched ~100x faster.
+3. **Hash-based triangle matching** — Quantizes triangle shape ratios into hash buckets for O(1) lookups — same 455 triangles from 50 stars, but matched ~100x faster than brute-force O(N²).
 
 4. **Two-pass least-squares refinement** — The initial 3-point affine from triangle matching is refined using ALL inlier star correspondences (typically 20-40 pairs) via least-squares normal equations. A second pass with a tighter threshold (4px) converges to sub-pixel alignment accuracy.
 
@@ -703,7 +400,7 @@ No. LightspeedStacker is designed for **visual preview only** — a quick "what 
 - **No calibration frames** — no dark, flat, or bias subtraction
 - **Min/max rejection only** — removes single-frame outliers (satellite trails, hot pixels) but no sigma clipping or advanced rejection
 
-LightspeedStacker does support optional Lanczos-3 interpolation and min/max pixel rejection (v4.4.0+). The stacked result is meant to give you a quick visual impression of your session's potential — not a final image.
+LightspeedStacker does support optional Lanczos-3 interpolation and min/max pixel rejection. The stacked result is meant to give you a quick visual impression of your session's potential — not a final image.
 
 ---
 

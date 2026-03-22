@@ -221,6 +221,7 @@ Uncompressed XISF: ~17ms decode (SSD limited). LZ4-compressed: ~100-300ms (CPU d
 ## Future TODOs — UI Polish
 - [ ] Smooth arrow-key scrolling: holding up/down should pin selection at visible edge while rows scroll past (like Finder). Current behavior still stutters — likely needs NSTableView subclass override of `moveDown:`/`moveUp:` to control scroll position directly instead of relying on `scrollRowToVisible`.
 - [ ] User-adjustable font size for file list table (currently hardcoded: 11pt columns, 12pt filename, 22pt row height). Cmd+/- or preferences slider. Needs to scale row height proportionally.
+- [ ] Backspace to remove selected files from session — remove from images array, clear from prefetch cache, reclaim cache memory, recompute quality scores. Files stay on disk untouched — just excluded from the current session as if never loaded. Useful for removing calibration frames that slipped through, test exposures, etc.
 
 ---
 
@@ -280,7 +281,7 @@ Uncompressed XISF: ~17ms decode (SSD limited). LZ4-compressed: ~100-300ms (CPU d
 - [ ] Custom icon asset (friendly old man with beard, glasses, 3 blinking stars)
 - [ ] Give AIsaac full keyboard shortcut reference in system prompt
 - [ ] Give AIsaac Help panel content knowledge for user support questions
-- [ ] iCloud sync activation (developer portal container setup)
+- [x] iCloud sync — already active (entitlements + AIsaacUserProfile dual-write to iCloud Drive + local fallback)
 - [ ] Persistent rate limiting in Supabase database (survives cold starts)
 - [ ] Cache common object info queries (reduce API calls)
 - [ ] Response streaming for Opus mode (currently works, verify edge cases)
@@ -415,6 +416,44 @@ median or averaged sigma-clipped for flats.
 - Combination: mean (after rejection)
 - Weight: equal (all calibration frames same exposure/conditions)
 - PixelMath for master flat: `$T / mean($T)` after integration
+
+## Future TODOs — User Confidence Rating (1/2/3 Stars)
+
+### Concept
+User can press 1, 2, or 3 on keyboard for highlighted file(s) to assign a personal confidence score:
+- **1 star** = low confidence / disagree with auto-rating
+- **2 stars** = unsure / needs review
+- **3 stars** = high confidence / fully agree with auto-rating
+- **0 (default)** = unrated
+
+Orthogonal to deletion marking — both are tracked independently.
+Valuable for ML/community learning, especially borderline cases.
+
+### Implementation Plan
+- [ ] `userConfidence: Int` (0-3) on ImageEntry, persisted in SQLite (GRDB)
+- [ ] Keyboard shortcuts: 1/2/3 set rating, 0 clears. Works on single + multi-selection
+- [ ] Tiny star icons column (left side), default visible: 0=empty, 1-3=filled stars
+- [ ] Persistence key: file content hash (SHA256 of first 64KB) + filename basename
+  - Hash-first for reliability (renamed files still match)
+  - Filename fallback for speed (skip hash if basename unique in DB)
+- [ ] SQLite table: `user_ratings(content_hash TEXT, filename TEXT, confidence INT, marked_delete BOOL, timestamp TEXT)`
+  - Index on content_hash + filename for fast lookup
+  - Tested for 1M+ rows: SQLite handles this trivially (B-tree, <1ms lookup)
+- [ ] Session load: batch-lookup ratings by filename set, lazy hash verification
+- [ ] Filter syntax: `rating:0`, `rating:1`, `rating:2`, `rating:3`, `rating:unrated`, `rating:rated`
+- [ ] Export: include confidence column in SSWEIGHT CSV + optional Supabase upload
+- [ ] ML/community value: confidence ratings paired with quality metrics = labeled training data
+
+### Performance Considerations (1M+ files)
+- SQLite single-row lookup by indexed hash: O(log n), <1ms even at 10M rows
+- Batch insert on session load: use GRDB `batchInsert` / transactions (1000 rows/batch)
+- No in-memory dictionary of all ratings — query on demand per visible page
+- Star icon rendering: lightweight SF Symbol, no performance concern
+
+### Future: Community Learning Integration
+- Anonymous upload: (setupFingerprint, qualityMetrics, userConfidence) tuples
+- Crowdsourced ground truth for detection algorithm training
+- Requires opt-in consent + Supabase backend (see project_community_detection_learning.md)
 
 ## Future TODOs — Testing
 - [ ] Fix pre-existing DecoderTests.testMetalBufferCreation failure

@@ -20,8 +20,7 @@ class ReleaseNotesWindowController {
             backing: .buffered,
             defer: false
         )
-        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
-        win.title = "What's New — AstroBlinkV2 v\(version)"
+        win.title = "What's New — AstroBlinkV2"
         win.contentView = hostingView
         win.center()
         win.isReleasedWhenClosed = false
