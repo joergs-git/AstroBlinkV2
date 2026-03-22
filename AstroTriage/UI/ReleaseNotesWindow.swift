@@ -34,6 +34,10 @@ class ReleaseNotesWindowController {
 // MARK: - Release notes data (shared between view and copy)
 
 private let allReleases: [(version: String, date: String, items: [(ReleaseNotesView.ChangeType, String, String)])] = [
+    ("5.1.3", "March 22, 2026", [
+        (.fixed, "Splash Screen Checkbox", "\"Don't show on startup\" checkbox now works correctly — clicking it no longer immediately dismisses the splash window."),
+        (.fixed, "Background Anomaly False Positives", "Quality scoring no longer flags the best frames as \"abnormal background\". Only elevated background (clouds/gradient) is flagged — lower background (clearer sky) is correctly treated as good."),
+    ]),
     ("4.0.0", "March 15, 2026", [
         (.added, "Star Eccentricity Detection", "2D image moment analysis (SExtractor method) detects star elongation from tracking errors. Eccentricity > 0.6 = immediate trash. Weight 1.5x in quality scoring (highest)."),
         (.added, "SNR Contribution Score", "Shows how much each frame adds to a weighted stack relative to the best frame: (SNR_i/SNR_best)^2. Hidden for trash frames to avoid misleading display."),

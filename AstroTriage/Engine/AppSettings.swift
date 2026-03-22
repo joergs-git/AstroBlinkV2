@@ -1,4 +1,4 @@
-// v5.1.2
+// v5.1.3
 import Foundation
 
 // Centralized settings wrapper with iCloud sync via NSUbiquitousKeyValueStore.

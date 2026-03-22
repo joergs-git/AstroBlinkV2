@@ -4,6 +4,14 @@ All notable changes to AstroBlink & AIsaac will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [5.1.3] — 2026-03-22
+
+### Fixed
+- **Splash screen checkbox** — "Don't show on startup" checkbox no longer triggers immediate window dismissal; preference saves and persists correctly
+- **Background anomaly false positives** — Quality scoring Rule 7 no longer flags frames with lower background (clearer sky, more stars) as "abnormal background"; only elevated background (clouds/gradient/fog) is penalized
+
+---
+
 ## [5.1.2] — 2026-03-21
 
 ### Added
