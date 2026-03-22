@@ -61,6 +61,10 @@ struct QualityBreakdown: Hashable {
     // Generated during scoring when group context is available.
     let reasoningText: String?
 
+    // Filter-aware trailing penalty multiplier applied during scoring.
+    // 0.3 = narrowband (Ha/OIII/SII), 0.6 = RGB, 1.0 = luminance, 0.7 = unknown
+    var filterTrailingMultiplier: Double = 1.0
+
     // Smart recommendation label based on per-metric analysis
     // Smart recommendation based on per-metric analysis and eccentricity.
     // Research shows: round stars = always keep (even with worse FWHM/noise).
@@ -80,7 +84,8 @@ struct QualityBreakdown: Hashable {
         guard tier == .borderline else { return "" }
 
         // Check eccentricity first — the critical differentiator
-        let hasHighEcc = (trailingZ ?? 0) > 1.5  // Significantly more trailing than group average
+        // Filter-aware: narrowband (0.3) needs much higher z to trigger review
+        let hasHighEcc = (trailingZ ?? 0) > (1.5 / max(filterTrailingMultiplier, 0.1))
         if hasHighEcc {
             return "REVIEW — stars may be elongated"
         }
@@ -164,6 +169,22 @@ struct QualityEstimator {
     // This handles all current and future filter types without maintaining a narrowband list.
     static let broadbandCanonical: Set<String> = ["L", "R", "G", "B"]
 
+    // Filter categories for trailing penalty scaling.
+    // Narrowband: slight trailing barely affects diffuse emission — very lenient.
+    // RGB: star color matters, moderate resolution needs.
+    // Luminance: the sharpness channel — full strictness.
+    private static let narrowbandCanonical: Set<String> = ["Ha", "OIII", "SII", "Hbeta", "NII"]
+    private static let rgbCanonical: Set<String> = ["R", "G", "B"]
+
+    /// Filter-aware trailing penalty multiplier.
+    /// Returns 0.3 for narrowband, 0.6 for RGB, 1.0 for luminance, 0.7 for unknown/exotic.
+    static func filterTrailingMultiplier(for canonical: String) -> Double {
+        if narrowbandCanonical.contains(canonical) { return 0.3 }
+        if rgbCanonical.contains(canonical)        { return 0.6 }
+        if canonical == "L"                         { return 1.0 }
+        return 0.7  // Unknown or exotic filters — conservative default
+    }
+
     // MARK: - Public API
 
     /// Compute quality scores with optional calibration data for absolute quality floor.
@@ -222,6 +243,7 @@ struct QualityEstimator {
                 || canonical.isEmpty || canonical.lowercased() == "none"
             let isNarrowband = !isBroadband
             var starWeight: Double = isNarrowband ? 0.5 : 1.2
+            let trailMult = filterTrailingMultiplier(for: canonical)
 
             // Per-group source consistency
             let allHaveHeaderFWHM = groupEntries.allSatisfy { $0.fwhm != nil }
@@ -371,28 +393,32 @@ struct QualityEstimator {
 
                 // Rule 5: Extreme eccentricity — raw ecc far above FL baseline.
                 // Fully FL-adaptive via baseline = 0.8 / sqrt(FL / 200).
+                // Filter-aware: narrowband threshold raised (÷ trailMult), so slight
+                // elongation in Ha/OIII/SII doesn't waste precious integration time.
                 if let ecc = entry.computedEccentricity {
                     let fl = entry.focalLength ?? 0
                     let baseline = fl > 0
                         ? min(0.70, max(0.15, 0.8 / (fl / 200.0).squareRoot()))
                         : 0.40
                     let excessRatio = (ecc - baseline) / max(baseline, 0.01)
-                    if excessRatio > 1.0 && !garbageReasons.contains(.elongated) {
+                    if excessRatio > (1.0 / trailMult) && !garbageReasons.contains(.elongated) {
                         garbageReasons.append(.elongated)
                     }
                 }
 
                 // Rule 6: Star trailing — consensus-weighted, FL-adaptive score.
                 // Cross-check: fwhmRulesOutTrailing prevents false positives on sharp frames.
+                // Filter-aware: thresholds raised for narrowband (÷ trailMult), effectively
+                // disabling trailing garbage for Ha/OIII/SII since score is capped at 1.0.
                 let fwhmRulesOutTrailing: Bool = {
                     guard let fwhm = fwhmValues[localIdx], let median = fwhmMedian else { return false }
                     return fwhm <= median * 1.15
                 }()
 
                 if !fwhmRulesOutTrailing, !garbageReasons.contains(.elongated) {
-                    if let ts = entry.trailingScore, ts > 0.7 {
+                    if let ts = entry.trailingScore, ts > (0.7 / trailMult) {
                         garbageReasons.append(.elongated)
-                    } else if let ts = entry.trailingScore, ts > 0.5,
+                    } else if let ts = entry.trailingScore, ts > (0.5 / trailMult),
                               let consensus = entry.trailingConsensus, consensus > 0.8 {
                         garbageReasons.append(.elongated)
                     }
@@ -457,7 +483,8 @@ struct QualityEstimator {
                         snrSquared: snrSq,
                         garbageReasons: garbageReasons,
                         isLockedKeep: false,
-                        reasoningText: nil  // Garbage reasons already shown via garbageReasons
+                        reasoningText: nil,  // Garbage reasons already shown via garbageReasons
+                        filterTrailingMultiplier: trailMult
                     )
                     continue
                 }
@@ -498,8 +525,8 @@ struct QualityEstimator {
                     wSum += 1.0
                 }
                 if let z = trailingZscores[localIdx] {
-                    zSum += -min(cap, max(-cap, z)) * 1.0     // lower trailing = better → negate
-                    wSum += 1.0          // Same weight as other metrics; Stage 1 catches severe trailing
+                    zSum += -min(cap, max(-cap, z)) * trailMult  // lower trailing = better → negate
+                    wSum += trailMult    // Filter-aware: 0.3 NB, 0.6 RGB, 1.0 L, 0.7 unknown
                 }
 
                 guard wSum > 0 else { continue }
@@ -536,7 +563,7 @@ struct QualityEstimator {
                         && noiseMadZscores[localIdx]! <= 0.5
                     let starsLow = starsValues[localIdx] != nil && starsMedian != nil
                         && starsValues[localIdx]! < starsMedian! * 0.75
-                    let trailingOK = (entry.trailingScore ?? 0) < 0.3
+                    let trailingOK = (entry.trailingScore ?? 0) < (0.3 / trailMult)
 
                     // Rule A: Good FWHM + acceptable noise → frame is fundamentally sound
                     if fwhmOK && noiseOK && trailingOK {
@@ -568,7 +595,8 @@ struct QualityEstimator {
                     trailingZ: cappedZ(trailingZscores[localIdx]),
                     tier: tier,
                     isLockedKeep: lockedKeep,
-                    rescueReason: rescueReason
+                    rescueReason: rescueReason,
+                    filterTrailingMultiplier: trailMult
                 )
 
                 // Hide SNR contribution for trash tier — misleading to show high % on garbage frames
@@ -586,7 +614,8 @@ struct QualityEstimator {
                     snrSquared: snrSq,
                     garbageReasons: [],
                     isLockedKeep: lockedKeep,
-                    reasoningText: reasoning
+                    reasoningText: reasoning,
+                    filterTrailingMultiplier: trailMult
                 )
             }
         }
@@ -649,7 +678,8 @@ struct QualityEstimator {
                     snrSquared: oldBD.snrSquared,
                     garbageReasons: [],
                     isLockedKeep: oldBD.isLockedKeep,
-                    reasoningText: "FWHM comparable to good frames — penalized by session peak quality, not actual degradation"
+                    reasoningText: "FWHM comparable to good frames — penalized by session peak quality, not actual degradation",
+                    filterTrailingMultiplier: oldBD.filterTrailingMultiplier
                 )
             }
         }
@@ -721,7 +751,8 @@ struct QualityEstimator {
         fwhmZ: Double?, starsZ: Double?, noiseZ: Double?, trailingZ: Double?,
         tier: QualityTier,
         isLockedKeep: Bool,
-        rescueReason: String?
+        rescueReason: String?,
+        filterTrailingMultiplier: Double = 1.0
     ) -> String {
         if isLockedKeep {
             return "Within calibrated baseline — all metrics match learned profile"
@@ -745,7 +776,11 @@ struct QualityEstimator {
         if fwhmPenalty > 0.5     { penalties.append(("FWHM", fwhmPenalty)) }
         if noisePenalty > 0.5    { penalties.append(("Noise", noisePenalty)) }
         if starsPenalty > 0.5    { penalties.append(("Stars", starsPenalty)) }
-        if trailingPenalty > 0.5 { penalties.append(("Trailing", trailingPenalty)) }
+        if trailingPenalty > 0.5 {
+            let label = filterTrailingMultiplier < 0.5 ? "Trailing (reduced — narrowband)" :
+                        filterTrailingMultiplier < 0.8 ? "Trailing (moderate — RGB)" : "Trailing"
+            penalties.append((label, trailingPenalty))
+        }
 
         let sorted = penalties.sorted { $0.1 > $1.1 }
 

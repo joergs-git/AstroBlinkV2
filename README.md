@@ -166,6 +166,7 @@ After a night of imaging you might have 200-600 sub-exposures. Some have clouds,
 ### SmartCull Quality Engine
 - **4-stage quality pipeline** — garbage detection, z-score ranking, pattern-based rescue rules, and sanity checks. Handles ~99% of quality decisions automatically
 - **Orientation consensus trailing detection** — industry first: detects tracking errors by analyzing whether star elongation directions agree (tracking error) or are random (optical aberration)
+- **Filter-aware trailing penalties** — narrowband (Ha/OIII/SII) gets 0.3× trailing weight (slight trailing barely affects emission nebulae), RGB 0.6×, luminance 1.0× (full strictness for the sharpness channel)
 - **Focal-length-adaptive thresholds** — automatically adjusts eccentricity tolerance based on FOCALLEN from headers (short FL = more tolerance)
 - **Stage 3 rescue rules** — frames with good FWHM + acceptable noise rescued from trash; star count dips recognized as transient events
 - **Quality reasoning ("Why?")** — hover any quality icon for a human-readable explanation of the scoring decision

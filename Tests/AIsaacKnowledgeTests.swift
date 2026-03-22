@@ -85,6 +85,45 @@ final class AIsaacKnowledgeTests: XCTestCase {
         }
     }
 
+    /// User guide section must cover all major app features.
+    func testUserGuideCoversAllFeatures() {
+        let prompt = AIsaacContextBuilder.appKnowledge.lowercased()
+
+        let features = [
+            "stretch mode",         // Auto vs Locked stretch
+            "pre-delete",           // Pre-delete workflow
+            "compare view",         // C key comparison
+            "header inspector",     // I key
+            "night mode",           // N key
+            "debayer",              // D key for OSC
+            "culling autopilot",    // Auto-mark popover
+            "color combine",        // Mono filter stacking
+            "lightspeedstacker",    // GPU stacking
+            "quicklook",            // Finder preview
+            "context menu",         // Right-click
+            "preview window",       // Double-click floating window
+            "multi-select",         // Shift/Cmd-click
+            "recommended workflow", // Best practices
+        ]
+
+        for feature in features {
+            XCTAssertTrue(prompt.contains(feature),
+                          "AIsaac USER GUIDE missing feature: \"\(feature)\"")
+        }
+    }
+
+    /// Filter-aware trailing penalty must be documented in the prompt.
+    func testFilterAwareTrailingDocumentedInPrompt() {
+        let prompt = AIsaacContextBuilder.appKnowledge.lowercased()
+
+        XCTAssertTrue(prompt.contains("filter-aware"),
+                      "AIsaac prompt must mention 'filter-aware' trailing penalty")
+        XCTAssertTrue(prompt.contains("narrowband") && prompt.contains("0.3"),
+                      "AIsaac prompt must document narrowband trailing multiplier 0.3")
+        XCTAssertTrue(prompt.contains("luminance") && prompt.contains("1.0"),
+                      "AIsaac prompt must document luminance trailing multiplier 1.0")
+    }
+
     // MARK: - Frame Data Completeness
 
     /// The per-frame CSV header in AIsaac context must include all metric columns.

@@ -262,7 +262,8 @@ struct AIsaacContextBuilder {
         These frames are NOT bad — just in a group too small to compare.
         - Stage 2 — Relative Z-Score Ranking (within each group):
           * Median/MAD robust statistics. Metrics weighted: Stars 1.2× (broadband) / 0.5× (narrowband), \
-          FWHM 1.0×, Noise 1.0×, Trailing 1.0×. Z-scores capped at ±3.0.
+          FWHM 1.0×, Noise 1.0×, Trailing filter-aware (0.3× narrowband, 0.6× RGB, 1.0× luminance, \
+          0.7× unknown). Z-scores capped at ±3.0.
           * Tiers: Excellent (z > 0.5), Good (z > -0.5), Borderline (z > -2.0), Trash (z ≤ -2.0)
         - Stage 3 — Rescue Rules (only promote, never demote):
           * A: FWHM + noise OK → Good. B: Star dip + sharp → Good. C: FWHM-only → Borderline.
@@ -283,7 +284,12 @@ struct AIsaacContextBuilder {
         ADAPTIVE THRESHOLDS:
         - Eccentricity: FL-adaptive baseline = 0.8 / sqrt(FL / 200). \
         468mm → 0.52, 620mm → 0.45, 904mm → 0.30, 2455mm → 0.23. \
-        R5 fires when ecc > 2× baseline (excessRatio > 1.0). R6 uses consensus-weighted score.
+        R5 fires when ecc > 2× baseline (excessRatio > 1.0). R6 uses consensus-weighted score. \
+        Both thresholds are filter-aware: divided by trailing multiplier.
+        - Trailing penalty: filter-aware. Narrowband (Ha/OIII/SII) × 0.3 — slight trailing barely \
+        affects diffuse emission, don't waste precious narrowband integration time. RGB × 0.6 — \
+        star color matters moderately. Luminance × 1.0 — full strictness, this is the sharpness \
+        channel. Unknown filters × 0.7. SSWEIGHT penalty also scales with this multiplier.
         - Background: scales with group size (10 frames → 6.5 MAD, 20+ → 5.0 MAD).
         - Narrowband: star weight 0.5× (fewer stars normal for Ha/OIII/SII).
 
@@ -291,34 +297,125 @@ struct AIsaacContextBuilder {
         - After 30+ frames with same setup, absolute quality floor activates.
         - Frames meeting learned baseline locked as KEEP (blue lock icon) — z-scores can't override.
 
-        OTHER CONCEPTS:
-        - STF: Screen Transfer Function — PixInsight-compatible auto-stretch (median/MAD → midtones transfer).
-        - SSWEIGHT: Quality weight 0-100 written to FITS/XISF headers for PixInsight WBPP.
-        - Pre-delete: Files moved to _predel/ staging folder, never permanently deleted. Full Cmd+Z undo.
-        - Culling Autopilot: Conservative (Stage 1 only), Balanced (+severe borderline), Aggressive (+all borderline).
-        - Compare (C key): side-by-side with best frame in group. Synchronized zoom/pan. Star overlay shows eccentricity.
+        USER GUIDE — Complete App Workflow & UI Reference:
 
-        STACKING OPTIONS:
-        - Bilinear interpolation: fast (4 pixels, 2x2). Good enough with 15+ frames.
-        - Lanczos-3 interpolation: sharper (36 pixels, 6x6 sinc kernel). Better for few frames or large dithers.
-        - Min/max pixel rejection: automatic, removes satellite trails and hot pixels when ≥3 frames.
-        - Gradient removal: removes light pollution gradients via median grid + interpolation.
-        - Structure enhancement: boosts nebula/cloud detail without sharpening stars.
-        - Deconvolution modes: RL (GPU, fast, default), USM (GPU, fastest), Wiener (CPU, best quality but slow).
-        - A/B toggle: instantly compare processed vs original without recalculation.
+        RECOMMENDED WORKFLOW (tell new users this):
+        1. Open folder (Cmd+O) — supports multi-folder: Cmd-click to merge sessions
+        2. Wait for caching to complete (progress bar in status bar). Quality scores appear only after \
+        all frames in each group are analyzed — this is normal, not a bug.
+        3. Sort by quality column (click header). Review red/orange frames — hover for per-metric breakdown.
+        4. Compare suspicious frames: select + press C for side-by-side with best frame. Star overlay shows elongation.
+        5. Mark bad frames: Space key (single or multi-selection). Shift-click/Cmd-click for range/individual selection.
+        6. Optional: use Culling Autopilot (click quality pill in status bar) for one-click auto-marking.
+        7. Pre-delete: Cmd+Backspace moves marked files to _predel/ staging folder. Never permanent. Full Cmd+Z undo.
+        8. Optional: export SSWEIGHT to FITS/XISF headers (File menu) for PixInsight WBPP weighted integration.
 
-        KEYBOARD SHORTCUTS (tell users when relevant):
-        - Arrow keys: prev/next image. Page Up/Home: first. Page Down/End: last.
-        - Space: toggle pre-delete mark. Cmd+Backspace: move marked to _predel/. Cmd+Z: undo.
-        - S: toggle stretch lock. D: toggle debayer. N: night mode. I: header inspector.
-        - C: compare with best. K: skip marked during navigation. H: cycle hide/show marked.
-        - +/-: zoom. 0: reset zoom. Double-click: fit to view or open preview.
-        - Cmd+O: open folder. Cmd+M: move to folder. Cmd+Shift+R: batch rename.
+        STRETCH MODES (S key cycles):
+        - Auto: each image stretched individually → compare SHARPNESS/QUALITY (independent of sky brightness)
+        - Locked: stretch params from current image applied to all → compare BRIGHTNESS/TRANSPARENCY \
+        (e.g., clouds make frames dimmer). Lock on a clear frame, then blink through to spot dim ones.
+        Best practice: use Auto for quality review, Locked for transparency/cloud detection.
 
-        LINKS (reference these when users ask for more info):
+        FILE LIST & TABLE:
+        - Click column header to sort. Click again to reverse. Sort tiebreaker: time ascending, date descending.
+        - Right-click column headers: show/hide columns, drag to reorder.
+        - Multi-select: Shift-click for range, Cmd-click for individual. Space marks ALL selected frames.
+        - Quality column icons: full green = excellent, half-green = good, orange gradient (4 sub-levels) = borderline, \
+        red X = garbage. Blue lock badge = calibration-locked KEEP.
+        - Hover quality icon for tooltip: per-metric z-scores, SNR contribution %, human-readable reason, KEEP/DELETE advice.
+        - Filter bar (top): type text to filter by filename. Filter syntax: "filter:Ha", "q:trash", "fwhm:>4", \
+        "stars:<500", "snr:<20", "trail:>0.5", "file:NGC". Combine with spaces.
+
+        IMAGE VIEWER:
+        - Scroll to zoom (trackpad or mouse wheel). +/- keys also zoom. 0 resets zoom to 100%.
+        - Double-click: reset to fit-to-view. If already fit: opens floating preview window with sliders.
+        - Drag to pan when zoomed in. Zoom follows cursor position.
+        - Info overlay (top-left): shows current frame metadata (FWHM, HFR, stars, ecc, trailing, SNR, filter, exposure).
+
+        HEADER INSPECTOR (I key):
+        - Opens panel showing all FITS/XISF header keywords from the current image.
+        - Useful for checking raw metadata: FILTER, GAIN, CCD-TEMP, FOCPOS, DATE-OBS, etc.
+
+        COMPARE VIEW (C key):
+        - Side-by-side: current frame vs best frame in group. Synchronized zoom and pan.
+        - Opens at 300% zoom on star field for detailed comparison.
+        - Star overlay toggle: circles on problematic stars (high eccentricity). PA arrows show trailing direction.
+        - Consensus arrow shows systematic tracking error direction when detected.
+        - ESC or close button to exit.
+
+        IMAGE PREVIEW WINDOW (double-click on image or press Enter):
+        - Floating window with full post-processing sliders:
+        Stretch (auto-stretch intensity), Sharp (multi-scale unsharp mask), Contrast, \
+        Dark (black point), Color (saturation, RGB only), Denoise (bilateral + chrominance), \
+        Deconv (Richardson-Lucy deconvolution with Gaussian PSF).
+        - A/B toggle: instantly compare processed vs original.
+        - Can open multiple preview windows simultaneously for different frames.
+
+        NIGHT MODE (N key):
+        - Red-on-black UI for preserving dark adaptation during imaging sessions.
+        - Affects entire app: file list, viewer, panels.
+
+        DEBAYER (D key):
+        - Toggles CFA→RGB debayer for OSC (one-shot-color) cameras.
+        - Only relevant for color cameras (BAYERPAT header present). Mono cameras: no effect.
+        - GPU bilinear interpolation, real-time.
+
+        CULLING AUTOPILOT:
+        - Click the quality status pill in the status bar to open popover.
+        - Conservative: marks only Stage 1 garbage (clearly broken frames).
+        - Balanced: + severe borderline (severity ≥ 2, orange-leaning-red).
+        - Aggressive: + all borderline frames.
+        - Shows integration loss and SNR impact before applying. Confirmable.
+
+        PRE-DELETE WORKFLOW:
+        - Space marks/unmarks frames (checkmark icon). Works on multi-selection.
+        - Cmd+Backspace physically moves marked files to _predel/ subfolder in session directory.
+        - Confirmation dialog shows: # of files, integration loss, SNR impact, tier breakdown.
+        - Full undo: Cmd+Z moves files back from _predel/ to original location.
+        - Files are NEVER permanently deleted by the app. User can empty _predel/ manually or via Finder Trash.
+        - K key: toggle skip-marked during arrow navigation. H key: cycle hide marked / show only marked / show all.
+
+        SSWEIGHT EXPORT:
+        - File menu → Export SSWEIGHT. Writes quality weight (0-100) to each FITS/XISF file header.
+        - Formula: (50 + z-score × 20) × trailing penalty. Filter-aware trailing multiplier applied.
+        - Locked KEEP frames get minimum weight 50. CSV backup created in session root.
+        - PixInsight WBPP reads SSWEIGHT automatically for weighted integration — better frames get more influence.
+
+        COLOR COMBINE (mono cameras only):
+        - Stack menu → Color Combine. Requires multiple filters (e.g., Ha + OIII + SII).
+        - Auto-detects filters from session. Presets: SHO (Hubble Palette), HOO, HSO, LRGB, HaRGB, Custom.
+        - Per-channel weight sliders (adjustable on-release for instant recombine).
+        - Luminance blending for LRGB: ratio-preserving (RGB × L/Y).
+        - Full post-processing in result window (stretch, sharp, contrast, color, denoise, deconv).
+
+        LIGHTSPEEDSTACKER:
+        - Select frames → Stack button (or right-click → Stack Selected).
+        - GPU-accelerated: hash-based triangle matching for alignment, warp+accumulate.
+        - Options: Bilinear (fast, 2x2) or Lanczos-3 (sharp, 6x6 sinc). Lanczos better for few frames or large dithers.
+        - Min/max pixel rejection: automatic when ≥3 frames. Removes satellite trails and hot pixels.
+        - Result window: stretch, sharp, contrast, dark, color, denoise, deconv, gradient removal, structure enhancement.
+        - A/B toggle, PNG export, direct open in PixInsight/Photoshop.
+
+        CONTEXT MENU (right-click on file list):
+        - Open With... (external app), Show in Finder, Compare with Best.
+
+        QUICKLOOK:
+        - AstroBlinkV2 installs a QuickLook plugin for FITS/XISF files.
+        - Select any FITS/XISF in Finder, press Spacebar → instant auto-stretched preview with OSC debayer.
+
+        KEYBOARD SHORTCUTS — Complete Reference:
+        - ←/→: prev/next image. Page Up/Home: first. Page Down/End: last.
+        - Space: toggle pre-delete mark (works on multi-selection).
+        - Cmd+Backspace: move marked to _predel/ folder. Cmd+Z: undo last pre-delete.
+        - S: cycle stretch mode (auto → locked). D: toggle debayer. N: toggle night mode.
+        - I: toggle header inspector panel. C: compare current frame with best in group.
+        - K: toggle skip-marked during navigation. H: cycle hide marked / show only marked / show all.
+        - +/-: zoom in/out. 0: reset zoom to 100%. Double-click: fit to view.
+        - Cmd+O: open folder (Cmd-click for multi-folder). Cmd+W: close window.
+
+        LINKS:
         - GitHub: https://github.com/joergs-git/AstroBlinkV2
-        - README with full feature list and changelog
-        - AstroBin profile: https://app.astrobin.com/u/joergsflow#gallery
+        - AstroBin: https://app.astrobin.com/u/joergsflow#gallery
         - Support: https://buymeacoffee.com/joergsflow
         """
     }

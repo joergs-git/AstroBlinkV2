@@ -195,7 +195,7 @@ struct ColumnDefinition {
         case "snrContrib":
             return "SNR Contribution: how much this frame adds to a weighted stack\nrelative to the best frame in its group.\n100% = best frame, 50% = contributes half as much.\nBased on (SNR_i / SNR_best)² — the stacking SNR formula."
         case "eccentricity":
-            return "Star eccentricity from 2D image moments (same method as SExtractor).\n0.0 = perfect circle, >0.5 = clearly elongated, >0.6 = trash.\nDetects tracking errors, wind shake, and mount issues.\nWeight in quality score: 1.5× (highest — can't be fixed by stacking)."
+            return "Star eccentricity from 2D image moments (same method as SExtractor).\n0.0 = perfect circle, >0.5 = clearly elongated, >0.6 = trash.\nDetects tracking errors, wind shake, and mount issues.\nWeight in quality score: filter-dependent (0.3× narrowband, 0.6× RGB, 1.0× luminance).\nNarrowband is lenient — slight trailing barely affects diffuse emission."
         case "snr":
             return "Signal-to-Noise Ratio.\nComputed from median pixel value / noise MAD during auto-stretch.\nHigher = cleaner signal. Affected by exposure, light pollution, clouds."
         case "fwhm":

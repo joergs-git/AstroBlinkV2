@@ -48,6 +48,9 @@ Usually not. Research shows that including softer-but-round frames barely affect
 **Q: What is "trailing consensus"?**
 When a mount has tracking errors, all stars trail in the same direction. SmartCull measures the position angle of each star's elongation and checks if they agree. >50% agreement = tracking error. Random directions = normal optical aberration (not penalized).
 
+**Q: Why are narrowband frames less penalized for trailing?**
+Narrowband filters (Ha, OIII, SII) capture diffuse nebula emission. The science target doesn't depend on point-source star sharpness, and narrowband PSFs are already naturally bloated from chromatic effects. Long narrowband exposures (300-600s) are expensive — clear narrowband nights are rare. Slight tracking drift within the seeing disk barely affects the final stack quality. SmartCull applies a 0.3× trailing weight multiplier for narrowband, 0.6× for RGB, and full 1.0× for luminance (the sharpness channel). This prevents wasting precious integration time on frames with barely visible elongation.
+
 ## Stacking
 
 **Q: Is LightspeedStacker a replacement for PixInsight/APP?**

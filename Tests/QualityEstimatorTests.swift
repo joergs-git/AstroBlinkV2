@@ -537,15 +537,16 @@ final class QualityEstimatorTests: XCTestCase {
     /// Rule 5: At long FL (2455mm RC12), ecc > 2× baseline → garbage.
     /// Baseline = 0.8 / sqrt(2455/200) = 0.228, threshold = 0.456.
     /// Ecc=0.51 (like frame #40) should be flagged as elongated.
+    /// Uses filter "L" (trailMult=1.0) for full strictness.
     func testExtremeEccentricityLongFL_Garbage() {
-        var entries = makeGroup(count: 24, fwhm: 3.5, hfr: 2.0, starCount: 2500, noiseMAD: 0.01)
+        var entries = makeGroup(count: 24, fwhm: 3.5, hfr: 2.0, starCount: 2500, noiseMAD: 0.01, filter: "L")
         // Set FL on all entries (same setup group)
         for i in 0..<entries.count {
             entries[i].focalLength = 2455.0
             entries[i].computedEccentricity = 0.34  // Normal for RC12
         }
         // Add a clearly trailed frame (like M82 #40)
-        var bad = makeEntry(index: 99, fwhm: 3.6, hfr: 2.1, starCount: 2464, noiseMAD: 0.01,
+        var bad = makeEntry(index: 99, filter: "L", fwhm: 3.6, hfr: 2.1, starCount: 2464, noiseMAD: 0.01,
                             computedEccentricity: 0.51, focalLength: 2455.0)
         bad.noiseMedian = 0.05
         entries.append(bad)
@@ -595,13 +596,14 @@ final class QualityEstimatorTests: XCTestCase {
 
     /// Rule 5: Extreme ecc at medium FL (620mm RASA f/2.2).
     /// Baseline = 0.455. Ecc=0.95 → excessRatio = (0.95-0.455)/0.455 = 1.09 → garbage.
+    /// Uses filter "L" (trailMult=1.0) for full strictness.
     func testExtremeEccentricityMediumFL_Garbage() {
-        var entries = makeGroup(count: 24, fwhm: 4.0, hfr: 2.5, starCount: 1500, noiseMAD: 0.01)
+        var entries = makeGroup(count: 24, fwhm: 4.0, hfr: 2.5, starCount: 1500, noiseMAD: 0.01, filter: "L")
         for i in 0..<entries.count {
             entries[i].focalLength = 620.0
             entries[i].computedEccentricity = 0.45
         }
-        var bad = makeEntry(index: 99, fwhm: 4.2, hfr: 2.6, starCount: 1500, noiseMAD: 0.01,
+        var bad = makeEntry(index: 99, filter: "L", fwhm: 4.2, hfr: 2.6, starCount: 1500, noiseMAD: 0.01,
                             computedEccentricity: 0.95, focalLength: 620.0)
         bad.noiseMedian = 0.05
         entries.append(bad)
@@ -613,14 +615,15 @@ final class QualityEstimatorTests: XCTestCase {
 
     /// Rule 5 bypasses fwhmRulesOutTrailing — ecc-based check needs no FWHM cross-check.
     /// Frame has normal FWHM (within 15% of median) but extreme eccentricity.
+    /// Uses filter "L" (trailMult=1.0) for full strictness.
     func testExtremeEcc_BypassesFWHMCrossCheck() {
-        var entries = makeGroup(count: 24, fwhm: 8.5, hfr: 4.0, starCount: 2500, noiseMAD: 0.01)
+        var entries = makeGroup(count: 24, fwhm: 8.5, hfr: 4.0, starCount: 2500, noiseMAD: 0.01, filter: "L")
         for i in 0..<entries.count {
             entries[i].focalLength = 2455.0
             entries[i].computedEccentricity = 0.33
         }
         // Frame with FWHM within 15% of median (8.79 < 8.5*1.15=9.775) BUT extreme ecc
-        var bad = makeEntry(index: 99, fwhm: 8.79, hfr: 4.62, starCount: 2464, noiseMAD: 0.01,
+        var bad = makeEntry(index: 99, filter: "L", fwhm: 8.79, hfr: 4.62, starCount: 2464, noiseMAD: 0.01,
                             computedEccentricity: 0.51, focalLength: 2455.0)
         bad.noiseMedian = 0.05
         entries.append(bad)
@@ -715,10 +718,11 @@ final class QualityEstimatorTests: XCTestCase {
     // MARK: - Multi-Reason Detection
 
     /// A frame with multiple issues should show ALL reasons, not just the first.
+    /// Uses filter "L" (trailMult=1.0) so eccentricity threshold isn't raised.
     func testMultipleGarbageReasons() {
-        var entries = makeGroup(count: 24, fwhm: 3.5, hfr: 2.0, starCount: 3000, noiseMAD: 0.01)
+        var entries = makeGroup(count: 24, fwhm: 3.5, hfr: 2.0, starCount: 3000, noiseMAD: 0.01, filter: "L")
         // Frame with BOTH low stars AND extreme eccentricity
-        var bad = makeEntry(index: 99, fwhm: 3.5, hfr: 2.0, starCount: 10, noiseMAD: 0.01,
+        var bad = makeEntry(index: 99, filter: "L", fwhm: 3.5, hfr: 2.0, starCount: 10, noiseMAD: 0.01,
                             computedEccentricity: 0.70, focalLength: 2455.0)
         bad.noiseMedian = 0.05
         entries.append(bad)
@@ -743,15 +747,177 @@ final class QualityEstimatorTests: XCTestCase {
                        "Without plate-solve data, must fall back to generic noStars reason")
     }
 
+    // MARK: - Filter-Aware Trailing Penalty Tests
+
+    /// Unit test: filterTrailingMultiplier returns correct values for each canonical filter.
+    func testFilterTrailingMultiplier() {
+        // Narrowband → 0.3
+        XCTAssertEqual(QualityEstimator.filterTrailingMultiplier(for: "Ha"), 0.3)
+        XCTAssertEqual(QualityEstimator.filterTrailingMultiplier(for: "OIII"), 0.3)
+        XCTAssertEqual(QualityEstimator.filterTrailingMultiplier(for: "SII"), 0.3)
+        XCTAssertEqual(QualityEstimator.filterTrailingMultiplier(for: "Hbeta"), 0.3)
+        XCTAssertEqual(QualityEstimator.filterTrailingMultiplier(for: "NII"), 0.3)
+
+        // RGB → 0.6
+        XCTAssertEqual(QualityEstimator.filterTrailingMultiplier(for: "R"), 0.6)
+        XCTAssertEqual(QualityEstimator.filterTrailingMultiplier(for: "G"), 0.6)
+        XCTAssertEqual(QualityEstimator.filterTrailingMultiplier(for: "B"), 0.6)
+
+        // Luminance → 1.0
+        XCTAssertEqual(QualityEstimator.filterTrailingMultiplier(for: "L"), 1.0)
+
+        // Unknown → 0.7
+        XCTAssertEqual(QualityEstimator.filterTrailingMultiplier(for: ""), 0.7)
+        XCTAssertEqual(QualityEstimator.filterTrailingMultiplier(for: "Unknown"), 0.7)
+        XCTAssertEqual(QualityEstimator.filterTrailingMultiplier(for: "L-eXtreme"), 0.7)
+    }
+
+    /// Narrowband frame with moderate trailing (0.65) should NOT be garbage.
+    /// At L filter (mult=1.0), trailing 0.65 is below 0.7 threshold so also not garbage.
+    /// But at L, trailing 0.75 would be garbage. At Ha (mult=0.3), threshold becomes 2.33 → never garbage.
+    func testNarrowbandTrailingNotGarbage() {
+        var entries = makeGroup(count: 24, fwhm: 4.0, hfr: 2.5, starCount: 200, noiseMAD: 0.01, filter: "Ha")
+        for i in 0..<entries.count {
+            entries[i].focalLength = 620.0
+            entries[i].computedEccentricity = 0.40
+            entries[i].noiseMedian = 0.05
+        }
+        // Moderate trailing — would be near garbage for L, but fine for narrowband
+        var trailed = makeEntry(index: 99, filter: "Ha", fwhm: 4.2, hfr: 2.6, starCount: 200,
+                                noiseMAD: 0.01, noiseMedian: 0.05,
+                                computedEccentricity: 0.65, focalLength: 620.0,
+                                trailingScore: 0.65, trailingConsensus: 0.7)
+        entries.append(trailed)
+
+        let scores = QualityEstimator.computeScores(for: entries)
+        guard let bd = scores[trailed.url] else {
+            XCTFail("Trailed Ha frame should have a score")
+            return
+        }
+
+        XCTAssertNotEqual(bd.garbageReason, .elongated,
+                          "Ha frame with trailingScore=0.65 must NOT be garbage (narrowband mult=0.3, effective threshold=2.33)")
+        XCTAssertEqual(bd.filterTrailingMultiplier, 0.3, accuracy: 0.001,
+                       "Ha should have trailing multiplier 0.3")
+    }
+
+    /// Luminance frame with trailing score 0.75 (high) should be garbage.
+    /// At L (mult=1.0), threshold stays 0.7 → 0.75 > 0.7 → garbage.
+    func testLuminanceTrailingIsGarbage() {
+        var entries = makeGroup(count: 24, fwhm: 3.5, hfr: 2.0, starCount: 2500, noiseMAD: 0.01, filter: "L")
+        for i in 0..<entries.count {
+            entries[i].focalLength = 2455.0
+            entries[i].computedEccentricity = 0.25
+            entries[i].noiseMedian = 0.05
+        }
+        // Trailing frame with elevated FWHM (to bypass fwhmRulesOutTrailing cross-check)
+        var trailed = makeEntry(index: 99, filter: "L", fwhm: 4.5, hfr: 2.5, starCount: 2500,
+                                noiseMAD: 0.01, noiseMedian: 0.05,
+                                computedEccentricity: 0.40, focalLength: 2455.0,
+                                trailingScore: 0.75, trailingConsensus: 0.9)
+        entries.append(trailed)
+
+        let scores = QualityEstimator.computeScores(for: entries)
+        guard let bd = scores[trailed.url] else {
+            XCTFail("Trailed L frame should have a score")
+            return
+        }
+
+        XCTAssertEqual(bd.tier, .trash,
+                       "L frame with trailingScore=0.75 must be garbage (L mult=1.0, threshold=0.7)")
+        XCTAssertEqual(bd.garbageReason, .elongated)
+        XCTAssertEqual(bd.filterTrailingMultiplier, 1.0, accuracy: 0.001,
+                       "L should have trailing multiplier 1.0")
+    }
+
+    /// Verify that narrowband trailing has less influence on combinedZ than luminance.
+    /// Same trailing z-score should produce less penalty for Ha than for L.
+    func testNarrowbandTrailingReducedZWeight() {
+        // Create Ha group — all frames need trailing scores for z-score computation
+        var haEntries: [ImageEntry] = []
+        for i in 0..<24 {
+            var e = makeEntry(index: i, filter: "Ha", fwhm: 3.0, hfr: 2.0, starCount: 200,
+                              noiseMAD: 0.01, noiseMedian: 0.05, trailingScore: 0.1)
+            haEntries.append(e)
+        }
+        // One clearly trailed frame
+        var haTrailed = makeEntry(index: 99, filter: "Ha", fwhm: 3.0, hfr: 2.0, starCount: 200,
+                                  noiseMAD: 0.01, noiseMedian: 0.05, trailingScore: 0.6)
+        haEntries.append(haTrailed)
+
+        // Create identical L group
+        var lEntries: [ImageEntry] = []
+        for i in 0..<24 {
+            var e = makeEntry(index: 200 + i, filter: "L", fwhm: 3.0, hfr: 2.0, starCount: 200,
+                              noiseMAD: 0.01, noiseMedian: 0.05, trailingScore: 0.1)
+            lEntries.append(e)
+        }
+        var lTrailed = makeEntry(index: 299, filter: "L", fwhm: 3.0, hfr: 2.0, starCount: 200,
+                                 noiseMAD: 0.01, noiseMedian: 0.05, trailingScore: 0.6)
+        lEntries.append(lTrailed)
+
+        let haScores = QualityEstimator.computeScores(for: haEntries)
+        let lScores = QualityEstimator.computeScores(for: lEntries)
+
+        guard let haBD = haScores[haTrailed.url], let lBD = lScores[lTrailed.url] else {
+            XCTFail("Both trailed frames should have scores")
+            return
+        }
+
+        // Ha trailing weight is 0.3, L is 1.0
+        // So Ha frame should have HIGHER combinedZ (less penalized) than L frame
+        XCTAssertGreaterThan(haBD.combinedZScore, lBD.combinedZScore,
+                             "Ha trailing penalty (0.3×) should produce higher combinedZ than L (1.0×)")
+    }
+
+    /// Verify filterTrailingMultiplier is correctly stored on QualityBreakdown for each filter type.
+    func testFilterTrailingMultiplierOnBreakdown() {
+        // Ha group
+        var haEntries = makeGroup(count: 10, fwhm: 3.0, hfr: 2.0, starCount: 200, noiseMAD: 0.01, filter: "Ha")
+        for i in 0..<haEntries.count { haEntries[i].noiseMedian = 0.05 }
+
+        // R group
+        var rEntries = (0..<10).map {
+            makeEntry(index: 100 + $0, filter: "R", fwhm: 3.0, hfr: 2.0, starCount: 500,
+                      noiseMAD: 0.01, noiseMedian: 0.05)
+        }
+
+        // L group
+        var lEntries = (0..<10).map {
+            makeEntry(index: 200 + $0, filter: "L", fwhm: 3.0, hfr: 2.0, starCount: 500,
+                      noiseMAD: 0.01, noiseMedian: 0.05)
+        }
+
+        let scores = QualityEstimator.computeScores(for: haEntries + rEntries + lEntries)
+
+        // Check Ha multiplier
+        if let haBD = scores[haEntries[0].url] {
+            XCTAssertEqual(haBD.filterTrailingMultiplier, 0.3, accuracy: 0.001,
+                           "Ha breakdown should have trailing multiplier 0.3")
+        }
+
+        // Check R multiplier
+        if let rBD = scores[rEntries[0].url] {
+            XCTAssertEqual(rBD.filterTrailingMultiplier, 0.6, accuracy: 0.001,
+                           "R breakdown should have trailing multiplier 0.6")
+        }
+
+        // Check L multiplier
+        if let lBD = scores[lEntries[0].url] {
+            XCTAssertEqual(lBD.filterTrailingMultiplier, 1.0, accuracy: 0.001,
+                           "L breakdown should have trailing multiplier 1.0")
+        }
+    }
+
     // MARK: - SSWEIGHT Helper
 
     /// Reproduces the SSWEIGHT formula from TriageViewModel for unit testing.
-    /// Formula: clamp(0, 100, (50 + combinedZ*20) * (1 - trailingScore*0.5))
+    /// Formula: clamp(0, 100, (50 + combinedZ*20) * (1 - trailingScore*0.5*filterTrailingMult))
     /// isLockedKeep → minimum weight 50.
-    private func computeSSWEIGHT(combinedZ: Double, trailingScore: Double?, isLockedKeep: Bool) -> Double {
+    private func computeSSWEIGHT(combinedZ: Double, trailingScore: Double?, isLockedKeep: Bool, filterTrailingMultiplier: Double = 1.0) -> Double {
         var weight = 50.0 + combinedZ * 20.0
         if let ts = trailingScore {
-            weight *= (1.0 - ts * 0.5)
+            weight *= (1.0 - ts * 0.5 * filterTrailingMultiplier)
         }
         if isLockedKeep {
             weight = max(weight, 50.0)

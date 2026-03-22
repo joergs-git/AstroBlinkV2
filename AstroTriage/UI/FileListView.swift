@@ -673,7 +673,7 @@ struct FileListView: NSViewRepresentable {
             lines.append("  FWHM   : star width in px (lower = sharper)")
             lines.append("  HFR    : half-flux radius (lower = tighter)")
             lines.append("  Noise  : background noise level (lower = cleaner)")
-            lines.append("  Trail  : star elongation score (lower = rounder)")
+            lines.append("  Trail  : star elongation score (lower = rounder, penalty reduced for narrowband)")
             lines.append("  Group  : compared within same filter+target+exposure")
 
             return lines.joined(separator: "\n")

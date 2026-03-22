@@ -28,7 +28,7 @@ Frames that pass Stage 1 are ranked within their group using robust statistics:
   - FWHM: 1.0x
   - HFR: 1.0x
   - Noise: 1.0x
-  - Trailing: 1.5x (highest — stacking can't fix elongated stars)
+  - Trailing: filter-aware (0.3× narrowband, 0.6× RGB, 1.0× luminance, 0.7× unknown)
 - **Z-scores capped at ±3.0** to prevent one extreme value from dominating
 - **Minimum group size: 6 frames** (median/MAD needs ≥6 samples)
 
@@ -53,6 +53,7 @@ Z-score trash with FWHM actually in the Good range → promoted to Borderline. C
 ## Adaptive Thresholds
 
 - **Focal-length-adaptive trailing:** baseline_ecc = 0.8 / sqrt(focalLength / 200). Short FL tolerates more aberration.
+- **Filter-aware trailing penalty:** Narrowband (Ha/OIII/SII) × 0.3 — slight trailing barely affects diffuse emission. RGB × 0.6. Luminance × 1.0 (full strictness — the sharpness channel). Unknown filters × 0.7. Garbage thresholds, z-score weights, rescue rules, and SSWEIGHT penalty all scale with this multiplier.
 - **Background anomaly scales with group size:** 10 frames → 6.5 MAD, 20+ frames → 5.0 MAD
 - **Narrowband star weight:** reduced to 0.5x because narrowband inherently detects fewer stars
 

@@ -198,12 +198,24 @@ Layer 3: Focal-Length Baseline (TrailingAnalyzer.swift)
   - 468mm → 0.52 (short FL, more aberration normal)
   - 2423mm → 0.23 (long FL, tight PSF expected)
   - trailingScore = excessEcc × consensusMultiplier
+
+Layer 4: Filter-Aware Penalty (QualityEstimator.swift, v5.2.0)
+  - Detection is filter-independent (physics is the same)
+  - PENALTY RESPONSE scales by filter type:
+    Narrowband (Ha/OIII/SII/Hbeta/NII): × 0.3 — slight trailing
+      barely affects diffuse emission, don't waste precious integration
+    RGB broadband (R/G/B):               × 0.6 — moderate strictness
+    Luminance (L):                        × 1.0 — full strictness
+    Unknown / exotic:                     × 0.7 — conservative default
+  - Scales: z-score weight, garbage thresholds, rescue rules, SSWEIGHT
+  - Rationale: narrowband PSFs already bloated, science target is nebula
+    emission not point sources, 300-600s exposures are expensive
 ```
 
 ### Key Files
 - `AstroTriage/Engine/StarMetricsCalculator.swift` — Adaptive aperture, PA + axis ratio
-- `AstroTriage/Engine/TrailingAnalyzer.swift` — Consensus engine, FL baseline
-- `AstroTriage/Engine/QualityEstimator.swift` — trailingScore replaces raw ecc
+- `AstroTriage/Engine/TrailingAnalyzer.swift` — Consensus engine, FL baseline (filter-independent)
+- `AstroTriage/Engine/QualityEstimator.swift` — Filter-aware trailing penalty, trailingScore scoring
 - `Tests/StarAnalyzerTests.swift` — Multi-setup validation harness
 
 ### Validation Results (5 setups, 1455 frames)
@@ -296,7 +308,8 @@ PrefetchCache:
 - `isLockedKeep` field on QualityBreakdown
 
 ### SSWEIGHT Export
-- Weight formula: `clamp(0, 100, 50 + qualityZScore*20) * (1 - trailingScore*0.5)`
+- Weight formula: `clamp(0, 100, 50 + qualityZScore*20) * (1 - trailingScore*0.5*filterTrailingMult)`
+- filterTrailingMult: 0.3 (narrowband), 0.6 (RGB), 1.0 (luminance), 0.7 (unknown)
 - Locked KEEP frames get minimum weight of 50
 - Writes via `write_fits_keyword` / `write_xisf_keyword` (C bridge)
 - CSV backup: `AstroBlinkV2_SSWEIGHT.csv` in session root
@@ -423,19 +436,6 @@ Fallback: Filename-Token-Parsing
 
 ---
 
-## Phasen-Übersicht
-
-| Phase | Inhalt                              | Ziel-Dauer |
-|-------|-------------------------------------|------------|
-| 1     | Skeleton + Decoder + Basis-Render   | 2 Tage     |
-| 2     | STF Metal Pipeline + RAM Cache      | 2 Tage     |
-| 3     | File List + Metadaten + DB          | 2 Tage     |
-| 4     | Triage Workflow (Pre-Delete, Undo)  | 1 Tag      |
-| 5     | Filter System                       | 1 Tag      |
-| 6     | Disk Cache + FSEvents + Polish      | 2 Tage     |
-
----
-
 ## Nicht-Verhandelbare Regeln
 
 1. Keine permanente Löschung ohne Bestätigung + macOS Trash
@@ -446,3 +446,40 @@ Fallback: Filename-Token-Parsing
 6. `MTLStorageModeShared` für alle Decode-Buffers (Zero-Copy)
 7. Min macOS 13 Ventura – keine macOS 14+ APIs
 8. Performance-Gate: < 200ms First Display (Cold), < 32ms nach Cache-Hit
+
+---
+
+## Quality Gates — Scoring Invariants
+Jede Änderung an Quality-kritischen Dateien erfordert /validate-scoring vor Commit.
+Quality-kritische Dateien: QualityEstimator.swift, TrailingAnalyzer.swift,
+CalibrationDatabase.swift, ConvergenceDetector.swift, StarMetricsCalculator.swift,
+STFCalculator.swift, ColorCombineEngine.swift (Filter-Mapping).
+Scoring-Richtung (NIEMALS invertieren)
+MetrikMesswertRichtungZ-Score Vorzeichen in combinedZFWHMPixelsniedrig = gutNEGIERT (−z)HFRPixelsniedrig = gutNEGIERT (−z), nur Fallback wenn kein FWHMStarsAnzahlhoch = gutDIREKT (+z)Noise MAD[0,1]niedrig = gutNEGIERT (−z)Trailing[0,1]niedrig = gutNEGIERT (−z)
+SNR = noiseMedian / noiseMAD — höher = besser.
+noiseMedian (Hintergrund-Level) ist KEIN Rauschen. Hoher Hintergrund bei niedrigem MAD = hoher SNR.
+Harte Invarianten
+
+isLockedKeep == true → Tier kann NICHT unter .good fallen
+Stage 3 Rescue Rules → NUR Promotion, NIE Demotion
+FWHM und HFR NIE gleichzeitig in combinedZ (95% korreliert)
+fwhmRulesOutTrailing: FWHM ≤ median×1.15 → kein Trailing-Garbage möglich
+R7 Background Anomaly: NUR positive Abweichung. Dunklerer Himmel = BESSER
+Calibration Floor: ≥30 Frames UND ≥2 Metriken UND ALLE müssen passen
+Star Count Anomaly R6: FWHM/HFR-Cross-Check pflicht (Satelliten-Schutz)
+Z-Score Cap ±3.0 — einzelne Metrik kann nicht allein Trash erzwingen
+
+Golden Set Regression (7 Setups, 1638 Frames)
+Maximale erlaubte Abweichung: ±2% pro Setup ohne explizite Begründung.
+Referenzdaten: wiki/quality-testing-log.md
+Vor jedem Release
+/pre-release ausführen. Alle 5 Phasen müssen PASS sein.
+
+## Projekt-Dokumentation
+
+Bei Bedarf diese Dateien im Projekt-Root lesen:
+- `CAVEATS.md` — Bekannte Einschränkungen und Workarounds
+- `LESSONS_LEARNED.md` — Vergangene Fehler, die nicht wiederholt werden dürfen
+- `RESOURCES.md` — Externe Referenzen und Abhängigkeiten
+- `TODO.md` — Offene Aufgaben und geplante Features
+- `PERFORMANCE.md` — Performance-Benchmarks und Optimierungen

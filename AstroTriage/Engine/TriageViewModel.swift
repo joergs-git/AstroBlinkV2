@@ -1821,7 +1821,7 @@ class TriageViewModel: ObservableObject {
     // MARK: - SSWEIGHT Export
 
     /// Export SSWEIGHT keyword to FITS/XISF headers for WBPP integration.
-    /// Weight formula: clamp(0, 100, 50 + qualityZScore * 20) * (1 - trailingScore * 0.5)
+    /// Weight formula: clamp(0, 100, 50 + qualityZScore * 20) * (1 - trailingScore * 0.5 * filterTrailingMult)
     func exportSSWEIGHT() {
         let scoredImages = images.filter { $0.qualityBreakdown != nil }
         guard !scoredImages.isEmpty else {
@@ -1846,10 +1846,10 @@ class TriageViewModel: ObservableObject {
         for entry in scoredImages {
             guard let bd = entry.qualityBreakdown else { continue }
 
-            // Compute SSWEIGHT: 50 + z*20, penalized by trailing
+            // Compute SSWEIGHT: 50 + z*20, penalized by trailing (filter-aware)
             var weight = 50.0 + bd.combinedZScore * 20.0
             if let ts = entry.trailingScore {
-                weight *= (1.0 - ts * 0.5)
+                weight *= (1.0 - ts * 0.5 * bd.filterTrailingMultiplier)
             }
             // Locked KEEP frames get minimum weight of 50
             if bd.isLockedKeep {

@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 ## [5.2.0] — 2026-03-22
 
 ### Added
+- **Filter-aware trailing penalties** — Trailing weight now depends on filter type: narrowband (Ha/OIII/SII) × 0.3, RGB × 0.6, luminance × 1.0, unknown × 0.7. Slight trailing in narrowband no longer over-penalizes precious integration time. Garbage thresholds, z-score weights, rescue rules, and SSWEIGHT all scale with the filter multiplier
 - **FL-adaptive eccentricity detection (Rule 5)** — Frames with eccentricity > 2× the focal-length baseline are flagged as garbage regardless of FWHM or consensus. Adapts automatically to any optics: 468mm baseline 0.52, 2455mm baseline 0.23
 - **Multi-reason garbage display** — Stage 1 now checks ALL rules independently; frames can show multiple garbage reasons simultaneously (e.g., "zero/near-zero stars" + "target shifted off sensor")
 - **Decentered target detection (Rule 1b)** — When plate-solved coordinates (CRVAL1/CRVAL2) show the frame center shifted > 30% of FOV from group median, reports "target shifted off sensor (mount recenter)"
