@@ -129,6 +129,7 @@ struct AIsaacSessionContext {
         let isMarked: Bool
         let garbageReason: String?
         let reasoning: String?
+        let twilight: String?   // Twilight phase at capture time (Night, Astro twilight, etc.)
     }
 
     struct FilterStat {

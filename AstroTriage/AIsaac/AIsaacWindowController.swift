@@ -334,8 +334,12 @@ class AIsaacWindowController: NSWindowController {
                 ecc: img.computedEccentricity,
                 trailing: img.trailingScore,
                 isMarked: img.isMarkedForDeletion,
-                garbageReason: img.qualityBreakdown?.garbageReason?.rawValue,
-                reasoning: img.qualityBreakdown?.reasoningText
+                garbageReason: {
+                    guard let reasons = img.qualityBreakdown?.garbageReasons, !reasons.isEmpty else { return nil }
+                    return reasons.map { $0.rawValue }.joined(separator: " + ")
+                }(),
+                reasoning: img.qualityBreakdown?.reasoningText,
+                twilight: img.twilightPhase?.rawValue
             )
         }
     }

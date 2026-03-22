@@ -16,7 +16,7 @@ final class ConvergenceDetectorTests: XCTestCase {
             tier: zScore > 0.5 ? .excellent : zScore > -0.3 ? .good : zScore > -1.2 ? .borderline : .trash,
             combinedZScore: zScore,
             starsZ: nil, fwhmZ: nil, hfrZ: nil, noiseZ: nil, trailingZ: nil,
-            snrContribution: nil, snrSquared: nil, garbageReason: nil,
+            snrContribution: nil, snrSquared: nil, garbageReasons: [],
             isLockedKeep: false, reasoningText: nil
         )
         entry.isMarkedForDeletion = isMarked

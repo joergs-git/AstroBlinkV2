@@ -4,6 +4,23 @@ All notable changes to AstroBlink & AIsaac will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [5.2.0] — 2026-03-22
+
+### Added
+- **FL-adaptive eccentricity detection (Rule 5)** — Frames with eccentricity > 2× the focal-length baseline are flagged as garbage regardless of FWHM or consensus. Adapts automatically to any optics: 468mm baseline 0.52, 2455mm baseline 0.23
+- **Multi-reason garbage display** — Stage 1 now checks ALL rules independently; frames can show multiple garbage reasons simultaneously (e.g., "zero/near-zero stars" + "target shifted off sensor")
+- **Decentered target detection (Rule 1b)** — When plate-solved coordinates (CRVAL1/CRVAL2) show the frame center shifted > 30% of FOV from group median, reports "target shifted off sensor (mount recenter)"
+- **Twilight/dawn detection (Rule 10)** — Sun position computed from DATE-OBS (UTC) + site coordinates using NOAA solar algorithm. Civil twilight or daylight → garbage. Twilight phase shown in quality panel for all frames
+- **SunCalculator** — New NOAA-based solar position calculator for twilight classification (Night, Astro twilight, Nautical, Civil, Daylight)
+- **AIsaac knowledge tests** — Automated test suite validates AIsaac's system prompt covers all garbage reasons, quality tiers, twilight phases, and key pipeline concepts. Catches knowledge drift on any logic change
+- **AIsaac prompt updated** — Full Rules 0-10 documentation, multi-reason support, twilight phase in per-frame data, FL-adaptive eccentricity explanation
+
+### Fixed
+- **Trailing detection false negatives** — Frames with extreme eccentricity but normal FWHM (e.g., RC12 at 2455mm) were incorrectly rated "Good" because `fwhmRulesOutTrailing` suppressed the trailing check. New Rule 5 bypasses this entirely
+- **"Why" redundancy** — Removed duplicate "Why" line that showed identical text to "Garbage" reasons in quality metrics panel
+
+---
+
 ## [5.1.3] — 2026-03-22
 
 ### Fixed

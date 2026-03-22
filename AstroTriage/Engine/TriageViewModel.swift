@@ -1454,6 +1454,13 @@ class TriageViewModel: ObservableObject {
                     if let px = headers["XPIXSZ"], let val = Double(px), val > 0 {
                         self.images[index].pixelSizeMicrons = val
                     }
+                    // Plate-solved center coordinates for pointing offset detection
+                    if let ra = headers["CRVAL1"], let val = Double(ra) {
+                        self.images[index].solvedRA = val
+                    }
+                    if let dec = headers["CRVAL2"], let val = Double(dec) {
+                        self.images[index].solvedDec = val
+                    }
                     // Site coordinates for AIsaac location-aware language detection
                     // NINA writes SITELAT/SITELONG, some software uses LAT-OBS/LONG-OBS or OBSLAT/OBSLONG
                     if self.images[index].siteLatitude == nil {
@@ -1490,6 +1497,25 @@ class TriageViewModel: ObservableObject {
                             let timeStart = dateObs.index(after: tIndex)
                             let timeEnd = dateObs.index(timeStart, offsetBy: 8, limitedBy: dateObs.endIndex) ?? dateObs.endIndex
                             self.images[index].time = self.images[index].time ?? String(dateObs[timeStart..<timeEnd])
+                        }
+                    }
+
+                    // Twilight phase: classify sun position at capture time
+                    // DATE-OBS is UTC (FITS standard), use with site coordinates
+                    if self.images[index].twilightPhase == nil,
+                       let lat = self.images[index].siteLatitude,
+                       let lon = self.images[index].siteLongitude,
+                       let dateObs = headers["DATE-OBS"], dateObs.count >= 19 {
+                        let df = DateFormatter()
+                        df.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
+                        df.timeZone = TimeZone(identifier: "UTC")
+                        df.locale = Locale(identifier: "en_US_POSIX")
+                        // Try with fractional seconds first, then without
+                        let cleanDate = String(dateObs.prefix(19))
+                        if let utcDate = df.date(from: cleanDate) {
+                            self.images[index].twilightPhase = SunCalculator.twilightPhase(
+                                utcDate: utcDate, latitude: lat, longitude: lon
+                            )
                         }
                     }
 
@@ -3116,7 +3142,7 @@ class TriageViewModel: ObservableObject {
         showInspector.toggle()
         if showInspector, let image = selectedImage {
             headerInspectorModel.update(for: image.decodingURL, filename: image.filename)
-            headerInspectorModel.updateQualityMetrics(from: image.qualityBreakdown)
+            headerInspectorModel.updateQualityMetrics(from: image.qualityBreakdown, entry: image)
         }
     }
 
@@ -3387,7 +3413,7 @@ class TriageViewModel: ObservableObject {
 
         // Update header inspector model (panel updates reactively via SwiftUI)
         headerInspectorModel.update(for: image.decodingURL, filename: image.filename)
-        headerInspectorModel.updateQualityMetrics(from: image.qualityBreakdown)
+        headerInspectorModel.updateQualityMetrics(from: image.qualityBreakdown, entry: image)
 
         // Update meridian rotation for this image (zero-cost UV flip)
         updateMeridianRotation()

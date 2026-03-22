@@ -598,9 +598,11 @@ struct FileListView: NSViewRepresentable {
                 lines.append("  [LOCKED] Within calibrated baseline for this setup")
             }
 
-            if let reason = bd.garbageReason {
+            if !bd.garbageReasons.isEmpty {
                 lines.append("")
-                lines.append("  Reason: \(reason.rawValue)")
+                for reason in bd.garbageReasons {
+                    lines.append("  Reason: \(reason.rawValue)")
+                }
             } else {
                 // Section header for metrics
                 lines.append("")

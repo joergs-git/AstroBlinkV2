@@ -15,6 +15,7 @@ enum QualityTier: Int {
 enum GarbageReason: String, Hashable {
     case noData            = "no signal detected"
     case noStars           = "zero/near-zero stars"
+    case decenteredTarget  = "target shifted off sensor (mount recenter)"
     case lowSNR            = "SNR catastrophically low"
     case highFWHM          = "severe defocus/tracking"
     case highHFR           = "severe defocus"
@@ -22,6 +23,7 @@ enum GarbageReason: String, Hashable {
     case starCountAnomaly  = "doubled stars (tracking jump)"
     case backgroundAnomaly = "abnormal background (clouds/gradient)"
     case trackingHop       = "tracking hops (star chains)"
+    case twilightExposure  = "captured during twilight/daylight"
 }
 
 // Full quality breakdown per image — replaces the old (tier, zScore) tuple.
@@ -44,8 +46,11 @@ struct QualityBreakdown: Hashable {
     // Cached SNR^2 for live SNR retention bar (avoids recomputation on every Space toggle)
     let snrSquared: Double?
 
-    // Garbage reason (nil if not Stage 1 garbage)
-    let garbageReason: GarbageReason?
+    // All Stage 1 garbage reasons detected (empty if not garbage)
+    let garbageReasons: [GarbageReason]
+
+    // Primary garbage reason (first detected) — backward compatibility
+    var garbageReason: GarbageReason? { garbageReasons.first }
 
     // Absolute quality floor: frame meets calibration baseline for ALL metrics.
     // When true, z-scores cannot override — this frame is locked as KEEP.
@@ -67,8 +72,9 @@ struct QualityBreakdown: Hashable {
             return "KEEP — within calibrated baseline"
         }
 
-        if let reason = garbageReason {
-            return "DELETE — \(reason.rawValue)"
+        if !garbageReasons.isEmpty {
+            let reasons = garbageReasons.map { $0.rawValue }.joined(separator: ", ")
+            return "DELETE — \(reasons)"
         }
 
         guard tier == .borderline else { return "" }
@@ -265,6 +271,22 @@ struct QualityEstimator {
             let bgMedian = sortedMedian(bgValues)
             let bgMAD = medianAbsoluteDeviation(bgValues, median: bgMedian)
 
+            // Plate-solved center coordinates for pointing offset detection
+            // Compute group median RA/Dec and FOV (degrees) for decentered-target check
+            let solvedRAs: [Double] = groupEntries.compactMap { $0.solvedRA }
+            let solvedDecs: [Double] = groupEntries.compactMap { $0.solvedDec }
+            let medianSolvedRA: Double? = solvedRAs.count >= 3 ? solvedRAs.sorted()[solvedRAs.count / 2] : nil
+            let medianSolvedDec: Double? = solvedDecs.count >= 3 ? solvedDecs.sorted()[solvedDecs.count / 2] : nil
+            // FOV in degrees: use first entry with pixel size + focal length + image dimensions
+            let fovDeg: Double? = {
+                guard let first = groupEntries.first(where: { $0.focalLength != nil && $0.pixelSizeMicrons != nil && $0.width != nil }),
+                      let fl = first.focalLength, fl > 0,
+                      let px = first.pixelSizeMicrons, px > 0,
+                      let w = first.width, let h = first.height else { return nil }
+                let sensorWidthMM = Double(max(w, h)) * px / 1000.0
+                return (sensorWidthMM / fl) * (180.0 / .pi)  // radians → degrees
+            }()
+
             // Z-scores for relative scoring
             let fwhmZscores  = zscores(values: fwhmValues)
             let hfrZscores   = zscores(values: hfrValues)
@@ -294,112 +316,120 @@ struct QualityEstimator {
                 }()
 
                 // ── Stage 1: Absolute garbage detection ──
-                // Any single metric catastrophically bad → immediate red
-                var garbageReason: GarbageReason? = nil
+                // Collect ALL matching reasons — multiple issues shown to user
+                var garbageReasons: [GarbageReason] = []
 
                 // Rule 0: Pitch black / no data — no stars AND no noise stats.
-                // Only apply when the image has actually been measured (noiseMAD is populated
-                // during caching). Before caching, noiseMAD is nil which means "not yet analyzed",
-                // not "no signal". Without this guard, uncached frames get falsely flagged as trash.
                 let hasBeenMeasured = entry.noiseMAD != nil
                 let hasNoStars = starsValues[localIdx] == nil || starsValues[localIdx] == 0
                 let hasNoNoise = (entry.noiseMAD ?? 0) == 0
                 if hasBeenMeasured && hasNoStars && hasNoNoise {
-                    garbageReason = .noData
+                    garbageReasons.append(.noData)
                 }
 
                 // Rule 1: No stars or near-zero stars → garbage
-                // Skip when star counts are unreliable (bimodal distribution from
-                // galaxy/nebula contamination — starWeight == 0).
-                // Broadband: < 25% of median, Narrowband: < 15% of median
-                if garbageReason == nil, starWeight > 0, let stars = starsValues[localIdx], let median = starsMedian {
+                if starWeight > 0, let stars = starsValues[localIdx], let median = starsMedian {
                     let dropThreshold = isNarrowband ? garbageDropFactor * 0.3 : garbageDropFactor * 0.5
                     if stars < 1 || (median > 10 && stars < median * dropThreshold) {
-                        garbageReason = .noStars
+                        garbageReasons.append(.noStars)
+                    }
+                }
+
+                // Rule 1b: Decentered target — plate-solved center offset > 30% of FOV.
+                // Runs independently of star count: a frame can be both "low stars" AND "decentered".
+                if let ra = entry.solvedRA, let dec = entry.solvedDec,
+                   let medRA = medianSolvedRA, let medDec = medianSolvedDec,
+                   let fov = fovDeg, fov > 0 {
+                    let dRA = (ra - medRA) * cos(medDec * .pi / 180.0)
+                    let dDec = dec - medDec
+                    let separation = (dRA * dRA + dDec * dDec).squareRoot()
+                    if separation > fov * 0.3 {
+                        garbageReasons.append(.decenteredTarget)
                     }
                 }
 
                 // Rule 2: SNR catastrophically low compared to group
-                if garbageReason == nil, let snrVal = snrValues[localIdx], let median = snrMedian {
+                if let snrVal = snrValues[localIdx], let median = snrMedian {
                     if median > 5 && snrVal < median * garbageDropFactor {
-                        garbageReason = .lowSNR
+                        garbageReasons.append(.lowSNR)
                     }
                 }
 
                 // Rule 3: FWHM catastrophically high (severe tracking error, defocus)
-                if garbageReason == nil, let fwhm = fwhmValues[localIdx], let median = fwhmMedian {
+                if let fwhm = fwhmValues[localIdx], let median = fwhmMedian {
                     if median > 0 && fwhm > median * (1.0 / garbageDropFactor) {
-                        garbageReason = .highFWHM
+                        garbageReasons.append(.highFWHM)
                     }
                 }
 
                 // Rule 4: HFR catastrophically high
-                if garbageReason == nil, let hfr = hfrValues[localIdx], let median = hfrMedian {
+                if let hfr = hfrValues[localIdx], let median = hfrMedian {
                     if median > 0 && hfr > median * (1.0 / garbageDropFactor) {
-                        garbageReason = .highHFR
+                        garbageReasons.append(.highHFR)
                     }
                 }
 
-                // Rule 5: Star trailing — uses consensus-weighted, focal-length-adaptive score.
-                // Cross-check: real trailing always degrades FWHM. If a frame's FWHM is at or
-                // below the group median, the stars are sharp and CAN'T be genuinely trailed.
-                // This prevents false positives from the PA consensus detector on sharp frames.
+                // Rule 5: Extreme eccentricity — raw ecc far above FL baseline.
+                // Fully FL-adaptive via baseline = 0.8 / sqrt(FL / 200).
+                if let ecc = entry.computedEccentricity {
+                    let fl = entry.focalLength ?? 0
+                    let baseline = fl > 0
+                        ? min(0.70, max(0.15, 0.8 / (fl / 200.0).squareRoot()))
+                        : 0.40
+                    let excessRatio = (ecc - baseline) / max(baseline, 0.01)
+                    if excessRatio > 1.0 && !garbageReasons.contains(.elongated) {
+                        garbageReasons.append(.elongated)
+                    }
+                }
+
+                // Rule 6: Star trailing — consensus-weighted, FL-adaptive score.
+                // Cross-check: fwhmRulesOutTrailing prevents false positives on sharp frames.
                 let fwhmRulesOutTrailing: Bool = {
                     guard let fwhm = fwhmValues[localIdx], let median = fwhmMedian else { return false }
-                    return fwhm <= median * 1.15  // Within 15% of median = not degraded by trailing
+                    return fwhm <= median * 1.15
                 }()
 
-                if garbageReason == nil, !fwhmRulesOutTrailing,
-                   let ts = entry.trailingScore, ts > 0.7 {
-                    garbageReason = .elongated
-                }
-                // Strong consensus variant: require BOTH high trailing AND high consensus AND
-                // FWHM above median (confirming the trailing actually degraded star sharpness).
-                if garbageReason == nil, !fwhmRulesOutTrailing,
-                   let ts = entry.trailingScore, ts > 0.5,
-                   let consensus = entry.trailingConsensus, consensus > 0.8 {
-                    garbageReason = .elongated
+                if !fwhmRulesOutTrailing, !garbageReasons.contains(.elongated) {
+                    if let ts = entry.trailingScore, ts > 0.7 {
+                        garbageReasons.append(.elongated)
+                    } else if let ts = entry.trailingScore, ts > 0.5,
+                              let consensus = entry.trailingConsensus, consensus > 0.8 {
+                        garbageReasons.append(.elongated)
+                    }
                 }
 
-                // Rule 6: Star count anomaly — doubled stars from tracking/dithering jump
-                // If star count is >1.8× the group median, stars may be doubled from movement.
-                // BUT: satellite/plane trails also inflate star count without affecting star quality.
-                // Distinguish: tracking jumps degrade FWHM/HFR (doubled PSFs are wider),
-                // while satellite trails leave real star metrics normal. Only flag if FWHM or HFR
-                // is also elevated (>1.3× median), confirming the PSFs themselves are degraded.
-                if garbageReason == nil, starWeight > 0, let stars = starsValues[localIdx], let median = starsMedian {
+                // Rule 7: Star count anomaly — doubled stars from tracking/dithering jump
+                if starWeight > 0, let stars = starsValues[localIdx], let median = starsMedian {
                     if median > 20 && stars > median * 1.8 {
                         let fwhmElevated = fwhmValues[localIdx] != nil && fwhmMedian != nil &&
                             fwhmValues[localIdx]! > fwhmMedian! * 1.3
                         let hfrElevated = hfrValues[localIdx] != nil && hfrMedian != nil &&
                             hfrValues[localIdx]! > hfrMedian! * 1.3
                         if fwhmElevated || hfrElevated {
-                            garbageReason = .starCountAnomaly
+                            garbageReasons.append(.starCountAnomaly)
                         }
-                        // Otherwise: likely satellite trail — frame is usable (sigma clipping removes trail)
                     }
                 }
 
-                // Rule 7: Background anomaly — clouds, light pollution gradient, or fog
-                // Clouds/gradient RAISE background level; only flag positive deviations.
-                // Lower background = clearer sky = good — never penalize that.
-                // Scale threshold for small groups: tight MAD in <20 frames causes false positives.
-                // 20+ frames → 5.0 MAD, 15 → 5.75, 10 → 6.5 (linear interpolation)
-                if garbageReason == nil, let bg = bgValues[localIdx],
+                // Rule 8: Background anomaly — clouds, light pollution gradient, or fog
+                if let bg = bgValues[localIdx],
                    let median = bgMedian, let mad = bgMAD, mad > 0 {
                     let bgThreshold = max(5.0, 5.0 + (20.0 - Double(min(groupEntries.count, 20))) * 0.15)
                     let deviation = (bg - median) / mad
                     if deviation > bgThreshold {
-                        garbageReason = .backgroundAnomaly
+                        garbageReasons.append(.backgroundAnomaly)
                     }
                 }
 
-                // Rule 8: Star chain detection — tracking hops create parallel chains of discrete dots.
-                // Each dot looks like a real star (round, good FWHM), but the spatial pattern
-                // (many parallel short chains scattered across the frame) is unmistakable.
-                // Detection runs in StarMetricsCalculator on all refined star positions.
-                if garbageReason == nil, let chainFrac = entry.starChainFraction, chainFrac > 0.25 {
-                    garbageReason = .trackingHop
+                // Rule 9: Star chain detection — tracking hops
+                if let chainFrac = entry.starChainFraction, chainFrac > 0.25 {
+                    garbageReasons.append(.trackingHop)
+                }
+
+                // Rule 10: Twilight/daylight exposure — sun above -12° (civil or daylight)
+                // Astronomical twilight (-18° to -12°) is borderline but not auto-flagged.
+                if let phase = entry.twilightPhase, phase >= .civil {
+                    garbageReasons.append(.twilightExposure)
                 }
 
                 // Cap individual z-scores at ±3 for display consistency.
@@ -411,7 +441,7 @@ struct QualityEstimator {
                     return min(zscoreCap, max(-zscoreCap, z))
                 }
 
-                if garbageReason != nil {
+                if !garbageReasons.isEmpty {
                     // Don't show SNR contribution for Stage 1 garbage — their signal is
                     // irrelevant since they'd ruin the stack (elongation, no stars, etc.).
                     // Showing "100%" next to a red X is misleading.
@@ -425,9 +455,9 @@ struct QualityEstimator {
                         trailingZ: cappedZ(trailingZscores[localIdx]),
                         snrContribution: nil,
                         snrSquared: snrSq,
-                        garbageReason: garbageReason,
+                        garbageReasons: garbageReasons,
                         isLockedKeep: false,
-                        reasoningText: garbageReason?.rawValue
+                        reasoningText: nil  // Garbage reasons already shown via garbageReasons
                     )
                     continue
                 }
@@ -554,7 +584,7 @@ struct QualityEstimator {
                     trailingZ: cappedZ(trailingZscores[localIdx]),
                     snrContribution: displayContrib,
                     snrSquared: snrSq,
-                    garbageReason: nil,
+                    garbageReasons: [],
                     isLockedKeep: lockedKeep,
                     reasoningText: reasoning
                 )
@@ -588,7 +618,7 @@ struct QualityEstimator {
                 switch bd.tier {
                 case .excellent, .good:
                     goodFWHMs.append(fwhmVal)
-                case .trash where bd.garbageReason == nil:
+                case .trash where bd.garbageReasons.isEmpty:
                     zScoreTrash.append((entry.url, fwhmVal))
                 case .borderline:
                     borderlineFrames.append((entry.url, fwhmVal))
@@ -617,7 +647,7 @@ struct QualityEstimator {
                     trailingZ: oldBD.trailingZ,
                     snrContribution: oldBD.snrContribution,
                     snrSquared: oldBD.snrSquared,
-                    garbageReason: nil,
+                    garbageReasons: [],
                     isLockedKeep: oldBD.isLockedKeep,
                     reasoningText: "FWHM comparable to good frames — penalized by session peak quality, not actual degradation"
                 )

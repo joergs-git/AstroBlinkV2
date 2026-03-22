@@ -67,6 +67,9 @@ struct ImageEntry: Identifiable, Hashable {
     var pixelSizeMicrons: Double?      // From XPIXSZ header (microns) — for arcsec/pixel computation
     var siteLatitude: Double?          // From SITELAT header — imaging site latitude
     var siteLongitude: Double?         // From SITELONG header — imaging site longitude
+    var solvedRA: Double?              // Plate-solved center RA in degrees from CRVAL1 header
+    var solvedDec: Double?             // Plate-solved center Dec in degrees from CRVAL2 header
+    var twilightPhase: TwilightPhase?  // Sun position classification at capture time
 
     // Trailing analysis (computed by TrailingAnalyzer after star metrics)
     var trailingScore: Double?         // 0 = no trailing, 1 = severe trailing (consensus-weighted, FL-adaptive)

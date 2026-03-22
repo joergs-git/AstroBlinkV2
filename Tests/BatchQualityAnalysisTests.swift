@@ -350,7 +350,7 @@ final class BatchQualityAnalysisTests: XCTestCase {
 
         let tier = entry.qualityTier.map { tierLabel($0) } ?? "unscored"
         let combinedZ = entry.qualityZScore.map { String(format: "%+.2f", $0) } ?? "n/a"
-        let garbageReason = entry.qualityBreakdown?.garbageReason?.rawValue ?? ""
+        let garbageReason = entry.qualityBreakdown?.garbageReasons.map { $0.rawValue }.joined(separator: " + ") ?? ""
         let locked = entry.qualityBreakdown?.isLockedKeep == true ? " [LOCKED]" : ""
 
         let line1 = "\(filter) \(frame)  Night: \(night)"
@@ -457,7 +457,7 @@ final class BatchQualityAnalysisTests: XCTestCase {
                 bd?.hfrZ.map { String(format: "%.4f", $0) } ?? "",
                 bd?.noiseZ.map { String(format: "%.4f", $0) } ?? "",
                 bd?.trailingZ.map { String(format: "%.4f", $0) } ?? "",
-                bd?.garbageReason?.rawValue ?? "",
+                bd?.garbageReasons.map { $0.rawValue }.joined(separator: " + ") ?? "",
                 bd?.snrContribution.map { String(format: "%.2f", $0) } ?? "",
                 isBroadband ? "false" : "true",
                 isBroadband ? "1.2" : "0.5"

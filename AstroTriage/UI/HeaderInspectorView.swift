@@ -138,8 +138,8 @@ class HeaderInspectorModel: ObservableObject {
         }
     }
 
-    // Update quality metrics section from QualityBreakdown
-    func updateQualityMetrics(from bd: QualityBreakdown?) {
+    // Update quality metrics section from QualityBreakdown + optional entry context
+    func updateQualityMetrics(from bd: QualityBreakdown?, entry: ImageEntry? = nil) {
         guard let bd = bd else {
             qualityMetrics = []
             return
@@ -174,11 +174,17 @@ class HeaderInspectorModel: ObservableObject {
         if bd.isLockedKeep {
             metrics.append(("Calibration", "Locked KEEP"))
         }
-        if let reason = bd.garbageReason {
-            metrics.append(("Garbage", reason.rawValue))
+        if !bd.garbageReasons.isEmpty {
+            for reason in bd.garbageReasons {
+                metrics.append(("Garbage", reason.rawValue))
+            }
         }
         if let why = bd.reasoningText {
             metrics.append(("Why", why))
+        }
+        // Twilight phase from entry context (shown for all frames, not just garbage)
+        if let phase = entry?.twilightPhase {
+            metrics.append(("Twilight", phase.rawValue))
         }
 
         qualityMetrics = metrics

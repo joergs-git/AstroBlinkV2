@@ -225,6 +225,9 @@ struct AIsaacContextBuilder {
 
     // MARK: - App Knowledge Block
 
+    // Exposed for AIsaacKnowledgeTests — validates prompt covers all detection rules
+    static var appKnowledge: String { buildAppKnowledge() }
+
     private static func buildAppKnowledge() -> String {
         return """
         APP KNOWLEDGE — AstroBlinkV2 Internals (use this to give accurate answers):
@@ -241,50 +244,52 @@ struct AIsaacContextBuilder {
 
         QUALITY SCORING — SmartCull 4-Stage Pipeline:
         - Groups: frames are grouped by (target + filter + exposure + observing night) for fair comparison.
-        - Stage 1 — Garbage Detection (absolute thresholds, checked first):
-          * No signal: zero stars AND no noise data → "no signal detected"
-          * Zero/near-zero stars: star count < 15-25% of group median → "zero/near-zero stars"
-          * Low SNR: SNR < 50% of group median → "SNR catastrophically low"
-          * High FWHM: FWHM > 2× group median → "severe defocus/tracking"
-          * High HFR: HFR > 2× group median → "severe defocus"
-          * Elongation: trailing score > 0.7 (cross-checked with FWHM) → "star trailing/elongation"
-          * Star count anomaly: stars > 1.8× median AND elevated FWHM/HFR → "doubled stars"
-          * Background anomaly: background > 5-6.5 MAD from group median → "abnormal background"
-        - MINIMUM GROUP SIZE: Groups with fewer than 6 frames get NO quality score. \
-        Z-scores need ≥6 samples for meaningful median/MAD statistics. These frames are \
-        NOT in a queue and NOT bad — just in a group too small to compare statistically.
+        - A frame can trigger MULTIPLE garbage reasons simultaneously (shown joined with "+").
+        - Stage 1 — Garbage Detection (Rules 0-10, all checked independently):
+          * R0 No signal: zero stars AND no noise → "no signal detected"
+          * R1 Near-zero stars: star count < 15-25% of median → "zero/near-zero stars"
+          * R1b Decentered target: plate-solved center offset > 30% of FOV → "target shifted off sensor"
+          * R2 Low SNR: SNR < 50% of group median → "SNR catastrophically low"
+          * R3 High FWHM: FWHM > 2× median → "severe defocus/tracking"
+          * R4 High HFR: HFR > 2× median → "severe defocus"
+          * R5 Extreme eccentricity: ecc > 2× FL baseline (no cross-check needed) → "star trailing/elongation"
+          * R6 Trailing (consensus): score > 0.7 (cross-checked with FWHM) → "star trailing/elongation"
+          * R7 Star count anomaly: stars > 1.8× median + elevated FWHM/HFR → "doubled stars"
+          * R8 Background anomaly: background > 5-6.5 MAD from median → "abnormal background"
+          * R9 Tracking hops: star chain fraction > 25% → "tracking hops (star chains)"
+          * R10 Twilight: sun altitude above -12° (civil/daylight) → "captured during twilight/daylight"
+        - MINIMUM GROUP SIZE: Groups with < 6 frames get NO quality score — too few for statistics. \
+        These frames are NOT bad — just in a group too small to compare.
         - Stage 2 — Relative Z-Score Ranking (within each group):
-          * Uses median/MAD robust statistics (outlier-resistant)
-          * Metrics weighted: Stars 1.2× (broadband) or 0.5× (narrowband), FWHM 1.0×, HFR 1.0×, \
-          Noise 1.0×, Trailing 1.5× (highest because stacking can't fix elongation)
-          * Individual z-scores capped at ±3.0
-          * Tier thresholds: Excellent (z > 0.5), Good (z > -0.5), Borderline (z > -2.0), Trash (z ≤ -2.0)
-        - Stage 3 — Rescue Rules:
-          * Rule A: FWHM + noise both OK → rescued to Good (even if stars dipped)
-          * Rule B: Star count dip + good FWHM → transient event (clouds, dew), rescued to Good
-          * Rule C: FWHM-only penalty → promoted to Borderline with lower SSWEIGHT
-        - Stage 4 — Sanity Check: z-score trash with FWHM in Good range → promoted to Borderline
+          * Median/MAD robust statistics. Metrics weighted: Stars 1.2× (broadband) / 0.5× (narrowband), \
+          FWHM 1.0×, Noise 1.0×, Trailing 1.0×. Z-scores capped at ±3.0.
+          * Tiers: Excellent (z > 0.5), Good (z > -0.5), Borderline (z > -2.0), Trash (z ≤ -2.0)
+        - Stage 3 — Rescue Rules (only promote, never demote):
+          * A: FWHM + noise OK → Good. B: Star dip + sharp → Good. C: FWHM-only → Borderline.
+        - Stage 4 — Sanity Check: z-score trash with FWHM in Good range → Borderline
 
         METRICS EXPLAINED:
-        - FWHM: Full Width at Half Maximum — star size in pixels. Lower = sharper. GPU Gaussian fitting.
-        - HFR: Half-Flux Radius — radius enclosing half star flux. Lower = tighter stars.
-        - SNR: Signal-to-Noise Ratio — computed from background MAD. Higher = cleaner signal.
-        - MAD: Median Absolute Deviation — robust noise estimator: 1.4826 × median(|pixel - median|).
-        - Eccentricity: Star elongation 0 (circle) to 1 (line). 2D image moments (SExtractor method).
-        - Trailing score: 0-1, combines eccentricity with orientation consensus. >0.5 = concerning.
-        - Trailing consensus: fraction of stars elongated in same direction. >50% = tracking error. \
-        Random directions = optical aberration (normal, not penalized).
-        - Z-score: standard deviations from group average. Negative = worse than average.
+        - FWHM: star size in pixels. Lower = sharper. Measured from center 70% crop.
+        - HFR: Half-Flux Radius. Lower = tighter stars. Fallback when FWHM unavailable.
+        - SNR: Signal-to-Noise = background median / MAD. Higher = cleaner signal.
+        - MAD: 1.4826 × median(|pixel - median|). Robust noise estimator.
+        - Eccentricity: star elongation 0-1. 2D image moments (SExtractor method).
+        - Trailing score: 0-1, combines eccentricity excess over FL baseline with PA consensus.
+        - Trailing consensus: fraction of stars elongated in same direction. >50% = tracking error.
+        - Twilight phase: Night (<-18°), Astro twilight (-18° to -12°), Nautical (-12° to -6°), \
+        Civil (-6° to 0°), Daylight (>0°). Computed from DATE-OBS (UTC) + site coordinates.
+        - Z-score: standard deviations from group median. Negative = worse than average.
 
         ADAPTIVE THRESHOLDS:
-        - Trailing detection is focal-length-adaptive: baseline_ecc = 0.8 / sqrt(focalLength / 200). \
-        Short FL (468mm) → 0.52 tolerance. Long FL (2423mm) → 0.23 tolerance.
-        - Background anomaly threshold scales with group size: 10 frames → 6.5 MAD, 20+ frames → 5.0 MAD.
-        - Narrowband (Ha, OIII, SII): star count weight reduced to 0.5× because fewer stars are normal.
+        - Eccentricity: FL-adaptive baseline = 0.8 / sqrt(FL / 200). \
+        468mm → 0.52, 620mm → 0.45, 904mm → 0.30, 2455mm → 0.23. \
+        R5 fires when ecc > 2× baseline (excessRatio > 1.0). R6 uses consensus-weighted score.
+        - Background: scales with group size (10 frames → 6.5 MAD, 20+ → 5.0 MAD).
+        - Narrowband: star weight 0.5× (fewer stars normal for Ha/OIII/SII).
 
         SELF-CALIBRATION:
-        - After 30+ frames with same setup (telescope+camera+focal length), absolute quality floor activates.
-        - Frames meeting learned baseline are locked as KEEP (blue lock icon) — z-scores can't override.
+        - After 30+ frames with same setup, absolute quality floor activates.
+        - Frames meeting learned baseline locked as KEEP (blue lock icon) — z-scores can't override.
 
         OTHER CONCEPTS:
         - STF: Screen Transfer Function — PixInsight-compatible auto-stretch (median/MAD → midtones transfer).
@@ -340,7 +345,7 @@ struct AIsaacContextBuilder {
 
         var lines: [String] = ["PER-FRAME DATA (use for deep analysis):"]
         lines.append("The '#' column shows session index (1-based). ALWAYS use the 1-based # number in BOTH text AND commands. The app resolves # to the correct frame regardless of sort order.")
-        lines.append("#|filename|filter|exp|tier|z|fwhm|hfr|stars|noise|ecc|trail|marked|reason")
+        lines.append("#|filename|filter|exp|tier|z|fwhm|hfr|stars|noise|ecc|trail|marked|reason|twilight")
 
         for f in framesToInclude {
             let z = f.zScore.map { String(format: "%+.2f", $0) } ?? "-"
@@ -352,9 +357,10 @@ struct AIsaacContextBuilder {
             let trail = f.trailing.map { String(format: "%.2f", $0) } ?? "-"
             let marked = f.isMarked ? "YES" : ""
             let reason = f.garbageReason ?? ""
+            let twilight = f.twilight ?? ""
 
             // f.index IS the sessionIndex (1-based, stable across sorting)
-            lines.append("\(f.index)|\(f.filename)|\(f.filter)|\(Int(f.exposure))|\(f.tier)|\(z)|\(fwhm)|\(hfr)|\(stars)|\(noise)|\(ecc)|\(trail)|\(marked)|\(reason)")
+            lines.append("\(f.index)|\(f.filename)|\(f.filter)|\(Int(f.exposure))|\(f.tier)|\(z)|\(fwhm)|\(hfr)|\(stars)|\(noise)|\(ecc)|\(trail)|\(marked)|\(reason)|\(twilight)")
         }
 
         if truncated {

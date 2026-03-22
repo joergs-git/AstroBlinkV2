@@ -738,8 +738,11 @@ struct HelpBackgroundView: View {
                     """
                     Eccentricity measures star shape using 2D image moments (the same method used by \
                     SExtractor and DAOPHOT in professional astronomy). It ranges from 0.0 (perfect circle) \
-                    to 1.0 (extreme elongation). Values above 0.5 indicate clear elongation from tracking \
-                    errors, wind shake, or mount issues. Above 0.6 = automatic trash.
+                    to 1.0 (extreme elongation). Detection is focal-length-adaptive: the expected baseline \
+                    eccentricity scales with focal length (short FL / fast optics naturally produce rounder \
+                    stars at higher baseline ecc, while long FL / slow optics expect tighter PSFs). \
+                    A frame with eccentricity more than 2× the FL baseline is flagged as garbage regardless \
+                    of other metrics.
                     """)
 
                 faqItem("Why eccentricity matters most",
@@ -791,7 +794,11 @@ struct HelpBackgroundView: View {
                     The total star count from GPU detection. Fewer stars than usual often indicates clouds, \
                     fog, high humidity, or tracking issues that smeared stars below the detection threshold. \
                     A sudden drop in star count is the most reliable single indicator of a problem. \
-                    Weight in quality score: 1.2x (slightly elevated).
+                    Weight in quality score: 1.2x (slightly elevated). \
+                    Note: a low star count can also occur when the mount recenters mid-session and shifts \
+                    the target partially off the sensor. In this case the visible portion may look perfectly \
+                    fine, but half the field is empty. If your images have plate-solved coordinates (CRVAL1/CRVAL2), \
+                    comparing center positions across frames can reveal pointing offsets.
                     """)
 
                 faqItem("FWHM — Full Width at Half Maximum",
@@ -971,9 +978,10 @@ struct HelpBackgroundView: View {
                 faqItem("Stage 1 — Garbage Detection",
                     """
                     Absolute thresholds catch catastrophic failures immediately: near-zero stars, \
-                    SNR below 50% of group median, FWHM/HFR over 2x median, severe trailing \
-                    (cross-checked against FWHM), star count anomalies from tracking jumps, \
-                    and background anomalies from clouds or fog.
+                    SNR below 50% of group median, FWHM/HFR over 2x median, extreme eccentricity \
+                    (more than 2x the focal-length baseline — adapts automatically to your optics), \
+                    severe trailing (cross-checked against FWHM), star count anomalies from tracking \
+                    jumps, and background anomalies from clouds or fog.
                     """)
 
                 faqItem("Stage 2 — Z-Score Ranking",

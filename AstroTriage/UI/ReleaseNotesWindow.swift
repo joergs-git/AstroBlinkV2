@@ -33,6 +33,13 @@ class ReleaseNotesWindowController {
 // MARK: - Release notes data (shared between view and copy)
 
 private let allReleases: [(version: String, date: String, items: [(ReleaseNotesView.ChangeType, String, String)])] = [
+    ("5.2.0", "March 22, 2026", [
+        (.added, "FL-Adaptive Eccentricity Detection", "New Rule 5: frames with eccentricity > 2× the focal-length baseline are flagged as garbage. Adapts automatically to any optics — no fixed thresholds."),
+        (.added, "Multi-Reason Garbage Display", "Quality panel now shows ALL detected issues per frame, not just the first one. Multiple reasons displayed on separate lines."),
+        (.added, "Twilight/Dawn Detection", "Sun position computed from capture time + site coordinates. Frames shot during civil twilight or daylight are auto-flagged. Twilight phase shown for all frames."),
+        (.added, "Decentered Target Detection", "When plate-solved coordinates show the frame center shifted off sensor (mount recenter), a specific garbage reason is shown."),
+        (.fixed, "Trailing Detection False Negatives", "Frames with extreme star elongation but normal FWHM (e.g., long focal length setups) were incorrectly rated as Good. Now caught by direct eccentricity check."),
+    ]),
     ("5.1.3", "March 22, 2026", [
         (.fixed, "Splash Screen Checkbox", "\"Don't show on startup\" checkbox now works correctly — clicking it no longer immediately dismisses the splash window."),
         (.fixed, "Background Anomaly False Positives", "Quality scoring no longer flags the best frames as \"abnormal background\". Only elevated background (clouds/gradient) is flagged — lower background (clearer sky) is correctly treated as good."),
