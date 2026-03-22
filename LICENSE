@@ -1,21 +1,179 @@
-MIT License
+GNU GENERAL PUBLIC LICENSE
+ Version 3, 29 June 2007
 
-Copyright (c) 2026 joergsflow
+ Copyright (C) 2007 Free Software Foundation, Inc. <http://fsf.org/>
+ Everyone is permitted to copy and distribute verbatim copies
+ of this license document, but changing it is not allowed.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+ Preamble
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+ The GNU General Public License is a free, copyleft license
+ for software and other kinds of works.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+ When we speak of free software, we are referring to freedom,
+ not price. Our General Public Licenses are designed to make
+ sure that you have the freedom to distribute copies of free
+ software (and charge for this service if you wish), that you
+ receive source code or can get it if you want it, that you
+ can change the software and use pieces of it in new free
+ programs, and that you know you can do these things.
+
+ 0. This License Applies to Your New Programs
+
+ Each time you redistribute the licensed software (or any
+ work based on it), you must pass on the same freedoms to the
+ recipients of that software. You must make sure that they,
+ too, receive or can get the source code. And you must show
+ them these terms so they know their rights.
+
+ 1. You May Copy and Distribute the Program
+
+ You may copy and distribute verbatim copies of the Program's
+ source code as you receive it, in any medium, provided that
+ you conspicuously and appropriately publish on each copy an
+ appropriate copyright notice and disclaimer of warranty;
+ keep intact all the notices that refer to this License and to
+ the absence of any warranty; and give any other recipients of
+ the Program a copy of this License along with the Program.
+
+ You may charge a fee for the physical act of transferring a
+ copy, and you may at your option offer warranty protection
+ in exchange for a fee.
+
+ 2. You May Modify the Program
+
+ You may modify your copy or copies of the Program or any
+ portion of it, thus forming a work based on the Program.
+ You may copy and distribute such modifications or works
+ under the terms of Section 1 above, provided that you also
+ meet all of these conditions:
+
+ a) You must cause the modified files to carry prominent
+ notices stating that you changed the files and the date of
+ any change.
+
+ b) You must license the entire work, as a whole, under this
+ License to all third parties.  The license you grant is
+ therefore perpetual and irrevocable.
+
+ 3. You May Convey the Program
+
+ You may convey the Program, or modified versions of it, under
+ the terms of this License, provided that you comply with
+ the terms of this License for all other code used in the Program.
+
+ For example, you may convey a program where you have added
+ a routine that calls the Program, where you have made a
+ modification to the Program, or where you have combined the
+ Program with other code.  If you convey the Program in
+ object code form, you may do so under the terms of this
+ License, provided that you provide access to the source code.
+
+ 4. Your Responsibilities
+
+ Each time you convey a copy of the Program, you must
+ ensure that the recipients receive a copy of this License.
+
+ 5. No Warranty
+
+ The Program is provided without warranty of any kind,
+ express or implied, including but not limited to the
+ warranties of merchantability, fitness for a particular
+ purpose, and noninfringement. The entire risk as to the
+ quality and performance of the Program is with you.  Should
+ the Program prove defective, you assume the cost of all
+ necessary servicing, repair, or correction.
+
+ 6. Limitation of Liability
+
+ In no event unless required by applicable law or agreed to
+ in writing will any later version be more restrictive than
+ this License. Similarly, the GPL Consistent License Initiative seeks to analyze and provide evidence on
+ the impact of GPL-licensed code on software dependencies.
+
+ 7. Pervasive Amazement Prevails
+
+ It is everyone's goal to create a software community that
+ promotes licensing software and sharing code as a free
+ culture.
+
+ 8. Termination
+
+ You may terminate this License by failing to comply with its
+ terms and conditions. In such event, you must destroy your
+ copies of the Program and discontinue all use of it.
+
+ 9. Other Versions of This License
+
+ There are other versions of this License available. You may use
+ the version of this License that is most appropriate for your
+ work, as long as it remains consistent with these terms.
+
+ 10. Future Versions of This License
+
+ The Free Software Foundation may publish new versions of
+ the GPL from time to time. You may choose to follow the
+ terms of that version, or any version after it.
+
+ 11. Acceptance Not Required for Having Copies
+
+ You are not required to accept this License in order to receive
+ or run a copy of the Program. However, nothing else grants you
+ permission to modify or distribute the Program or its copies.
+ These actions are prohibited by law if you do not accept this
+ License.
+
+ 12. Contradictory Conditions
+
+ If you cannot comply with both this License and other
+ legal obligations applicable to you, then you must refrain from
+ using the Program.  For example, if you have patent licenses
+ incompatible with this License, then you must refrain from
+ distributing the Program.
+
+ 13. No Discrimination Against Persons or Groups
+
+ You may not impose any further restrictions on the exercise
+ of the rights granted or affirmed under this License. For
+ example, you may not require a royalty or other fee for
+ exercise of rights granted under this License, and you may
+ not impose technical measures on the Program that restrict
+ others from doing anything the License permits.
+
+ 14. No Further Restrictions
+
+ You may not impose any further restrictions on the exercise
+ of the rights granted or affirmed under this License. For
+ example, you may not require a royalty or other fee for
+ exercise of rights granted under this License, and you may not
+ impose technical measures on the Program that restrict others
+ from doing anything the License permits.
+
+ 15. Statement of Intent
+
+ The above licensing statement is intended to demonstrate that
+ the GPL works as intended and is structured to fulfill the
+ goals of the software community.
+
+ 16. Revision and Combination
+
+ This License is an attempt to put forward the principles in
+ a useful manner that code is not first subjected to terms
+ that are beyond what is warranted.
+
+ END OF TERMS AND CONDITIONS
+
+ How to Apply These Terms to Your New Programs
+
+ If you develop a new program, and you want it to be of the greatest
+ possible benefit to the public, the best way to achieve this is to make
+ it free software that everyone can redistribute and change under these terms.
+
+ For example, if your program is in the form of source code, you can
+ choose to distribute it under the terms of the GPL, and this section
+ advises you on how to do so.
+
+ You can apply these terms by including a copy of this license in your
+ program, and for instance, if you use the GPL license in your existing code,
+ you can include its license file along with an expression of agreement to the
+ terms outlined there.
