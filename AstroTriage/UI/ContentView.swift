@@ -633,6 +633,28 @@ struct ContentView: View {
                             .lineLimit(1)
                             .textSelection(.enabled)
 
+                        // Community learning toggle (clickable icon)
+                        statusDivider
+                        let communityEnabled = AppSettings.defaults.bool(forKey: AppSettings.Key.communityLearning.rawValue)
+                        HStack(spacing: 2) {
+                            Image(systemName: "person.3.fill")
+                                .font(.system(size: 10))
+                                .foregroundColor(communityEnabled
+                                    ? (viewModel.nightMode ? .red : .green)
+                                    : nightFgDim.opacity(0.4))
+                            Text("Community")
+                                .font(.system(size: 9, design: .monospaced))
+                                .foregroundColor(communityEnabled ? nightFgDim.opacity(0.6) : nightFgDim.opacity(0.4))
+                        }
+                        .onTapGesture {
+                            let newValue = !AppSettings.defaults.bool(forKey: AppSettings.Key.communityLearning.rawValue)
+                            AppSettings.save(newValue, for: .communityLearning)
+                            viewModel.objectWillChange.send()
+                        }
+                        .help(communityEnabled
+                            ? "Community learning ON — anonymous session stats shared to improve detection. Click to disable."
+                            : "Community learning OFF — click to share anonymous stats and benefit from community baselines with new equipment.")
+
                         // iCloud sync indicator (rightmost, always visible)
                         statusDivider
                         HStack(spacing: 2) {
