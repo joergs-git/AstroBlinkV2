@@ -108,6 +108,53 @@ struct STFCalculator {
         return STFParams(c0: c0, mb: mb)
     }
 
+    // MARK: - Lightweight Image Statistics (SNR + star estimate)
+
+    /// Compute basic SNR and approximate star count from raw image data.
+    /// Uses the same 5% subsample as STF calculation — negligible overhead.
+    /// Returns (snr, starCount) where SNR = median/MAD and starCount is estimated
+    /// from bright pixel clusters above 5*sigma threshold.
+    static func computeStats(from image: DecodedImage) -> (snr: Float, starCount: Int) {
+        let ptr = image.buffer.contents().bindMemory(to: UInt16.self, capacity: image.pixelCount)
+        let planeSize = image.width * image.height
+
+        // Use first channel (or mono)
+        let sampleCount = max(1000, Int(Float(planeSize) * sampleFraction))
+        let stride = max(1, planeSize / sampleCount)
+
+        var samples = [Float]()
+        samples.reserveCapacity(sampleCount)
+
+        var i = 0
+        while i < planeSize {
+            samples.append(Float(ptr[i]) / 65535.0)
+            i += stride
+        }
+        guard samples.count > 10 else { return (0, 0) }
+
+        samples.sort()
+        let n = samples.count
+        let median = (n % 2 == 0) ? (samples[n/2 - 1] + samples[n/2]) / 2 : samples[n/2]
+
+        var deviations = samples.map { abs($0 - median) }
+        deviations.sort()
+        let mad = (n % 2 == 0) ? (deviations[n/2 - 1] + deviations[n/2]) / 2 : deviations[n/2]
+        let normalizedMAD = 1.4826 * mad
+
+        let snr: Float = normalizedMAD > 0 ? median / normalizedMAD : 0
+
+        // Star count estimate: count samples > median + 5*sigma
+        // This counts bright pixels, not individual stars — divide by ~4 to approximate
+        let threshold = median + 5.0 * normalizedMAD
+        let brightCount = samples.filter { $0 > threshold }.count
+
+        // Scale up from subsample to full image, divide by ~9 (avg star occupies ~9 sampled pixels)
+        let scaleFactor = Float(planeSize) / Float(sampleCount)
+        let estimatedStars = max(0, Int(Float(brightCount) * scaleFactor / 9.0))
+
+        return (snr, estimatedStars)
+    }
+
     // Midtones Transfer Function — inverse for parameter calculation
     // Given target output and input, find the midtone balance parameter
     private static func mtf(_ target: Float, _ x: Float) -> Float {

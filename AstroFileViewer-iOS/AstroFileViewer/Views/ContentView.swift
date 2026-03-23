@@ -264,10 +264,12 @@ struct AdjustmentsPanel: View {
                       display: viewModel.contrastAmount == 0 ? "0" :
                         String(format: "%+.0f%%", viewModel.contrastAmount * 50))
 
-            // Saturation slider
-            SliderRow(icon: "paintpalette", label: "Color", value: $viewModel.saturationAmount,
-                      range: 0.0...3.0, step: 0.1, tint: .pink,
-                      display: String(format: "%.0f%%", viewModel.saturationAmount * 100))
+            // Saturation slider (only for color/debayered images — no effect on mono)
+            if viewModel.isColorImage {
+                SliderRow(icon: "paintpalette", label: "Color", value: $viewModel.saturationAmount,
+                          range: 0.0...3.0, step: 0.1, tint: .pink,
+                          display: String(format: "%.0f%%", viewModel.saturationAmount * 100))
+            }
 
             // Denoise slider (0-300% for stronger effect on mobile)
             SliderRow(icon: "aqi.medium", label: "Denoise", value: $viewModel.denoiseAmount,

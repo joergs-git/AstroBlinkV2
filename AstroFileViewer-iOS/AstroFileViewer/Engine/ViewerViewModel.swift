@@ -153,6 +153,14 @@ class ViewerViewModel: ObservableObject {
                        (imageHeight > 0 ? (rawDecodedImage?.channelCount == 3 ? "RGB" : "Mono") : "")
         parts.append("\(imageWidth) x \(imageHeight) \(channels)")
 
+        // SNR + stars (if computed)
+        if imageSNR > 0 {
+            parts.append(String(format: "SNR %.0f", imageSNR))
+        }
+        if imageStarCount > 0 {
+            parts.append("\(imageStarCount) stars")
+        }
+
         return parts.joined(separator: " | ")
     }
 
@@ -165,6 +173,11 @@ class ViewerViewModel: ObservableObject {
     // True when current image is landscape (wider than tall)
     var isLandscapeImage: Bool {
         imageWidth > imageHeight && imageWidth > 0
+    }
+
+    // True when the displayed image has color (RGB or debayered)
+    var isColorImage: Bool {
+        debayerEnabled || (rawDecodedImage?.channelCount ?? 0) >= 3
     }
 
     private func headerValue(for key: String) -> String? {
@@ -183,6 +196,9 @@ class ViewerViewModel: ObservableObject {
     private var isReprocessing: Bool = false
     // Cached gradient plane coefficients for current image (raw, unscaled)
     private var gradientCoefficients: PostParams?
+    // Cached image stats (computed once per image load)
+    @Published var imageSNR: Float = 0
+    @Published var imageStarCount: Int = 0
 
     // Important header keywords to highlight at the top
     private let priorityKeywords: Set<String> = [
@@ -277,14 +293,29 @@ class ViewerViewModel: ObservableObject {
         bayerPatternDetected = nil
         debayerEnabled = false
 
-        // Copy file to cache (if not already there)
+        // Copy file to cache while we have security-scoped access
         let cachedFilename = url.lastPathComponent
         let cachedURL = Self.cacheDirectory.appendingPathComponent(cachedFilename)
-        if !FileManager.default.fileExists(atPath: cachedURL.path) {
-            try? FileManager.default.copyItem(at: url, to: cachedURL)
+        let fm = FileManager.default
+        // Always overwrite — same filename from different session may differ
+        if fm.fileExists(atPath: cachedURL.path) {
+            try? fm.removeItem(at: cachedURL)
         }
-        // Use cached version for decoding (original may be temporary)
-        let targetURL = FileManager.default.fileExists(atPath: cachedURL.path) ? cachedURL : url
+        do {
+            try fm.copyItem(at: url, to: cachedURL)
+        } catch {
+            // Copy failed — decode from original URL directly
+            print("Cache copy failed: \(error.localizedDescription)")
+        }
+        // Use cached version for decoding (original may be temporary/sandboxed)
+        let targetURL = fm.fileExists(atPath: cachedURL.path) ? cachedURL : url
+
+        // Release security scope early if we have the cached copy
+        if accessing && fm.fileExists(atPath: cachedURL.path) {
+            url.stopAccessingSecurityScopedResource()
+        }
+
+        let needsStopAccess = accessing && !fm.fileExists(atPath: cachedURL.path)
 
         Task.detached(priority: .userInitiated) { [weak self] in
             guard let self = self, let device = self.device else { return }
@@ -345,7 +376,7 @@ class ViewerViewModel: ObservableObject {
                     self.isLoading = false
                 }
 
-                if accessing {
+                if needsStopAccess {
                     url.stopAccessingSecurityScopedResource()
                 }
             }
@@ -561,6 +592,13 @@ class ViewerViewModel: ObservableObject {
                 }
             } else {
                 imageForSTF = rawImage
+            }
+
+            // Step 1b: Compute image stats (SNR + star count) — negligible overhead
+            let stats = STFCalculator.computeStats(from: imageForSTF)
+            await MainActor.run {
+                self.imageSNR = stats.snr
+                self.imageStarCount = stats.starCount
             }
 
             // Step 2: Compute gradient correction if strength > 0
