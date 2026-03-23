@@ -23,6 +23,7 @@ struct AppSettings {
         case autoMeridian         // Bool — auto-rotate images across meridian flip
         case sessionCount         // Int — number of sessions opened (for App Store review prompt)
         case hideSplash           // Bool — never show splash screen on launch
+        case communityLearning    // Bool — opt-in to community detection learning (default: off)
     }
 
     // Start observing iCloud changes (call once at app launch)

@@ -57,6 +57,11 @@ struct QualityBreakdown: Hashable {
     // Only set when the setup has ≥30 learned frames.
     let isLockedKeep: Bool
 
+    // Community floor: frame meets community baseline for similar setups.
+    // Only set when local calibration has < 30 frames and community data exists.
+    // Displayed as gray lock badge (distinct from blue local calibration lock).
+    var isCommunityFloorLocked: Bool = false
+
     // Human-readable explanation of why this frame received its tier.
     // Generated during scoring when group context is available.
     let reasoningText: String?
@@ -74,6 +79,11 @@ struct QualityBreakdown: Hashable {
         // Locked keep from calibration floor — overrides z-score recommendations
         if isLockedKeep {
             return "KEEP — within calibrated baseline"
+        }
+
+        // Community floor lock — weaker than local, used during cold start
+        if isCommunityFloorLocked {
+            return "KEEP — within community baseline"
         }
 
         if !garbageReasons.isEmpty {
@@ -198,7 +208,8 @@ struct QualityEstimator {
     static func computeScores(
         for entries: [ImageEntry],
         calibrationDB: CalibrationDatabase? = nil,
-        fingerprint: SetupFingerprint? = nil
+        fingerprint: SetupFingerprint? = nil,
+        communityBaseline: CommunityBaseline? = nil
     ) -> [URL: QualityBreakdown] {
         // Two-pass night-aware scoring for multi-night sessions:
         // Pass 1: combined groups (all nights merged) → every entry gets a baseline score
@@ -607,7 +618,21 @@ struct QualityEstimator {
                 // Hide SNR contribution for trash tier — misleading to show high % on garbage frames
                 let displayContrib = tier == .trash ? nil : contribution
 
-                result[entry.url] = QualityBreakdown(
+                // ── Community Floor (cold-start) ──
+                // When local calibration has < 30 frames, check community baseline.
+                // Only promotes to .good minimum (same as local floor) — never overrides local.
+                var communityLocked = false
+                if !lockedKeep && (tier == .borderline || tier == .trash) {
+                    if let cb = communityBaseline, let db = calibrationDB, let fp = fingerprint,
+                       !db.profile(for: fp).hasLearned {
+                        if CommunityDetectionService.meetsCommunityFloor(entry: entry, baseline: cb) {
+                            tier = .good
+                            communityLocked = true
+                        }
+                    }
+                }
+
+                var breakdown = QualityBreakdown(
                     tier: tier,
                     combinedZScore: combinedZ,
                     starsZ: cappedZ(starsZscores[localIdx]),
@@ -622,6 +647,8 @@ struct QualityEstimator {
                     reasoningText: reasoning,
                     filterTrailingMultiplier: trailMult
                 )
+                breakdown.isCommunityFloorLocked = communityLocked
+                result[entry.url] = breakdown
             }
         }
 

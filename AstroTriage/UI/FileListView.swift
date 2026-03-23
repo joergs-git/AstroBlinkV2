@@ -527,17 +527,22 @@ struct FileListView: NSViewRepresentable {
                 cellView.imageView?.image = nil
             }
 
-            // Lock badge overlay for calibration-locked KEEP frames
+            // Lock badge overlay for calibration-locked or community-locked KEEP frames
             let lockTag = 999
             cellView.viewWithTag(lockTag)?.removeFromSuperview()
-            if entry.qualityBreakdown?.isLockedKeep == true {
+            let bd = entry.qualityBreakdown
+            if bd?.isLockedKeep == true || bd?.isCommunityFloorLocked == true {
                 let lockView = NSImageView()
                 lockView.tag = lockTag
                 lockView.translatesAutoresizingMaskIntoConstraints = false
-                if let lockImg = NSImage(systemSymbolName: "lock.circle.fill", accessibilityDescription: "Calibration locked") {
+                let isLocal = bd?.isLockedKeep == true
+                let symbolName = isLocal ? "lock.circle.fill" : "lock.circle.fill"
+                let description = isLocal ? "Calibration locked" : "Community baseline locked"
+                if let lockImg = NSImage(systemSymbolName: symbolName, accessibilityDescription: description) {
                     let lockConfig = NSImage.SymbolConfiguration(pointSize: 7, weight: .bold)
                     lockView.image = lockImg.withSymbolConfiguration(lockConfig)
-                    lockView.contentTintColor = .systemBlue
+                    // Blue for local calibration, gray for community baseline
+                    lockView.contentTintColor = isLocal ? .systemBlue : .systemGray
                 }
                 cellView.addSubview(lockView)
                 NSLayoutConstraint.activate([
@@ -596,6 +601,8 @@ struct FileListView: NSViewRepresentable {
 
             if bd.isLockedKeep {
                 lines.append("  [LOCKED] Within calibrated baseline for this setup")
+            } else if bd.isCommunityFloorLocked {
+                lines.append("  [COMMUNITY] Within community baseline (similar setups)")
             }
 
             if !bd.garbageReasons.isEmpty {

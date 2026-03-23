@@ -165,6 +165,9 @@ class TriageViewModel: ObservableObject {
         )
     }
 
+    // Community detection learning baseline (fetched on session load if opted in)
+    var communityBaseline: CommunityBaseline?
+
     // Spotlight-style search: filters file list in real time
     // Supports plain text (searches all columns) or "column:value" syntax (e.g. "filter:Ha", "fwhm:>4")
     @Published var filterText: String = ""
@@ -1579,6 +1582,22 @@ class TriageViewModel: ObservableObject {
                 self.recomputeQualityScores()
                 self.detectMeridianFlip()
 
+                // Fetch community baseline for cold-start calibration (async, non-blocking)
+                if let fp = self.currentSetupFingerprint {
+                    Task {
+                        let baseline = await CommunityDetectionService.shared.fetchCommunityBaseline(fingerprint: fp)
+                        await MainActor.run {
+                            if let bl = baseline, self.communityBaseline == nil {
+                                self.communityBaseline = bl
+                                // Recompute scores with community baseline if local calibration insufficient
+                                if !CalibrationDatabase.shared.profile(for: fp).hasLearned {
+                                    self.recomputeQualityScores()
+                                }
+                            }
+                        }
+                    }
+                }
+
                 // Learn equipment/location/targets for AIsaac user profile
                 var profile = AIsaacUserProfile.load()
                 profile.learnFrom(images: self.images)
@@ -1635,7 +1654,8 @@ class TriageViewModel: ObservableObject {
         let scores = QualityEstimator.computeScores(
             for: images,
             calibrationDB: CalibrationDatabase.shared,
-            fingerprint: currentSetupFingerprint
+            fingerprint: currentSetupFingerprint,
+            communityBaseline: communityBaseline
         )
         for index in images.indices {
             images[index].qualityBreakdown = scores[images[index].url]
@@ -2875,6 +2895,8 @@ class TriageViewModel: ObservableObject {
         // Commit retained frames to calibration database for learning
         if let fp = currentSetupFingerprint {
             CalibrationDatabase.shared.commitSession(entries: images, fingerprint: fp)
+            // Upload anonymous session summary to community (if opted in)
+            CommunityDetectionService.shared.uploadSessionData(entries: images, fingerprint: fp)
         }
         recomputeQualityScores()
         updateConvergence()
