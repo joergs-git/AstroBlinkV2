@@ -7,6 +7,7 @@ struct ContentView: View {
     @ObservedObject var viewModel: ViewerViewModel
     @State private var showHeaders = false
     @State private var showHelp = false
+    @State private var immersiveMode = false
     @Environment(\.requestReview) private var requestReview
 
     var body: some View {
@@ -23,7 +24,8 @@ struct ContentView: View {
                             onSwipeRight: { viewModel.navigateBack() }
                         )
 
-                        // Navigation arrows
+                        // Navigation arrows (hidden in immersive mode)
+                        if !immersiveMode {
                         HStack {
                             if viewModel.canGoBack {
                                 Image(systemName: "chevron.left")
@@ -40,8 +42,14 @@ struct ContentView: View {
                             }
                         }
                         .allowsHitTesting(false)
+                        }
                     }
                     .ignoresSafeArea()
+                    .onTapGesture {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            immersiveMode.toggle()
+                        }
+                    }
                 } else if viewModel.isLoading {
                     ProgressView("Processing...")
                         .foregroundColor(.white)
@@ -117,6 +125,8 @@ struct ContentView: View {
             }
             .navigationTitle(viewModel.displayTexture == nil ? "AstroFileViewer" : "")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbar(immersiveMode ? .hidden : .visible, for: .navigationBar)
+            .statusBarHidden(immersiveMode)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     HStack(spacing: 12) {
@@ -179,6 +189,7 @@ struct ContentView: View {
                 }
             }
             .overlay(alignment: .bottom) {
+                if !immersiveMode {
                 VStack(spacing: 0) {
                     // Adjustments panel
                     if viewModel.showAdjustments && viewModel.displayTexture != nil {
@@ -208,6 +219,7 @@ struct ContentView: View {
                         }
                     }
                     .padding(.bottom, 8)
+                }
                 }
             }
             .sheet(isPresented: $showHeaders) {
