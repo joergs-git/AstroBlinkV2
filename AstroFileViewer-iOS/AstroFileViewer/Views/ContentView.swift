@@ -1,4 +1,4 @@
-// v1.3.0
+// v1.4.0
 import SwiftUI
 import MetalKit
 import StoreKit
@@ -6,7 +6,7 @@ import StoreKit
 struct ContentView: View {
     @ObservedObject var viewModel: ViewerViewModel
     @State private var showHeaders = false
-    @State private var showAbout = false
+    @State private var showHelp = false
     @Environment(\.requestReview) private var requestReview
 
     var body: some View {
@@ -47,8 +47,8 @@ struct ContentView: View {
 
                         Spacer().frame(height: 40)
 
-                        Button(action: { showAbout = true }) {
-                            Text("About AstroFileViewer")
+                        Button(action: { showHelp = true }) {
+                            Text("Help & About")
                                 .font(.caption)
                                 .foregroundColor(.gray)
                         }
@@ -63,8 +63,8 @@ struct ContentView: View {
                         Button(action: { viewModel.showFilePicker = true }) {
                             Image(systemName: "folder")
                         }
-                        Button(action: { showAbout = true }) {
-                            Image(systemName: "person.circle")
+                        Button(action: { showHelp = true }) {
+                            Image(systemName: "questionmark.circle")
                         }
                     }
                 }
@@ -72,14 +72,22 @@ struct ContentView: View {
                 if viewModel.displayTexture != nil {
                     ToolbarItem(placement: .navigationBarTrailing) {
                         HStack(spacing: 12) {
-                            // Image adjustments toggle
+                            // Image adjustments toggle with gradient indicator
                             Button(action: {
                                 withAnimation(.easeInOut(duration: 0.2)) {
                                     viewModel.showAdjustments.toggle()
                                 }
                             }) {
-                                Image(systemName: "slider.horizontal.3")
-                                    .foregroundColor(viewModel.showAdjustments ? .yellow : .white)
+                                ZStack(alignment: .topTrailing) {
+                                    Image(systemName: "slider.horizontal.3")
+                                        .foregroundColor(viewModel.showAdjustments ? .yellow : .white)
+                                    if viewModel.gradientEnabled {
+                                        Image(systemName: "exclamationmark.circle.fill")
+                                            .font(.system(size: 10))
+                                            .foregroundColor(.orange)
+                                            .offset(x: 6, y: -6)
+                                    }
+                                }
                             }
 
                             // Save to Photos
@@ -138,8 +146,8 @@ struct ContentView: View {
             .sheet(isPresented: $showHeaders) {
                 HeaderListView(headers: viewModel.headers, filename: viewModel.filename)
             }
-            .sheet(isPresented: $showAbout) {
-                AboutView()
+            .sheet(isPresented: $showHelp) {
+                HelpAboutView()
             }
             .fileImporter(
                 isPresented: $viewModel.showFilePicker,
@@ -184,12 +192,33 @@ struct AdjustmentsPanel: View {
                 Text("Stretch")
                     .font(.caption.bold())
                     .foregroundColor(.white)
-                    .frame(width: 55, alignment: .leading)
+                    .frame(width: 60, alignment: .leading)
 
                 Slider(value: $viewModel.stretchStrength, in: 0.0...0.50, step: 0.01)
                     .tint(.yellow)
 
                 Text(String(format: "%.0f%%", viewModel.stretchStrength * 200))
+                    .font(.caption.monospaced())
+                    .foregroundColor(.gray)
+                    .frame(width: 40)
+            }
+
+            // Dark level slider
+            HStack(spacing: 8) {
+                Image(systemName: "circle.bottomhalf.filled")
+                    .font(.caption)
+                    .foregroundColor(.gray)
+                    .frame(width: 20)
+
+                Text("Dark")
+                    .font(.caption.bold())
+                    .foregroundColor(.white)
+                    .frame(width: 60, alignment: .leading)
+
+                Slider(value: $viewModel.darkLevel, in: 0.0...0.5, step: 0.01)
+                    .tint(.purple)
+
+                Text(String(format: "%.0f%%", viewModel.darkLevel * 200))
                     .font(.caption.monospaced())
                     .foregroundColor(.gray)
                     .frame(width: 40)
@@ -205,7 +234,7 @@ struct AdjustmentsPanel: View {
                 Text("Sharpen")
                     .font(.caption.bold())
                     .foregroundColor(.white)
-                    .frame(width: 55, alignment: .leading)
+                    .frame(width: 60, alignment: .leading)
 
                 Slider(value: $viewModel.sharpenAmount, in: 0...2.0, step: 0.05)
                     .tint(.cyan)
@@ -214,6 +243,29 @@ struct AdjustmentsPanel: View {
                     .font(.caption.monospaced())
                     .foregroundColor(.gray)
                     .frame(width: 40)
+            }
+
+            // Gradient correction toggle
+            HStack(spacing: 8) {
+                Image(systemName: "circle.grid.cross")
+                    .font(.caption)
+                    .foregroundColor(.gray)
+                    .frame(width: 20)
+
+                Text("Gradient")
+                    .font(.caption.bold())
+                    .foregroundColor(.white)
+                    .frame(width: 60, alignment: .leading)
+
+                Toggle("", isOn: $viewModel.gradientEnabled)
+                    .labelsHidden()
+                    .tint(.orange)
+
+                Text("Auto LP removal")
+                    .font(.caption2)
+                    .foregroundColor(.gray)
+
+                Spacer()
             }
 
             // Debayer toggle (only when Bayer pattern detected)
@@ -227,7 +279,7 @@ struct AdjustmentsPanel: View {
                     Text("Debayer")
                         .font(.caption.bold())
                         .foregroundColor(.white)
-                        .frame(width: 55, alignment: .leading)
+                        .frame(width: 60, alignment: .leading)
 
                     Toggle("", isOn: $viewModel.debayerEnabled)
                         .labelsHidden()
@@ -242,10 +294,12 @@ struct AdjustmentsPanel: View {
             }
 
             // Reset button
-            if viewModel.stretchStrength != 0.25 || viewModel.sharpenAmount != 0 {
+            if viewModel.hasNonDefaultSettings {
                 Button(action: {
                     viewModel.stretchStrength = 0.25
+                    viewModel.darkLevel = 0
                     viewModel.sharpenAmount = 0
+                    viewModel.gradientEnabled = false
                 }) {
                     Text("Reset to Default")
                         .font(.caption)
@@ -270,76 +324,119 @@ struct AdjustmentsPanel: View {
     }
 }
 
-// MARK: - About View
+// MARK: - Help & About View
 
-struct AboutView: View {
+struct HelpAboutView: View {
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         NavigationStack {
-            ZStack {
-                Color.black.ignoresSafeArea()
+            List {
+                // Getting Started
+                Section("Getting Started") {
+                    HelpRow(icon: "folder", color: .blue,
+                            title: "Open Files",
+                            text: "Tap the folder icon to open FITS (.fits, .fit, .fts) or XISF (.xisf) files from the Files app, iCloud Drive, or any document provider.")
 
-                VStack(spacing: 16) {
-                    Image(systemName: "star.circle")
-                        .font(.system(size: 50))
-                        .foregroundColor(.blue)
+                    HelpRow(icon: "sparkles", color: .yellow,
+                            title: "Auto Stretch",
+                            text: "Images are automatically stretched using a PixInsight-compatible STF algorithm. The stretch makes faint nebulae and galaxies visible while preserving star shapes.")
+                }
 
-                    Text("AstroFileViewer")
-                        .font(.title2.bold())
-                        .foregroundColor(.white)
+                // Image Controls
+                Section("Image Controls") {
+                    HelpRow(icon: "sun.min", color: .yellow,
+                            title: "Stretch (0-100%)",
+                            text: "Controls the target background level. Higher values reveal fainter detail but may blow out bright areas. Default: 50%.")
 
-                    Text("v1.3.0")
-                        .font(.caption)
-                        .foregroundColor(.gray)
+                    HelpRow(icon: "circle.bottomhalf.filled", color: .purple,
+                            title: "Dark (0-100%)",
+                            text: "Raises the black point to clip faint noise in the background. Useful for cleaning up light-polluted subs. Similar to the Shadows slider in photo editors.")
 
-                    Text("FITS & XISF viewer for astrophotography.\nPixInsight-compatible STF auto-stretch\nwith adjustable strength, sharpening & debayer.")
-                        .font(.subheadline)
-                        .foregroundColor(.gray)
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal, 30)
+                    HelpRow(icon: "diamond", color: .cyan,
+                            title: "Sharpen (0-100%)",
+                            text: "Applies an unsharp mask to enhance fine detail. Use sparingly — over-sharpening amplifies noise.")
 
-                    Divider().background(Color.gray.opacity(0.3)).padding(.horizontal, 40)
+                    HelpRow(icon: "circle.grid.cross", color: .orange,
+                            title: "Gradient Correction",
+                            text: "Automatically detects and removes linear light pollution gradients across the frame. Uses an 8x8 grid of background samples to fit and subtract the gradient tilt. When active, an indicator icon appears on the adjustments button.")
 
-                    Text("by joergsflow")
-                        .font(.headline)
-                        .foregroundColor(.white)
+                    HelpRow(icon: "square.grid.3x3", color: .green,
+                            title: "Debayer",
+                            text: "Converts raw Bayer CFA data to color. Auto-enabled when a Bayer pattern (RGGB, GRBG, etc.) is detected in the file header. Only available for mono CFA images.")
+                }
 
-                    VStack(spacing: 10) {
-                        Link(destination: URL(string: "https://app.astrobin.com/u/joergsflow#gallery")!) {
-                            Label("Astrobin Gallery", systemImage: "photo.on.rectangle")
-                                .font(.subheadline)
-                        }
+                // Tips
+                Section("Tips") {
+                    HelpRow(icon: "hand.pinch", color: .white,
+                            title: "Zoom & Pan",
+                            text: "Pinch to zoom (up to 10x), drag to pan. Double-tap not needed — just pinch anywhere on the image.")
 
-                        Link(destination: URL(string: "https://www.instagram.com/joergsflow/")!) {
-                            Label("Instagram @joergsflow", systemImage: "camera")
-                                .font(.subheadline)
-                        }
+                    HelpRow(icon: "square.and.arrow.down", color: .white,
+                            title: "Save to Photos",
+                            text: "Saves the current view as a bin2 JPEG to your photo library. The image includes all active adjustments (stretch, dark, sharpen, gradient correction).")
 
-                        Link(destination: URL(string: "https://github.com/joergs-git/AstroBlinkV2")!) {
-                            Label("GitHub — Source Code", systemImage: "chevron.left.forwardslash.chevron.right")
-                                .font(.subheadline)
+                    HelpRow(icon: "info.circle", color: .white,
+                            title: "Header Inspector",
+                            text: "View all FITS/XISF header keywords. Important keywords (OBJECT, FILTER, EXPTIME, GAIN, etc.) are highlighted at the top.")
+
+                    HelpRow(icon: "gearshape", color: .white,
+                            title: "Persistent Settings",
+                            text: "Your slider positions and gradient toggle are saved automatically and restored on next launch. Use 'Reset to Default' to clear all settings.")
+                }
+
+                // About
+                Section("About") {
+                    VStack(alignment: .center, spacing: 12) {
+                        HStack {
+                            Spacer()
+                            VStack(spacing: 6) {
+                                Image(systemName: "star.circle")
+                                    .font(.system(size: 40))
+                                    .foregroundColor(.blue)
+                                Text("AstroFileViewer")
+                                    .font(.headline)
+                                Text("v1.4.0")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                Text("by joergsflow")
+                                    .font(.subheadline)
+                            }
+                            Spacer()
                         }
                     }
-                    .padding(.top, 8)
+                    .listRowBackground(Color.clear)
 
-                    Divider().background(Color.gray.opacity(0.3)).padding(.horizontal, 40)
+                    Link(destination: URL(string: "https://app.astrobin.com/u/joergsflow#gallery")!) {
+                        Label("Astrobin Gallery", systemImage: "photo.on.rectangle")
+                    }
 
-                    Text("Open Source — GPLv3 License")
-                        .font(.caption2)
-                        .foregroundColor(.gray)
+                    Link(destination: URL(string: "https://www.instagram.com/joergsflow/")!) {
+                        Label("Instagram @joergsflow", systemImage: "camera")
+                    }
 
-                    Text("Uses libxisf (GPLv3) and cfitsio (NASA Open Source)")
-                        .font(.caption2)
-                        .foregroundColor(.gray.opacity(0.7))
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal, 30)
+                    Link(destination: URL(string: "https://github.com/joergs-git/AstroBlinkV2")!) {
+                        Label("GitHub — Source Code", systemImage: "chevron.left.forwardslash.chevron.right")
+                    }
 
-                    Spacer()
+                    VStack(alignment: .center, spacing: 4) {
+                        HStack {
+                            Spacer()
+                            VStack(spacing: 4) {
+                                Text("Open Source — GPLv3 License")
+                                    .font(.caption2)
+                                Text("Uses libxisf (GPLv3) and cfitsio (NASA Open Source)")
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                            }
+                            Spacer()
+                        }
+                    }
+                    .listRowBackground(Color.clear)
                 }
-                .padding(.top, 20)
             }
-            .navigationTitle("About")
+            .listStyle(.insetGrouped)
+            .navigationTitle("Help & About")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
@@ -347,6 +444,35 @@ struct AboutView: View {
                 }
             }
         }
+    }
+}
+
+// MARK: - Help Row Component
+
+struct HelpRow: View {
+    let icon: String
+    let color: Color
+    let title: String
+    let text: String
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: icon)
+                .font(.body)
+                .foregroundColor(color)
+                .frame(width: 24)
+                .padding(.top, 2)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.subheadline.bold())
+                Text(text)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(.vertical, 4)
     }
 }
 
@@ -424,7 +550,7 @@ class ZoomableImageView: UIScrollView, UIScrollViewDelegate {
 
         imageView.contentMode = .scaleAspectFit
         imageView.clipsToBounds = true
-        // Trilinear filtering reduces Moiré artifacts when image is zoomed out
+        // Trilinear filtering reduces Moire artifacts when image is zoomed out
         imageView.layer.minificationFilter = .trilinear
         addSubview(imageView)
 

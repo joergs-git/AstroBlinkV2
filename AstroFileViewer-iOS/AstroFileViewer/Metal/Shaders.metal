@@ -1,5 +1,5 @@
-// v1.3.0
-// STF Auto-Stretch + Debayer + Sharpening kernels
+// v1.4.0
+// STF Auto-Stretch + Debayer + Sharpening + Dark Level + Gradient Correction kernels
 // PixInsight-compatible Screen Transfer Function with adjustable stretch strength
 
 #include <metal_stdlib>
@@ -20,6 +20,14 @@ struct STFParams {
     float mb;   // Midtone balance for MTF [0,1]
 };
 
+// Post-processing parameters: dark level + gradient correction
+struct PostParams {
+    float darkLevel;  // Black point raise [0..0.5], applied after STF
+    float gradA;      // Gradient X coefficient (applied before STF)
+    float gradB;      // Gradient Y coefficient (applied before STF)
+    float gradC;      // Gradient constant offset (mean-normalized)
+};
+
 // ==========================================================================
 // Kernel 1: STF normalize — uint16 mono/RGB to BGRA8
 // ==========================================================================
@@ -32,6 +40,7 @@ kernel void normalize_uint16(
     constant int& channelCount [[buffer(3)]],
     constant STFParams* stfParams [[buffer(4)]],
     constant int& binFactor [[buffer(5)]],
+    constant PostParams& post [[buffer(6)]],
     uint2 gid [[thread_position_in_grid]])
 {
     uint outW = output.get_width();
@@ -44,21 +53,30 @@ kernel void normalize_uint16(
     uint pixelIndex = srcY * (uint)width + srcX;
     uint planeSize = (uint)width * (uint)height;
 
+    // Gradient correction: linear plane subtracted from raw [0,1] values
+    float nx = float(srcX) / float(width);
+    float ny = float(srcY) / float(height);
+    float gradCorr = post.gradA * nx + post.gradB * ny + post.gradC;
+
+    float darkLevel = post.darkLevel;
+
     float4 color;
 
     if (channelCount == 1) {
-        // Mono: apply single-channel STF
+        // Mono: gradient correct -> STF -> dark level
         float v = float(pixelData[pixelIndex]) / 65535.0;
+        v -= gradCorr;
         float c0 = stfParams[0].c0;
         float mb = stfParams[0].mb;
         v = clamp((v - c0) / (1.0 - c0), 0.0, 1.0);
         v = mtf(v, mb);
+        if (darkLevel > 0.0) v = clamp((v - darkLevel) / (1.0 - darkLevel), 0.0, 1.0);
         color = float4(v, v, v, 1.0);
     } else if (channelCount == 3) {
-        // RGB planar: apply per-channel STF (unlinked for OSC data)
-        float r = float(pixelData[pixelIndex]) / 65535.0;
-        float g = float(pixelData[planeSize + pixelIndex]) / 65535.0;
-        float b = float(pixelData[2 * planeSize + pixelIndex]) / 65535.0;
+        // RGB planar: same gradient correction on all channels
+        float r = float(pixelData[pixelIndex]) / 65535.0 - gradCorr;
+        float g = float(pixelData[planeSize + pixelIndex]) / 65535.0 - gradCorr;
+        float b = float(pixelData[2 * planeSize + pixelIndex]) / 65535.0 - gradCorr;
 
         r = clamp((r - stfParams[0].c0) / (1.0 - stfParams[0].c0), 0.0, 1.0);
         r = mtf(r, stfParams[0].mb);
@@ -67,13 +85,21 @@ kernel void normalize_uint16(
         b = clamp((b - stfParams[2].c0) / (1.0 - stfParams[2].c0), 0.0, 1.0);
         b = mtf(b, stfParams[2].mb);
 
+        if (darkLevel > 0.0) {
+            r = clamp((r - darkLevel) / (1.0 - darkLevel), 0.0, 1.0);
+            g = clamp((g - darkLevel) / (1.0 - darkLevel), 0.0, 1.0);
+            b = clamp((b - darkLevel) / (1.0 - darkLevel), 0.0, 1.0);
+        }
+
         color = float4(r, g, b, 1.0);
     } else {
         float v = float(pixelData[pixelIndex]) / 65535.0;
+        v -= gradCorr;
         float c0 = stfParams[0].c0;
         float mb = stfParams[0].mb;
         v = clamp((v - c0) / (1.0 - c0), 0.0, 1.0);
         v = mtf(v, mb);
+        if (darkLevel > 0.0) v = clamp((v - darkLevel) / (1.0 - darkLevel), 0.0, 1.0);
         color = float4(v, v, v, 1.0);
     }
 

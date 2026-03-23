@@ -453,6 +453,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 - Navigation: arrow keys stop at boundaries (no wrap-around).
 - Column order: checkbox, #, filename, object, filter, exp, amb, foc, temp, gain, size, fwhm, hfr, stars, subfolder.
 
+## [1.4.0] — 2026-03-23 (iOS AstroFileViewer)
+
+### Added
+- **Dark point slider** — Raises the black point to clip faint background noise. Range 0–100%, applied after STF stretch. Same algorithm as macOS AstroBlink.
+- **Auto gradient correction** — One-tap removal of linear light pollution gradients. Fits a plane to an 8x8 grid of background medians and subtracts the tilt on GPU. Superfast — one multiply-add per pixel.
+- **Persistent settings** — Stretch, dark, sharpen, and gradient toggle are saved via UserDefaults and restored on next launch.
+- **Gradient indicator** — Orange exclamationmark.circle badge on the adjustments toolbar button when gradient correction is active.
+- **Help & About view** — Replaced the About screen with a comprehensive help section covering all image controls, tips, and about info. Toolbar icon changed from person.circle to questionmark.circle.
+
 ## [1.3.0] — 2026-03-08
 
 ### Added

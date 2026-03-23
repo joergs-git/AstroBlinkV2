@@ -287,10 +287,13 @@ After a night of imaging you might have 200-600 sub-exposures. Some have clouds,
 - **Open FITS and XISF files** directly from the Files app, iCloud Drive, or any document provider
 - **Auto STF stretch** — same PixInsight-compatible algorithm as the macOS app
 - **Adjustable stretch strength** — slider from 0% (fully linear) to 100%
+- **Dark point slider** — raises the black point to clip faint background noise (same as macOS AstroBlink)
+- **Auto gradient correction** — one-tap removal of linear light pollution gradients using 8x8 background median plane fit
 - **OSC debayer** — automatic Bayer pattern detection with GPU-accelerated bilinear interpolation
 - **Sharpening** — real-time unsharp mask with adjustable strength
 - **FITS/XISF header viewer** — browse all metadata keywords with priority sorting
 - **Save to Photos** — export stretched images as JPEG to your Photo Library
+- **Persistent settings** — slider positions and gradient toggle saved across launches
 - **Universal app** — optimized for both iPhone and iPad
 - **Automatic bin2 display** — large sensor images (e.g. ZWO ASI6200MM at 9576×6388) are automatically downscaled for smooth display
 

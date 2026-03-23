@@ -1,9 +1,17 @@
-// v1.3.0
+// v1.4.0
 import SwiftUI
 import Metal
 import MetalKit
 import Photos
 import UniformTypeIdentifiers
+
+// PostParams must match Metal struct layout exactly
+struct PostParams {
+    var darkLevel: Float = 0.0
+    var gradA: Float = 0.0
+    var gradB: Float = 0.0
+    var gradC: Float = 0.0
+}
 
 // View model: open a FITS/XISF file, decode, optional debayer, STF stretch, optional sharpen, display
 @MainActor
@@ -19,18 +27,43 @@ class ViewerViewModel: ObservableObject {
     @Published var isSaving: Bool = false
     @Published var saveMessage: String = ""
 
-    // Adjustable image processing parameters
+    // Adjustable image processing parameters (persisted via UserDefaults)
     @Published var stretchStrength: Float = 0.25 {  // TARGET_BKG [0.05..0.50]
-        didSet { reprocessIfNeeded() }
+        didSet {
+            UserDefaults.standard.set(stretchStrength, forKey: "viewer_stretchStrength")
+            reprocessIfNeeded()
+        }
     }
     @Published var sharpenAmount: Float = 0.0 {     // Unsharp mask strength [0..2]
-        didSet { reprocessIfNeeded() }
+        didSet {
+            UserDefaults.standard.set(sharpenAmount, forKey: "viewer_sharpenAmount")
+            reprocessIfNeeded()
+        }
+    }
+    @Published var darkLevel: Float = 0.0 {         // Black point raise [0..0.5]
+        didSet {
+            UserDefaults.standard.set(darkLevel, forKey: "viewer_darkLevel")
+            reprocessIfNeeded()
+        }
+    }
+    @Published var gradientEnabled: Bool = false {   // Auto gradient correction toggle
+        didSet {
+            UserDefaults.standard.set(gradientEnabled, forKey: "viewer_gradientEnabled")
+            // Gradient changes the raw data path — need full reprocess
+            gradientCoefficients = nil
+            reprocessIfNeeded()
+        }
     }
     @Published var debayerEnabled: Bool = false {    // Manual debayer toggle
         didSet { reprocessFromRaw() }
     }
     @Published var bayerPatternDetected: String? = nil  // Auto-detected from header
     @Published var showAdjustments: Bool = false         // Toggle adjustments panel
+
+    // True when any processing setting differs from factory defaults
+    var hasNonDefaultSettings: Bool {
+        stretchStrength != 0.25 || sharpenAmount != 0 || darkLevel != 0 || gradientEnabled
+    }
 
     let device: MTLDevice?
 
@@ -42,6 +75,8 @@ class ViewerViewModel: ObservableObject {
     private var stretchedTexture: MTLTexture?
     // Track if reprocess is already in flight to avoid duplicate work
     private var isReprocessing: Bool = false
+    // Cached gradient plane coefficients for current image
+    private var gradientCoefficients: PostParams?
 
     // Important header keywords to highlight at the top
     private let priorityKeywords: Set<String> = [
@@ -64,13 +99,21 @@ class ViewerViewModel: ObservableObject {
 
     init() {
         self.device = MTLCreateSystemDefaultDevice()
+        // Restore persisted settings (UserDefaults returns 0 for unset keys)
+        let defaults = UserDefaults.standard
+        if defaults.object(forKey: "viewer_stretchStrength") != nil {
+            stretchStrength = defaults.float(forKey: "viewer_stretchStrength")
+        }
+        sharpenAmount = defaults.float(forKey: "viewer_sharpenAmount")
+        darkLevel = defaults.float(forKey: "viewer_darkLevel")
+        gradientEnabled = defaults.bool(forKey: "viewer_gradientEnabled")
     }
 
     // Supported file extensions
     private static let validExtensions: Set<String> = ["xisf", "fits", "fit", "fts"]
 
     // Bayer pattern string to shader index mapping
-    nonisolated(unsafe) private static let bayerPatternMap: [String: Int] = [
+    private static let bayerPatternMap: [String: Int] = [
         "RGGB": 0, "GRBG": 1, "GBRG": 2, "BGGR": 3
     ]
 
@@ -90,12 +133,9 @@ class ViewerViewModel: ObservableObject {
         rawDecodedImage = nil
         debayeredImage = nil
         stretchedTexture = nil
+        gradientCoefficients = nil
         bayerPatternDetected = nil
         debayerEnabled = false
-
-        // Reset adjustments to defaults for new file
-        stretchStrength = 0.25
-        sharpenAmount = 0.0
 
         let targetURL = url
 
@@ -187,6 +227,8 @@ class ViewerViewModel: ObservableObject {
             let bayerPat = await self.bayerPatternDetected
             let stretch = await self.stretchStrength
             let sharpen = await self.sharpenAmount
+            let dark = await self.darkLevel
+            let useGradient = await self.gradientEnabled
 
             guard let rawImage = rawImage else {
                 await MainActor.run {
@@ -218,9 +260,24 @@ class ViewerViewModel: ObservableObject {
                 imageForSTF = rawImage
             }
 
-            // Step 2: STF stretch
+            // Step 2: Compute gradient correction if enabled
+            var postParams: PostParams
+            if useGradient {
+                if let cached = await self.gradientCoefficients {
+                    postParams = cached
+                } else {
+                    let grad = Self.computeGradient(from: imageForSTF)
+                    postParams = grad
+                    await MainActor.run { self.gradientCoefficients = grad }
+                }
+            } else {
+                postParams = PostParams()
+            }
+            postParams.darkLevel = dark
+
+            // Step 3: STF stretch (with gradient + dark applied in shader)
             let stfParamsArray = STFCalculator.calculate(from: imageForSTF, targetBackground: stretch)
-            guard let stfTexture = self.runSTFStretch(image: imageForSTF, stfParams: stfParamsArray, device: device) else {
+            guard let stfTexture = self.runSTFStretch(image: imageForSTF, stfParams: stfParamsArray, postParams: postParams, device: device) else {
                 await MainActor.run {
                     self.statusMessage = "Metal stretch error"
                     self.isReprocessing = false
@@ -229,7 +286,7 @@ class ViewerViewModel: ObservableObject {
                 return
             }
 
-            // Step 3: Sharpen if amount > 0
+            // Step 4: Sharpen if amount > 0
             let finalTexture: MTLTexture
             if sharpen > 0.01 {
                 finalTexture = self.runSharpen(input: stfTexture, amount: sharpen, device: device) ?? stfTexture
@@ -295,7 +352,7 @@ class ViewerViewModel: ObservableObject {
 
     // MARK: - Metal Pipeline: STF Stretch
 
-    nonisolated private func runSTFStretch(image: DecodedImage, stfParams: [STFParams], device: MTLDevice) -> MTLTexture? {
+    nonisolated private func runSTFStretch(image: DecodedImage, stfParams: [STFParams], postParams: PostParams = PostParams(), device: MTLDevice) -> MTLTexture? {
         guard let library = device.makeDefaultLibrary(),
               let function = library.makeFunction(name: "normalize_uint16"),
               let pipeline = try? device.makeComputePipelineState(function: function) else {
@@ -342,6 +399,9 @@ class ViewerViewModel: ObservableObject {
         var bin = Int32(binFactor)
         encoder.setBytes(&bin, length: 4, index: 5)
 
+        var post = postParams
+        encoder.setBytes(&post, length: MemoryLayout<PostParams>.size, index: 6)
+
         let threadGroupSize = MTLSize(width: 16, height: 16, depth: 1)
         let threadGroups = MTLSize(
             width: (outWidth + 15) / 16,
@@ -354,6 +414,111 @@ class ViewerViewModel: ObservableObject {
         commandBuffer.waitUntilCompleted()
 
         return outTexture
+    }
+
+    // MARK: - Gradient Computation (8x8 grid median + linear plane fit)
+
+    /// Computes a linear gradient plane from raw image data.
+    /// Divides image into 8x8 grid, takes median of each cell, fits z = a*x + b*y + c,
+    /// then mean-normalizes so only the tilt is removed (preserves overall brightness).
+    nonisolated private static func computeGradient(from image: DecodedImage) -> PostParams {
+        let w = image.width
+        let h = image.height
+        let ptr = image.buffer.contents().assumingMemoryBound(to: UInt16.self)
+
+        // For multi-channel images, use first channel (or average for luminance)
+        let planeSize = w * h
+        let gridSize = 8
+        let cellW = w / gridSize
+        let cellH = h / gridSize
+        let samplesPerCell = min(200, cellW * cellH)
+
+        var gridX = [Float](repeating: 0, count: gridSize * gridSize)
+        var gridY = [Float](repeating: 0, count: gridSize * gridSize)
+        var gridZ = [Float](repeating: 0, count: gridSize * gridSize)
+
+        for gy in 0..<gridSize {
+            for gx in 0..<gridSize {
+                let cellStartX = gx * cellW
+                let cellStartY = gy * cellH
+
+                // Sample pixels from this cell
+                var samples = [Float]()
+                samples.reserveCapacity(samplesPerCell)
+
+                // Deterministic sampling using stride through the cell
+                let step = max(1, (cellW * cellH) / samplesPerCell)
+                for i in stride(from: 0, to: cellW * cellH, by: step) {
+                    let lx = i % cellW
+                    let ly = i / cellW
+                    let sx = cellStartX + lx
+                    let sy = cellStartY + ly
+                    guard sx < w && sy < h else { continue }
+
+                    let idx = sy * w + sx
+                    if image.channelCount == 1 {
+                        samples.append(Float(ptr[idx]) / 65535.0)
+                    } else {
+                        // Average of RGB channels for luminance estimate
+                        let r = Float(ptr[idx]) / 65535.0
+                        let g = Float(ptr[planeSize + idx]) / 65535.0
+                        let b = Float(ptr[2 * planeSize + idx]) / 65535.0
+                        samples.append((r + g + b) / 3.0)
+                    }
+                }
+
+                // Median (robust to stars)
+                samples.sort()
+                let median = samples.isEmpty ? 0 : samples[samples.count / 2]
+
+                let gi = gy * gridSize + gx
+                gridX[gi] = (Float(gx) + 0.5) / Float(gridSize)  // Normalized [0,1]
+                gridY[gi] = (Float(gy) + 0.5) / Float(gridSize)
+                gridZ[gi] = median
+            }
+        }
+
+        // Least squares fit: z = a*x + b*y + c
+        // Normal equations: [Sxx Sxy Sx] [a]   [Sxz]
+        //                   [Sxy Syy Sy] [b] = [Syz]
+        //                   [Sx  Sy  N ] [c]   [Sz ]
+        let n = Float(gridSize * gridSize)
+        var sx: Float = 0, sy: Float = 0, sz: Float = 0
+        var sxx: Float = 0, syy: Float = 0, sxy: Float = 0
+        var sxz: Float = 0, syz: Float = 0
+
+        for i in 0..<Int(n) {
+            let x = gridX[i], y = gridY[i], z = gridZ[i]
+            sx += x; sy += y; sz += z
+            sxx += x * x; syy += y * y; sxy += x * y
+            sxz += x * z; syz += y * z
+        }
+
+        // Solve 3x3 system using Cramer's rule
+        let det = sxx * (syy * n - sy * sy)
+                - sxy * (sxy * n - sy * sx)
+                + sx  * (sxy * sy - syy * sx)
+
+        guard abs(det) > 1e-10 else { return PostParams() }
+
+        let a = (sxz * (syy * n - sy * sy)
+               - sxy * (syz * n - sy * sz)
+               + sx  * (syz * sy - syy * sz)) / det
+
+        let b = (sxx * (syz * n - sy * sz)
+               - sxz * (sxy * n - sy * sx)
+               + sx  * (sxy * sz - syz * sx)) / det
+
+        let c = (sxx * (syy * sz - syz * sy)
+               - sxy * (sxy * sz - syz * sx)
+               + sxz * (sxy * sy - syy * sx)) / det
+
+        // Mean-normalize: remove average so only tilt remains
+        // Mean of plane over [0,1]x[0,1] = a*0.5 + b*0.5 + c
+        let meanPlane = a * 0.5 + b * 0.5 + c
+        let cNorm = c - meanPlane  // Offset so mean subtraction is zero
+
+        return PostParams(darkLevel: 0, gradA: a, gradB: b, gradC: cNorm)
     }
 
     // MARK: - Metal Pipeline: Unsharp Mask Sharpening
