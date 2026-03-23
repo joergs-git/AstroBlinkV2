@@ -217,14 +217,17 @@ kernel void contrast_saturation(
 
     float4 color = input.read(gid);
 
-    // S-curve contrast: steeper sigmoid around 0.5
+    // S-curve contrast using tanh with exponential strength mapping.
+    // Slider range [-2..+2] is mapped exponentially so small values
+    // give fine control and extremes give dramatic effect.
     if (contrast != 0.0) {
-        // Attempt to avoid division by zero: use smooth S-curve
+        // Exponential mapping: sign(c) * (exp(|c|) - 1) gives ~0.1 at slider 0.1, ~6.4 at slider 2.0
         float c = contrast;
-        float3 shifted = color.rgb - 0.5;
-        // tanh-based S-curve: stronger contrast pushes values toward 0 or 1
-        float factor = 1.0 + c * 2.0;  // 1..5 at max contrast
-        color.rgb = 0.5 + shifted * factor / (1.0 + abs(shifted * factor * 2.0));
+        float strength = sign(c) * (exp(abs(c)) - 1.0);
+        // tanh S-curve centered at 0.5
+        float3 shifted = (color.rgb - 0.5) * 2.0;  // map to [-1, 1]
+        float3 curved = tanh(shifted * (1.0 + strength * 1.5));
+        color.rgb = curved * 0.5 + 0.5;  // map back to [0, 1]
         color.rgb = clamp(color.rgb, 0.0, 1.0);
     }
 

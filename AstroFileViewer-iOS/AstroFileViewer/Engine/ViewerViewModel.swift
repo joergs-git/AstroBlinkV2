@@ -536,6 +536,28 @@ class ViewerViewModel: ObservableObject {
         }
     }
 
+    // MARK: - Home (return to splash screen)
+
+    func goHome() {
+        displayTexture = nil
+        rawDecodedImage = nil
+        debayeredImage = nil
+        stretchedTexture = nil
+        gradientCoefficients = nil
+        cachedSTFParams = nil
+        cachedSTFStretch = -1
+        headers = []
+        filename = ""
+        imageWidth = 0
+        imageHeight = 0
+        imageSNR = 0
+        imageStarCount = 0
+        bayerPatternDetected = nil
+        debayerEnabled = false
+        showAdjustments = false
+        statusMessage = "Open a FITS or XISF file"
+    }
+
     // MARK: - Re-processing (stretch/sharpen changed, no re-decode needed)
 
     // Called when stretch strength changes — re-run STF + sharpen

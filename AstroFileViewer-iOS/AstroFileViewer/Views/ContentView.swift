@@ -115,11 +115,18 @@ struct ContentView: View {
                     }
                 }
             }
-            .navigationTitle(viewModel.filename.isEmpty ? "AstroFileViewer" : viewModel.filename)
+            .navigationTitle(viewModel.displayTexture == nil ? "AstroFileViewer" : "")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     HStack(spacing: 12) {
+                        if viewModel.displayTexture != nil {
+                            // Home button — return to splash screen
+                            Button(action: { viewModel.goHome() }) {
+                                Image(systemName: "star.circle.fill")
+                                    .foregroundColor(.blue)
+                            }
+                        }
                         Button(action: { viewModel.showFilePicker = true }) {
                             Image(systemName: "folder")
                         }
