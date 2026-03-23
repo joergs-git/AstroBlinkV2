@@ -199,49 +199,44 @@ kernel void debayer_bilinear(
 }
 
 // ==========================================================================
-// Kernel 3: Unsharp Mask — post-processing sharpening on BGRA8 texture
-// Reads from input texture, writes sharpened result to output texture.
-// Uses 3x3 Gaussian blur subtracted from original.
+// Kernel 3: Contrast + Saturation — S-curve contrast and color saturation
+// Contrast: S-curve centered at 0.5. Amount [-2..+2], 0 = neutral.
+// Saturation: multiplier on color distance from luminance. [0..3], 1 = neutral.
 // ==========================================================================
 
-kernel void unsharp_mask(
+kernel void contrast_saturation(
     texture2d<float, access::read> input [[texture(0)]],
     texture2d<float, access::write> output [[texture(1)]],
-    constant float& amount [[buffer(0)]],     // Sharpening strength [0..2]
-    constant float& radius [[buffer(1)]],     // Not used for 3x3, reserved for future
+    constant float& contrast [[buffer(0)]],     // S-curve amount [-2..+2]
+    constant float& saturation [[buffer(1)]],   // Color saturation [0..3]
     uint2 gid [[thread_position_in_grid]])
 {
     uint w = input.get_width();
     uint h = input.get_height();
     if (gid.x >= w || gid.y >= h) return;
 
-    // 3x3 Gaussian kernel weights (sigma ~0.85)
-    // [1 2 1]
-    // [2 4 2] / 16
-    // [1 2 1]
-    float4 sum = float4(0.0);
-    const int offsets[3] = {-1, 0, 1};
-    const float weights[3][3] = {
-        {1.0/16.0, 2.0/16.0, 1.0/16.0},
-        {2.0/16.0, 4.0/16.0, 2.0/16.0},
-        {1.0/16.0, 2.0/16.0, 1.0/16.0}
-    };
+    float4 color = input.read(gid);
 
-    for (int dy = 0; dy < 3; dy++) {
-        for (int dx = 0; dx < 3; dx++) {
-            int sx = clamp((int)gid.x + offsets[dx], 0, (int)w - 1);
-            int sy = clamp((int)gid.y + offsets[dy], 0, (int)h - 1);
-            sum += input.read(uint2(sx, sy)) * weights[dy][dx];
-        }
+    // S-curve contrast: steeper sigmoid around 0.5
+    if (contrast != 0.0) {
+        // Attempt to avoid division by zero: use smooth S-curve
+        float c = contrast;
+        float3 shifted = color.rgb - 0.5;
+        // tanh-based S-curve: stronger contrast pushes values toward 0 or 1
+        float factor = 1.0 + c * 2.0;  // 1..5 at max contrast
+        color.rgb = 0.5 + shifted * factor / (1.0 + abs(shifted * factor * 2.0));
+        color.rgb = clamp(color.rgb, 0.0, 1.0);
     }
 
-    float4 original = input.read(gid);
-    // Unsharp mask: output = original + amount * (original - blurred)
-    float4 sharpened = original + amount * (original - sum);
-    sharpened = clamp(sharpened, 0.0, 1.0);
-    sharpened.a = 1.0;
+    // Saturation: scale distance from luminance
+    if (saturation != 1.0) {
+        float lum = dot(color.rgb, float3(0.2126, 0.7152, 0.0722));
+        color.rgb = lum + saturation * (color.rgb - lum);
+        color.rgb = clamp(color.rgb, 0.0, 1.0);
+    }
 
-    output.write(sharpened, gid);
+    color.a = 1.0;
+    output.write(color, gid);
 }
 
 // ==========================================================================

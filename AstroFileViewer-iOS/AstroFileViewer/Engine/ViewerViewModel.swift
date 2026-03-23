@@ -57,13 +57,19 @@ class ViewerViewModel: ObservableObject {
             reprocessIfNeeded()
         }
     }
-    @Published var sharpenAmount: Float = 0.0 {     // Unsharp mask strength [0..2]
+    @Published var contrastAmount: Float = 0.0 {     // S-curve contrast [-2..+2]
         didSet {
-            UserDefaults.standard.set(sharpenAmount, forKey: "viewer_sharpenAmount")
+            UserDefaults.standard.set(contrastAmount, forKey: "viewer_contrastAmount")
             reprocessIfNeeded()
         }
     }
-    @Published var denoiseAmount: Float = 0.0 {     // Bilateral denoise strength [0..1]
+    @Published var saturationAmount: Float = 1.0 {  // Color saturation [0..3], 1=neutral
+        didSet {
+            UserDefaults.standard.set(saturationAmount, forKey: "viewer_saturationAmount")
+            reprocessIfNeeded()
+        }
+    }
+    @Published var denoiseAmount: Float = 0.0 {     // Bilateral denoise strength [0..3]
         didSet {
             UserDefaults.standard.set(denoiseAmount, forKey: "viewer_denoiseAmount")
             reprocessIfNeeded()
@@ -132,8 +138,8 @@ class ViewerViewModel: ObservableObject {
 
     // True when any processing setting differs from factory defaults
     var hasNonDefaultSettings: Bool {
-        stretchStrength != 0.25 || darkLevel != 0 || sharpenAmount != 0
-        || denoiseAmount != 0 || gradientStrength != 0
+        stretchStrength != 0.25 || darkLevel != 0 || contrastAmount != 0
+        || saturationAmount != 1.0 || denoiseAmount != 0 || gradientStrength != 0
     }
 
     // True when current image is landscape (wider than tall)
@@ -196,7 +202,10 @@ class ViewerViewModel: ObservableObject {
             stretchStrength = defaults.float(forKey: "viewer_stretchStrength")
         }
         darkLevel = defaults.float(forKey: "viewer_darkLevel")
-        sharpenAmount = defaults.float(forKey: "viewer_sharpenAmount")
+        contrastAmount = defaults.float(forKey: "viewer_contrastAmount")
+        if defaults.object(forKey: "viewer_saturationAmount") != nil {
+            saturationAmount = defaults.float(forKey: "viewer_saturationAmount")
+        }
         denoiseAmount = defaults.float(forKey: "viewer_denoiseAmount")
         gradientStrength = defaults.float(forKey: "viewer_gradientStrength")
         // Auto-rotate defaults to true for new installs
@@ -278,7 +287,8 @@ class ViewerViewModel: ObservableObject {
                 self.headers = sorted.map { (key: $0.key, value: $0.value) }
 
                 // Detect Bayer pattern from headers
-                let bayerPat = rawHeaders["BAYERPAT"]?.trimmingCharacters(in: .whitespaces).uppercased()
+                let bayerPat = rawHeaders.first(where: { $0.key.uppercased() == "BAYERPAT" })?.value
+                    .trimmingCharacters(in: .whitespaces).uppercased()
                 if let pat = bayerPat, Self.bayerPatternMap[pat] != nil {
                     self.bayerPatternDetected = pat
                 }
@@ -433,7 +443,8 @@ class ViewerViewModel: ObservableObject {
                 }
                 self.headers = sorted.map { (key: $0.key, value: $0.value) }
 
-                let bayerPat = rawHeaders["BAYERPAT"]?.trimmingCharacters(in: .whitespaces).uppercased()
+                let bayerPat = rawHeaders.first(where: { $0.key.uppercased() == "BAYERPAT" })?.value
+                    .trimmingCharacters(in: .whitespaces).uppercased()
                 if let pat = bayerPat, Self.bayerPatternMap[pat] != nil {
                     self.bayerPatternDetected = pat
                 }
@@ -492,7 +503,8 @@ class ViewerViewModel: ObservableObject {
             let bayerPat = await self.bayerPatternDetected
             let stretch = await self.stretchStrength
             let dark = await self.darkLevel
-            let sharpen = await self.sharpenAmount
+            let contrast = await self.contrastAmount
+            let saturation = await self.saturationAmount
             let denoise = await self.denoiseAmount
             let gradStrength = await self.gradientStrength
 
@@ -557,15 +569,15 @@ class ViewerViewModel: ObservableObject {
                 return
             }
 
-            // Step 4: Denoise if amount > 0 (before sharpen — denoise first, then enhance)
+            // Step 4: Denoise if amount > 0
             var currentTexture = stfTexture
             if denoise > 0.01 {
                 currentTexture = self.runDenoise(input: currentTexture, strength: denoise, device: device) ?? currentTexture
             }
 
-            // Step 5: Sharpen if amount > 0
-            if sharpen > 0.01 {
-                currentTexture = self.runSharpen(input: currentTexture, amount: sharpen, device: device) ?? currentTexture
+            // Step 5: Contrast + Saturation if non-default
+            if abs(contrast) > 0.01 || abs(saturation - 1.0) > 0.01 {
+                currentTexture = self.runContrastSaturation(input: currentTexture, contrast: contrast, saturation: saturation, device: device) ?? currentTexture
             }
 
             await MainActor.run {
@@ -836,11 +848,11 @@ class ViewerViewModel: ObservableObject {
         return outTexture
     }
 
-    // MARK: - Metal Pipeline: Unsharp Mask Sharpening
+    // MARK: - Metal Pipeline: Contrast + Saturation
 
-    nonisolated private func runSharpen(input: MTLTexture, amount: Float, device: MTLDevice) -> MTLTexture? {
+    nonisolated private func runContrastSaturation(input: MTLTexture, contrast: Float, saturation: Float, device: MTLDevice) -> MTLTexture? {
         guard let library = device.makeDefaultLibrary(),
-              let function = library.makeFunction(name: "unsharp_mask"),
+              let function = library.makeFunction(name: "contrast_saturation"),
               let pipeline = try? device.makeComputePipelineState(function: function) else {
             return nil
         }
@@ -865,10 +877,10 @@ class ViewerViewModel: ObservableObject {
         encoder.setTexture(input, index: 0)
         encoder.setTexture(outTexture, index: 1)
 
-        var amt = amount
-        var rad: Float = 1.0  // Reserved for future larger kernel
-        encoder.setBytes(&amt, length: 4, index: 0)
-        encoder.setBytes(&rad, length: 4, index: 1)
+        var c = contrast
+        var s = saturation
+        encoder.setBytes(&c, length: 4, index: 0)
+        encoder.setBytes(&s, length: 4, index: 1)
 
         let threadGroupSize = MTLSize(width: 16, height: 16, depth: 1)
         let threadGroups = MTLSize(

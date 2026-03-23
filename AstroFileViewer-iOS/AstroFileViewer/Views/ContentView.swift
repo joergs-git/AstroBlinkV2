@@ -223,15 +223,21 @@ struct AdjustmentsPanel: View {
                       range: 0.0...0.5, step: 0.01, tint: .purple,
                       display: String(format: "%.0f%%", viewModel.darkLevel * 200))
 
+            // Contrast slider
+            SliderRow(icon: "circle.lefthalf.filled", label: "Contrast", value: $viewModel.contrastAmount,
+                      range: -2.0...2.0, step: 0.1, tint: .white,
+                      display: viewModel.contrastAmount == 0 ? "0" :
+                        String(format: "%+.0f%%", viewModel.contrastAmount * 50))
+
+            // Saturation slider
+            SliderRow(icon: "paintpalette", label: "Color", value: $viewModel.saturationAmount,
+                      range: 0.0...3.0, step: 0.1, tint: .pink,
+                      display: String(format: "%.0f%%", viewModel.saturationAmount * 100))
+
             // Denoise slider (0-300% for stronger effect on mobile)
             SliderRow(icon: "aqi.medium", label: "Denoise", value: $viewModel.denoiseAmount,
                       range: 0.0...3.0, step: 0.1, tint: .mint,
                       display: String(format: "%.0f%%", viewModel.denoiseAmount * 100))
-
-            // Sharpening slider
-            SliderRow(icon: "diamond", label: "Sharpen", value: $viewModel.sharpenAmount,
-                      range: 0.0...2.0, step: 0.05, tint: .cyan,
-                      display: String(format: "%.0f%%", viewModel.sharpenAmount * 50))
 
             // Gradient correction slider (0-300% for aggressive LP removal)
             SliderRow(icon: "circle.grid.cross", label: "Gradient", value: $viewModel.gradientStrength,
@@ -277,8 +283,9 @@ struct AdjustmentsPanel: View {
                 Button(action: {
                     viewModel.stretchStrength = 0.25
                     viewModel.darkLevel = 0
+                    viewModel.contrastAmount = 0
+                    viewModel.saturationAmount = 1.0
                     viewModel.denoiseAmount = 0
-                    viewModel.sharpenAmount = 0
                     viewModel.gradientStrength = 0
                 }) {
                     Text("Reset to Default")
@@ -404,13 +411,17 @@ struct HelpAboutView: View {
                             title: "Dark (0-100%)",
                             text: "Raises the black point to clip faint noise in the background. Useful for cleaning up light-polluted subs. Similar to the Shadows slider in photo editors.")
 
+                    HelpRow(icon: "circle.lefthalf.filled", color: .white,
+                            title: "Contrast (-100% to +100%)",
+                            text: "S-curve contrast adjustment. Positive values deepen shadows and brighten highlights — great for making nebulae pop. Negative values flatten the image for a softer look. Centered at 0 (neutral).")
+
+                    HelpRow(icon: "paintpalette", color: .pink,
+                            title: "Color / Saturation (0-300%)",
+                            text: "Controls color intensity. 100% is neutral (no change). Below 100% desaturates toward grayscale. Above 100% boosts colors — useful for bringing out faint Ha reds or OIII blues in OSC data. Goes up to 300% for dramatic effect.")
+
                     HelpRow(icon: "aqi.medium", color: .mint,
                             title: "Denoise (0-300%)",
-                            text: "GPU bilateral noise reduction that preserves edges. Smooths background noise while keeping stars sharp. Goes up to 300% for aggressive smoothing on mobile screens. Note: strong denoise will mostly eliminate any sharpening effect — the sharpen slider is left available for fine-tuning, but denoise naturally softens what sharpen tries to enhance.")
-
-                    HelpRow(icon: "diamond", color: .cyan,
-                            title: "Sharpen (0-100%)",
-                            text: "Applies an unsharp mask to enhance fine detail. Works best at low to moderate denoise levels. At high denoise settings the sharpening effect becomes minimal — that's normal physics, not a bug.")
+                            text: "GPU bilateral noise reduction that preserves edges. Smooths background noise while keeping stars sharp. Goes up to 300% for aggressive smoothing on mobile screens.")
 
                     HelpRow(icon: "circle.grid.cross", color: .orange,
                             title: "Gradient (0-300%)",
@@ -556,17 +567,18 @@ struct HeaderListView: View {
         NavigationStack {
             List {
                 ForEach(headers, id: \.key) { header in
-                    HStack(alignment: .top) {
+                    HStack(alignment: .top, spacing: 10) {
                         Text(header.key)
-                            .font(.caption.monospaced().bold())
+                            .font(.body.monospaced().bold())
                             .foregroundColor(highlighted.contains(header.key.uppercased()) ? .red : .accentColor)
-                            .frame(width: 100, alignment: .trailing)
+                            .frame(width: 120, alignment: .trailing)
 
                         Text(header.value)
-                            .font(.caption.monospaced())
+                            .font(.body.monospaced())
                             .foregroundColor(.primary)
                             .textSelection(.enabled)
                     }
+                    .listRowInsets(EdgeInsets(top: 2, leading: 8, bottom: 2, trailing: 8))
                 }
             }
             .listStyle(.plain)
