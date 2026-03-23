@@ -4,6 +4,16 @@ All notable changes to AstroBlink & AIsaac will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [5.3.0] — 2026-03-23
+
+### Added
+- **Community Detection Learning (Phase 1)** — Opt-in anonymous session sharing to improve quality detection across the community. After PRE-DELETE confirm, anonymized metric averages (FWHM, SNR, trailing, retention rate) are uploaded to a shared database. No filenames, images, coordinates, or personal data — ever
+- **Community baseline for cold start** — New equipment? No more waiting 30 frames for calibration. If other users with similar pixel scale have contributed data, you get instant quality baselines from the community. Gray lock badge distinguishes community baselines from local calibration (blue)
+- **Community status bar toggle** — Clickable person icon next to iCloud indicator. Green when active, dimmed when off. Hover for privacy explanation
+- **Server-side data validation** — Supabase trigger rejects physically impossible metrics on upload. Admin RPCs for monitoring and cleanup
+
+---
+
 ## [5.2.1] — 2026-03-23
 
 ### Fixed

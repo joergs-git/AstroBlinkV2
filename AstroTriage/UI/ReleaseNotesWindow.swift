@@ -33,6 +33,11 @@ class ReleaseNotesWindowController {
 // MARK: - Release notes data (shared between view and copy)
 
 private let allReleases: [(version: String, date: String, items: [(ReleaseNotesView.ChangeType, String, String)])] = [
+    ("5.3.0", "March 23, 2026", [
+        (.added, "Community Detection Learning", "Opt-in anonymous sharing of quality metrics to improve detection for everyone. No filenames, images, or personal data shared — only metric averages like FWHM, SNR, and retention rate."),
+        (.added, "Instant Community Calibration", "New equipment gets instant quality baselines from the community — no 30-frame warmup needed. Gray lock badge for community-locked frames."),
+        (.added, "Community Status Bar Toggle", "Clickable icon next to iCloud. Green = active. Hover for privacy explanation."),
+    ]),
     ("5.2.1", "March 23, 2026", [
         (.fixed, "Compare Window Trash Recommendation", "Z-score-based trash frames now correctly show \"DELETE — below quality threshold\" in the Compare window instead of no recommendation."),
         (.fixed, "Compare Best Selection Consistency", "Context menu \"Compare with Best\" now uses fine-grained z-score ranking, matching keyboard shortcut behavior."),
