@@ -15,10 +15,32 @@ struct ContentView: View {
                 Color.black.ignoresSafeArea()
 
                 if let texture = viewModel.displayTexture {
-                    ZoomableImageContainer(
-                        texture: texture,
-                        autoRotate: viewModel.autoRotate && viewModel.isLandscapeImage
-                    )
+                    ZStack {
+                        ZoomableImageContainer(
+                            texture: texture,
+                            autoRotate: viewModel.autoRotate && viewModel.isLandscapeImage,
+                            onSwipeLeft: { viewModel.navigateForward() },
+                            onSwipeRight: { viewModel.navigateBack() }
+                        )
+
+                        // Navigation arrows
+                        HStack {
+                            if viewModel.canGoBack {
+                                Image(systemName: "chevron.left")
+                                    .font(.title2.bold())
+                                    .foregroundColor(.white.opacity(0.4))
+                                    .padding(.leading, 4)
+                            }
+                            Spacer()
+                            if viewModel.canGoForward {
+                                Image(systemName: "chevron.right")
+                                    .font(.title2.bold())
+                                    .foregroundColor(.white.opacity(0.4))
+                                    .padding(.trailing, 4)
+                            }
+                        }
+                        .allowsHitTesting(false)
+                    }
                     .ignoresSafeArea()
                 } else if viewModel.isLoading {
                     ProgressView("Processing...")
@@ -133,8 +155,8 @@ struct ContentView: View {
                                 .background(.black.opacity(0.7))
                                 .cornerRadius(8)
                         }
-                        if !viewModel.statusMessage.isEmpty && viewModel.displayTexture != nil && !viewModel.showAdjustments {
-                            Text(viewModel.statusMessage)
+                        if viewModel.displayTexture != nil && !viewModel.showAdjustments {
+                            Text(viewModel.currentImageInfo)
                                 .font(.caption.monospaced())
                                 .foregroundColor(.white)
                                 .padding(.horizontal, 12)
@@ -266,7 +288,7 @@ struct AdjustmentsPanel: View {
             }
 
             // Image info
-            Text(viewModel.statusMessage)
+            Text(viewModel.currentImageInfo)
                 .font(.caption2.monospaced())
                 .foregroundColor(.gray)
         }
@@ -564,12 +586,19 @@ struct HeaderListView: View {
 struct ZoomableImageContainer: UIViewRepresentable {
     let texture: MTLTexture
     var autoRotate: Bool = false
+    var onSwipeLeft: (() -> Void)?
+    var onSwipeRight: (() -> Void)?
 
     func makeUIView(context: Context) -> ZoomableImageView {
-        ZoomableImageView(texture: texture, autoRotate: autoRotate)
+        let view = ZoomableImageView(texture: texture, autoRotate: autoRotate)
+        view.onSwipeLeft = onSwipeLeft
+        view.onSwipeRight = onSwipeRight
+        return view
     }
 
     func updateUIView(_ uiView: ZoomableImageView, context: Context) {
+        uiView.onSwipeLeft = onSwipeLeft
+        uiView.onSwipeRight = onSwipeRight
         uiView.updateTexture(texture, autoRotate: autoRotate)
     }
 }
@@ -579,6 +608,8 @@ class ZoomableImageView: UIScrollView, UIScrollViewDelegate {
     private let imageView = UIImageView()
     private var imageSize: CGSize = .zero
     private var currentAutoRotate: Bool = false
+    var onSwipeLeft: (() -> Void)?
+    var onSwipeRight: (() -> Void)?
 
     init(texture: MTLTexture, autoRotate: Bool) {
         super.init(frame: .zero)
@@ -593,11 +624,29 @@ class ZoomableImageView: UIScrollView, UIScrollViewDelegate {
 
         imageView.contentMode = .scaleAspectFit
         imageView.clipsToBounds = true
-        // Trilinear filtering reduces Moire artifacts when image is zoomed out
         imageView.layer.minificationFilter = .trilinear
         addSubview(imageView)
 
+        // Swipe gestures for history navigation (only fire at zoom 1.0)
+        let swipeLeft = UISwipeGestureRecognizer(target: self, action: #selector(handleSwipeLeft))
+        swipeLeft.direction = .left
+        addGestureRecognizer(swipeLeft)
+
+        let swipeRight = UISwipeGestureRecognizer(target: self, action: #selector(handleSwipeRight))
+        swipeRight.direction = .right
+        addGestureRecognizer(swipeRight)
+
         updateTexture(texture, autoRotate: autoRotate)
+    }
+
+    @objc private func handleSwipeLeft() {
+        guard zoomScale <= 1.01 else { return }
+        onSwipeLeft?()
+    }
+
+    @objc private func handleSwipeRight() {
+        guard zoomScale <= 1.01 else { return }
+        onSwipeRight?()
     }
 
     required init?(coder: NSCoder) {

@@ -13,6 +13,23 @@ struct PostParams {
     var gradC: Float = 0.0
 }
 
+// File history entry for cache + navigation
+struct FileHistoryEntry: Codable, Equatable {
+    let cachedFilename: String   // filename in FileCache/ directory
+    let displayName: String      // original filename for display
+    let dateObs: String?         // DATE-OBS header value
+    let filter: String?          // FILTER header value
+    let object: String?          // OBJECT header value
+    let width: Int
+    let height: Int
+    let channelCount: Int
+    let bayerPattern: String?
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.cachedFilename == rhs.cachedFilename
+    }
+}
+
 // View model: open a FITS/XISF file, decode, optional debayer, STF stretch, optional sharpen, display
 @MainActor
 class ViewerViewModel: ObservableObject {
@@ -75,6 +92,44 @@ class ViewerViewModel: ObservableObject {
     @Published var bayerPatternDetected: String? = nil  // Auto-detected from header
     @Published var showAdjustments: Bool = false         // Toggle adjustments panel
 
+    // File history for swipe navigation
+    @Published var fileHistory: [FileHistoryEntry] = []
+    @Published var currentHistoryIndex: Int = 0
+
+    var canGoBack: Bool { currentHistoryIndex < fileHistory.count - 1 }
+    var canGoForward: Bool { currentHistoryIndex > 0 }
+
+    // Enhanced status: "date | filter | WxH channels" with position indicator
+    var currentImageInfo: String {
+        guard imageWidth > 0 else { return statusMessage }
+        var parts: [String] = []
+
+        // Position in history
+        if fileHistory.count > 1 {
+            parts.append("\(currentHistoryIndex + 1)/\(fileHistory.count)")
+        }
+
+        // Date from headers (truncate to minute)
+        if let dateStr = headerValue(for: "DATE-OBS") ?? headerValue(for: "DATE-LOC") {
+            // "2025-11-12T20:53:46" → "2025-11-12 20:53"
+            let cleaned = dateStr.replacingOccurrences(of: "T", with: " ")
+            let truncated = String(cleaned.prefix(16))
+            parts.append(truncated)
+        }
+
+        // Filter
+        if let filter = headerValue(for: "FILTER") {
+            parts.append(filter.trimmingCharacters(in: .whitespaces))
+        }
+
+        // Dimensions + channels
+        let channels = bayerPatternDetected != nil ? "Mono (\(bayerPatternDetected!))" :
+                       (imageHeight > 0 ? (rawDecodedImage?.channelCount == 3 ? "RGB" : "Mono") : "")
+        parts.append("\(imageWidth) x \(imageHeight) \(channels)")
+
+        return parts.joined(separator: " | ")
+    }
+
     // True when any processing setting differs from factory defaults
     var hasNonDefaultSettings: Bool {
         stretchStrength != 0.25 || darkLevel != 0 || sharpenAmount != 0
@@ -84,6 +139,10 @@ class ViewerViewModel: ObservableObject {
     // True when current image is landscape (wider than tall)
     var isLandscapeImage: Bool {
         imageWidth > imageHeight && imageWidth > 0
+    }
+
+    private func headerValue(for key: String) -> String? {
+        headers.first(where: { $0.key.uppercased() == key })?.value
     }
 
     let device: MTLDevice?
@@ -118,6 +177,17 @@ class ViewerViewModel: ObservableObject {
         return types
     }()
 
+    // File cache directory for history navigation
+    static let cacheDirectory: URL = {
+        let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first!
+        let cache = docs.appendingPathComponent("FileCache", isDirectory: true)
+        try? FileManager.default.createDirectory(at: cache, withIntermediateDirectories: true)
+        return cache
+    }()
+
+    private static let maxHistoryCount = 10
+    private static let maxCacheBytes: Int64 = 2_000_000_000  // 2 GB
+
     init() {
         self.device = MTLCreateSystemDefaultDevice()
         // Restore persisted settings (UserDefaults returns 0 for unset keys)
@@ -139,6 +209,14 @@ class ViewerViewModel: ObservableObject {
                 gradientStrength = 0.5
             }
             defaults.removeObject(forKey: "viewer_gradientEnabled")
+        }
+        // Load file history
+        if let data = defaults.data(forKey: "viewer_fileHistory"),
+           let history = try? JSONDecoder().decode([FileHistoryEntry].self, from: data) {
+            // Validate cached files still exist
+            fileHistory = history.filter { entry in
+                FileManager.default.fileExists(atPath: Self.cacheDirectory.appendingPathComponent(entry.cachedFilename).path)
+            }
         }
     }
 
@@ -170,7 +248,14 @@ class ViewerViewModel: ObservableObject {
         bayerPatternDetected = nil
         debayerEnabled = false
 
-        let targetURL = url
+        // Copy file to cache (if not already there)
+        let cachedFilename = url.lastPathComponent
+        let cachedURL = Self.cacheDirectory.appendingPathComponent(cachedFilename)
+        if !FileManager.default.fileExists(atPath: cachedURL.path) {
+            try? FileManager.default.copyItem(at: url, to: cachedURL)
+        }
+        // Use cached version for decoding (original may be temporary)
+        let targetURL = FileManager.default.fileExists(atPath: cachedURL.path) ? cachedURL : url
 
         Task.detached(priority: .userInitiated) { [weak self] in
             guard let self = self, let device = self.device else { return }
@@ -204,9 +289,19 @@ class ViewerViewModel: ObservableObject {
                     self.imageHeight = decoded.height
                     self.rawDecodedImage = decoded
 
-                    let channels = decoded.channelCount == 1 ? "Mono" : "RGB"
-                    let bayerInfo = self.bayerPatternDetected != nil ? " (\(self.bayerPatternDetected!))" : ""
-                    self.statusMessage = "\(decoded.width) x \(decoded.height) \(channels)\(bayerInfo)"
+                    // Build history entry from headers
+                    let entry = FileHistoryEntry(
+                        cachedFilename: cachedFilename,
+                        displayName: url.lastPathComponent,
+                        dateObs: rawHeaders["DATE-OBS"] ?? rawHeaders["DATE-LOC"],
+                        filter: rawHeaders["FILTER"],
+                        object: rawHeaders["OBJECT"],
+                        width: decoded.width,
+                        height: decoded.height,
+                        channelCount: decoded.channelCount,
+                        bayerPattern: self.bayerPatternDetected
+                    )
+                    self.addToHistory(entry)
 
                     // Auto-enable debayer for mono CFA images
                     if decoded.channelCount == 1 && self.bayerPatternDetected != nil {
@@ -221,7 +316,143 @@ class ViewerViewModel: ObservableObject {
                 }
 
                 if accessing {
-                    targetURL.stopAccessingSecurityScopedResource()
+                    url.stopAccessingSecurityScopedResource()
+                }
+            }
+        }
+    }
+
+    // MARK: - File History Management
+
+    private func addToHistory(_ entry: FileHistoryEntry) {
+        // Remove duplicate if exists
+        fileHistory.removeAll { $0 == entry }
+        // Insert at front
+        fileHistory.insert(entry, at: 0)
+        currentHistoryIndex = 0
+        // Enforce max count
+        while fileHistory.count > Self.maxHistoryCount {
+            let removed = fileHistory.removeLast()
+            let path = Self.cacheDirectory.appendingPathComponent(removed.cachedFilename)
+            // Only delete if no other entry references same filename
+            if !fileHistory.contains(where: { $0.cachedFilename == removed.cachedFilename }) {
+                try? FileManager.default.removeItem(at: path)
+            }
+        }
+        // Enforce cache size limit
+        cleanupCacheIfNeeded()
+        saveHistory()
+    }
+
+    private func saveHistory() {
+        if let data = try? JSONEncoder().encode(fileHistory) {
+            UserDefaults.standard.set(data, forKey: "viewer_fileHistory")
+        }
+    }
+
+    private func cleanupCacheIfNeeded() {
+        let fm = FileManager.default
+        var totalSize: Int64 = 0
+        let cachedNames = Set(fileHistory.map { $0.cachedFilename })
+
+        // Calculate total cache size
+        for name in cachedNames {
+            let path = Self.cacheDirectory.appendingPathComponent(name).path
+            if let attrs = try? fm.attributesOfItem(atPath: path),
+               let size = attrs[.size] as? Int64 {
+                totalSize += size
+            }
+        }
+
+        // Evict oldest entries until under limit
+        while totalSize > Self.maxCacheBytes && fileHistory.count > 1 {
+            let removed = fileHistory.removeLast()
+            let path = Self.cacheDirectory.appendingPathComponent(removed.cachedFilename)
+            if let attrs = try? fm.attributesOfItem(atPath: path.path),
+               let size = attrs[.size] as? Int64 {
+                totalSize -= size
+            }
+            if !fileHistory.contains(where: { $0.cachedFilename == removed.cachedFilename }) {
+                try? fm.removeItem(at: path)
+            }
+        }
+    }
+
+    // MARK: - Swipe Navigation
+
+    func navigateBack() {
+        guard canGoBack else { return }
+        currentHistoryIndex += 1
+        openFromHistory(at: currentHistoryIndex)
+    }
+
+    func navigateForward() {
+        guard canGoForward else { return }
+        currentHistoryIndex -= 1
+        openFromHistory(at: currentHistoryIndex)
+    }
+
+    private func openFromHistory(at index: Int) {
+        let entry = fileHistory[index]
+        let cachedURL = Self.cacheDirectory.appendingPathComponent(entry.cachedFilename)
+        guard FileManager.default.fileExists(atPath: cachedURL.path) else {
+            // File gone — remove from history
+            fileHistory.remove(at: index)
+            currentHistoryIndex = min(currentHistoryIndex, max(0, fileHistory.count - 1))
+            saveHistory()
+            statusMessage = "File no longer cached"
+            return
+        }
+
+        // Open without re-adding to history (navigation, not new open)
+        filename = entry.displayName
+        isLoading = true
+        statusMessage = "Decoding..."
+        headers = []
+        displayTexture = nil
+        rawDecodedImage = nil
+        debayeredImage = nil
+        stretchedTexture = nil
+        gradientCoefficients = nil
+        bayerPatternDetected = nil
+        debayerEnabled = false
+
+        Task.detached(priority: .userInitiated) { [weak self] in
+            guard let self = self, let device = self.device else { return }
+
+            let rawHeaders = MetadataExtractor.readHeaders(from: cachedURL)
+            let result = ImageDecoder.decode(url: cachedURL, device: device)
+
+            await MainActor.run {
+                let priorityKeys = self.priorityKeywords
+                let sorted = rawHeaders.sorted { a, b in
+                    let aP = priorityKeys.contains(a.key.uppercased())
+                    let bP = priorityKeys.contains(b.key.uppercased())
+                    if aP != bP { return aP }
+                    return a.key < b.key
+                }
+                self.headers = sorted.map { (key: $0.key, value: $0.value) }
+
+                let bayerPat = rawHeaders["BAYERPAT"]?.trimmingCharacters(in: .whitespaces).uppercased()
+                if let pat = bayerPat, Self.bayerPatternMap[pat] != nil {
+                    self.bayerPatternDetected = pat
+                }
+
+                switch result {
+                case .success(let decoded):
+                    self.imageWidth = decoded.width
+                    self.imageHeight = decoded.height
+                    self.rawDecodedImage = decoded
+
+                    if decoded.channelCount == 1 && self.bayerPatternDetected != nil {
+                        self.debayerEnabled = true
+                    } else {
+                        self.processAndDisplay()
+                    }
+
+                case .failure(let error):
+                    self.statusMessage = "Error: \(error.localizedDescription)"
+                    self.isLoading = false
                 }
             }
         }

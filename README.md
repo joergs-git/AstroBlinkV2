@@ -289,7 +289,8 @@ After a night of imaging you might have 200-600 sub-exposures. Some have clouds,
 - **Adjustable stretch strength** — slider from 0% (fully linear) to 100%
 - **Dark point slider** — raises the black point to clip faint background noise (same as macOS AstroBlink)
 - **GPU bilateral denoise** — edge-preserving noise reduction that smooths background while keeping stars sharp
-- **Auto gradient correction** — adjustable removal of linear light pollution gradients (0–100%)
+- **Auto gradient correction** — adjustable removal of linear light pollution gradients (0–300%)
+- **File history & swipe navigation** — cached files with swipe left/right to navigate between recently viewed images
 - **Auto-rotate** — landscape images automatically rotated to fill the screen in portrait mode
 - **OSC debayer** — automatic Bayer pattern detection with GPU-accelerated bilinear interpolation
 - **Sharpening** — real-time unsharp mask with adjustable strength

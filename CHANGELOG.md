@@ -456,13 +456,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 ## [1.4.0] — 2026-03-23 (iOS AstroFileViewer)
 
 ### Added
+- **File history & swipe navigation** — Files are cached locally in Documents/FileCache/ (max 10 files, 2 GB). Swipe left/right to navigate between previously opened files. Works even after app restart. Translucent chevron arrows indicate available navigation.
+- **Enhanced status bar** — Shows position in history, date/time (DATE-OBS), filter, and dimensions: "1/5 2025-11-12 20:53 | Ha | 9576 x 6388 Mono"
 - **Dark point slider** — Raises the black point to clip faint background noise. Range 0–100%, applied after STF stretch. Same algorithm as macOS AstroBlink.
-- **GPU bilateral denoise** — Edge-preserving 5x5 bilateral noise reduction. Smooths background noise while keeping stars and edges sharp.
-- **Gradient correction slider** — Adjustable removal of linear light pollution gradients (0–100%). Fits a plane to an 8x8 grid of 20th-percentile background samples. Strength scales up to 3x measured gradient.
+- **GPU bilateral denoise** — Edge-preserving 5x5 bilateral noise reduction (0–300%). Smooths background noise while keeping stars and edges sharp.
+- **Gradient correction slider** — Adjustable removal of linear light pollution gradients (0–300%). Fits a plane to an 8x8 grid of 20th-percentile background samples.
 - **Auto-rotate** — Landscape images are automatically rotated to fill the screen in portrait mode. Zero-cost UIImage orientation metadata. Toggle in adjustments panel.
+- **Swipeable adjustments panel** — Drag down to dismiss the slider panel. Drag handle at top.
 - **Persistent settings** — All sliders and toggles saved via UserDefaults and restored on next launch.
-- **Help & About view** — Replaced the About screen with a comprehensive help section covering all image controls, tips, and about info. "Buy me a coffee" support link at top.
-- **Gradient indicator** — Orange exclamationmark.circle badge on the adjustments toolbar button when gradient correction is active.
+- **Help & About view** — Comprehensive help section with "Play Around!" encouragement, all controls documented, tips, and about info. "Buy me a coffee" support link at top.
 
 ## [1.3.0] — 2026-03-08
 
