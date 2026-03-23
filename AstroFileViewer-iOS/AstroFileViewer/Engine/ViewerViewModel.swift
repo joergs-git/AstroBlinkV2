@@ -28,6 +28,26 @@ struct FileHistoryEntry: Codable, Equatable {
     static func == (lhs: Self, rhs: Self) -> Bool {
         lhs.cachedFilename == rhs.cachedFilename
     }
+
+    // Thumbnail filename derived from cached filename
+    var thumbnailFilename: String {
+        let name = (cachedFilename as NSString).deletingPathExtension
+        return "\(name)_thumb.jpg"
+    }
+
+    // Short label for display under thumbnail
+    var shortLabel: String {
+        var parts: [String] = []
+        if let f = filter { parts.append(f.trimmingCharacters(in: .whitespaces)) }
+        if let d = dateObs {
+            // Extract just time portion "HH:MM" from "2025-11-12T20:53:46"
+            let cleaned = d.replacingOccurrences(of: "T", with: " ")
+            if cleaned.count >= 16 {
+                parts.append(String(cleaned.suffix(from: cleaned.index(cleaned.startIndex, offsetBy: 11)).prefix(5)))
+            }
+        }
+        return parts.isEmpty ? displayName : parts.joined(separator: " ")
+    }
 }
 
 // View model: open a FITS/XISF file, decode, optional debayer, STF stretch, optional sharpen, display
@@ -402,6 +422,11 @@ class ViewerViewModel: ObservableObject {
         openFromHistory(at: currentHistoryIndex)
     }
 
+    /// Open a file from history by index (used by start screen thumbnails)
+    func openFromHistoryPublic(at index: Int) {
+        openFromHistory(at: index)
+    }
+
     private func openFromHistory(at index: Int) {
         let entry = fileHistory[index]
         let cachedURL = Self.cacheDirectory.appendingPathComponent(entry.cachedFilename)
@@ -585,6 +610,7 @@ class ViewerViewModel: ObservableObject {
                 self.displayTexture = currentTexture
                 self.isReprocessing = false
                 self.isLoading = false
+                self.saveThumbnailIfNeeded()
             }
         }
     }
@@ -894,6 +920,60 @@ class ViewerViewModel: ObservableObject {
         commandBuffer.waitUntilCompleted()
 
         return outTexture
+    }
+
+    // MARK: - Save to Photos (bin2 JPEG)
+
+    // MARK: - Thumbnail Management
+
+    /// Save a small JPEG thumbnail from the current display texture
+    func saveThumbnailIfNeeded() {
+        guard let texture = displayTexture,
+              currentHistoryIndex < fileHistory.count else { return }
+        let entry = fileHistory[currentHistoryIndex]
+        let thumbURL = Self.cacheDirectory.appendingPathComponent(entry.thumbnailFilename)
+        guard !FileManager.default.fileExists(atPath: thumbURL.path) else { return }
+
+        // Generate thumbnail in background
+        Task.detached(priority: .utility) {
+            let w = texture.width
+            let h = texture.height
+            let bytesPerRow = w * 4
+            var pixels = [UInt8](repeating: 0, count: bytesPerRow * h)
+            texture.getBytes(&pixels, bytesPerRow: bytesPerRow,
+                             from: MTLRegion(origin: .init(), size: .init(width: w, height: h, depth: 1)),
+                             mipmapLevel: 0)
+            // BGRA -> RGBA
+            for i in stride(from: 0, to: pixels.count, by: 4) {
+                let b = pixels[i]; pixels[i] = pixels[i + 2]; pixels[i + 2] = b
+            }
+            let cs = CGColorSpaceCreateDeviceRGB()
+            guard let ctx = CGContext(data: &pixels, width: w, height: h,
+                                     bitsPerComponent: 8, bytesPerRow: bytesPerRow,
+                                     space: cs, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue),
+                  let cgImage = ctx.makeImage() else { return }
+
+            // Resize to max 200px wide thumbnail
+            let thumbW = min(200, w)
+            let thumbH = thumbW * h / max(w, 1)
+            guard let thumbCtx = CGContext(data: nil, width: thumbW, height: thumbH,
+                                          bitsPerComponent: 8, bytesPerRow: thumbW * 4,
+                                          space: cs, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return }
+            thumbCtx.interpolationQuality = .medium
+            thumbCtx.draw(cgImage, in: CGRect(x: 0, y: 0, width: thumbW, height: thumbH))
+            guard let thumbCG = thumbCtx.makeImage() else { return }
+
+            let uiImage = UIImage(cgImage: thumbCG)
+            if let data = uiImage.jpegData(compressionQuality: 0.7) {
+                try? data.write(to: thumbURL)
+            }
+        }
+    }
+
+    /// Load thumbnail UIImage for a history entry (returns nil if not yet generated)
+    static func loadThumbnail(for entry: FileHistoryEntry) -> UIImage? {
+        let path = cacheDirectory.appendingPathComponent(entry.thumbnailFilename).path
+        return UIImage(contentsOfFile: path)
     }
 
     // MARK: - Save to Photos (bin2 JPEG)

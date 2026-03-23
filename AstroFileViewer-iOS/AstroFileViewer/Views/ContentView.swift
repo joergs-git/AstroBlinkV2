@@ -70,7 +70,42 @@ struct ContentView: View {
                                 .cornerRadius(10)
                         }
 
-                        Spacer().frame(height: 40)
+                        // Recent files thumbnail grid
+                        if !viewModel.fileHistory.isEmpty {
+                            VStack(spacing: 8) {
+                                Text("Recent")
+                                    .font(.caption.bold())
+                                    .foregroundColor(.gray)
+
+                                LazyVGrid(columns: [
+                                    GridItem(.flexible(), spacing: 8),
+                                    GridItem(.flexible(), spacing: 8),
+                                    GridItem(.flexible(), spacing: 8)
+                                ], spacing: 8) {
+                                    ForEach(Array(viewModel.fileHistory.prefix(6).enumerated()), id: \.offset) { index, entry in
+                                        Button(action: {
+                                            viewModel.currentHistoryIndex = index
+                                            viewModel.openFromHistoryPublic(at: index)
+                                        }) {
+                                            VStack(spacing: 4) {
+                                                RecentThumbnail(entry: entry)
+                                                    .frame(height: 70)
+                                                    .cornerRadius(6)
+
+                                                Text(entry.shortLabel)
+                                                    .font(.caption2)
+                                                    .foregroundColor(.gray)
+                                                    .lineLimit(1)
+                                            }
+                                        }
+                                    }
+                                }
+                                .padding(.horizontal, 20)
+                            }
+                            .padding(.top, 16)
+                        }
+
+                        Spacer().frame(height: 20)
 
                         Button(action: { showHelp = true }) {
                             Text("Help & About")
@@ -517,6 +552,33 @@ struct HelpAboutView: View {
                     Button("Done") { dismiss() }
                 }
             }
+        }
+    }
+}
+
+// MARK: - Recent File Thumbnail
+
+struct RecentThumbnail: View {
+    let entry: FileHistoryEntry
+    @State private var image: UIImage?
+
+    var body: some View {
+        Group {
+            if let img = image {
+                Image(uiImage: img)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+                    .clipped()
+            } else {
+                ZStack {
+                    Color.gray.opacity(0.2)
+                    Image(systemName: "star.circle")
+                        .foregroundColor(.gray.opacity(0.5))
+                }
+            }
+        }
+        .onAppear {
+            image = ViewerViewModel.loadThumbnail(for: entry)
         }
     }
 }
