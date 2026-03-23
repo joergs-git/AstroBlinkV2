@@ -81,6 +81,11 @@ struct QualityBreakdown: Hashable {
             return "DELETE — \(reasons)"
         }
 
+        // Z-score based trash (no garbage reasons but combined z-score below threshold)
+        if tier == .trash {
+            return "DELETE — below quality threshold"
+        }
+
         guard tier == .borderline else { return "" }
 
         // Check eccentricity first — the critical differentiator

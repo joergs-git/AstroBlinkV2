@@ -4,6 +4,15 @@ All notable changes to AstroBlink & AIsaac will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [5.2.1] — 2026-03-23
+
+### Fixed
+- **Compare window recommendation for trash frames** — Z-score-based trash frames now correctly show "DELETE — below quality threshold" instead of no recommendation. Previously, only garbage-reason trash showed DELETE
+- **Compare "best" selection consistency** — Context menu "Compare with Best" now uses fine-grained z-score ranking (matching keyboard shortcut behavior) instead of coarse tier-only ranking
+- **Compare window font size** — Quality metrics and recommendation text increased from 10pt to 13pt for better readability
+
+---
+
 ## [5.2.0] — 2026-03-22
 
 ### Added

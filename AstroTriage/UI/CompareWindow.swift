@@ -283,7 +283,7 @@ struct CompareView: View {
     private func styledWhyWorse(_ text: String) -> Text {
         // Split on the arrow marker that precedes the recommendation
         guard let arrowRange = text.range(of: "\u{2192} ") else {
-            return Text(text).font(.system(size: 10, design: .monospaced)).foregroundColor(.secondary)
+            return Text(text).font(.system(size: 13, design: .monospaced)).foregroundColor(.secondary)
         }
         let metricsText = String(text[text.startIndex..<arrowRange.lowerBound])
         let recText = String(text[arrowRange.upperBound...])
@@ -300,13 +300,13 @@ struct CompareView: View {
         }
 
         return Text(metricsText)
-            .font(.system(size: 10, design: .monospaced))
+            .font(.system(size: 13, design: .monospaced))
             .foregroundColor(.secondary)
         + Text("\u{2192} ")
-            .font(.system(size: 10, design: .monospaced))
+            .font(.system(size: 13, design: .monospaced))
             .foregroundColor(.secondary)
         + Text(recText)
-            .font(.system(size: 10, weight: .bold, design: .monospaced))
+            .font(.system(size: 13, weight: .bold, design: .monospaced))
             .foregroundColor(recColor)
     }
 }

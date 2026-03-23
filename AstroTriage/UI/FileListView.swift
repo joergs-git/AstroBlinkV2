@@ -1042,9 +1042,9 @@ struct FileListView: NSViewRepresentable {
                     return t == targetKey && f == filterKey && e == expKey
                 }
 
-                // Find the one with the highest quality tier (excellent > good > borderline > trash)
+                // Find the one with the highest quality z-score (fine-grained, matches TriageViewModel)
                 let best = groupImages.max { a, b in
-                    (a.qualityTier?.rawValue ?? -1) < (b.qualityTier?.rawValue ?? -1)
+                    (a.qualityZScore ?? -100) < (b.qualityZScore ?? -100)
                 }
 
                 guard let bestEntry = best, bestEntry.url != entry.url else { return }

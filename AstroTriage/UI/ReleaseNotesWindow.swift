@@ -33,6 +33,11 @@ class ReleaseNotesWindowController {
 // MARK: - Release notes data (shared between view and copy)
 
 private let allReleases: [(version: String, date: String, items: [(ReleaseNotesView.ChangeType, String, String)])] = [
+    ("5.2.1", "March 23, 2026", [
+        (.fixed, "Compare Window Trash Recommendation", "Z-score-based trash frames now correctly show \"DELETE — below quality threshold\" in the Compare window instead of no recommendation."),
+        (.fixed, "Compare Best Selection Consistency", "Context menu \"Compare with Best\" now uses fine-grained z-score ranking, matching keyboard shortcut behavior."),
+        (.fixed, "Compare Window Readability", "Quality metrics and recommendation text size increased from 10pt to 13pt."),
+    ]),
     ("5.2.0", "March 22, 2026", [
         (.added, "FL-Adaptive Eccentricity Detection", "New Rule 5: frames with eccentricity > 2× the focal-length baseline are flagged as garbage. Adapts automatically to any optics — no fixed thresholds."),
         (.added, "Multi-Reason Garbage Display", "Quality panel now shows ALL detected issues per frame, not just the first one. Multiple reasons displayed on separate lines."),
