@@ -419,6 +419,10 @@ struct HelpAboutView: View {
                         Label("GitHub — Source Code", systemImage: "chevron.left.forwardslash.chevron.right")
                     }
 
+                    Link(destination: URL(string: "https://buymeacoffee.com/joergsflow")!) {
+                        Label("Buy Me a Coffee", systemImage: "cup.and.saucer")
+                    }
+
                     VStack(alignment: .center, spacing: 4) {
                         HStack {
                             Spacer()
