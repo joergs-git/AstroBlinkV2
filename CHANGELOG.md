@@ -457,10 +457,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Added
 - **Dark point slider** — Raises the black point to clip faint background noise. Range 0–100%, applied after STF stretch. Same algorithm as macOS AstroBlink.
-- **Auto gradient correction** — One-tap removal of linear light pollution gradients. Fits a plane to an 8x8 grid of background medians and subtracts the tilt on GPU. Superfast — one multiply-add per pixel.
-- **Persistent settings** — Stretch, dark, sharpen, and gradient toggle are saved via UserDefaults and restored on next launch.
+- **GPU bilateral denoise** — Edge-preserving 5x5 bilateral noise reduction. Smooths background noise while keeping stars and edges sharp.
+- **Gradient correction slider** — Adjustable removal of linear light pollution gradients (0–100%). Fits a plane to an 8x8 grid of 20th-percentile background samples. Strength scales up to 3x measured gradient.
+- **Auto-rotate** — Landscape images are automatically rotated to fill the screen in portrait mode. Zero-cost UIImage orientation metadata. Toggle in adjustments panel.
+- **Persistent settings** — All sliders and toggles saved via UserDefaults and restored on next launch.
+- **Help & About view** — Replaced the About screen with a comprehensive help section covering all image controls, tips, and about info. "Buy me a coffee" support link at top.
 - **Gradient indicator** — Orange exclamationmark.circle badge on the adjustments toolbar button when gradient correction is active.
-- **Help & About view** — Replaced the About screen with a comprehensive help section covering all image controls, tips, and about info. Toolbar icon changed from person.circle to questionmark.circle.
 
 ## [1.3.0] — 2026-03-08
 

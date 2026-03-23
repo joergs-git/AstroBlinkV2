@@ -288,7 +288,9 @@ After a night of imaging you might have 200-600 sub-exposures. Some have clouds,
 - **Auto STF stretch** — same PixInsight-compatible algorithm as the macOS app
 - **Adjustable stretch strength** — slider from 0% (fully linear) to 100%
 - **Dark point slider** — raises the black point to clip faint background noise (same as macOS AstroBlink)
-- **Auto gradient correction** — one-tap removal of linear light pollution gradients using 8x8 background median plane fit
+- **GPU bilateral denoise** — edge-preserving noise reduction that smooths background while keeping stars sharp
+- **Auto gradient correction** — adjustable removal of linear light pollution gradients (0–100%)
+- **Auto-rotate** — landscape images automatically rotated to fill the screen in portrait mode
 - **OSC debayer** — automatic Bayer pattern detection with GPU-accelerated bilinear interpolation
 - **Sharpening** — real-time unsharp mask with adjustable strength
 - **FITS/XISF header viewer** — browse all metadata keywords with priority sorting

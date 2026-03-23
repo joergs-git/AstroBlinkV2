@@ -15,8 +15,11 @@ struct ContentView: View {
                 Color.black.ignoresSafeArea()
 
                 if let texture = viewModel.displayTexture {
-                    ZoomableImageContainer(texture: texture)
-                        .ignoresSafeArea()
+                    ZoomableImageContainer(
+                        texture: texture,
+                        autoRotate: viewModel.autoRotate && viewModel.isLandscapeImage
+                    )
+                    .ignoresSafeArea()
                 } else if viewModel.isLoading {
                     ProgressView("Processing...")
                         .foregroundColor(.white)
@@ -81,7 +84,7 @@ struct ContentView: View {
                                 ZStack(alignment: .topTrailing) {
                                     Image(systemName: "slider.horizontal.3")
                                         .foregroundColor(viewModel.showAdjustments ? .yellow : .white)
-                                    if viewModel.gradientEnabled {
+                                    if viewModel.gradientStrength > 0 {
                                         Image(systemName: "exclamationmark.circle.fill")
                                             .font(.system(size: 10))
                                             .foregroundColor(.orange)
@@ -168,7 +171,6 @@ struct ContentView: View {
         let key = "launchCount"
         let count = UserDefaults.standard.integer(forKey: key) + 1
         UserDefaults.standard.set(count, forKey: key)
-        // Trigger on 10th launch and every 50th after that (Apple rate-limits to 3x/year anyway)
         if count == 10 || (count > 10 && count % 50 == 0) {
             requestReview()
         }
@@ -181,116 +183,66 @@ struct AdjustmentsPanel: View {
     @ObservedObject var viewModel: ViewerViewModel
 
     var body: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 10) {
             // Stretch strength slider
-            HStack(spacing: 8) {
-                Image(systemName: "sun.min")
-                    .font(.caption)
-                    .foregroundColor(.gray)
-                    .frame(width: 20)
-
-                Text("Stretch")
-                    .font(.caption.bold())
-                    .foregroundColor(.white)
-                    .frame(width: 60, alignment: .leading)
-
-                Slider(value: $viewModel.stretchStrength, in: 0.0...0.50, step: 0.01)
-                    .tint(.yellow)
-
-                Text(String(format: "%.0f%%", viewModel.stretchStrength * 200))
-                    .font(.caption.monospaced())
-                    .foregroundColor(.gray)
-                    .frame(width: 40)
-            }
+            SliderRow(icon: "sun.min", label: "Stretch", value: $viewModel.stretchStrength,
+                      range: 0.0...0.50, step: 0.01, tint: .yellow,
+                      display: String(format: "%.0f%%", viewModel.stretchStrength * 200))
 
             // Dark level slider
-            HStack(spacing: 8) {
-                Image(systemName: "circle.bottomhalf.filled")
-                    .font(.caption)
-                    .foregroundColor(.gray)
-                    .frame(width: 20)
+            SliderRow(icon: "circle.bottomhalf.filled", label: "Dark", value: $viewModel.darkLevel,
+                      range: 0.0...0.5, step: 0.01, tint: .purple,
+                      display: String(format: "%.0f%%", viewModel.darkLevel * 200))
 
-                Text("Dark")
-                    .font(.caption.bold())
-                    .foregroundColor(.white)
-                    .frame(width: 60, alignment: .leading)
-
-                Slider(value: $viewModel.darkLevel, in: 0.0...0.5, step: 0.01)
-                    .tint(.purple)
-
-                Text(String(format: "%.0f%%", viewModel.darkLevel * 200))
-                    .font(.caption.monospaced())
-                    .foregroundColor(.gray)
-                    .frame(width: 40)
-            }
+            // Denoise slider
+            SliderRow(icon: "aqi.medium", label: "Denoise", value: $viewModel.denoiseAmount,
+                      range: 0.0...1.0, step: 0.05, tint: .mint,
+                      display: String(format: "%.0f%%", viewModel.denoiseAmount * 100))
 
             // Sharpening slider
-            HStack(spacing: 8) {
-                Image(systemName: "diamond")
-                    .font(.caption)
-                    .foregroundColor(.gray)
-                    .frame(width: 20)
+            SliderRow(icon: "diamond", label: "Sharpen", value: $viewModel.sharpenAmount,
+                      range: 0.0...2.0, step: 0.05, tint: .cyan,
+                      display: String(format: "%.0f%%", viewModel.sharpenAmount * 50))
 
-                Text("Sharpen")
-                    .font(.caption.bold())
-                    .foregroundColor(.white)
-                    .frame(width: 60, alignment: .leading)
+            // Gradient correction slider (0 = off, 100% = 3x measured gradient)
+            SliderRow(icon: "circle.grid.cross", label: "Gradient", value: $viewModel.gradientStrength,
+                      range: 0.0...1.0, step: 0.05, tint: .orange,
+                      display: viewModel.gradientStrength > 0
+                        ? String(format: "%.0f%%", viewModel.gradientStrength * 100) : "Off")
 
-                Slider(value: $viewModel.sharpenAmount, in: 0...2.0, step: 0.05)
-                    .tint(.cyan)
-
-                Text(String(format: "%.0f%%", viewModel.sharpenAmount * 50))
-                    .font(.caption.monospaced())
-                    .foregroundColor(.gray)
-                    .frame(width: 40)
-            }
-
-            // Gradient correction toggle
-            HStack(spacing: 8) {
-                Image(systemName: "circle.grid.cross")
-                    .font(.caption)
-                    .foregroundColor(.gray)
-                    .frame(width: 20)
-
-                Text("Gradient")
-                    .font(.caption.bold())
-                    .foregroundColor(.white)
-                    .frame(width: 60, alignment: .leading)
-
-                Toggle("", isOn: $viewModel.gradientEnabled)
-                    .labelsHidden()
-                    .tint(.orange)
-
-                Text("Auto LP removal")
-                    .font(.caption2)
-                    .foregroundColor(.gray)
-
-                Spacer()
-            }
-
-            // Debayer toggle (only when Bayer pattern detected)
-            if viewModel.bayerPatternDetected != nil {
-                HStack(spacing: 8) {
-                    Image(systemName: "square.grid.3x3")
+            // Auto-rotate toggle + Debayer toggle
+            HStack(spacing: 16) {
+                // Auto-rotate landscape images
+                HStack(spacing: 6) {
+                    Image(systemName: "rotate.left")
                         .font(.caption)
                         .foregroundColor(.gray)
-                        .frame(width: 20)
-
-                    Text("Debayer")
+                        .frame(width: 16)
+                    Text("Auto-Rotate")
                         .font(.caption.bold())
                         .foregroundColor(.white)
-                        .frame(width: 60, alignment: .leading)
-
-                    Toggle("", isOn: $viewModel.debayerEnabled)
+                    Toggle("", isOn: $viewModel.autoRotate)
                         .labelsHidden()
-                        .tint(.green)
-
-                    Text(viewModel.bayerPatternDetected ?? "")
-                        .font(.caption.monospaced())
-                        .foregroundColor(.gray)
-
-                    Spacer()
+                        .tint(.indigo)
                 }
+
+                // Debayer toggle (only when Bayer pattern detected)
+                if viewModel.bayerPatternDetected != nil {
+                    HStack(spacing: 6) {
+                        Image(systemName: "square.grid.3x3")
+                            .font(.caption)
+                            .foregroundColor(.gray)
+                            .frame(width: 16)
+                        Text("Debayer")
+                            .font(.caption.bold())
+                            .foregroundColor(.white)
+                        Toggle("", isOn: $viewModel.debayerEnabled)
+                            .labelsHidden()
+                            .tint(.green)
+                    }
+                }
+
+                Spacer()
             }
 
             // Reset button
@@ -298,8 +250,9 @@ struct AdjustmentsPanel: View {
                 Button(action: {
                     viewModel.stretchStrength = 0.25
                     viewModel.darkLevel = 0
+                    viewModel.denoiseAmount = 0
                     viewModel.sharpenAmount = 0
-                    viewModel.gradientEnabled = false
+                    viewModel.gradientStrength = 0
                 }) {
                     Text("Reset to Default")
                         .font(.caption)
@@ -313,7 +266,7 @@ struct AdjustmentsPanel: View {
                 .foregroundColor(.gray)
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(.vertical, 10)
         .background(
             RoundedRectangle(cornerRadius: 16)
                 .fill(.ultraThinMaterial)
@@ -321,6 +274,40 @@ struct AdjustmentsPanel: View {
         )
         .padding(.horizontal, 12)
         .padding(.bottom, 4)
+    }
+}
+
+// MARK: - Reusable Slider Row
+
+struct SliderRow: View {
+    let icon: String
+    let label: String
+    @Binding var value: Float
+    let range: ClosedRange<Float>
+    let step: Float
+    let tint: Color
+    let display: String
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: icon)
+                .font(.caption)
+                .foregroundColor(.gray)
+                .frame(width: 18)
+
+            Text(label)
+                .font(.caption.bold())
+                .foregroundColor(.white)
+                .frame(width: 58, alignment: .leading)
+
+            Slider(value: $value, in: range, step: step)
+                .tint(tint)
+
+            Text(display)
+                .font(.caption.monospaced())
+                .foregroundColor(.gray)
+                .frame(width: 36)
+        }
     }
 }
 
@@ -332,6 +319,18 @@ struct HelpAboutView: View {
     var body: some View {
         NavigationStack {
             List {
+                // Support link at the top
+                Section {
+                    Link(destination: URL(string: "https://buymeacoffee.com/joergsflow")!) {
+                        HStack {
+                            Image(systemName: "cup.and.saucer.fill")
+                                .foregroundColor(.orange)
+                            Text("Like it? Buy me a coffee!")
+                                .font(.subheadline.bold())
+                        }
+                    }
+                }
+
                 // Getting Started
                 Section("Getting Started") {
                     HelpRow(icon: "folder", color: .blue,
@@ -353,13 +352,17 @@ struct HelpAboutView: View {
                             title: "Dark (0-100%)",
                             text: "Raises the black point to clip faint noise in the background. Useful for cleaning up light-polluted subs. Similar to the Shadows slider in photo editors.")
 
+                    HelpRow(icon: "aqi.medium", color: .mint,
+                            title: "Denoise (0-100%)",
+                            text: "Edge-preserving bilateral noise reduction. Smooths background noise while keeping stars and edges sharp. Apply before sharpening for best results.")
+
                     HelpRow(icon: "diamond", color: .cyan,
                             title: "Sharpen (0-100%)",
-                            text: "Applies an unsharp mask to enhance fine detail. Use sparingly — over-sharpening amplifies noise.")
+                            text: "Applies an unsharp mask to enhance fine detail. Use sparingly — over-sharpening amplifies noise. Best combined with some denoise.")
 
                     HelpRow(icon: "circle.grid.cross", color: .orange,
-                            title: "Gradient Correction",
-                            text: "Automatically detects and removes linear light pollution gradients across the frame. Uses an 8x8 grid of background samples to fit and subtract the gradient tilt. When active, an indicator icon appears on the adjustments button.")
+                            title: "Gradient (0-100%)",
+                            text: "Removes linear light pollution gradients. At 0% the correction is off. Increase strength until the background looks even. Uses an 8x8 grid of background samples to detect and subtract the gradient tilt.")
 
                     HelpRow(icon: "square.grid.3x3", color: .green,
                             title: "Debayer",
@@ -368,13 +371,17 @@ struct HelpAboutView: View {
 
                 // Tips
                 Section("Tips") {
+                    HelpRow(icon: "rotate.left", color: .indigo,
+                            title: "Auto-Rotate",
+                            text: "Landscape images are automatically rotated to fill the screen in portrait mode. No need to turn your phone! Toggle off in adjustments if you prefer the original orientation.")
+
                     HelpRow(icon: "hand.pinch", color: .white,
                             title: "Zoom & Pan",
-                            text: "Pinch to zoom (up to 10x), drag to pan. Double-tap not needed — just pinch anywhere on the image.")
+                            text: "Pinch to zoom (up to 10x), drag to pan. Works naturally even on rotated images.")
 
                     HelpRow(icon: "square.and.arrow.down", color: .white,
                             title: "Save to Photos",
-                            text: "Saves the current view as a bin2 JPEG to your photo library. The image includes all active adjustments (stretch, dark, sharpen, gradient correction).")
+                            text: "Saves the current view as a bin2 JPEG to your photo library. The image includes all active adjustments (stretch, dark, denoise, sharpen, gradient correction).")
 
                     HelpRow(icon: "info.circle", color: .white,
                             title: "Header Inspector",
@@ -382,7 +389,7 @@ struct HelpAboutView: View {
 
                     HelpRow(icon: "gearshape", color: .white,
                             title: "Persistent Settings",
-                            text: "Your slider positions and gradient toggle are saved automatically and restored on next launch. Use 'Reset to Default' to clear all settings.")
+                            text: "All slider positions and toggles are saved automatically and restored on next launch. Use 'Reset to Default' to clear all settings.")
                 }
 
                 // About
@@ -526,13 +533,14 @@ struct HeaderListView: View {
 
 struct ZoomableImageContainer: UIViewRepresentable {
     let texture: MTLTexture
+    var autoRotate: Bool = false
 
     func makeUIView(context: Context) -> ZoomableImageView {
-        ZoomableImageView(texture: texture)
+        ZoomableImageView(texture: texture, autoRotate: autoRotate)
     }
 
     func updateUIView(_ uiView: ZoomableImageView, context: Context) {
-        uiView.updateTexture(texture)
+        uiView.updateTexture(texture, autoRotate: autoRotate)
     }
 }
 
@@ -540,8 +548,9 @@ struct ZoomableImageContainer: UIViewRepresentable {
 class ZoomableImageView: UIScrollView, UIScrollViewDelegate {
     private let imageView = UIImageView()
     private var imageSize: CGSize = .zero
+    private var currentAutoRotate: Bool = false
 
-    init(texture: MTLTexture) {
+    init(texture: MTLTexture, autoRotate: Bool) {
         super.init(frame: .zero)
 
         delegate = self
@@ -558,7 +567,7 @@ class ZoomableImageView: UIScrollView, UIScrollViewDelegate {
         imageView.layer.minificationFilter = .trilinear
         addSubview(imageView)
 
-        updateTexture(texture)
+        updateTexture(texture, autoRotate: autoRotate)
     }
 
     required init?(coder: NSCoder) {
@@ -567,19 +576,20 @@ class ZoomableImageView: UIScrollView, UIScrollViewDelegate {
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        // Only reset frame when not zoomed
         if zoomScale == 1.0 {
             imageView.frame = bounds
         }
         centerImageView()
     }
 
-    func updateTexture(_ texture: MTLTexture) {
+    func updateTexture(_ texture: MTLTexture, autoRotate: Bool) {
         let width = texture.width
         let height = texture.height
         let newSize = CGSize(width: width, height: height)
-        let isNewImage = newSize != imageSize
+        let rotateChanged = autoRotate != currentAutoRotate
+        let isNewImage = newSize != imageSize || rotateChanged
         imageSize = newSize
+        currentAutoRotate = autoRotate
         let bytesPerRow = width * 4
 
         var pixels = [UInt8](repeating: 0, count: bytesPerRow * height)
@@ -605,10 +615,15 @@ class ZoomableImageView: UIScrollView, UIScrollViewDelegate {
             bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
         ), let cgImage = context.makeImage() else { return }
 
-        imageView.image = UIImage(cgImage: cgImage)
+        // Auto-rotate: use UIImage orientation metadata (zero-cost, no pixel copy)
+        let uiImage: UIImage
+        if autoRotate && width > height {
+            uiImage = UIImage(cgImage: cgImage, scale: 1.0, orientation: .left)
+        } else {
+            uiImage = UIImage(cgImage: cgImage)
+        }
+        imageView.image = uiImage
 
-        // Only reset zoom when a different image is opened (dimensions changed),
-        // not when stretch/sharpen sliders change the same image
         if isNewImage {
             zoomScale = 1.0
             imageView.frame = bounds

@@ -34,24 +34,39 @@ class ViewerViewModel: ObservableObject {
             reprocessIfNeeded()
         }
     }
-    @Published var sharpenAmount: Float = 0.0 {     // Unsharp mask strength [0..2]
-        didSet {
-            UserDefaults.standard.set(sharpenAmount, forKey: "viewer_sharpenAmount")
-            reprocessIfNeeded()
-        }
-    }
     @Published var darkLevel: Float = 0.0 {         // Black point raise [0..0.5]
         didSet {
             UserDefaults.standard.set(darkLevel, forKey: "viewer_darkLevel")
             reprocessIfNeeded()
         }
     }
-    @Published var gradientEnabled: Bool = false {   // Auto gradient correction toggle
+    @Published var sharpenAmount: Float = 0.0 {     // Unsharp mask strength [0..2]
         didSet {
-            UserDefaults.standard.set(gradientEnabled, forKey: "viewer_gradientEnabled")
-            // Gradient changes the raw data path — need full reprocess
-            gradientCoefficients = nil
+            UserDefaults.standard.set(sharpenAmount, forKey: "viewer_sharpenAmount")
             reprocessIfNeeded()
+        }
+    }
+    @Published var denoiseAmount: Float = 0.0 {     // Bilateral denoise strength [0..1]
+        didSet {
+            UserDefaults.standard.set(denoiseAmount, forKey: "viewer_denoiseAmount")
+            reprocessIfNeeded()
+        }
+    }
+    @Published var gradientStrength: Float = 0.0 {  // Gradient correction [0..1], 0=off
+        didSet {
+            UserDefaults.standard.set(gradientStrength, forKey: "viewer_gradientStrength")
+            // Recompute gradient coefficients only when going from 0 to >0
+            if gradientStrength > 0 && gradientCoefficients == nil {
+                gradientCoefficients = nil
+            }
+            reprocessIfNeeded()
+        }
+    }
+    @Published var autoRotate: Bool = true {         // Auto-rotate landscape to portrait
+        didSet {
+            UserDefaults.standard.set(autoRotate, forKey: "viewer_autoRotate")
+            // No reprocess needed — rotation applied at display time
+            objectWillChange.send()
         }
     }
     @Published var debayerEnabled: Bool = false {    // Manual debayer toggle
@@ -62,7 +77,13 @@ class ViewerViewModel: ObservableObject {
 
     // True when any processing setting differs from factory defaults
     var hasNonDefaultSettings: Bool {
-        stretchStrength != 0.25 || sharpenAmount != 0 || darkLevel != 0 || gradientEnabled
+        stretchStrength != 0.25 || darkLevel != 0 || sharpenAmount != 0
+        || denoiseAmount != 0 || gradientStrength != 0
+    }
+
+    // True when current image is landscape (wider than tall)
+    var isLandscapeImage: Bool {
+        imageWidth > imageHeight && imageWidth > 0
     }
 
     let device: MTLDevice?
@@ -71,11 +92,11 @@ class ViewerViewModel: ObservableObject {
     private var rawDecodedImage: DecodedImage?
     // Debayered RGB buffer (when debayer is active)
     private var debayeredImage: DecodedImage?
-    // STF-stretched texture before sharpening (for sharpen-only re-render)
+    // STF-stretched texture before post-processing (for slider re-render)
     private var stretchedTexture: MTLTexture?
     // Track if reprocess is already in flight to avoid duplicate work
     private var isReprocessing: Bool = false
-    // Cached gradient plane coefficients for current image
+    // Cached gradient plane coefficients for current image (raw, unscaled)
     private var gradientCoefficients: PostParams?
 
     // Important header keywords to highlight at the top
@@ -104,9 +125,21 @@ class ViewerViewModel: ObservableObject {
         if defaults.object(forKey: "viewer_stretchStrength") != nil {
             stretchStrength = defaults.float(forKey: "viewer_stretchStrength")
         }
-        sharpenAmount = defaults.float(forKey: "viewer_sharpenAmount")
         darkLevel = defaults.float(forKey: "viewer_darkLevel")
-        gradientEnabled = defaults.bool(forKey: "viewer_gradientEnabled")
+        sharpenAmount = defaults.float(forKey: "viewer_sharpenAmount")
+        denoiseAmount = defaults.float(forKey: "viewer_denoiseAmount")
+        gradientStrength = defaults.float(forKey: "viewer_gradientStrength")
+        // Auto-rotate defaults to true for new installs
+        if defaults.object(forKey: "viewer_autoRotate") != nil {
+            autoRotate = defaults.bool(forKey: "viewer_autoRotate")
+        }
+        // Migrate from old bool gradient setting
+        if defaults.object(forKey: "viewer_gradientEnabled") != nil {
+            if defaults.bool(forKey: "viewer_gradientEnabled") && gradientStrength == 0 {
+                gradientStrength = 0.5
+            }
+            defaults.removeObject(forKey: "viewer_gradientEnabled")
+        }
     }
 
     // Supported file extensions
@@ -207,10 +240,11 @@ class ViewerViewModel: ObservableObject {
         guard rawDecodedImage != nil else { return }
         debayeredImage = nil
         stretchedTexture = nil
+        gradientCoefficients = nil
         processAndDisplay()
     }
 
-    // MARK: - Full processing pipeline: debayer (optional) -> STF stretch -> sharpen (optional)
+    // MARK: - Full processing pipeline: debayer -> gradient -> STF -> denoise -> sharpen
 
     private func processAndDisplay() {
         guard !isReprocessing else { return }
@@ -226,9 +260,10 @@ class ViewerViewModel: ObservableObject {
             let shouldDebayer = await self.debayerEnabled
             let bayerPat = await self.bayerPatternDetected
             let stretch = await self.stretchStrength
-            let sharpen = await self.sharpenAmount
             let dark = await self.darkLevel
-            let useGradient = await self.gradientEnabled
+            let sharpen = await self.sharpenAmount
+            let denoise = await self.denoiseAmount
+            let gradStrength = await self.gradientStrength
 
             guard let rawImage = rawImage else {
                 await MainActor.run {
@@ -260,16 +295,21 @@ class ViewerViewModel: ObservableObject {
                 imageForSTF = rawImage
             }
 
-            // Step 2: Compute gradient correction if enabled
+            // Step 2: Compute gradient correction if strength > 0
             var postParams: PostParams
-            if useGradient {
+            if gradStrength > 0 {
                 if let cached = await self.gradientCoefficients {
                     postParams = cached
                 } else {
                     let grad = Self.computeGradient(from: imageForSTF)
-                    postParams = grad
                     await MainActor.run { self.gradientCoefficients = grad }
+                    postParams = grad
                 }
+                // Scale gradient by strength * 3 (so 100% = 3x measured gradient)
+                let scale = gradStrength * 3.0
+                postParams.gradA *= scale
+                postParams.gradB *= scale
+                postParams.gradC *= scale
             } else {
                 postParams = PostParams()
             }
@@ -286,17 +326,20 @@ class ViewerViewModel: ObservableObject {
                 return
             }
 
-            // Step 4: Sharpen if amount > 0
-            let finalTexture: MTLTexture
+            // Step 4: Denoise if amount > 0 (before sharpen — denoise first, then enhance)
+            var currentTexture = stfTexture
+            if denoise > 0.01 {
+                currentTexture = self.runDenoise(input: currentTexture, strength: denoise, device: device) ?? currentTexture
+            }
+
+            // Step 5: Sharpen if amount > 0
             if sharpen > 0.01 {
-                finalTexture = self.runSharpen(input: stfTexture, amount: sharpen, device: device) ?? stfTexture
-            } else {
-                finalTexture = stfTexture
+                currentTexture = self.runSharpen(input: currentTexture, amount: sharpen, device: device) ?? currentTexture
             }
 
             await MainActor.run {
                 self.stretchedTexture = stfTexture
-                self.displayTexture = finalTexture
+                self.displayTexture = currentTexture
                 self.isReprocessing = false
                 self.isLoading = false
             }
@@ -416,22 +459,21 @@ class ViewerViewModel: ObservableObject {
         return outTexture
     }
 
-    // MARK: - Gradient Computation (8x8 grid median + linear plane fit)
+    // MARK: - Gradient Computation (8x8 grid, 20th percentile + linear plane fit)
 
     /// Computes a linear gradient plane from raw image data.
-    /// Divides image into 8x8 grid, takes median of each cell, fits z = a*x + b*y + c,
-    /// then mean-normalizes so only the tilt is removed (preserves overall brightness).
+    /// Divides image into 8x8 grid, takes 20th percentile of each cell (robust to stars),
+    /// fits z = a*x + b*y + c, then mean-normalizes so only the tilt is removed.
     nonisolated private static func computeGradient(from image: DecodedImage) -> PostParams {
         let w = image.width
         let h = image.height
         let ptr = image.buffer.contents().assumingMemoryBound(to: UInt16.self)
 
-        // For multi-channel images, use first channel (or average for luminance)
         let planeSize = w * h
         let gridSize = 8
         let cellW = w / gridSize
         let cellH = h / gridSize
-        let samplesPerCell = min(200, cellW * cellH)
+        let samplesPerCell = min(400, cellW * cellH)
 
         var gridX = [Float](repeating: 0, count: gridSize * gridSize)
         var gridY = [Float](repeating: 0, count: gridSize * gridSize)
@@ -442,7 +484,6 @@ class ViewerViewModel: ObservableObject {
                 let cellStartX = gx * cellW
                 let cellStartY = gy * cellH
 
-                // Sample pixels from this cell
                 var samples = [Float]()
                 samples.reserveCapacity(samplesPerCell)
 
@@ -467,21 +508,19 @@ class ViewerViewModel: ObservableObject {
                     }
                 }
 
-                // Median (robust to stars)
+                // 20th percentile — more robust to stars than median
                 samples.sort()
-                let median = samples.isEmpty ? 0 : samples[samples.count / 2]
+                let pctIdx = max(0, min(samples.count - 1, samples.count / 5))
+                let background = samples.isEmpty ? 0 : samples[pctIdx]
 
                 let gi = gy * gridSize + gx
-                gridX[gi] = (Float(gx) + 0.5) / Float(gridSize)  // Normalized [0,1]
+                gridX[gi] = (Float(gx) + 0.5) / Float(gridSize)
                 gridY[gi] = (Float(gy) + 0.5) / Float(gridSize)
-                gridZ[gi] = median
+                gridZ[gi] = background
             }
         }
 
         // Least squares fit: z = a*x + b*y + c
-        // Normal equations: [Sxx Sxy Sx] [a]   [Sxz]
-        //                   [Sxy Syy Sy] [b] = [Syz]
-        //                   [Sx  Sy  N ] [c]   [Sz ]
         let n = Float(gridSize * gridSize)
         var sx: Float = 0, sy: Float = 0, sz: Float = 0
         var sxx: Float = 0, syy: Float = 0, sxy: Float = 0
@@ -514,11 +553,56 @@ class ViewerViewModel: ObservableObject {
                + sxz * (sxy * sy - syy * sx)) / det
 
         // Mean-normalize: remove average so only tilt remains
-        // Mean of plane over [0,1]x[0,1] = a*0.5 + b*0.5 + c
         let meanPlane = a * 0.5 + b * 0.5 + c
-        let cNorm = c - meanPlane  // Offset so mean subtraction is zero
+        let cNorm = c - meanPlane
 
         return PostParams(darkLevel: 0, gradA: a, gradB: b, gradC: cNorm)
+    }
+
+    // MARK: - Metal Pipeline: Bilateral Denoise
+
+    nonisolated private func runDenoise(input: MTLTexture, strength: Float, device: MTLDevice) -> MTLTexture? {
+        guard let library = device.makeDefaultLibrary(),
+              let function = library.makeFunction(name: "bilateral_denoise"),
+              let pipeline = try? device.makeComputePipelineState(function: function) else {
+            return nil
+        }
+
+        let texDesc = MTLTextureDescriptor.texture2DDescriptor(
+            pixelFormat: .bgra8Unorm,
+            width: input.width,
+            height: input.height,
+            mipmapped: false
+        )
+        texDesc.usage = [.shaderWrite, .shaderRead]
+        texDesc.storageMode = .shared
+
+        guard let outTexture = device.makeTexture(descriptor: texDesc),
+              let commandQueue = device.makeCommandQueue(),
+              let commandBuffer = commandQueue.makeCommandBuffer(),
+              let encoder = commandBuffer.makeComputeCommandEncoder() else {
+            return nil
+        }
+
+        encoder.setComputePipelineState(pipeline)
+        encoder.setTexture(input, index: 0)
+        encoder.setTexture(outTexture, index: 1)
+
+        var str = strength
+        encoder.setBytes(&str, length: 4, index: 0)
+
+        let threadGroupSize = MTLSize(width: 16, height: 16, depth: 1)
+        let threadGroups = MTLSize(
+            width: (input.width + 15) / 16,
+            height: (input.height + 15) / 16,
+            depth: 1
+        )
+        encoder.dispatchThreadgroups(threadGroups, threadsPerThreadgroup: threadGroupSize)
+        encoder.endEncoding()
+        commandBuffer.commit()
+        commandBuffer.waitUntilCompleted()
+
+        return outTexture
     }
 
     // MARK: - Metal Pipeline: Unsharp Mask Sharpening
@@ -530,7 +614,6 @@ class ViewerViewModel: ObservableObject {
             return nil
         }
 
-        // Output texture (same format as input)
         let texDesc = MTLTextureDescriptor.texture2DDescriptor(
             pixelFormat: .bgra8Unorm,
             width: input.width,
