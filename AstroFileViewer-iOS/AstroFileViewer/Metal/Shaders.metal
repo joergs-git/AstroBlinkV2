@@ -264,7 +264,7 @@ kernel void bilateral_denoise(
 
     // Spatial sigma fixed at 2.0, range sigma scales with strength
     float sigma_s2 = 8.0;                          // 2 * 2.0^2
-    float sigma_r = max(strength * 0.15, 0.01);    // Range sigma
+    float sigma_r = max(strength * 0.25, 0.01);    // Range sigma, scales with strength
     float sigma_r2 = 2.0 * sigma_r * sigma_r;
 
     float3 sum = float3(0.0);

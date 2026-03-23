@@ -181,9 +181,16 @@ struct ContentView: View {
 
 struct AdjustmentsPanel: View {
     @ObservedObject var viewModel: ViewerViewModel
+    @State private var dragOffset: CGFloat = 0
 
     var body: some View {
         VStack(spacing: 10) {
+            // Drag handle
+            Capsule()
+                .fill(Color.gray.opacity(0.5))
+                .frame(width: 36, height: 4)
+                .padding(.top, 2)
+
             // Stretch strength slider
             SliderRow(icon: "sun.min", label: "Stretch", value: $viewModel.stretchStrength,
                       range: 0.0...0.50, step: 0.01, tint: .yellow,
@@ -194,9 +201,9 @@ struct AdjustmentsPanel: View {
                       range: 0.0...0.5, step: 0.01, tint: .purple,
                       display: String(format: "%.0f%%", viewModel.darkLevel * 200))
 
-            // Denoise slider
+            // Denoise slider (0-300% for stronger effect on mobile)
             SliderRow(icon: "aqi.medium", label: "Denoise", value: $viewModel.denoiseAmount,
-                      range: 0.0...1.0, step: 0.05, tint: .mint,
+                      range: 0.0...3.0, step: 0.1, tint: .mint,
                       display: String(format: "%.0f%%", viewModel.denoiseAmount * 100))
 
             // Sharpening slider
@@ -204,15 +211,14 @@ struct AdjustmentsPanel: View {
                       range: 0.0...2.0, step: 0.05, tint: .cyan,
                       display: String(format: "%.0f%%", viewModel.sharpenAmount * 50))
 
-            // Gradient correction slider (0 = off, 100% = 3x measured gradient)
+            // Gradient correction slider (0-300% for aggressive LP removal)
             SliderRow(icon: "circle.grid.cross", label: "Gradient", value: $viewModel.gradientStrength,
-                      range: 0.0...1.0, step: 0.05, tint: .orange,
+                      range: 0.0...3.0, step: 0.1, tint: .orange,
                       display: viewModel.gradientStrength > 0
                         ? String(format: "%.0f%%", viewModel.gradientStrength * 100) : "Off")
 
             // Auto-rotate toggle + Debayer toggle
             HStack(spacing: 16) {
-                // Auto-rotate landscape images
                 HStack(spacing: 6) {
                     Image(systemName: "rotate.left")
                         .font(.caption)
@@ -226,7 +232,6 @@ struct AdjustmentsPanel: View {
                         .tint(.indigo)
                 }
 
-                // Debayer toggle (only when Bayer pattern detected)
                 if viewModel.bayerPatternDetected != nil {
                     HStack(spacing: 6) {
                         Image(systemName: "square.grid.3x3")
@@ -266,7 +271,7 @@ struct AdjustmentsPanel: View {
                 .foregroundColor(.gray)
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 10)
+        .padding(.vertical, 8)
         .background(
             RoundedRectangle(cornerRadius: 16)
                 .fill(.ultraThinMaterial)
@@ -274,6 +279,27 @@ struct AdjustmentsPanel: View {
         )
         .padding(.horizontal, 12)
         .padding(.bottom, 4)
+        .offset(y: dragOffset)
+        .gesture(
+            DragGesture()
+                .onChanged { value in
+                    // Only allow downward drag
+                    if value.translation.height > 0 {
+                        dragOffset = value.translation.height
+                    }
+                }
+                .onEnded { value in
+                    if value.translation.height > 60 {
+                        // Swipe down past threshold — dismiss panel
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            viewModel.showAdjustments = false
+                        }
+                    }
+                    withAnimation(.easeOut(duration: 0.15)) {
+                        dragOffset = 0
+                    }
+                }
+        )
     }
 }
 

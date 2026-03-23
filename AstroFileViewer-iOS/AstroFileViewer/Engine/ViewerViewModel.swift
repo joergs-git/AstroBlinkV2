@@ -305,7 +305,7 @@ class ViewerViewModel: ObservableObject {
                     await MainActor.run { self.gradientCoefficients = grad }
                     postParams = grad
                 }
-                // Scale gradient by strength * 3 (so 100% = 3x measured gradient)
+                // Scale gradient by strength * 3 (so 300% = 9x measured gradient)
                 let scale = gradStrength * 3.0
                 postParams.gradA *= scale
                 postParams.gradB *= scale
