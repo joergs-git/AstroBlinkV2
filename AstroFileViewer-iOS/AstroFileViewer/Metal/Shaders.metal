@@ -241,13 +241,15 @@ kernel void contrast_saturation(
 
 // ==========================================================================
 // Kernel 4: Bilateral Denoise — edge-preserving noise reduction on BGRA8
-// 5x5 window, spatial Gaussian + range Gaussian to preserve edges
+// 7x7 window, spatial Gaussian + range Gaussian to preserve edges.
+// Larger kernel than typical 5x5 — needed for visible effect on mobile
+// screens and debayered color images with Bayer interpolation noise.
 // ==========================================================================
 
 kernel void bilateral_denoise(
     texture2d<float, access::read> input [[texture(0)]],
     texture2d<float, access::write> output [[texture(1)]],
-    constant float& strength [[buffer(0)]],    // Denoise strength [0..1]
+    constant float& strength [[buffer(0)]],    // Denoise strength [0..3]
     uint2 gid [[thread_position_in_grid]])
 {
     uint w = input.get_width();
@@ -257,16 +259,16 @@ kernel void bilateral_denoise(
     float4 center = input.read(gid);
     float3 centerRGB = center.rgb;
 
-    // Spatial sigma fixed at 2.0, range sigma scales with strength
-    float sigma_s2 = 8.0;                          // 2 * 2.0^2
-    float sigma_r = max(strength * 0.25, 0.01);    // Range sigma, scales with strength
+    // Spatial sigma 3.0 (wider kernel), range sigma scales with strength
+    float sigma_s2 = 18.0;                         // 2 * 3.0^2
+    float sigma_r = max(strength * 0.3, 0.01);     // Range sigma, wider for color noise
     float sigma_r2 = 2.0 * sigma_r * sigma_r;
 
     float3 sum = float3(0.0);
     float wsum = 0.0;
 
-    for (int dy = -2; dy <= 2; dy++) {
-        for (int dx = -2; dx <= 2; dx++) {
+    for (int dy = -3; dy <= 3; dy++) {
+        for (int dx = -3; dx <= 3; dx++) {
             uint2 pos = uint2(
                 clamp(int(gid.x) + dx, 0, int(w) - 1),
                 clamp(int(gid.y) + dy, 0, int(h) - 1)
