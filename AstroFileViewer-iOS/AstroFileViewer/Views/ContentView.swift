@@ -359,11 +359,15 @@ struct HelpAboutView: View {
 
                 // Getting Started
                 Section("Getting Started") {
+                    HelpRow(icon: "sparkles", color: .yellow,
+                            title: "Play Around!",
+                            text: "The best way to learn is to experiment. Open a file and drag the sliders — everything updates in real-time on the GPU. Try cranking denoise to 200%, then adding some sharpen. Push gradient to 300% and watch light pollution vanish. There's no wrong setting — you can always hit Reset. Have fun!")
+
                     HelpRow(icon: "folder", color: .blue,
                             title: "Open Files",
                             text: "Tap the folder icon to open FITS (.fits, .fit, .fts) or XISF (.xisf) files from the Files app, iCloud Drive, or any document provider.")
 
-                    HelpRow(icon: "sparkles", color: .yellow,
+                    HelpRow(icon: "sun.min", color: .yellow,
                             title: "Auto Stretch",
                             text: "Images are automatically stretched using a PixInsight-compatible STF algorithm. The stretch makes faint nebulae and galaxies visible while preserving star shapes.")
                 }
@@ -379,16 +383,16 @@ struct HelpAboutView: View {
                             text: "Raises the black point to clip faint noise in the background. Useful for cleaning up light-polluted subs. Similar to the Shadows slider in photo editors.")
 
                     HelpRow(icon: "aqi.medium", color: .mint,
-                            title: "Denoise (0-100%)",
-                            text: "Edge-preserving bilateral noise reduction. Smooths background noise while keeping stars and edges sharp. Apply before sharpening for best results.")
+                            title: "Denoise (0-300%)",
+                            text: "GPU bilateral noise reduction that preserves edges. Smooths background noise while keeping stars sharp. Goes up to 300% for aggressive smoothing on mobile screens. Note: strong denoise will mostly eliminate any sharpening effect — the sharpen slider is left available for fine-tuning, but denoise naturally softens what sharpen tries to enhance.")
 
                     HelpRow(icon: "diamond", color: .cyan,
                             title: "Sharpen (0-100%)",
-                            text: "Applies an unsharp mask to enhance fine detail. Use sparingly — over-sharpening amplifies noise. Best combined with some denoise.")
+                            text: "Applies an unsharp mask to enhance fine detail. Works best at low to moderate denoise levels. At high denoise settings the sharpening effect becomes minimal — that's normal physics, not a bug.")
 
                     HelpRow(icon: "circle.grid.cross", color: .orange,
-                            title: "Gradient (0-100%)",
-                            text: "Removes linear light pollution gradients. At 0% the correction is off. Increase strength until the background looks even. Uses an 8x8 grid of background samples to detect and subtract the gradient tilt.")
+                            title: "Gradient (0-300%)",
+                            text: "Removes linear light pollution gradients across the frame. At 0% the correction is off. Start around 100% and increase until the background looks even — go up to 300% for stubborn gradients. Uses an 8x8 grid of background samples to detect and subtract the tilt.")
 
                     HelpRow(icon: "square.grid.3x3", color: .green,
                             title: "Debayer",
@@ -407,7 +411,7 @@ struct HelpAboutView: View {
 
                     HelpRow(icon: "square.and.arrow.down", color: .white,
                             title: "Save to Photos",
-                            text: "Saves the current view as a bin2 JPEG to your photo library. The image includes all active adjustments (stretch, dark, denoise, sharpen, gradient correction).")
+                            text: "Saves the current view as a bin2 JPEG to your photo library. All active adjustments are baked in — stretch, dark, denoise, sharpen, and gradient correction.")
 
                     HelpRow(icon: "info.circle", color: .white,
                             title: "Header Inspector",
