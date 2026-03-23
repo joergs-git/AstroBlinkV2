@@ -652,8 +652,8 @@ struct ContentView: View {
                             viewModel.objectWillChange.send()
                         }
                         .help(communityEnabled
-                            ? "Community learning ON — anonymous session stats shared to improve detection. Click to disable."
-                            : "Community learning OFF — click to share anonymous stats and benefit from community baselines with new equipment.")
+                            ? "Community Learning is ON — You're helping improve quality detection for all AstroBlink users! Only anonymous metric averages (FWHM, SNR, trailing) are shared. No filenames, no images, no coordinates, no personal data — ever. New equipment? You'll get instant calibration from the community. Click to disable."
+                            : "Community Learning is OFF — Click to join! Share anonymous quality metrics to help improve detection accuracy for everyone. In return, you get instant calibration baselines when trying new equipment — no 30-frame warmup needed. No personal data is ever shared: no filenames, no images, no location, no equipment names.")
 
                         // iCloud sync indicator (rightmost, always visible)
                         statusDivider
@@ -675,8 +675,8 @@ struct ContentView: View {
                             }
                         }
                         .help(FileManager.default.ubiquityIdentityToken != nil
-                            ? "iCloud active — settings, calibration data, and equipment profile sync across devices"
-                            : "iCloud unavailable — data is stored locally only. Sign in to iCloud in System Settings to enable sync.")
+                            ? "iCloud is ON — Your settings, calibration profiles, and equipment memory sync privately across your Macs. All data stays in your personal iCloud account — nothing is shared publicly or with other users."
+                            : "iCloud is OFF — Settings and calibration data are stored locally only. Sign in to iCloud in System Settings to sync across your Macs. iCloud data is always private — never shared with anyone.")
                     }
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
