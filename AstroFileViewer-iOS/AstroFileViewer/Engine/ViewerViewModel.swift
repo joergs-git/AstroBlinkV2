@@ -196,6 +196,9 @@ class ViewerViewModel: ObservableObject {
     private var isReprocessing: Bool = false
     // Cached gradient plane coefficients for current image (raw, unscaled)
     private var gradientCoefficients: PostParams?
+    // Cached STF params to avoid recalculation when only post-process sliders change
+    private var cachedSTFParams: [STFParams]?
+    private var cachedSTFStretch: Float = -1
     // Cached image stats (computed once per image load)
     @Published var imageSNR: Float = 0
     @Published var imageStarCount: Int = 0
@@ -292,6 +295,10 @@ class ViewerViewModel: ObservableObject {
         gradientCoefficients = nil
         bayerPatternDetected = nil
         debayerEnabled = false
+        imageSNR = 0
+        imageStarCount = 0
+        cachedSTFParams = nil
+        cachedSTFStretch = -1
 
         // Copy file to cache while we have security-scoped access
         let cachedFilename = url.lastPathComponent
@@ -482,6 +489,10 @@ class ViewerViewModel: ObservableObject {
         gradientCoefficients = nil
         bayerPatternDetected = nil
         debayerEnabled = false
+        imageSNR = 0
+        imageStarCount = 0
+        cachedSTFParams = nil
+        cachedSTFStretch = -1
 
         Task.detached(priority: .userInitiated) { [weak self] in
             guard let self = self, let device = self.device else { return }
@@ -539,6 +550,10 @@ class ViewerViewModel: ObservableObject {
         debayeredImage = nil
         stretchedTexture = nil
         gradientCoefficients = nil
+        cachedSTFParams = nil
+        cachedSTFStretch = -1
+        imageSNR = 0
+        imageStarCount = 0
         processAndDisplay()
     }
 
@@ -594,11 +609,13 @@ class ViewerViewModel: ObservableObject {
                 imageForSTF = rawImage
             }
 
-            // Step 1b: Compute image stats (SNR + star count) — negligible overhead
-            let stats = STFCalculator.computeStats(from: imageForSTF)
-            await MainActor.run {
-                self.imageSNR = stats.snr
-                self.imageStarCount = stats.starCount
+            // Step 1b: Compute image stats once per image (skip on slider-only reprocess)
+            if await self.imageSNR == 0 {
+                let stats = STFCalculator.computeStats(from: imageForSTF)
+                await MainActor.run {
+                    self.imageSNR = stats.snr
+                    self.imageStarCount = stats.starCount
+                }
             }
 
             // Step 2: Compute gradient correction if strength > 0
@@ -621,8 +638,18 @@ class ViewerViewModel: ObservableObject {
             }
             postParams.darkLevel = dark
 
-            // Step 3: STF stretch (with gradient + dark applied in shader)
-            let stfParamsArray = STFCalculator.calculate(from: imageForSTF, targetBackground: stretch)
+            // Step 3: STF stretch — use cached params if stretch hasn't changed
+            let stfParamsArray: [STFParams]
+            if let cached = await self.cachedSTFParams, await self.cachedSTFStretch == stretch {
+                stfParamsArray = cached
+            } else {
+                let computed = STFCalculator.calculate(from: imageForSTF, targetBackground: stretch)
+                await MainActor.run {
+                    self.cachedSTFParams = computed
+                    self.cachedSTFStretch = stretch
+                }
+                stfParamsArray = computed
+            }
             guard let stfTexture = self.runSTFStretch(image: imageForSTF, stfParams: stfParamsArray, postParams: postParams, device: device) else {
                 await MainActor.run {
                     self.statusMessage = "Metal stretch error"
@@ -648,7 +675,14 @@ class ViewerViewModel: ObservableObject {
                 self.displayTexture = currentTexture
                 self.isReprocessing = false
                 self.isLoading = false
-                self.saveThumbnailIfNeeded()
+                // Save thumbnail only on first display (check file existence before texture readback)
+                if self.currentHistoryIndex < self.fileHistory.count {
+                    let entry = self.fileHistory[self.currentHistoryIndex]
+                    let thumbPath = Self.cacheDirectory.appendingPathComponent(entry.thumbnailFilename).path
+                    if !FileManager.default.fileExists(atPath: thumbPath) {
+                        self.saveThumbnailIfNeeded()
+                    }
+                }
             }
         }
     }
