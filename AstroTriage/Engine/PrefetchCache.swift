@@ -160,7 +160,7 @@ class PrefetchCache {
                             measuredStarCount: 0, totalStarCount: totalStarCount,
                             medianEccentricity: nil,
                             starDetails: [],
-                            starChainFraction: 0
+                            starChainFraction: 0, trailCandidateCount: 0, trailRejectCount: 0
                         )
                         Task { @MainActor in onStarMetrics(url, finalMetrics) }
                     }
@@ -338,7 +338,7 @@ class PrefetchCache {
                                 measuredStarCount: 0, totalStarCount: totalStarCount,
                                 medianEccentricity: nil,
                                 starDetails: [],
-                                starChainFraction: 0
+                                starChainFraction: 0, trailCandidateCount: 0, trailRejectCount: 0
                             )
                             Task { @MainActor in onStarMetrics(url, finalMetrics) }
                         }

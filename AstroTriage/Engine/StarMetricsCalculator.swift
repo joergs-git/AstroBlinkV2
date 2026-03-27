@@ -22,6 +22,11 @@ struct StarMetrics {
     // Tracking hops create chains of discrete dots — each dot looks round,
     // but the spatial pattern (many parallel short chains) is unmistakable.
     let starChainFraction: Double
+    // Number of detections initially flagged by RANSAC trail detection (0 = no trail found).
+    // Used for diagnostics — helps identify false positive trail detections.
+    let trailCandidateCount: Int
+    // Number of detections confirmed as trail after axis ratio verification (0 = false positive or no trail).
+    let trailRejectCount: Int
 }
 
 // Result of 2D moment analysis on a single star: eccentricity + position angle + axis ratio
@@ -99,8 +104,46 @@ enum StarMetricsCalculator {
         // This catches trails regardless of where they cross the image.
         let trailIndices = detectSatelliteTrail(stars: refinedStars, width: w, height: h)
         var trailPositions = Set<Int>()  // indices into refinedStars
-        for idx in trailIndices { trailPositions.insert(idx) }
-        let streakRejectCount = trailIndices.count
+        var streakRejectCount = trailIndices.count
+
+        // Verify trail candidates: real satellite trails have streak-like axis ratios (< 0.3).
+        // Galaxy knots, HII regions, and normal stars along coincidental lines have normal
+        // axis ratios (> 0.3). Without this check, extended objects like edge-on galaxies
+        // (M82, NGC 4565, NGC 891) cause false positive trail detections.
+        if !trailIndices.isEmpty {
+            var streakLikeCount = 0
+            var measuredCount = 0
+            for idx in trailIndices {
+                let star = refinedStars[idx]
+                let cx = Int(star.x.rounded())
+                let cy = Int(star.y.rounded())
+                let safeR = Int(preFilterAperture + bgOuterRadius)
+                guard cx - safeR >= 0, cx + safeR < w,
+                      cy - safeR >= 0, cy + safeR < h else { continue }
+                let bg = estimateBackground(
+                    ptr: ptr, channelOffset: channelOffset, width: w,
+                    cx: cx, cy: cy, innerR: bgInnerRadius, outerR: bgOuterRadius
+                )
+                if let shape = computeShape(
+                    ptr: ptr, channelOffset: channelOffset, width: w,
+                    cx: star.x, cy: star.y, aperture: preFilterAperture, background: bg
+                ) {
+                    measuredCount += 1
+                    // Streak-like = very elongated (low axis ratio < 0.3)
+                    // Real satellite trails: axis ratio typically < 0.1
+                    // Normal/trailed stars: axis ratio > 0.3
+                    if shape.axisRatio < 0.3 { streakLikeCount += 1 }
+                }
+            }
+            // If fewer than 30% of measurable trail candidates look like actual streaks,
+            // reject the entire trail detection as a false positive
+            if measuredCount >= 3 && Double(streakLikeCount) / Double(measuredCount) < 0.3 {
+                streakRejectCount = 0
+                // trailPositions stays empty — don't remove any stars
+            } else {
+                for idx in trailIndices { trailPositions.insert(idx) }
+            }
+        }
 
         // Filter stars: center crop + skip edge, saturated (strict for HFR/FWHM), crowded
         // Exclude trail detections from the filtered set
@@ -227,15 +270,18 @@ enum StarMetricsCalculator {
             medianEcc = nil
         }
 
-        // Correct total star count for satellite/plane trail contamination.
-        // When a trail is detected, the GPU atomic counter is unreliable — a single bright
-        // trail creates hundreds/thousands of false peaks. Use the count of verified real
-        // stars (trail detections already removed from `filtered` before center crop).
+        // Correct total star count for verified satellite/plane trail contamination.
+        // Subtract only the confirmed trail detections from the raw count. This preserves
+        // comparability with frames that have no trail detection (both use full-image counts).
+        // The previous approach of replacing with filtered.count (center-crop-only) caused
+        // false "zero/near-zero stars" garbage on frames with false positive trail detection,
+        // because filtered.count (~15% of rawTotal) is not comparable to rawTotal.
+        // For real trails: count may be slightly elevated, but trailing/eccentricity rules
+        // handle the actual quality issue. Elevated count alone won't trigger garbage.
         let rawTotal = totalStarCount ?? totalDetected
         let correctedTotal: Int
         if streakRejectCount > 0 {
-            // Satellite trail detected — GPU count is garbage, use verified stars only
-            correctedTotal = filtered.count
+            correctedTotal = max(filtered.count, rawTotal - streakRejectCount)
         } else {
             correctedTotal = rawTotal
         }
@@ -247,7 +293,9 @@ enum StarMetricsCalculator {
             totalStarCount: correctedTotal,
             medianEccentricity: medianEcc,
             starDetails: details,
-            starChainFraction: chainFraction
+            starChainFraction: chainFraction,
+            trailCandidateCount: trailIndices.count,
+            trailRejectCount: streakRejectCount
         )
     }
 

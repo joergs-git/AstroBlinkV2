@@ -42,6 +42,76 @@ final class BatchQualityAnalysisTests: XCTestCase {
         try analyzeSetup(name: "M82", path: setupDir)
     }
 
+    /// Diagnostic: Analyze satellite trail detection on M82 H-alpha frames.
+    /// Checks whether false positive trail detection causes star count drops.
+    /// Frame #98 (H #0005 at 01:45:54) was falsely classified as "zero/near-zero stars"
+    /// because satellite trail detection triggered on galaxy knots, dropping count from ~1150 to ~183.
+    func testM82_SatelliteTrailFalsePositive() throws {
+        let m82Dir = "/Volumes/ASTRO/RC12/M 82"
+        guard FileManager.default.fileExists(atPath: m82Dir) else {
+            throw XCTSkip("M82 data not available at \(m82Dir)")
+        }
+
+        // Frame #98 (the problematic one) and two neighbors for comparison
+        let targetFiles = [
+            "2026-03-18_M 82_01-42-53_RC12red08_ZWO ASI6200MM Pro_LIGHT_H_180.00s_#0004__bin1x1_gain100_O50_T-10.00c_FWHM-2.59.xisf",  // #97 neighbor
+            "2026-03-18_M 82_01-45-54_RC12red08_ZWO ASI6200MM Pro_LIGHT_H_180.00s_#0005__bin1x1_gain100_O50_T-10.00c_FWHM-2.53.xisf",  // #98 problematic
+            "2026-03-18_M 82_01-53-55_RC12red08_ZWO ASI6200MM Pro_LIGHT_H_180.00s_#0006__bin1x1_gain100_O50_T-10.00c_FWHM-2.70.xisf",  // #99 neighbor
+        ]
+
+        print("\n" + String(repeating: "=", count: 70))
+        print("  M82 SATELLITE TRAIL FALSE POSITIVE DIAGNOSTIC")
+        print(String(repeating: "=", count: 70))
+
+        var allStarCounts: [Int] = []
+
+        for filename in targetFiles {
+            let url = URL(fileURLWithPath: m82Dir + "/" + filename)
+            guard FileManager.default.fileExists(atPath: url.path) else {
+                print("  SKIP: \(filename) not found")
+                continue
+            }
+
+            let decodeResult = ImageDecoder.decode(url: url, device: device)
+            guard case .success(let decoded) = decodeResult else {
+                print("  DECODE FAILED: \(filename)")
+                continue
+            }
+
+            let channel = decoded.channelCount == 3 ? 1 : 0
+            let stars = previewGenerator.detectStarsFromImage(decoded, channel: channel)
+            let gpuStarCount = previewGenerator.lastTotalStarCount
+
+            let metrics = StarMetricsCalculator.measure(
+                stars: stars, fullResImage: decoded, channel: channel,
+                totalStarCount: gpuStarCount
+            )
+
+            let shortName = String(filename.prefix(80))
+            if let m = metrics {
+                print("  \(shortName)")
+                print("    GPU count: \(gpuStarCount ?? -1), measured: \(m.measuredStarCount), total: \(m.totalStarCount)")
+                print("    Trail RANSAC candidates: \(m.trailCandidateCount), verified rejects: \(m.trailRejectCount)")
+                print("    FWHM: \(String(format: "%.2f", m.medianFWHM)), HFR: \(String(format: "%.2f", m.medianHFR))")
+                print("    Ecc: \(m.medianEccentricity.map { String(format: "%.3f", $0) } ?? "nil")")
+                allStarCounts.append(m.totalStarCount)
+            } else {
+                print("  \(shortName): NO METRICS")
+            }
+        }
+
+        // Key assertion: all frames from same object/filter/night should have comparable star counts
+        // No frame should drop below 50% of the max (which would indicate false trail detection)
+        if allStarCounts.count >= 2 {
+            let maxCount = allStarCounts.max()!
+            let minCount = allStarCounts.min()!
+            let ratio = Double(minCount) / Double(maxCount)
+            print("\n  Star count range: \(minCount)–\(maxCount), ratio: \(String(format: "%.2f", ratio))")
+            XCTAssertGreaterThan(ratio, 0.5,
+                "Star counts vary too much (\(minCount) vs \(maxCount)) — possible false satellite trail detection")
+        }
+    }
+
     /// Analyze M82-January setup (64 images with tracking hops — should be flagged as garbage)
     func testAnalyzeM82January() throws {
         let setupDir = testDataRoot + "/M82-January"
