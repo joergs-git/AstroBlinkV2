@@ -31,8 +31,23 @@ struct AstroBlinkV2App: App {
                 .keyboardShortcut("o", modifiers: .command)
             }
 
-            // View menu: Columns visibility + Reset Settings
+            // View menu: Font size + Columns visibility + Reset Settings
             CommandGroup(after: .toolbar) {
+                Button("Increase Font Size") {
+                    NotificationCenter.default.post(name: .fontScaleIncrease, object: nil)
+                }
+                .keyboardShortcut("+", modifiers: .command)
+
+                Button("Decrease Font Size") {
+                    NotificationCenter.default.post(name: .fontScaleDecrease, object: nil)
+                }
+                .keyboardShortcut("-", modifiers: .command)
+
+                Button("Reset Font Size") {
+                    NotificationCenter.default.post(name: .fontScaleReset, object: nil)
+                }
+                .keyboardShortcut("0", modifiers: .command)
+
                 Divider()
 
                 Button("Reset Settings to Defaults") {
@@ -65,7 +80,7 @@ struct AstroBlinkV2App: App {
 
                 Divider()
 
-                Button("What's New in v4.0.0") {
+                Button("What's New") {
                     ReleaseNotesWindowController.shared.show()
                 }
             }
@@ -312,6 +327,9 @@ extension Notification.Name {
     static let showBenchmarkStats = Notification.Name("showBenchmarkStats")
     static let showBatchRename = Notification.Name("showBatchRename")
     static let showAIsaac = Notification.Name("showAIsaac")
+    static let fontScaleIncrease = Notification.Name("fontScaleIncrease")
+    static let fontScaleDecrease = Notification.Name("fontScaleDecrease")
+    static let fontScaleReset = Notification.Name("fontScaleReset")
 }
 
 // AppDelegate extension for help window

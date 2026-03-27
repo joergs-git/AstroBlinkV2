@@ -218,6 +218,7 @@ class HeaderInspectorModel: ObservableObject {
 
 struct HeaderScrollView: NSViewRepresentable {
     let entries: [HeaderEntry]
+    var fontScale: CGFloat = 1.0
 
     func makeNSView(context: Context) -> NSScrollView {
         let scrollView = NSScrollView()
@@ -262,6 +263,11 @@ struct HeaderScrollView: NSViewRepresentable {
         let savedOffset = scrollView.contentView.bounds.origin
 
         context.coordinator.entries = entries
+        context.coordinator.fontScale = fontScale
+        let scaledRowHeight = round(22 * fontScale)
+        if let tv = context.coordinator.tableView, tv.rowHeight != scaledRowHeight {
+            tv.rowHeight = scaledRowHeight
+        }
         context.coordinator.tableView?.reloadData()
 
         // Restore scroll position after reload (AppKit preserves this naturally,
@@ -278,6 +284,7 @@ struct HeaderScrollView: NSViewRepresentable {
     class Coordinator: NSObject, NSTableViewDelegate, NSTableViewDataSource {
         var entries: [HeaderEntry] = []
         weak var tableView: NSTableView?
+        var fontScale: CGFloat = 1.0
 
         func numberOfRows(in tableView: NSTableView) -> Int {
             entries.count
@@ -290,7 +297,7 @@ struct HeaderScrollView: NSViewRepresentable {
             let isEven = row % 2 == 0
 
             let cell = NSTextField(labelWithString: "")
-            cell.font = NSFont.monospacedSystemFont(ofSize: 12, weight: isImportant ? .semibold : .regular)
+            cell.font = NSFont.monospacedSystemFont(ofSize: round(12 * fontScale), weight: isImportant ? .semibold : .regular)
             cell.drawsBackground = true
             cell.isSelectable = true
             cell.lineBreakMode = .byTruncatingTail
@@ -314,7 +321,7 @@ struct HeaderScrollView: NSViewRepresentable {
         }
 
         func tableView(_ tableView: NSTableView, heightOfRow row: Int) -> CGFloat {
-            22
+            round(22 * fontScale)
         }
 
         // Copy selected rows as "KEY = VALUE" lines (Cmd+C)
@@ -340,13 +347,16 @@ struct HeaderScrollView: NSViewRepresentable {
 
 struct HeaderInspectorContentView: View {
     @ObservedObject var model: HeaderInspectorModel
+    @Environment(\.fontScale) private var fontScale
+
+    private func fs(_ base: CGFloat) -> CGFloat { round(base * fontScale) }
 
     var body: some View {
         VStack(spacing: 0) {
             // Filename header
             HStack {
                 Text(model.filename)
-                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                    .font(.system(size: fs(12), weight: .semibold, design: .monospaced))
                     .lineLimit(1)
                     .truncationMode(.middle)
 
@@ -360,13 +370,13 @@ struct HeaderInspectorContentView: View {
                     NSPasteboard.general.setString(text, forType: .string)
                 }) {
                     Image(systemName: "doc.on.doc")
-                        .font(.system(size: 11))
+                        .font(.system(size: fs(11)))
                 }
                 .buttonStyle(.plain)
                 .help("Copy all headers to clipboard")
 
                 Text("\(model.headers.count) keywords")
-                    .font(.system(size: 12))
+                    .font(.system(size: fs(12)))
                     .foregroundColor(.secondary)
             }
             .padding(.horizontal, 12)
@@ -377,17 +387,17 @@ struct HeaderInspectorContentView: View {
             HStack {
                 Image(systemName: "magnifyingglass")
                     .foregroundColor(.secondary)
-                    .font(.system(size: 12))
+                    .font(.system(size: fs(12)))
 
                 TextField("Filter keywords...", text: $model.searchText)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 12, design: .monospaced))
+                    .font(.system(size: fs(12), design: .monospaced))
 
                 if !model.searchText.isEmpty {
                     Button(action: { model.searchText = "" }) {
                         Image(systemName: "xmark.circle.fill")
                             .foregroundColor(.secondary)
-                            .font(.system(size: 12))
+                            .font(.system(size: fs(12)))
                     }
                     .buttonStyle(.plain)
                 }
@@ -402,11 +412,11 @@ struct HeaderInspectorContentView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     HStack {
                         Text("Quality Metrics")
-                            .font(.system(size: 11, weight: .semibold))
+                            .font(.system(size: fs(11), weight: .semibold))
                             .foregroundColor(Color(NSColor.systemPurple))
                         Button(action: { model.showQualityHelp.toggle() }) {
                             Image(systemName: "questionmark.circle")
-                                .font(.system(size: 10))
+                                .font(.system(size: fs(10)))
                                 .foregroundColor(Color(NSColor.systemPurple).opacity(0.6))
                         }
                         .buttonStyle(.plain)
@@ -416,16 +426,16 @@ struct HeaderInspectorContentView: View {
                         )) {
                             VStack(alignment: .leading, spacing: 6) {
                                 Text("Quality Metrics Guide")
-                                    .font(.system(size: 12, weight: .bold))
+                                    .font(.system(size: fs(12), weight: .bold))
                                     .padding(.bottom, 2)
 
                                 Text("Z-scores show how this frame compares to its group\n(same filter + target + exposure).")
-                                    .font(.system(size: 11))
+                                    .font(.system(size: fs(11)))
 
                                 Divider()
 
                                 Text("\u{03C3} = standard deviation from group average\n+1.0\u{03C3} = one sigma better than average\n\u{2212}1.0\u{03C3} = one sigma worse than average")
-                                    .font(.system(size: 11, design: .monospaced))
+                                    .font(.system(size: fs(11), design: .monospaced))
 
                                 Divider()
 
@@ -448,11 +458,11 @@ struct HeaderInspectorContentView: View {
                     ForEach(Array(model.qualityMetrics.enumerated()), id: \.offset) { _, metric in
                         HStack(alignment: .top) {
                             Text(metric.label)
-                                .font(.system(size: 11, weight: .medium, design: .monospaced))
+                                .font(.system(size: fs(11), weight: .medium, design: .monospaced))
                                 .foregroundColor(Color(NSColor.systemPurple))
                                 .frame(width: 90, alignment: .trailing)
                             Text(metric.value)
-                                .font(.system(size: 11, design: .monospaced))
+                                .font(.system(size: fs(11), design: .monospaced))
                                 .foregroundColor(Color(NSColor.labelColor))
                                 .lineLimit(2)
                                 .fixedSize(horizontal: false, vertical: true)
@@ -469,13 +479,13 @@ struct HeaderInspectorContentView: View {
             // Always mounted (never conditionally removed) so scroll position persists
             // across image navigation. Loading/empty states overlay on top.
             ZStack {
-                HeaderScrollView(entries: model.filteredHeaders)
+                HeaderScrollView(entries: model.filteredHeaders, fontScale: fontScale)
 
                 if model.isLoading {
                     VStack {
                         Spacer()
                         ProgressView("Reading headers...")
-                            .font(.system(size: 12))
+                            .font(.system(size: fs(12)))
                         Spacer()
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -484,7 +494,7 @@ struct HeaderInspectorContentView: View {
                     VStack {
                         Spacer()
                         Text(model.searchText.isEmpty ? "No headers found" : "No matching keywords")
-                            .font(.system(size: 12))
+                            .font(.system(size: fs(12)))
                             .foregroundColor(.secondary)
                         Spacer()
                     }
@@ -499,10 +509,10 @@ struct HeaderInspectorContentView: View {
     private func metricHelpRow(_ name: String, _ desc: String, _ direction: String) -> some View {
         HStack(alignment: .top, spacing: 4) {
             Text(name)
-                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                .font(.system(size: fs(11), weight: .semibold, design: .monospaced))
                 .frame(width: 85, alignment: .trailing)
             Text("\(desc) (\(direction))")
-                .font(.system(size: 11))
+                .font(.system(size: fs(11)))
                 .foregroundColor(.secondary)
         }
     }

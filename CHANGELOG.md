@@ -4,6 +4,22 @@ All notable changes to AstroBlink & AIsaac will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [5.4.0] — 2026-03-27
+
+### Added
+- **Font size scaling (Cmd+/Cmd-/Cmd+0)** — Adjustable UI font size across file list, header inspector, session overview, and compare window. Persisted via iCloud sync. Range 0.7x–1.5x
+- **Auto-Mark toolbar button** — Culling autopilot promoted to main toolbar with colorful gradient icon (green→orange→red). One-click access to Conservative/Balanced/Aggressive auto-marking
+- **Toolbar reorganization** — Buttons grouped by function with visual dividers: File ops | Actions | Stacking | Display settings | Search. Toggle labels reformatted to two-line layout
+
+### Fixed
+- **False satellite trail detection on extended objects** — RANSAC collinear detection falsely triggered on galaxy knots in edge-on galaxies (M82, NGC 4565, NGC 891), dropping star count from ~1150 to ~183 and causing "zero/near-zero stars" garbage classification. New axis ratio verification rejects false positives. Count correction now subtracts only trail detections instead of replacing with center-crop-only count
+- **"What's New" button version drift** — Removed hardcoded version from button label. Release notes data is the single source of truth
+
+### Changed
+- **Benchmark button color** — Green → blue for visual differentiation from quality indicators
+
+---
+
 ## [5.3.0] — 2026-03-23
 
 ### Added

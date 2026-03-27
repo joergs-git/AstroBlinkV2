@@ -33,6 +33,13 @@ class ReleaseNotesWindowController {
 // MARK: - Release notes data (shared between view and copy)
 
 private let allReleases: [(version: String, date: String, items: [(ReleaseNotesView.ChangeType, String, String)])] = [
+    ("5.4.0", "March 27, 2026", [
+        (.added, "Font Size Scaling", "Cmd+/Cmd-/Cmd+0 to adjust UI font size across file list, inspector, session overview, and compare window. Persisted via iCloud."),
+        (.added, "Auto-Mark Toolbar Button", "Culling autopilot promoted to main toolbar with colorful gradient icon. One-click Conservative/Balanced/Aggressive auto-marking."),
+        (.added, "Toolbar Reorganization", "Buttons grouped by function with visual dividers. Toggle labels reformatted to two-line layout."),
+        (.fixed, "False Satellite Trail Detection", "Edge-on galaxies (M82, NGC 4565) no longer trigger false 'zero/near-zero stars' garbage. Axis ratio verification rejects false positives."),
+        (.fixed, "What's New Version Drift", "Button no longer shows hardcoded version number."),
+    ]),
     ("5.3.0", "March 23, 2026", [
         (.added, "Community Detection Learning", "Opt-in anonymous sharing of quality metrics to improve detection for everyone. No filenames, images, or personal data shared — only metric averages like FWHM, SNR, and retention rate."),
         (.added, "Instant Community Calibration", "New equipment gets instant quality baselines from the community — no 30-frame warmup needed. Gray lock badge for community-locked frames."),

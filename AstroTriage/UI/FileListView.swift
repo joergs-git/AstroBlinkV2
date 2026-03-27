@@ -109,6 +109,10 @@ struct FileListView: NSViewRepresentable {
         let nightModeChanged = coordinator.lastNightMode != viewModel.nightMode
         coordinator.lastNightMode = viewModel.nightMode
 
+        // Track font scale changes — update row height and force reload
+        let fontScaleChanged = coordinator.lastFontScale != viewModel.fontScale
+        coordinator.lastFontScale = viewModel.fontScale
+
         // Update the displayed images snapshot: apply hide/show-only-marked + column filter
         let isFiltered = viewModel.hideMarked || viewModel.showOnlyMarked || !viewModel.filterText.isEmpty
         coordinator.displayedImages = isFiltered ? viewModel.visibleImages : viewModel.images
@@ -156,10 +160,15 @@ struct FileListView: NSViewRepresentable {
             scrollView.drawsBackground = true
         }
 
+        // Apply font scale to row height
+        if fontScaleChanged {
+            tableView.rowHeight = round(22 * viewModel.fontScale)
+        }
+
         let newCount = coordinator.displayedImages.count
         let currentCount = tableView.numberOfRows
 
-        if currentCount != newCount || viewModel.needsTableRefresh || nightModeChanged {
+        if currentCount != newCount || viewModel.needsTableRefresh || nightModeChanged || fontScaleChanged {
             // Detect initial load (table was empty, now has rows) to grab keyboard focus
             let wasEmpty = currentCount == 0
 
@@ -292,6 +301,7 @@ struct FileListView: NSViewRepresentable {
         var viewModel: TriageViewModel
         weak var tableView: NSTableView?
         var lastNightMode: Bool = false
+        var lastFontScale: CGFloat = 1.0
 
         init(viewModel: TriageViewModel) {
             self.viewModel = viewModel
@@ -390,7 +400,7 @@ struct FileListView: NSViewRepresentable {
                 let textField = NSTextField(labelWithString: "")
                 textField.translatesAutoresizingMaskIntoConstraints = false
                 textField.lineBreakMode = .byTruncatingTail
-                textField.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
+                textField.font = .monospacedSystemFont(ofSize: round(11 * lastFontScale), weight: .regular)
                 textField.isSelectable = true
                 cellView.addSubview(textField)
                 cellView.textField = textField
@@ -421,6 +431,12 @@ struct FileListView: NSViewRepresentable {
             }
 
             cellView.textField?.stringValue = value
+
+            // Update font size for scale changes (reused cells keep old font)
+            let scaledFontSize = round(11 * lastFontScale)
+            if cellView.textField?.font?.pointSize != scaledFontSize {
+                cellView.textField?.font = .monospacedSystemFont(ofSize: scaledFontSize, weight: .regular)
+            }
 
             // Update metric bar: longer = better, red (bad) → green (good)
             if isMetricCol, let numVal = ColumnDefinition.numericValue(for: colId, from: entry),
@@ -733,6 +749,12 @@ struct FileListView: NSViewRepresentable {
             }
 
             textField.stringValue = entry.filename
+            // Update font for scale changes
+            let scaledFilenameFont = round(12 * lastFontScale)
+            if textField.font?.pointSize != scaledFilenameFont {
+                textField.font = .monospacedSystemFont(ofSize: scaledFilenameFont, weight: .regular)
+                indicator.font = .systemFont(ofSize: round(9 * lastFontScale))
+            }
 
             // Status indicator: batch-modified > rotated > cached
             let isRotated = rotatedURLs.contains(entry.url)

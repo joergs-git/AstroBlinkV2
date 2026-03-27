@@ -36,6 +36,7 @@ class TriageViewModel: ObservableObject {
 
     // Night mode: black background + red UI for dark-adapted vision
     @Published var nightMode: Bool = false
+    @Published var fontScale: CGFloat = 1.0  // UI font scale (0.8 = small, 1.0 = default, 1.2 = large)
 
     // Debayer toggle: when ON, OSC (one-shot-color) images are debayered to RGB
     // Default OFF for faster caching. Only relevant when session has OSC images.
@@ -460,6 +461,7 @@ class TriageViewModel: ObservableObject {
         if let v = AppSettings.loadBool(for: .skipMarked) { skipMarked = v }
         if let v = AppSettings.loadBool(for: .hideMarked) { hideMarked = v }
         if let v = AppSettings.loadBool(for: .autoMeridian) { autoMeridianEnabled = v }
+        if let v = AppSettings.loadFloat(for: .fontScale) { fontScale = CGFloat(v) }
 
         // Start lightweight system stats polling (CPU + memory every 2s)
         startStatsPolling()

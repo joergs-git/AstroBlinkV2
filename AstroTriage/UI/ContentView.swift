@@ -59,30 +59,42 @@ struct ContentView: View {
             VStack(spacing: 2) {
                 // Row 1: Icon buttons + toggles + stats
                 HStack(spacing: 4) {
+                    // ── Group 1: File operations ──
                     sfToolbarButton("folder", "Open", "Open Folder (⌘O)") { viewModel.openFolder() }
                     sfToolbarButton("list.bullet.rectangle", "Inspector", "Show FITS/XISF header keywords for selected image (I)") { viewModel.toggleHeaderInspector() }
                     sfToolbarButton("chart.bar", "Session", "Session overview — group stats by filter, night, and target") {
                         viewModel.showSessionOverview.toggle()
                     }
+
+                    toolbarDivider
+
+                    // ── Group 2: Actions ──
+                    autoMarkToolbarButton
+                    aisaacToolbarButton
+                    sfToolbarButton("square.and.arrow.up", "SSWEIGHT\nExport", "Export quality weights to FITS/XISF headers for WBPP.\nAlso creates CSV backup.") {
+                        viewModel.exportSSWEIGHT()
+                    }
                     sfToolbarButton("trash", "Delete", "Move spacebar-marked files to _predel/ staging folder (⌘⌫)\nFiles are NOT permanently deleted") { viewModel.moveMarkedToPreDelete() }
                     if viewModel.canUndoPreDelete {
                         sfToolbarButton("arrow.uturn.backward", "Undo", "Undo last Pre-Delete (⌘Z)") { viewModel.undoPreDelete() }
                     }
+
+                    toolbarDivider
+
+                    // ── Group 3: Stacking ──
                     sfToolbarButton("bolt.fill", "Lightspeed\nStacker", "GPU-accelerated stacking with outlier rejection.\nSelect 3+ images first.") {
                         viewModel.startQuickStackV2()
                     }
                     sfToolbarButton("paintpalette.fill", "Color\nCombine", "Combine mono filter stacks into RGB color image.\nNeeds 2+ filters with 3+ frames each.") {
                         viewModel.startColorCombine()
                     }
-                    sfToolbarButton("square.and.arrow.up", "SSWEIGHT\nExport", "Export quality weights to FITS/XISF headers for WBPP.\nAlso creates CSV backup.") {
-                        viewModel.exportSSWEIGHT()
-                    }
-                    aisaacToolbarButton
+
                     toolbarDivider
 
+                    // ── Group 4: Display settings ──
                     // Apply All toggle: bakes current settings into all cached previews
                     VStack(spacing: 2) {
-                        Toggle("Apply All", isOn: Binding(
+                        Toggle("Apply\nAll", isOn: Binding(
                             get: { viewModel.applyAllEnabled },
                             set: { _ in viewModel.toggleApplyAll() }
                         ))
@@ -91,7 +103,7 @@ struct ContentView: View {
                         .tint(.blue)
                         .help("Apply current settings to all cached previews")
                     }
-                    .frame(width: 95)
+                    .frame(width: 90)
 
                     // Debayer toggle
                     if viewModel.hasOSCImages {
@@ -123,7 +135,7 @@ struct ContentView: View {
 
                     // Auto Meridian toggle — rotates images across meridian flip
                     VStack(spacing: 2) {
-                        Toggle("MeridianFlip", isOn: Binding(
+                        Toggle("Meridian\nFlip", isOn: Binding(
                             get: { viewModel.autoMeridianEnabled },
                             set: { _ in viewModel.toggleAutoMeridian() }
                         ))
@@ -132,10 +144,11 @@ struct ContentView: View {
                         .tint(.purple)
                         .help("Auto-rotate images across meridian flip for consistent orientation")
                     }
-                    .frame(width: 120)
+                    .frame(width: 95)
 
                     toolbarDivider
 
+                    // ── Group 5: Search ──
                     // Spotlight-style search: filters file list in real time
                     // Supports plain text or "column:value" (e.g. "filter:Ha", "fwhm:>4")
                     HStack(spacing: 4) {
@@ -233,6 +246,7 @@ struct ContentView: View {
 
                     Spacer()
 
+                    // ── Right side: Night, Benchmark, Help ──
                     // Night mode toggle
                     VStack(spacing: 2) {
                         Toggle("Night", isOn: Binding(
@@ -246,7 +260,7 @@ struct ContentView: View {
                     }
                     .frame(width: 80)
 
-                    sfToolbarButton("gauge.with.dots.needle.67percent", "Benchmark", "Session load & stacking performance stats.\nCompare with community leaderboard.", iconColor: Color(red: 0.2, green: 0.55, blue: 0.2)) {
+                    sfToolbarButton("gauge.with.dots.needle.67percent", "Benchmark", "Session load & stacking performance stats.\nCompare with community leaderboard.", iconColor: Color(red: 0.25, green: 0.45, blue: 0.85)) {
                         NotificationCenter.default.post(name: .showBenchmarkStats, object: nil)
                     }
 
@@ -318,6 +332,7 @@ struct ContentView: View {
                 // LEFT: Header Inspector panel
                 if viewModel.showInspector {
                     HeaderInspectorContentView(model: viewModel.headerInspectorModel)
+                        .environment(\.fontScale, viewModel.fontScale)
                         .frame(width: 420)
                         .background(nightBg)
 
@@ -688,6 +703,7 @@ struct ContentView: View {
                     Rectangle().fill(nightDivider).frame(width: 1)
 
                     SessionOverviewContentView(model: viewModel.sessionOverviewModel)
+                        .environment(\.fontScale, viewModel.fontScale)
                         .frame(width: 480)
                         .background(nightBg)
                 }
@@ -721,6 +737,21 @@ struct ContentView: View {
         }
         // AIsaac state observers extracted to reduce type-check pressure
         .modifier(AIsaacStateObserver(viewModel: viewModel))
+        .onReceive(NotificationCenter.default.publisher(for: .fontScaleIncrease)) { _ in
+            viewModel.fontScale = min(1.5, viewModel.fontScale + 0.1)
+            AppSettings.saveFloat(Float(viewModel.fontScale), for: .fontScale)
+            viewModel.needsTableRefresh = true
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .fontScaleDecrease)) { _ in
+            viewModel.fontScale = max(0.7, viewModel.fontScale - 0.1)
+            AppSettings.saveFloat(Float(viewModel.fontScale), for: .fontScale)
+            viewModel.needsTableRefresh = true
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .fontScaleReset)) { _ in
+            viewModel.fontScale = 1.0
+            AppSettings.saveFloat(1.0, for: .fontScale)
+            viewModel.needsTableRefresh = true
+        }
         .onReceive(NotificationCenter.default.publisher(for: .resetSettingsRequest)) { _ in
             let alert = NSAlert()
             alert.messageText = "Reset all settings to defaults?"
@@ -837,6 +868,38 @@ struct ContentView: View {
     }
 
     // AIsaac toolbar button with continuous sparkle animation
+    // Auto-Mark toolbar button — opens the 3-level autopilot popover
+    @State private var showAutoMarkPopover = false
+    private var autoMarkToolbarButton: some View {
+        Button(action: { showAutoMarkPopover.toggle() }) {
+            VStack(spacing: 2) {
+                Image(systemName: "wand.and.stars")
+                    .font(.system(size: 24, weight: .light))
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [.green, .orange, .red],
+                            startPoint: .topLeading, endPoint: .bottomTrailing
+                        )
+                    )
+                Spacer(minLength: 0)
+                Text("Auto-Mark")
+                    .font(.system(size: 8, weight: .medium))
+                    .foregroundColor(nightFgDim)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(width: 56, height: 48)
+        }
+        .buttonStyle(.plain)
+        .help("Auto-mark frames for deletion — Conservative (Nebula), Balanced, or Aggressive (Stars)")
+        .contentShape(Rectangle())
+        .popover(isPresented: $showAutoMarkPopover, arrowEdge: .bottom) {
+            AutoMarkPopover(viewModel: viewModel, isPresented: $showAutoMarkPopover)
+                .frame(width: 320)
+        }
+    }
+
     @State private var aisaacGlow: Bool = false
     private var aisaacToolbarButton: some View {
         Button(action: {

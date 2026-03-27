@@ -1,5 +1,37 @@
 // v5.1.3
 import Foundation
+import SwiftUI
+
+// Environment key for global font scale factor (Cmd+/Cmd- adjustable)
+private struct FontScaleKey: EnvironmentKey {
+    static let defaultValue: CGFloat = 1.0
+}
+
+extension EnvironmentValues {
+    var fontScale: CGFloat {
+        get { self[FontScaleKey.self] }
+        set { self[FontScaleKey.self] = newValue }
+    }
+}
+
+// View modifier that scales all .font(.system(size:)) calls via environment
+extension View {
+    /// Apply a scaled system font using the environment font scale
+    func scaledFont(size: CGFloat, weight: Font.Weight = .regular, design: Font.Design = .default) -> some View {
+        modifier(ScaledFontModifier(baseSize: size, weight: weight, design: design))
+    }
+}
+
+private struct ScaledFontModifier: ViewModifier {
+    @Environment(\.fontScale) private var fontScale
+    let baseSize: CGFloat
+    let weight: Font.Weight
+    let design: Font.Design
+
+    func body(content: Content) -> some View {
+        content.font(.system(size: round(baseSize * fontScale), weight: weight, design: design))
+    }
+}
 
 // Centralized settings wrapper with iCloud sync via NSUbiquitousKeyValueStore.
 // All settings sync across devices automatically when iCloud is available.
@@ -24,6 +56,7 @@ struct AppSettings {
         case sessionCount         // Int — number of sessions opened (for App Store review prompt)
         case hideSplash           // Bool — never show splash screen on launch
         case communityLearning    // Bool — opt-in to community detection learning (default: off)
+        case fontScale            // Float — UI font scale factor (1.0 = default)
     }
 
     // Start observing iCloud changes (call once at app launch)

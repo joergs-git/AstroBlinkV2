@@ -1,5 +1,17 @@
 # Lessons Learned
 
+## [2026-03-27] — Satellite trail RANSAC fires false positives on extended objects
+- **Mistake:** RANSAC collinear detection (8-point minimum) triggered on galaxy knots in edge-on galaxies like M82, dropping star count from ~1150 to ~183 via `correctedTotal = filtered.count` (center-crop only, not comparable to full-image GPU count).
+- **Root cause:** Galaxy structure creates 8+ collinear bright regions within 5px tolerance. The count correction used center-crop-only count (apples) vs full-image count (oranges). No shape verification on trail candidates.
+- **Rule:** After RANSAC trail detection, always verify candidates have streak-like axis ratios (< 0.3). Normal stars/galaxy knots have ratio > 0.3. Never replace full-image count with center-crop count — subtract trail detections instead.
+- **Applies to:** StarMetricsCalculator, any collinear detection, star count pipeline
+
+## [2026-03-27] — Hardcoded version strings in UI create drift
+- **Mistake:** "What's New in v4.0.0" button label was hardcoded but release notes data was already at v5.3.0.
+- **Root cause:** Version string in button label was set once and never updated during subsequent releases.
+- **Rule:** Never hardcode version numbers in UI button labels. Use version-agnostic text ("What's New") and let the data array be the single source of truth.
+- **Applies to:** Any UI text referencing version numbers, release notes, about screens
+
 ## [2026-03-19] — Always verify scoring changes with BOTH batch test AND app diagnostics
 - **Mistake:** Changed z-score thresholds and rescue rules, verified only via batch test (19% trash). But app still showed 42% trash because the app's star detection pipeline produced different trailing scores, causing 20 false-positive "elongation" flags on the BEST frames.
 - **Root cause:** Batch test and app use different code paths for star detection (batch: standalone PreviewGenerator; app: PrefetchCache pipeline). Trailing consensus analysis is sensitive to small differences in star positions/eccentricities.

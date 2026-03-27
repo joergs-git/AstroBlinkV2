@@ -459,6 +459,9 @@ class SessionOverviewModel: ObservableObject {
 struct SessionOverviewContentView: View {
     @ObservedObject var model: SessionOverviewModel
     @State private var copied = false
+    @Environment(\.fontScale) private var fontScale
+
+    private func fs(_ base: CGFloat) -> CGFloat { round(base * fontScale) }
 
     private var hasMultipleObjects: Bool {
         Set(model.rows.map { $0.object }).count > 1
@@ -475,7 +478,7 @@ struct SessionOverviewContentView: View {
 
                 if model.rows.isEmpty {
                     Text("No session loaded")
-                        .font(.system(size: 12))
+                        .font(.system(size: fs(12)))
                         .foregroundColor(.secondary)
                         .padding(.vertical, 12)
                 } else {
@@ -499,7 +502,7 @@ struct SessionOverviewContentView: View {
                         Text("Total")
                             .frame(width: 55, alignment: .trailing)
                     }
-                    .font(.system(size: 12, weight: .bold, design: .monospaced))
+                    .font(.system(size: fs(12), weight: .bold, design: .monospaced))
                     .foregroundColor(.secondary)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 3)
@@ -537,7 +540,7 @@ struct SessionOverviewContentView: View {
                                     .frame(width: 55, alignment: .trailing)
                                     .fontWeight(.bold)
                             }
-                            .font(.system(size: 12, design: .monospaced))
+                            .font(.system(size: fs(12), design: .monospaced))
                             .foregroundColor(.accentColor)
                             .padding(.horizontal, 10)
                             .padding(.vertical, 4)
@@ -557,11 +560,11 @@ struct SessionOverviewContentView: View {
                     // Section header with help button
                     HStack {
                         Text("Quality Overview")
-                            .font(.system(size: 12, weight: .bold, design: .monospaced))
+                            .font(.system(size: fs(12), weight: .bold, design: .monospaced))
                             .foregroundColor(.secondary)
                         Button(action: showQualityHelp) {
                             Image(systemName: "questionmark.circle")
-                                .font(.system(size: 13))
+                                .font(.system(size: fs(13)))
                                 .foregroundColor(.secondary)
                         }
                         .buttonStyle(.plain)
@@ -597,7 +600,7 @@ struct SessionOverviewContentView: View {
                         Text("S")
                             .frame(width: 36)
                     }
-                    .font(.system(size: 12, weight: .bold, design: .monospaced))
+                    .font(.system(size: fs(12), weight: .bold, design: .monospaced))
                     .foregroundColor(.secondary)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 3)
@@ -655,7 +658,7 @@ struct SessionOverviewContentView: View {
                                     Text("")
                                         .frame(width: 36)
                                 }
-                                .font(.system(size: 12, design: .monospaced))
+                                .font(.system(size: fs(12), design: .monospaced))
                                 .foregroundColor(.accentColor)
                                 .padding(.horizontal, 10)
                                 .padding(.vertical, 4)
@@ -674,14 +677,14 @@ struct SessionOverviewContentView: View {
             HStack(alignment: .top, spacing: 6) {
                 ScrollView {
                     Text(model.generateFactSheet())
-                        .font(.system(size: 11, design: .monospaced))
+                        .font(.system(size: fs(11), design: .monospaced))
                         .foregroundColor(.secondary)
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 Button(action: copyFactSheet) {
                     Image(systemName: copied ? "checkmark.circle.fill" : "doc.on.doc")
-                        .font(.system(size: 14))
+                        .font(.system(size: fs(14)))
                         .foregroundColor(copied ? .green : .accentColor)
                     }
                     .buttonStyle(.plain)
@@ -788,7 +791,7 @@ struct SessionOverviewContentView: View {
                 .frame(width: 55, alignment: .trailing)
                 .foregroundColor(.primary)
         }
-        .font(.system(size: 12, design: .monospaced))
+        .font(.system(size: fs(12), design: .monospaced))
         .padding(.horizontal, 10)
         .padding(.vertical, 3)
     }
@@ -842,7 +845,7 @@ struct SessionOverviewContentView: View {
             miniBar(fraction: snrFraction, color: snrColor(row.avgSNR))
                 .frame(width: 36)
         }
-        .font(.system(size: 12, design: .monospaced))
+        .font(.system(size: fs(12), design: .monospaced))
         .padding(.horizontal, 10)
         .padding(.vertical, 3)
     }

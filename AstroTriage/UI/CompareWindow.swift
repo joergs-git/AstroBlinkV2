@@ -152,7 +152,9 @@ enum CompareWindowController {
                     consensusPA: selConsensusPA,
                     syncState: syncState
                 )
-                let hostingView = NSHostingView(rootView: view)
+                // Load font scale from persisted settings
+                let savedScale = AppSettings.loadFloat(for: .fontScale).map { CGFloat($0) } ?? 1.0
+                let hostingView = NSHostingView(rootView: view.environment(\.fontScale, savedScale))
 
                 // Open maximized on the main screen
                 let screenFrame = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1920, height: 1080)
@@ -183,6 +185,9 @@ struct CompareView: View {
     let problemStars: [(x: CGFloat, y: CGFloat, ecc: Double, pa: Double?, axisRatio: Double?)]
     let consensusPA: Double?
     @ObservedObject var syncState: SyncedZoomState
+    @Environment(\.fontScale) private var fontScale
+
+    private func fs(_ base: CGFloat) -> CGFloat { round(base * fontScale) }
     @State private var showStarOverlay: Bool = true
 
     var body: some View {
@@ -193,7 +198,7 @@ struct CompareView: View {
                     SyncedZoomableView(texture: leftTexture, syncState: syncState)
                         .id("compare-left")
                     Text(leftLabel)
-                        .font(.system(size: 11, design: .monospaced))
+                        .font(.system(size: fs(11), design: .monospaced))
                         .foregroundColor(.green)
                         .multilineTextAlignment(.center)
                         .lineLimit(2)
@@ -215,7 +220,7 @@ struct CompareView: View {
                     )
                     .id("compare-right")
                     Text(rightLabel)
-                        .font(.system(size: 11, design: .monospaced))
+                        .font(.system(size: fs(11), design: .monospaced))
                         .foregroundColor(.orange)
                         .multilineTextAlignment(.center)
                         .lineLimit(2)
@@ -229,7 +234,7 @@ struct CompareView: View {
             if !whyWorseText.isEmpty {
                 HStack(spacing: 6) {
                     Image(systemName: "info.circle.fill")
-                        .font(.system(size: 11))
+                        .font(.system(size: fs(11)))
                         .foregroundColor(.orange)
                     // Style recommendation keywords: KEEP=green bold, DELETE=red bold, REVIEW=orange bold
                     styledWhyWorse(whyWorseText)
@@ -247,7 +252,7 @@ struct CompareView: View {
                         Image(systemName: "arrow.counterclockwise")
                         Text("Reset Zoom")
                     }
-                    .font(.system(size: 11, design: .monospaced))
+                    .font(.system(size: fs(11), design: .monospaced))
                 }
                 .buttonStyle(.bordered).controlSize(.small)
                 .help("Reset zoom and pan to fit-to-view")
@@ -257,9 +262,9 @@ struct CompareView: View {
                     Toggle(isOn: $showStarOverlay) {
                         HStack(spacing: 3) {
                             Image(systemName: "circle.circle")
-                                .font(.system(size: 11))
+                                .font(.system(size: fs(11)))
                             Text("Stars (\(problemStars.count))")
-                                .font(.system(size: 11, design: .monospaced))
+                                .font(.system(size: fs(11), design: .monospaced))
                         }
                     }
                     .toggleStyle(.switch).controlSize(.small)
@@ -270,7 +275,7 @@ struct CompareView: View {
                 Spacer()
 
                 Text("Click-drag to zoom \u{2022} Scroll to pan \u{2022} Double-click to reset")
-                    .font(.system(size: 10, design: .monospaced))
+                    .font(.system(size: fs(10), design: .monospaced))
                     .foregroundColor(.secondary)
             }
             .padding(.horizontal, 8).padding(.vertical, 4)
@@ -283,7 +288,7 @@ struct CompareView: View {
     private func styledWhyWorse(_ text: String) -> Text {
         // Split on the arrow marker that precedes the recommendation
         guard let arrowRange = text.range(of: "\u{2192} ") else {
-            return Text(text).font(.system(size: 13, design: .monospaced)).foregroundColor(.secondary)
+            return Text(text).font(.system(size: fs(13), design: .monospaced)).foregroundColor(.secondary)
         }
         let metricsText = String(text[text.startIndex..<arrowRange.lowerBound])
         let recText = String(text[arrowRange.upperBound...])
@@ -300,13 +305,13 @@ struct CompareView: View {
         }
 
         return Text(metricsText)
-            .font(.system(size: 13, design: .monospaced))
+            .font(.system(size: fs(13), design: .monospaced))
             .foregroundColor(.secondary)
         + Text("\u{2192} ")
-            .font(.system(size: 13, design: .monospaced))
+            .font(.system(size: fs(13), design: .monospaced))
             .foregroundColor(.secondary)
         + Text(recText)
-            .font(.system(size: 13, weight: .bold, design: .monospaced))
+            .font(.system(size: fs(13), weight: .bold, design: .monospaced))
             .foregroundColor(recColor)
     }
 }
