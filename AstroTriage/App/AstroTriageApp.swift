@@ -454,6 +454,8 @@ struct HelpContentView: View {
                 shortcutRow("C", "Compare with Best — side-by-side with best frame in group")
                 shortcutRow("Double-click row", "Open image in floating preview with stretch/denoise/deconv")
                 shortcutRow("Cmd + O", "Open folder containing FITS/XISF images")
+                shortcutRow("Cmd + / Cmd -", "Increase / decrease file list font size")
+                shortcutRow("Cmd + 0", "Reset file list font size to default")
 
                 Divider()
 
@@ -708,7 +710,8 @@ struct HelpBackgroundView: View {
                 faqItem("Stage 1 — Garbage Detection",
                     """
                     Before any statistics, obvious failures are flagged red immediately: star count < 50% \
-                    of group median, SNR < 50%, FWHM > 2x median, or star eccentricity > 0.6 (trailing). \
+                    of group median, SNR < 50%, FWHM > 2x median, star eccentricity > 0.6 (trailing), \
+                    or twilight (filter-aware: narrowband tolerates nautical twilight, broadband does not). \
                     Any single catastrophic metric = immediate red, regardless of other metrics.
                     """)
 
@@ -728,6 +731,8 @@ struct HelpBackgroundView: View {
                     "Below average — 4 orange gradient levels from light (nearly good) to deep (nearly trash). Hover for per-metric breakdown and SNR contribution.")
                 qualityIconRow("xmark.circle.fill", .systemRed, "Trash (< -1.2 or Stage 1)",
                     "Either catastrophically bad (Stage 1) or statistically worst in group. Hover for reason.")
+                qualityIconRow("questionmark.circle", .systemBlue, "Uncertain (small group)",
+                    "Group has fewer than 8 frames with ambiguous quality — not enough data for confident ranking.")
 
                 Text("Hover over any quality icon to see per-metric z-scores, SNR contribution %, and a keep/delete recommendation.")
                     .font(.system(size: 11)).foregroundColor(.secondary).italic()
@@ -965,7 +970,8 @@ struct HelpBackgroundView: View {
                 faqItem("Compare with Best (C key)",
                     """
                     Opens a side-by-side comparison window showing the best-quality frame from the same \
-                    group (target + filter + exposure) next to the selected frame. Zoom and pan are \
+                    group (target + filter + exposure) next to the selected frame. If no same-group match \
+                    is available, falls back to the best frame in the entire session. Zoom and pan are \
                     synchronized — drag in one image to zoom, both follow. \
                     Star overlay shows circles color-coded by eccentricity (green=round, orange=borderline, \
                     red=elongated). Elongated stars show PA direction lines. When trailing consensus \
@@ -988,7 +994,7 @@ struct HelpBackgroundView: View {
                 // SmartCull
                 faqSection("SmartCull — Multi-Stage Quality Engine",
                     """
-                    SmartCull is a 4-stage pipeline that handles ~99% of quality decisions \
+                    SmartCull is a 5-stage pipeline that handles ~99% of quality decisions \
                     automatically, leaving only genuine edge cases for you. Validated on 1,457 frames \
                     across 6 setups (3 telescopes, mono+OSC, narrowband+broadband).
                     """)
@@ -999,7 +1005,18 @@ struct HelpBackgroundView: View {
                     SNR below 50% of group median, FWHM/HFR over 2x median, extreme eccentricity \
                     (more than 2x the focal-length baseline — adapts automatically to your optics), \
                     severe trailing (cross-checked against FWHM), star count anomalies from tracking \
-                    jumps, and background anomalies from clouds or fog.
+                    jumps, background anomalies from clouds or fog, and twilight detection. \
+                    Twilight is filter-aware: narrowband (Ha/OIII/SII) tolerates nautical twilight \
+                    (sun -12° to -6°) since narrow bandpass rejects sky glow. Broadband and \
+                    luminance are flagged as garbage at nautical twilight.
+                    """)
+
+                faqItem("Stage 1.5 — Session Sanity Check",
+                    """
+                    Cross-group comparison using session-wide P10/P90 benchmarks. If 2+ metrics \
+                    (FWHM, SNR, stars, eccentricity) are dramatically worse than the session's \
+                    best-decile values, the frame is demoted to trash — even if it looked acceptable \
+                    within its own (weak) group. Catches uniformly bad groups where every frame is poor.
                     """)
 
                 faqItem("Stage 2 — Z-Score Ranking",

@@ -4,6 +4,24 @@ All notable changes to AstroBlink & AIsaac will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [5.5.0] — 2026-03-27
+
+### Added
+- **Session-wide sanity check (Stage 1.5)** — Cross-group comparison using P10/P90 benchmarks. When 2+ metrics (FWHM, SNR, stars, eccentricity) are dramatically worse than the session's best-decile, frame is demoted to trash regardless of within-group z-score. Catches uniformly bad nights that z-scores normalize away
+- **Uncertain quality tier** — Blue "?" icon for groups with <8 frames and ambiguous z-scores. Indicates low scoring confidence — visual inspection recommended. Treated like borderline for auto-mark
+- **Filter-aware twilight detection** — Narrowband (Ha/OIII/SII) tolerates nautical twilight (sun -12° to -6°), RGB/L is garbage at nautical. Quality metrics panel shows "(OK for narrowband)" or "(degraded for R)" context
+- **Automated January regression test** — 471-image test verifies zero false-Good classifications on known-bad data. Catches scoring regressions automatically
+
+### Fixed
+- **R9 chain detection timing race** — PrefetchCache merged all per-image callbacks (noise, stars, progress) into single MainActor task. Guarantees starChainFraction is populated before scoring runs
+- **Compare with Best cross-group fallback** — When the same filter group's "best" frame is also garbage, Compare now searches across all filters and exposures for a genuinely good reference frame
+- **Session sanity false positives** — Multi-group guard ensures session sanity only runs when pool has 2+ filter/night groups. Severe single-metric outlier (FWHM >1.4× P10) catches L-filter frames where SNR is acceptable but seeing is catastrophic
+
+### Changed
+- **Lighter orange borderline icons** — More visually distinct from red trash icons. HSB values shifted for all 4 severity levels
+
+---
+
 ## [5.4.0] — 2026-03-27
 
 ### Added

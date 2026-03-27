@@ -2,7 +2,7 @@
 
 Status: [ ] offen | [~] in Arbeit | [x] fertig
 
-Current version: **v5.4.0** (build 39)
+Current version: **v5.5.0** (build 40)
 
 ---
 
@@ -41,6 +41,11 @@ All original implementation phases are complete:
 - [x] **Auto-Mark Toolbar Button** — Culling autopilot in main toolbar with gradient icon (v5.4.0)
 - [x] **Toolbar Reorganization** — Grouped with dividers, two-line toggle labels (v5.4.0)
 - [x] **False Satellite Trail Fix** — Axis ratio verification on extended objects (v5.4.0)
+- [x] **Session-Wide Sanity Check** — Cross-group P10/P90 comparison catches uniformly bad groups (v5.5.0)
+- [x] **Uncertain Tier** — Blue ? for small groups with low confidence (v5.5.0)
+- [x] **Filter-Aware Twilight** — Narrowband tolerates nautical twilight (v5.5.0)
+- [x] **R9 Timing Race Fix** — Merged MainActor callbacks in PrefetchCache (v5.5.0)
+- [x] **Compare Cross-Group Fallback** — Finds genuinely good reference across filters (v5.5.0)
 
 ---
 

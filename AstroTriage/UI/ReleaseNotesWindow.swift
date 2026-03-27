@@ -33,6 +33,13 @@ class ReleaseNotesWindowController {
 // MARK: - Release notes data (shared between view and copy)
 
 private let allReleases: [(version: String, date: String, items: [(ReleaseNotesView.ChangeType, String, String)])] = [
+    ("5.5.0", "March 27, 2026", [
+        (.added, "Session-Wide Sanity Check", "Cross-group quality comparison catches uniformly bad nights. Uses P10/P90 benchmarks — 2+ metrics far below session norm = trash."),
+        (.added, "Uncertain Quality Tier", "Blue ? icon for small groups (<8 frames) with ambiguous quality. Visual inspection recommended."),
+        (.added, "Filter-Aware Twilight", "Narrowband tolerates nautical twilight (sun -12° to -6°). RGB/L flagged as garbage. Context shown in quality metrics."),
+        (.fixed, "Chain Detection Timing", "Fixed race condition where starChainFraction was nil during scoring. Tracking hops now reliably detected."),
+        (.fixed, "Compare Cross-Group Fallback", "Compare with Best now searches across all filters when same-group best is also garbage."),
+    ]),
     ("5.4.0", "March 27, 2026", [
         (.added, "Font Size Scaling", "Cmd+/Cmd-/Cmd+0 to adjust UI font size across file list, inspector, session overview, and compare window. Persisted via iCloud."),
         (.added, "Auto-Mark Toolbar Button", "Culling autopilot promoted to main toolbar with colorful gradient icon. One-click Conservative/Balanced/Aggressive auto-marking."),

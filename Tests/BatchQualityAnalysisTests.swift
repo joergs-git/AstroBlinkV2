@@ -112,6 +112,95 @@ final class BatchQualityAnalysisTests: XCTestCase {
         }
     }
 
+    /// AUTOMATED REGRESSION: Verify that ALL January M82 frames are NOT rated "Good" or "Excellent".
+    /// These frames have uniformly bad metrics (FWHM 8-12, SNR 2-9, high chain fraction, high ecc).
+    /// Uses the FULL M82 dataset (304 files from /Volumes/ASTRO) to test the session sanity check
+    /// with realistic multi-night data where bad nights can contaminate session medians.
+    /// ~5 minutes on M2 Ultra, 304 images × ~1s each.
+    func testM82_JanuaryFramesMustNotBeGood() throws {
+        let m82Dir = "/Volumes/ASTRO/RC12/M 82"
+        guard FileManager.default.fileExists(atPath: m82Dir) else {
+            // Fallback to QUALITYCHECKDATA (smaller subset, 119 files)
+            let fallbackDir = testDataRoot + "/M82"
+            guard FileManager.default.fileExists(atPath: fallbackDir) else {
+                throw XCTSkip("M82 data not available")
+            }
+            try verifyJanuaryFramesNotGood(in: fallbackDir, label: "QUALITYCHECKDATA/M82")
+            return
+        }
+        try verifyJanuaryFramesNotGood(in: m82Dir, label: "FULL M82 (304 files)")
+    }
+
+    private func verifyJanuaryFramesNotGood(in path: String, label: String) throws {
+        let allFiles = collectImageFiles(in: path)
+        guard !allFiles.isEmpty else {
+            throw XCTSkip("No image files found in \(path)")
+        }
+
+        print("\n" + String(repeating: "=", count: 70))
+        print("  AUTOMATED REGRESSION: January frames must not be Good/Excellent")
+        print("  Dataset: \(label) (\(allFiles.count) files)")
+        print(String(repeating: "=", count: 70))
+
+        // Phase 1: Process all images
+        var entries: [ImageEntry] = []
+        for (idx, url) in allFiles.enumerated() {
+            autoreleasepool {
+                if let data = processImage(url: url, index: idx, total: allFiles.count, outputDir: NSTemporaryDirectory()) {
+                    entries.append(data.entry)
+                }
+            }
+        }
+
+        // Phase 2: Score
+        let scores = QualityEstimator.computeScores(for: entries)
+        for i in 0..<entries.count {
+            entries[i].qualityBreakdown = scores[entries[i].url]
+        }
+
+        // Phase 3: Check January frames
+        let januaryFrames = entries.filter { $0.filename.contains("2026-01-") }
+        print("\n  January frames: \(januaryFrames.count)")
+
+        var falseGood: [(String, QualityTier, String)] = []
+        for entry in januaryFrames {
+            let tier = entry.qualityTier
+            let fwhm = entry.computedFWHM ?? entry.fwhm ?? 0
+            let snrVal: Double = {
+                guard let med = entry.noiseMedian, let mad = entry.noiseMAD, mad > 0 else { return 0 }
+                return Double(med / mad)
+            }()
+            let chain = entry.starChainFraction ?? 0
+            let ecc = entry.computedEccentricity ?? 0
+
+            let info = "FWHM=\(String(format: "%.1f", fwhm)) SNR=\(String(format: "%.1f", snrVal)) Chain=\(String(format: "%.2f", chain)) Ecc=\(String(format: "%.2f", ecc))"
+
+            if tier == .good || tier == .excellent {
+                falseGood.append((entry.filename, tier!, info))
+                print("  FAIL: \(entry.filename) → \(tier == .good ? "Good" : "Excellent") (\(info))")
+                if let bd = entry.qualityBreakdown {
+                    print("        Z=\(String(format: "%+.2f", bd.combinedZScore)) sanity=\(bd.sessionSanityReasons)")
+                }
+            } else {
+                let tierStr: String
+                switch tier {
+                case .trash: tierStr = "Trash"
+                case .borderline: tierStr = "Borderline"
+                case .uncertain: tierStr = "Uncertain"
+                default: tierStr = "Unscored"
+                }
+                print("    OK: \(entry.filename) → \(tierStr) (\(info))")
+            }
+        }
+
+        // Summary
+        let tierCounts = entries.compactMap { $0.qualityTier }.reduce(into: [:]) { $0[$1, default: 0] += 1 }
+        print("\n  Overall: E=\(tierCounts[.excellent, default: 0]) G=\(tierCounts[.good, default: 0]) B=\(tierCounts[.borderline, default: 0]) T=\(tierCounts[.trash, default: 0]) U=\(tierCounts[.uncertain, default: 0])")
+
+        XCTAssertEqual(falseGood.count, 0,
+            "\(falseGood.count) January frame(s) falsely rated Good/Excellent: \(falseGood.map { $0.0 }.joined(separator: ", "))")
+    }
+
     /// Analyze M82-January setup (64 images with tracking hops — should be flagged as garbage)
     func testAnalyzeM82January() throws {
         let setupDir = testDataRoot + "/M82-January"
@@ -214,6 +303,7 @@ final class BatchQualityAnalysisTests: XCTestCase {
         print("    Good:      \(tierCounts[.good, default: 0])")
         print("    Borderline:\(tierCounts[.borderline, default: 0])")
         print("    Trash:     \(tierCounts[.trash, default: 0])")
+        print("    Uncertain: \(tierCounts[.uncertain, default: 0])")
         print("    Unscored:  \(entries.filter { $0.qualityTier == nil }.count)")
         print("    CSV: \(csvPath)")
         print("    Thumbnails: \(outputDir)/*.jpg")
@@ -469,6 +559,7 @@ final class BatchQualityAnalysisTests: XCTestCase {
         case .good:       return "GOOD"
         case .borderline: return "BORDERLINE"
         case .trash:      return "TRASH"
+        case .uncertain:  return "UNCERTAIN"
         }
     }
 
@@ -478,6 +569,7 @@ final class BatchQualityAnalysisTests: XCTestCase {
         case .good:       return NSColor(red: 0.6, green: 1.0, blue: 0.6, alpha: 1.0)
         case .borderline: return NSColor(red: 1.0, green: 0.7, blue: 0.2, alpha: 1.0)
         case .trash:      return NSColor(red: 1.0, green: 0.3, blue: 0.3, alpha: 1.0)
+        case .uncertain:  return NSColor(red: 0.3, green: 0.5, blue: 1.0, alpha: 1.0)
         case .none:       return NSColor.white
         }
     }

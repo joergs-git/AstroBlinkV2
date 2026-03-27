@@ -1,14 +1,16 @@
 // v4.3.0
 import Foundation
 
-// Four-tier quality system with sub-tiers for borderline:
+// Five-tier quality system with sub-tiers for borderline:
 // Stage 1 ("garbage"): absolute outlier → red (any single metric catastrophically bad)
+// Stage 1.5 ("session sanity"): cross-group comparison → demote if far below session norm
 // Stage 2 ("relative"): weighted z-score within group → excellent/good/borderline/poor
 enum QualityTier: Int {
     case trash      = 0   // Red X: catastrophic garbage (Stage 1) or statistically worst
     case borderline = 1   // Orange: on the edge — worth visual inspection before keeping
     case good       = 2   // Half-green: slightly below the best but definitely usable
     case excellent  = 3   // Full green: clearly above average — best frames
+    case uncertain  = 4   // Blue ?: small group, low confidence — visual inspection recommended
 }
 
 // Stage 1 garbage reason — explains WHY a frame was immediately flagged as trash
@@ -70,6 +72,10 @@ struct QualityBreakdown: Hashable {
     // 0.3 = narrowband (Ha/OIII/SII), 0.6 = RGB, 1.0 = luminance, 0.7 = unknown
     var filterTrailingMultiplier: Double = 1.0
 
+    // Session-wide sanity check reasons (Stage 1.5) — explains why a frame was demoted
+    // across groups. Empty if frame passed session sanity or check didn't apply.
+    var sessionSanityReasons: [String] = []
+
     // Smart recommendation label based on per-metric analysis
     // Smart recommendation based on per-metric analysis and eccentricity.
     // Research shows: round stars = always keep (even with worse FWHM/noise).
@@ -86,6 +92,10 @@ struct QualityBreakdown: Hashable {
             return "KEEP — within community baseline"
         }
 
+        if !sessionSanityReasons.isEmpty && (tier == .trash || tier == .borderline) {
+            return "REVIEW — \(sessionSanityReasons.joined(separator: ", "))"
+        }
+
         if !garbageReasons.isEmpty {
             let reasons = garbageReasons.map { $0.rawValue }.joined(separator: ", ")
             return "DELETE — \(reasons)"
@@ -94,6 +104,10 @@ struct QualityBreakdown: Hashable {
         // Z-score based trash (no garbage reasons but combined z-score below threshold)
         if tier == .trash {
             return "DELETE — below quality threshold"
+        }
+
+        if tier == .uncertain {
+            return "UNCERTAIN — small group, inspect visually"
         }
 
         guard tier == .borderline else { return "" }
@@ -135,7 +149,7 @@ struct QualityBreakdown: Hashable {
     // Borderline severity for orange gradient icons (0-3, 0 = nearly good, 3 = nearly trash)
     // Only meaningful when tier == .borderline
     var borderlineSeverity: Int {
-        guard tier == .borderline else { return 0 }
+        guard tier == .borderline || tier == .uncertain else { return 0 }
         // Range is thresholdGood (-0.5) to thresholdBorderline (-2.0), span = 1.5
         // Split into 4 sub-tiers
         let z = combinedZScore
@@ -468,10 +482,18 @@ struct QualityEstimator {
                     garbageReasons.append(.trackingHop)
                 }
 
-                // Rule 10: Twilight/daylight exposure — sun above -12° (civil or daylight)
-                // Astronomical twilight (-18° to -12°) is borderline but not auto-flagged.
-                if let phase = entry.twilightPhase, phase >= .civil {
-                    garbageReasons.append(.twilightExposure)
+                // Rule 10: Twilight/daylight exposure — filter-aware thresholds.
+                // Narrowband filters (3-7nm bandpass) reject most broadband sky glow,
+                // so they tolerate twilight much better than RGB/L.
+                // Thresholds:
+                //   Narrowband (Ha/OIII/SII): garbage at civil twilight and daylight (sun > -6°)
+                //   RGB/Broadband:            garbage at nautical twilight and above (sun > -12°)
+                //   Astronomical twilight (-18° to -12°): safe for all filters
+                if let phase = entry.twilightPhase {
+                    let twilightGarbagePhase: TwilightPhase = isNarrowband ? .civil : .nautical
+                    if phase >= twilightGarbagePhase {
+                        garbageReasons.append(.twilightExposure)
+                    }
                 }
 
                 // Cap individual z-scores at ±3 for display consistency.
@@ -632,6 +654,17 @@ struct QualityEstimator {
                     }
                 }
 
+                // ── Uncertain tier for small groups ──
+                // When group has < 8 frames and z-score is ambiguous (not clearly good or bad),
+                // mark as uncertain instead of potentially misleading good/borderline.
+                // Does not apply to locked, garbage, trash, or excellent frames.
+                if !lockedKeep && !communityLocked && garbageReasons.isEmpty
+                    && indices.count < 8
+                    && (tier == .good || tier == .borderline)
+                    && combinedZ > -1.0 && combinedZ < thresholdExcellent {
+                    tier = .uncertain
+                }
+
                 var breakdown = QualityBreakdown(
                     tier: tier,
                     combinedZScore: combinedZ,
@@ -651,6 +684,13 @@ struct QualityEstimator {
                 result[entry.url] = breakdown
             }
         }
+
+        // ── Stage 1.5: Session-wide sanity check ──
+        // Cross-group comparison: demote frames that are dramatically worse than the
+        // session norm. Catches uniformly-bad groups where z-scores normalize away.
+        // Groups by object+exposure (ignoring filter and night) to create session pools.
+        // Only demotes — never promotes. isLockedKeep/community frames are immune.
+        sessionSanityCheck(entries: entries, result: &result)
 
         // ── Stage 4: FWHM sanity check for z-score trash ──
         // Z-score trash frames (not Stage 1 garbage) may have FWHM comparable to
@@ -717,6 +757,148 @@ struct QualityEstimator {
         }
 
         return result
+    }
+
+    // MARK: - Session-Wide Sanity Check (Stage 1.5)
+
+    /// Cross-group comparison: demote frames that are dramatically worse than the
+    /// session norm across ALL groups with the same object and exposure.
+    /// Only demotes — never promotes. isLockedKeep and community-locked frames are immune.
+    private static func sessionSanityCheck(
+        entries: [ImageEntry],
+        result: inout [URL: QualityBreakdown]
+    ) {
+        // Build session pools: group by object+exposure (ignoring filter and night)
+        struct PoolKey: Hashable {
+            let target: String
+            let exposure: Int
+        }
+        var pools: [PoolKey: [Int]] = [:]
+        for (i, entry) in entries.enumerated() {
+            let key = PoolKey(
+                target: (entry.target ?? "").trimmingCharacters(in: .whitespaces),
+                exposure: entry.exposure.map { Int($0.rounded()) } ?? 0
+            )
+            pools[key, default: []].append(i)
+        }
+
+        // Session sanity only makes sense when there are multiple groups in a pool.
+        // Single-group sessions are already handled by within-group z-scoring.
+        // Count distinct filter+night combos per pool to detect multi-group sessions.
+        for (poolKey, indices) in pools {
+            // Need at least 6 frames in the session pool for meaningful comparison
+            guard indices.count >= minGroupSize else { continue }
+
+            // Only run cross-group sanity when pool contains multiple filter/night groups
+            let distinctGroups = Set(indices.map { i -> String in
+                let e = entries[i]
+                let f = (e.filter ?? "").uppercased()
+                let n = e.observingNight ?? ""
+                return "\(f)|\(n)"
+            })
+            guard distinctGroups.count >= 2 else { continue }
+
+            // Collect metrics from ALL frames in the pool (across all filters/nights)
+            var fwhms: [Double] = []
+            var snrs: [Double] = []
+            var stars: [Double] = []
+            var eccs: [Double] = []
+
+            for i in indices {
+                let e = entries[i]
+                if let v = e.computedFWHM ?? e.fwhm { fwhms.append(v) }
+                if let med = e.noiseMedian, let mad = e.noiseMAD, mad > 0 {
+                    snrs.append(Double(med / mad))
+                }
+                if let v = e.computedStarCount { stars.append(Double(v)) }
+                if let v = e.computedEccentricity { eccs.append(v) }
+            }
+
+            // Need enough data points for reliable medians
+            guard fwhms.count >= 6 else { continue }
+
+            fwhms.sort(); snrs.sort(); stars.sort(); eccs.sort()
+            // Use best-decile benchmarks instead of median to resist contamination
+            // from uniformly-bad nights. The best 10% defines what "good" looks like.
+            // FWHM/Ecc: lower is better → use 10th percentile (P10)
+            // SNR/Stars: higher is better → use 90th percentile (P90)
+            let fwhmP10 = fwhms[max(0, fwhms.count / 10)]                         // Best 10% FWHM
+            let snrP90 = snrs.isEmpty ? 0 : snrs[min(snrs.count - 1, snrs.count * 9 / 10)]  // Best 10% SNR
+            let starsP90 = stars.isEmpty ? 0 : stars[min(stars.count - 1, stars.count * 9 / 10)]
+            let eccP10 = eccs.isEmpty ? 0 : eccs[max(0, eccs.count / 10)]         // Best 10% Ecc
+
+            // Check each frame against session-wide best-decile benchmarks
+            // Tighter than median: P10 for FWHM/Ecc (lower=better), P90 for SNR/Stars (higher=better)
+            for i in indices {
+                let entry = entries[i]
+                guard let bd = result[entry.url] else { continue }
+
+                // Never touch locked frames
+                if bd.isLockedKeep || bd.isCommunityFloorLocked { continue }
+                // Don't re-demote Stage 1 garbage (already trash with reasons)
+                if !bd.garbageReasons.isEmpty { continue }
+
+                var flags: [String] = []
+
+                // FWHM: frame > 1.3× the session's best-decile → significantly worse seeing
+                if let fwhm = entry.computedFWHM ?? entry.fwhm, fwhmP10 > 0 {
+                    if fwhm > fwhmP10 * 1.3 { flags.append("FWHM far above session norm") }
+                }
+                // SNR: frame < 0.4× the session's best-decile → dramatically lower signal
+                if let med = entry.noiseMedian, let mad = entry.noiseMAD, mad > 0, snrP90 > 3 {
+                    let snr = Double(med / mad)
+                    if snr < snrP90 * 0.4 { flags.append("SNR far below session norm") }
+                }
+                if let sc = entry.computedStarCount, starsP90 > 50 {
+                    if Double(sc) < starsP90 * 0.4 { flags.append("star count far below session norm") }
+                }
+                if let ecc = entry.computedEccentricity, eccP10 > 0.1 {
+                    if ecc > eccP10 * 1.5 { flags.append("eccentricity far above session norm") }
+                }
+
+                // Severe single-metric outlier: FWHM so far above session P10 that
+                // it's unambiguous garbage even without a second flag.
+                // This catches L-filter frames where SNR is acceptable (L captures
+                // more photons than RGB) but seeing is catastrophically worse.
+                var isSevereOutlier = false
+                if let fwhm = entry.computedFWHM ?? entry.fwhm, fwhmP10 > 0 {
+                    if fwhm > fwhmP10 * 1.4 { isSevereOutlier = true }
+                }
+
+                guard flags.count >= 2 || (flags.count >= 1 && isSevereOutlier) else { continue }
+
+                // 2+ session sanity flags = unambiguous garbage.
+                // Also: a single extreme outlier (>1.6× P10) is trash by itself.
+                let newTier: QualityTier = .trash
+
+                // Only demote (never promote)
+                let currentTierValue: Int
+                switch bd.tier {
+                case .trash: currentTierValue = 0
+                case .borderline: currentTierValue = 1
+                case .uncertain: currentTierValue = 1  // treat like borderline
+                case .good: currentTierValue = 2
+                case .excellent: currentTierValue = 3
+                }
+                let newTierValue = newTier == .trash ? 0 : 1
+                guard newTierValue < currentTierValue else { continue }
+
+                var demoted = QualityBreakdown(
+                    tier: newTier,
+                    combinedZScore: bd.combinedZScore,
+                    starsZ: bd.starsZ, fwhmZ: bd.fwhmZ, hfrZ: bd.hfrZ,
+                    noiseZ: bd.noiseZ, trailingZ: bd.trailingZ,
+                    snrContribution: newTier == .trash ? nil : bd.snrContribution,
+                    snrSquared: bd.snrSquared,
+                    garbageReasons: [],
+                    isLockedKeep: false,
+                    reasoningText: "Session sanity: \(flags.joined(separator: ", "))",
+                    filterTrailingMultiplier: bd.filterTrailingMultiplier
+                )
+                demoted.sessionSanityReasons = flags
+                result[entry.url] = demoted
+            }
+        }
     }
 
     // MARK: - Private helpers

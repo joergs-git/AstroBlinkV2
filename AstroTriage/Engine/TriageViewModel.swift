@@ -409,6 +409,7 @@ class TriageViewModel: ObservableObject {
         switch query {
         case "trash", "red":        return tier == .trash
         case "borderline", "orange": return tier == .borderline
+        case "uncertain", "blue":   return tier == .uncertain
         case "good", "yellow":      return tier == .good
         case "excellent", "green":  return tier == .excellent
         case "unscored":            return false  // has a tier, so not unscored
@@ -531,9 +532,39 @@ class TriageViewModel: ObservableObject {
             return t == targetKey && f == filterKey && e == expKey
         }
 
-        // Use qualityZScore for fine-grained "best" selection (not just tier enum)
-        guard let best = groupImages.max(by: { ($0.qualityZScore ?? -100) < ($1.qualityZScore ?? -100) }),
-              best.url != entry.url else { return }
+        // Find the best frame for comparison.
+        // Priority: same filter group → same target+exposure (any filter) → same target (any filter/exposure).
+        // When the group's best is also garbage, widen the search to find a genuinely good reference.
+        var best: ImageEntry? = groupImages
+            .filter { $0.url != entry.url }
+            .max(by: { ($0.qualityZScore ?? -100) < ($1.qualityZScore ?? -100) })
+
+        // If group best is still garbage/borderline, try same target+exposure across all filters
+        if best == nil || (best!.qualityTier != .excellent && best!.qualityTier != .good) {
+            let crossFilter = images.filter { img in
+                let t = (img.target ?? "").trimmingCharacters(in: .whitespaces)
+                let e = img.exposure.map { Int($0.rounded()) } ?? 0
+                return t == targetKey && e == expKey && img.url != entry.url
+            }
+            if let crossBest = crossFilter.max(by: { ($0.qualityZScore ?? -100) < ($1.qualityZScore ?? -100) }),
+               (crossBest.qualityZScore ?? -100) > (best?.qualityZScore ?? -100) {
+                best = crossBest
+            }
+        }
+
+        // If still no good reference, try any frame with the same target
+        if best == nil || (best!.qualityTier != .excellent && best!.qualityTier != .good) {
+            let anyTarget = images.filter { img in
+                let t = (img.target ?? "").trimmingCharacters(in: .whitespaces)
+                return t == targetKey && img.url != entry.url
+            }
+            if let anyBest = anyTarget.max(by: { ($0.qualityZScore ?? -100) < ($1.qualityZScore ?? -100) }),
+               (anyBest.qualityZScore ?? -100) > (best?.qualityZScore ?? -100) {
+                best = anyBest
+            }
+        }
+
+        guard let best = best, best.url != entry.url else { return }
 
         // Show loading indicator while compare images are decoded and stretched
         statusMessage = "Preparing Compare..."
@@ -1691,10 +1722,48 @@ class TriageViewModel: ObservableObject {
             if let fp = currentSetupFingerprint {
                 msg += " [\(CalibrationDatabase.shared.learningStatus(for: fp))]"
             }
+            // Append session guidance hints if applicable
+            if let guidance = generateSessionGuidance() {
+                msg += " | \(guidance)"
+            }
             statusMessage = msg
         }
 
         updateConvergence()
+    }
+
+    /// Generate session guidance hints about scoring accuracy
+    private func generateSessionGuidance() -> String? {
+        guard !images.isEmpty else { return nil }
+
+        // Build group sizes: filter+object+exposure
+        var groupSizes: [String: Int] = [:]
+        for entry in images {
+            let f = (entry.filter ?? "").uppercased()
+            let t = (entry.target ?? "").trimmingCharacters(in: .whitespaces)
+            let e = entry.exposure.map { Int($0.rounded()) } ?? 0
+            let key = "\(f)|\(t)|\(e)"
+            groupSizes[key, default: 0] += 1
+        }
+
+        var hints: [String] = []
+
+        // Check for small groups
+        let tooSmall = groupSizes.filter { $0.value < QualityEstimator.minGroupSize }.count
+        let small = groupSizes.filter { $0.value >= QualityEstimator.minGroupSize && $0.value < 8 }.count
+        if tooSmall > 0 {
+            hints.append("\(tooSmall) group(s) too small for scoring (<\(QualityEstimator.minGroupSize) frames)")
+        } else if small > 0 {
+            hints.append("\(small) group(s) with reduced confidence (<8 frames)")
+        }
+
+        // Suggest multi-night for better accuracy
+        let uniqueNights = Set(images.compactMap { $0.observingNight })
+        if uniqueNights.count <= 1 && images.count > 10 {
+            hints.append("Tip: loading multiple nights improves scoring accuracy")
+        }
+
+        return hints.isEmpty ? nil : hints.joined(separator: " | ")
     }
 
     /// Count distinct groups that produced at least one score

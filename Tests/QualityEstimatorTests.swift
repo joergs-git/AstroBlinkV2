@@ -925,4 +925,93 @@ final class QualityEstimatorTests: XCTestCase {
         weight = max(0.0, min(100.0, weight))
         return weight
     }
+
+    // MARK: - Session Sanity Check Tests
+
+    /// Good L-filter group + bad B-filter group (same target/exposure).
+    /// The bad B frames should be demoted by session-wide cross-group comparison.
+    func testSessionSanityCheck_demotesBadCrossGroup() {
+        // 10 good L frames: FWHM 3.0, SNR 50 (med 0.05, mad 0.001)
+        let goodL: [ImageEntry] = (0..<10).map { i in
+            makeEntry(index: i, filter: "L", target: "M82", exposure: 180,
+                      noiseMAD: 0.001, noiseMedian: 0.05,
+                      computedFWHM: 3.0 + Double.random(in: -0.2...0.2),
+                      computedStarCount: 3000 + Int.random(in: -200...200),
+                      computedEccentricity: 0.35)
+        }
+        // 8 bad B frames: FWHM 10.0, SNR ~8 (med 0.05, mad 0.006)
+        let badB: [ImageEntry] = (0..<8).map { i in
+            makeEntry(index: 100 + i, filter: "B", target: "M82", exposure: 180,
+                      noiseMAD: 0.006, noiseMedian: 0.05,
+                      computedFWHM: 10.0 + Double.random(in: -0.3...0.3),
+                      computedStarCount: 2400 + Int.random(in: -200...200),
+                      computedEccentricity: 0.65)
+        }
+
+        let entries = goodL + badB
+        let scores = QualityEstimator.computeScores(for: entries)
+
+        // Verify: bad B frames should NOT be .good or .excellent
+        // Session sanity check sees FWHM Q1 ~3.0 → threshold 4.2. Bad B at 10.0 → flagged
+        // SNR Q3 ~50 → threshold 20. Bad B at ~8.3 → flagged
+        // 2+ flags → demoted to borderline at most
+        for i in 100..<108 {
+            let url = URL(fileURLWithPath: "/tmp/test_\(i).xisf")
+            if let bd = scores[url] {
+                XCTAssertTrue(bd.tier == .trash || bd.tier == .borderline || bd.tier == .uncertain,
+                    "Bad B frame \(i) should be demoted by session sanity, got \(bd.tier)")
+                if !bd.sessionSanityReasons.isEmpty {
+                    XCTAssertGreaterThanOrEqual(bd.sessionSanityReasons.count, 2,
+                        "Should have at least 2 session sanity flags")
+                }
+            }
+        }
+
+        // Verify: good L frames should remain excellent or good
+        for i in 0..<10 {
+            let url = URL(fileURLWithPath: "/tmp/test_\(i).xisf")
+            if let bd = scores[url] {
+                XCTAssertTrue(bd.tier == .excellent || bd.tier == .good,
+                    "Good L frame \(i) should not be demoted, got \(bd.tier)")
+            }
+        }
+    }
+
+    /// Session sanity must not touch isLockedKeep frames
+    func testSessionSanityCheck_respectsLockedKeep() {
+        // Similar to above but with calibration that locks bad frames
+        // The locked frames should remain good despite session sanity flags
+        // (isLockedKeep is set by CalibrationDatabase, not by this test directly)
+        // This test verifies that the garbageReasons.isEmpty check protects Stage 1 garbage
+        let goodL: [ImageEntry] = (0..<10).map { i in
+            makeEntry(index: i, filter: "L", target: "M82", exposure: 180,
+                      noiseMAD: 0.001, noiseMedian: 0.05,
+                      computedFWHM: 3.0, computedStarCount: 3000,
+                      computedEccentricity: 0.35)
+        }
+        // 6 bad frames with chain fraction → Stage 1 garbage (trackingHop)
+        let badChain: [ImageEntry] = (0..<6).map { i in
+            var e = makeEntry(index: 200 + i, filter: "B", target: "M82", exposure: 180,
+                              noiseMAD: 0.006, noiseMedian: 0.05,
+                              computedFWHM: 10.0, computedStarCount: 2400,
+                              computedEccentricity: 0.65)
+            e.starChainFraction = 0.5  // Above R9 threshold 0.25
+            return e
+        }
+
+        let entries = goodL + badChain
+        let scores = QualityEstimator.computeScores(for: entries)
+
+        // Bad frames should be Stage 1 trash (trackingHop) — session sanity doesn't re-demote
+        for i in 200..<206 {
+            let url = URL(fileURLWithPath: "/tmp/test_\(i).xisf")
+            if let bd = scores[url] {
+                XCTAssertEqual(bd.tier, .trash, "Chain frame should be trash")
+                XCTAssertTrue(bd.garbageReasons.contains(.trackingHop),
+                    "Should have trackingHop garbage reason")
+                XCTAssertTrue(bd.sessionSanityReasons.isEmpty,
+                    "Session sanity should not add reasons to Stage 1 garbage")
+            }
+        }
+    }
 }

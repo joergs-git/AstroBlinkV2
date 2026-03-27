@@ -141,12 +141,14 @@ class PrefetchCache {
                     imageForSTF = decoded
                 }
 
-                if let onNoiseStats = onNoiseStats {
-                    let stats = STFCalculator.measureNoise(from: imageForSTF)
-                    Task { @MainActor in onNoiseStats(url, stats) }
+                // Compute metrics synchronously on background thread
+                var noiseStatsResult: STFCalculator.NoiseStats?
+                if onNoiseStats != nil {
+                    noiseStatsResult = STFCalculator.measureNoise(from: imageForSTF)
                 }
 
-                if let onStarMetrics = onStarMetrics {
+                var starMetricsResult: StarMetrics?
+                if onStarMetrics != nil {
                     let channel = imageForSTF.channelCount == 3 ? 1 : 0
                     let stars = generator?.detectStarsFromImage(imageForSTF, channel: channel) ?? []
                     let totalStarCount = generator?.lastTotalStarCount ?? stars.count
@@ -155,14 +157,13 @@ class PrefetchCache {
                             stars: stars, fullResImage: imageForSTF, channel: channel,
                             totalStarCount: totalStarCount
                         )
-                        let finalMetrics = metrics ?? StarMetrics(
+                        starMetricsResult = metrics ?? StarMetrics(
                             medianHFR: 0, medianFWHM: 0,
                             measuredStarCount: 0, totalStarCount: totalStarCount,
                             medianEccentricity: nil,
                             starDetails: [],
                             starChainFraction: 0, trailCandidateCount: 0, trailRejectCount: 0
                         )
-                        Task { @MainActor in onStarMetrics(url, finalMetrics) }
                     }
                 }
 
@@ -188,8 +189,10 @@ class PrefetchCache {
                 }
                 semaphore.wait()
 
-                // Store and notify ViewModel to refresh display
+                // Single MainActor task: deliver ALL results atomically
                 Task { @MainActor [weak self] in
+                    if let stats = noiseStatsResult { onNoiseStats?(url, stats) }
+                    if let metrics = starMetricsResult { onStarMetrics?(url, metrics) }
                     if let preview = resultPreview {
                         self?.storePreview(preview, for: url)
                     }
@@ -315,14 +318,18 @@ class PrefetchCache {
                     }
 
                     // 2b. Measure noise stats (uses same 5% subsample as STF — ~2ms)
-                    if let onNoiseStats = onNoiseStats {
-                        let stats = STFCalculator.measureNoise(from: imageForSTF)
-                        Task { @MainActor in onNoiseStats(url, stats) }
+                    // Computed synchronously on background thread; dispatched to MainActor
+                    // together with star metrics and progress in a single Task to guarantee
+                    // all data is populated before scoring runs.
+                    var noiseStatsResult: STFCalculator.NoiseStats?
+                    if onNoiseStats != nil {
+                        noiseStatsResult = STFCalculator.measureNoise(from: imageForSTF)
                     }
 
                     // 2c. GPU star detection + CPU HFR/FWHM measurement (~5-7ms per image)
                     // Always computed for all images to support per-group source consistency
-                    if let onStarMetrics = onStarMetrics {
+                    var starMetricsResult: StarMetrics?
+                    if onStarMetrics != nil {
                         let channel = imageForSTF.channelCount == 3 ? 1 : 0  // Green for OSC
                         let stars = generator?.detectStarsFromImage(imageForSTF, channel: channel) ?? []
                         let totalStarCount = generator?.lastTotalStarCount ?? stars.count
@@ -333,14 +340,13 @@ class PrefetchCache {
                             )
                             // Always report star count even if HFR/FWHM measurement failed
                             // (not enough stars in center crop for measurement)
-                            let finalMetrics = metrics ?? StarMetrics(
+                            starMetricsResult = metrics ?? StarMetrics(
                                 medianHFR: 0, medianFWHM: 0,
                                 measuredStarCount: 0, totalStarCount: totalStarCount,
                                 medianEccentricity: nil,
                                 starDetails: [],
                                 starChainFraction: 0, trailCandidateCount: 0, trailRejectCount: 0
                             )
-                            Task { @MainActor in onStarMetrics(url, finalMetrics) }
                         }
                     }
 
@@ -370,9 +376,13 @@ class PrefetchCache {
                     }
                     semaphore.wait()
 
-                    // Store result and report progress
+                    // Single MainActor task: deliver ALL per-image results atomically.
+                    // This guarantees starChainFraction and noiseMAD are populated BEFORE
+                    // onProgress fires the final scoring pass (fixes R9 timing race).
                     let completed = completedCount.increment()
                     Task { @MainActor in
+                        if let stats = noiseStatsResult { onNoiseStats?(url, stats) }
+                        if let metrics = starMetricsResult { onStarMetrics?(url, metrics) }
                         if let preview = resultPreview {
                             self?.storePreview(preview, for: url)
                         }

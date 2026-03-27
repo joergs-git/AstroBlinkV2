@@ -318,6 +318,7 @@ class AIsaacWindowController: NSWindowController {
             case .good: tierStr = "good"
             case .borderline: tierStr = "borderline"
             case .trash: tierStr = "trash"
+            case .uncertain: tierStr = "uncertain"
             case .none: tierStr = "unscored"
             }
             return AIsaacSessionContext.FrameMetric(

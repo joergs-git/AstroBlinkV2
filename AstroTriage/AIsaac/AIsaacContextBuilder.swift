@@ -242,7 +242,7 @@ struct AIsaacContextBuilder {
         This is NORMAL and expected. DO NOT interpret unscored frames as bad quality.
         - The "scoredCount" field tells you how many frames have been scored vs total.
 
-        QUALITY SCORING — SmartCull 4-Stage Pipeline:
+        QUALITY SCORING — SmartCull 5-Stage Pipeline:
         - Groups: frames are grouped by (target + filter + exposure + observing night) for fair comparison.
         - A frame can trigger MULTIPLE garbage reasons simultaneously (shown joined with "+").
         - Stage 1 — Garbage Detection (Rules 0-10, all checked independently):
@@ -257,9 +257,21 @@ struct AIsaacContextBuilder {
           * R7 Star count anomaly: stars > 1.8× median + elevated FWHM/HFR → "doubled stars"
           * R8 Background anomaly: background > 5-6.5 MAD from median → "abnormal background"
           * R9 Tracking hops: star chain fraction > 25% → "tracking hops (star chains)"
-          * R10 Twilight: sun altitude above -12° (civil/daylight) → "captured during twilight/daylight"
+          * R10 Twilight: sun altitude above -12° for broadband/luminance → "captured during twilight/daylight". \
+          Filter-aware: narrowband filters (Ha/OIII/SII) tolerate nautical twilight (sun -12° to -6°) because \
+          narrow bandpass rejects most sky glow. Only civil twilight (sun > -6°) is garbage for narrowband. \
+          RGB and luminance remain garbage at nautical twilight.
+        - Stage 1.5 — Session-Wide Sanity Check (cross-group comparison):
+          * After within-group scoring, each frame is compared against session-wide P10/P90 benchmarks \
+          (best-decile / worst-decile across ALL groups in the session).
+          * If 2+ metrics (FWHM, SNR, stars, eccentricity) are dramatically worse than the session's \
+          best-decile values, the frame is demoted to trash regardless of within-group z-score.
+          * This catches frames that look "OK" within a weak group but are objectively terrible compared \
+          to the rest of the session (e.g., a cloudy group where ALL frames are bad).
         - MINIMUM GROUP SIZE: Groups with < 6 frames get NO quality score — too few for statistics. \
-        These frames are NOT bad — just in a group too small to compare.
+        These frames are NOT bad — just in a group too small to compare. \
+        Groups with 6-7 frames that have ambiguous quality may receive the "uncertain" tier (blue "?" icon) \
+        instead of a definitive rating, indicating the sample is too small for confident ranking.
         - Stage 2 — Relative Z-Score Ranking (within each group):
           * Median/MAD robust statistics. Metrics weighted: Stars 1.2× (broadband) / 0.5× (narrowband), \
           FWHM 1.0×, Noise 1.0×, Trailing filter-aware (0.3× narrowband, 0.6× RGB, 1.0× luminance, \
@@ -278,7 +290,8 @@ struct AIsaacContextBuilder {
         - Trailing score: 0-1, combines eccentricity excess over FL baseline with PA consensus.
         - Trailing consensus: fraction of stars elongated in same direction. >50% = tracking error.
         - Twilight phase: Night (<-18°), Astro twilight (-18° to -12°), Nautical (-12° to -6°), \
-        Civil (-6° to 0°), Daylight (>0°). Computed from DATE-OBS (UTC) + site coordinates.
+        Civil (-6° to 0°), Daylight (>0°). Computed from DATE-OBS (UTC) + site coordinates. \
+        Filter-aware: narrowband (Ha/OIII/SII) tolerates nautical twilight, only civil is garbage.
         - Z-score: standard deviations from group median. Negative = worse than average.
 
         ADAPTIVE THRESHOLDS:
@@ -321,7 +334,7 @@ struct AIsaacContextBuilder {
         - Right-click column headers: show/hide columns, drag to reorder.
         - Multi-select: Shift-click for range, Cmd-click for individual. Space marks ALL selected frames.
         - Quality column icons: full green = excellent, half-green = good, orange gradient (4 sub-levels) = borderline, \
-        red X = garbage. Blue lock badge = calibration-locked KEEP.
+        red X = garbage, blue "?" = uncertain (small group, ambiguous quality). Blue lock badge = calibration-locked KEEP.
         - Hover quality icon for tooltip: per-metric z-scores, SNR contribution %, human-readable reason, KEEP/DELETE advice.
         - Filter bar (top): type text to filter by filename. Filter syntax: "filter:Ha", "q:trash", "fwhm:>4", \
         "stars:<500", "snr:<20", "trail:>0.5", "file:NGC". Combine with spaces.
@@ -337,7 +350,8 @@ struct AIsaacContextBuilder {
         - Useful for checking raw metadata: FILTER, GAIN, CCD-TEMP, FOCPOS, DATE-OBS, etc.
 
         COMPARE VIEW (C key):
-        - Side-by-side: current frame vs best frame in group. Synchronized zoom and pan.
+        - Side-by-side: current frame vs best frame in group. Falls back to best in session if no \
+        same-group match is available. Synchronized zoom and pan.
         - Opens at 300% zoom on star field for detailed comparison.
         - Star overlay toggle: circles on problematic stars (high eccentricity). PA arrows show trailing direction.
         - Consensus arrow shows systematic tracking error direction when detected.
@@ -361,7 +375,8 @@ struct AIsaacContextBuilder {
         - GPU bilinear interpolation, real-time.
 
         CULLING AUTOPILOT:
-        - Click the quality status pill in the status bar to open popover.
+        - Auto-Mark toolbar button (wand icon with green-to-red gradient) opens the autopilot popover.
+        - Also accessible by clicking the quality status pill in the status bar.
         - Conservative: marks only Stage 1 garbage (clearly broken frames).
         - Balanced: + severe borderline (severity ≥ 2, orange-leaning-red).
         - Aggressive: + all borderline frames.
@@ -412,6 +427,7 @@ struct AIsaacContextBuilder {
         - K: toggle skip-marked during navigation. H: cycle hide marked / show only marked / show all.
         - +/-: zoom in/out. 0: reset zoom to 100%. Double-click: fit to view.
         - Cmd+O: open folder (Cmd-click for multi-folder). Cmd+W: close window.
+        - Cmd+/Cmd-/Cmd+0: increase/decrease/reset file list font size.
 
         LINKS:
         - GitHub: https://github.com/joergs-git/AstroBlinkV2

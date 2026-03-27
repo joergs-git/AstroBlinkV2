@@ -1,5 +1,17 @@
 # Lessons Learned
 
+## [2026-03-27] — Z-scores normalize away uniformly bad groups — need cross-group sanity
+- **Mistake:** January night of M82 with FWHM 9-11, SNR 6-9 rated "Good" because all frames in the group were equally bad. Z-scores normalized to zero within the group.
+- **Root cause:** Z-scores are purely group-relative. When ALL frames in a group are bad, the median IS bad, and no frame is an outlier. Stage 1 garbage rules (R2/R3) also use group medians.
+- **Rule:** Always have a cross-group sanity check (Stage 1.5) that compares absolute metrics against the session's best decile (P10/P90). Use the best 10% as the "good" baseline, not the median. Require multi-group pools (≥2 filter/night combos) to avoid false positives in single-group sessions.
+- **Applies to:** QualityEstimator, any relative scoring system, multi-night sessions
+
+## [2026-03-27] — Compare "best" must search across groups when group best is also garbage
+- **Mistake:** Compare with Best showed a garbage January R frame as "best" when comparing a garbage January G frame. Both were from the same bad night.
+- **Root cause:** Best selection was limited to same filter+target+exposure group. When the entire group is bad, the "best" is just the least-bad garbage.
+- **Rule:** When group best is below .good tier, widen search: first try same target+exposure across all filters, then same target with any filter/exposure. Always show a genuinely good reference if one exists anywhere in the session.
+- **Applies to:** CompareWindow, any "best frame" selection logic
+
 ## [2026-03-27] — Satellite trail RANSAC fires false positives on extended objects
 - **Mistake:** RANSAC collinear detection (8-point minimum) triggered on galaxy knots in edge-on galaxies like M82, dropping star count from ~1150 to ~183 via `correctedTotal = filtered.count` (center-crop only, not comparable to full-image GPU count).
 - **Root cause:** Galaxy structure creates 8+ collinear bright regions within 5px tolerance. The count correction used center-crop-only count (apples) vs full-image count (oranges). No shape verification on trail candidates.

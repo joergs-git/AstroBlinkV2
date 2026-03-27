@@ -1219,7 +1219,7 @@ struct AutoMarkPopover: View {
             ($0.qualityTier == .borderline && ($0.qualityBreakdown?.borderlineSeverity ?? 0) >= 2)
         }
         let aggressiveTarget = images.filter {
-            $0.qualityTier == .trash || $0.qualityTier == .borderline
+            $0.qualityTier == .trash || $0.qualityTier == .borderline || $0.qualityTier == .uncertain
         }
 
         let currentlyMarked = images.filter { $0.isMarkedForDeletion }.count
@@ -1306,12 +1306,13 @@ struct AutoMarkPopover: View {
                 shouldMark = entry.qualityTier == .trash ||
                     (entry.qualityTier == .borderline && (entry.qualityBreakdown?.borderlineSeverity ?? 0) >= 2)
             } else {
-                shouldMark = entry.qualityTier == .trash || entry.qualityTier == .borderline
+                // Aggressive: trash + borderline + uncertain
+                shouldMark = entry.qualityTier == .trash || entry.qualityTier == .borderline || entry.qualityTier == .uncertain
             }
 
             // Bidirectional: mark what should be marked, UNMARK what shouldn't
             // (only unmark autopilot-eligible frames — don't touch manually marked excellent/good)
-            let isAutopilotEligible = entry.qualityTier == .trash || entry.qualityTier == .borderline
+            let isAutopilotEligible = entry.qualityTier == .trash || entry.qualityTier == .borderline || entry.qualityTier == .uncertain
             if shouldMark && !entry.isMarkedForDeletion {
                 viewModel.images[i].isMarkedForDeletion = true
             } else if !shouldMark && entry.isMarkedForDeletion && isAutopilotEligible {

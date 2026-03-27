@@ -153,6 +153,7 @@ class HeaderInspectorModel: ObservableObject {
         case .good: tierName = "Good"
         case .borderline: tierName = "Borderline"
         case .trash: tierName = "Trash"
+        case .uncertain: tierName = "Uncertain"
         }
         metrics.append(("Tier", tierName))
         metrics.append(("Combined Z", String(format: "%+.2fσ", bd.combinedZScore)))
@@ -182,9 +183,19 @@ class HeaderInspectorModel: ObservableObject {
         if let why = bd.reasoningText {
             metrics.append(("Why", why))
         }
-        // Twilight phase from entry context (shown for all frames, not just garbage)
+        // Twilight phase with filter-aware note (shown for all frames, not just garbage)
         if let phase = entry?.twilightPhase {
-            metrics.append(("Twilight", phase.rawValue))
+            var twilightText = phase.rawValue
+            if phase >= .nautical, let filter = entry?.filter {
+                let canon = ColorCombineEngine.canonicalFilterName(filter)
+                let isNB = ["Ha", "OIII", "SII", "Hbeta", "NII"].contains(canon)
+                if isNB && phase == .nautical {
+                    twilightText += " (OK for narrowband)"
+                } else if !isNB && phase == .nautical {
+                    twilightText += " (degraded for \(canon))"
+                }
+            }
+            metrics.append(("Twilight", twilightText))
         }
 
         qualityMetrics = metrics

@@ -529,6 +529,8 @@ struct FileListView: NSViewRepresentable {
                     return (icon, tint, richTooltip)
                 case .trash:
                     return ("xmark.circle.fill", .systemRed, richTooltip)
+                case .uncertain:
+                    return ("questionmark.circle", .systemBlue, richTooltip)
                 }
             }()
 
@@ -576,14 +578,14 @@ struct FileListView: NSViewRepresentable {
         // 4 levels from light amber (nearly good) to deep orange (nearly trash).
         private static func borderlineIconAndColor(severity: Int) -> (String, NSColor) {
             switch severity {
-            case 0:  // Nearly good — lightest
+            case 0:  // Nearly good — lightest warm amber
+                return ("exclamationmark.circle", NSColor(calibratedHue: 0.14, saturation: 0.45, brightness: 1.0, alpha: 1.0))
+            case 1:  // Middle borderline — light orange
                 return ("exclamationmark.circle", NSColor(calibratedHue: 0.12, saturation: 0.55, brightness: 0.95, alpha: 1.0))
-            case 1:  // Middle borderline — standard orange
-                return ("exclamationmark.circle", .systemOrange)
-            case 2:  // Leaning trash — filled, deeper orange
-                return ("exclamationmark.circle.fill", NSColor(calibratedHue: 0.06, saturation: 0.80, brightness: 0.90, alpha: 1.0))
-            default: // Nearly trash — filled, dark orange
-                return ("exclamationmark.circle.fill", NSColor(calibratedHue: 0.03, saturation: 0.90, brightness: 0.85, alpha: 1.0))
+            case 2:  // Leaning trash — filled, warm orange
+                return ("exclamationmark.circle.fill", NSColor(calibratedHue: 0.09, saturation: 0.70, brightness: 0.92, alpha: 1.0))
+            default: // Nearly trash — filled, deep orange (distinct from red)
+                return ("exclamationmark.circle.fill", NSColor(calibratedHue: 0.06, saturation: 0.80, brightness: 0.88, alpha: 1.0))
             }
         }
 
@@ -610,6 +612,7 @@ struct FileListView: NSViewRepresentable {
                 case .good:       return boldText("Good")
                 case .borderline: return boldText("Borderline")
                 case .trash:      return boldText("Poor")
+                case .uncertain:  return boldText("Uncertain")
                 }
             }()
 

@@ -41,7 +41,7 @@ AIsaac knows your equipment, remembers your imaging history, understands light p
 ## Highlights
 
 - **AIsaac AI Assistant** — built-in astrophotography AI powered by Claude. Quality summaries, smart culling suggestions, filter advice, imaging plans, voice input, equipment memory. Free Sonnet tier included; bring your own API key for Opus.
-- **SmartCull Quality Engine** — 4-stage pipeline (garbage detection → z-score ranking → rescue rules → sanity checks) auto-classifies ~99% of frames. Orientation consensus trailing detection (industry first). Self-calibrating per-setup quality baseline.
+- **SmartCull Quality Engine** — 5-stage pipeline (garbage detection → session sanity → z-score ranking → rescue rules → FWHM sanity) auto-classifies ~99% of frames. Cross-group P10/P90 comparison catches uniformly bad nights. Filter-aware twilight detection. Orientation consensus trailing detection (industry first). Self-calibrating per-setup quality baseline.
 - **LightspeedStacker** — GPU warp+accumulate stacking, 10-20x faster than CPU. Hash-based triangle matching, Lanczos-3 interpolation, min/max pixel rejection. Color Combine for mono filter palettes (SHO, HOO, LRGB).
 - **GPU Post-Processing** — real-time stretch, sharpening, contrast, dark level, color saturation, bilateral denoise, Richardson-Lucy deconvolution, gradient removal, Wiener deconvolution, structure enhancement.
 - **Metal GPU Rendering** — PixInsight-compatible STF auto-stretch, zero-copy Apple Silicon buffers, <32ms navigation on cache hit.
