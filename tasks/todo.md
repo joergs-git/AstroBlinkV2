@@ -455,6 +455,39 @@ Valuable for ML/community learning, especially borderline cases.
 - Crowdsourced ground truth for detection algorithm training
 - Requires opt-in consent + Supabase backend (see project_community_detection_learning.md)
 
+## v5.6.0 — Frame History Database + Archive Scanner (COMPLETE 2026-03-28)
+- [x] GRDB.swift SQLite integration (FrameHistoryDatabase, FrameRecord, SessionRecord)
+- [x] Per-frame quality persistence (UPSERT on SHA256 file hash, no duplicates)
+- [x] Global unique frame IDs (#XX-NNNN from file hash, deterministic)
+- [x] MoonCalculator (illumination, position, angular separation)
+- [x] Moon% and MoonDist columns in file list
+- [x] Moon-aware background anomaly scoring (broadband threshold relaxed near bright moon)
+- [x] Cross-session historical baselines (historicalZScore, historicalPercentile)
+- [x] History window with SwiftUI Charts (Quality, Metrics, Moon, Setups tabs)
+- [x] Filter-accurate chart colors (R=red, B=blue, Ha=orange, OIII=teal, etc.)
+- [x] "All Setups" consolidated view + Setup Comparison chart
+- [x] Archive Scanner — background folder crawler with per-file progress
+- [x] Scanner exclusion rules (DARK/FLAT/BIAS, PixInsight, calibration)
+- [x] Post-scan quality tier scoring (groups by target+filter+exposure)
+- [x] Resumable scans (scan_progress table, crash-safe, resume dialog on startup)
+- [x] iCloud rotating backup (lazy resolution, non-blocking)
+- [x] Advanced menu: Reset Frame History Database
+- [x] AIsaac historical context (setup summary in system prompt)
+- [x] Meridian flip in Compare window (UV flip, zero GPU cost)
+- [x] Deployment target bumped to macOS 14.0 (chartScrollableAxes, onChange new syntax)
+- [x] 24 new tests (16 FrameHistoryDB + 8 MoonCalculator), all passing
+
+## Open TODOs — Frame History & Charts
+- [ ] Chart zoom: pinch/scroll zoom on time axis (chartXScale modifier)
+- [ ] Chart tooltip/hover: show exact values on hover (SwiftUI Charts annotation)
+- [ ] Twilight bands overlay on quality timeline chart (AreaMark background)
+- [ ] FWHM histogram: current session distribution overlaid on historical
+- [ ] Archive scanner: detect and flag files that no longer exist (fileGone marker)
+- [ ] Archive scanner: progress notification via Pushover when done
+- [ ] Bortle class estimation from SITELAT/SITELONG (needs embedded light pollution dataset)
+- [ ] User confidence rating (1/2/3 stars) — persisted in FrameHistory DB
+- [ ] WBPP file organizer: auto-organize files into WBPP directory structure
+
 ## Future TODOs — Testing
 - [ ] Fix pre-existing DecoderTests.testMetalBufferCreation failure
 - [x] ~~CI: GitHub Actions workflow~~ — Metal required, won't work on GitHub runners

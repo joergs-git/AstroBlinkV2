@@ -1,5 +1,29 @@
 # Lessons Learned
 
+## [2026-03-28] — iCloud container access blocks main thread for 10-30s
+- **Mistake:** `FrameHistoryDatabase.init()` called `FileManager.url(forUbiquityContainerIdentifier:)` synchronously. App hung with spinning beachball on launch and during tests.
+- **Root cause:** Apple's iCloud container resolution can take 10-30+ seconds on first call, especially if iCloud Drive is syncing or has connectivity issues. Same issue existed in CalibrationDatabase but was masked by lazy singleton init.
+- **Rule:** Never call `url(forUbiquityContainerIdentifier:)` synchronously on main thread or in `init()`. Resolve asynchronously via `DispatchQueue.global().async` and use the result only when ready (`nil` until resolved = skip iCloud silently).
+- **Applies to:** Any singleton that accesses iCloud containers, app startup code, test host initialization
+
+## [2026-03-28] — SwiftUI Charts crashes on empty KeyValuePairs
+- **Mistake:** `chartForegroundStyleScale` passed empty `KeyValuePairs<String, Color>` → `EXC_BREAKPOINT` crash in Charts framework `Sequence.reduce(into:)`.
+- **Root cause:** SwiftUI Charts doesn't handle empty color scales. Our dynamic filter color builder returned `[:]` as placeholder.
+- **Rule:** Never pass empty `KeyValuePairs` to `chartForegroundStyleScale`. Either build a non-empty literal, or use `foregroundStyle()` directly per mark with explicit colors.
+- **Applies to:** Any SwiftUI Charts color scale configuration
+
+## [2026-03-28] — Archive scanner GPU operations need .userInitiated QoS
+- **Mistake:** Archive scanner ran at `.utility` QoS. GPU star detection via Metal compute hung — 0 files processed after 5 minutes.
+- **Root cause:** Metal GPU dispatch on `.utility` threads gets deprioritized by the system. Star detection pipeline needs P-core scheduling to complete in reasonable time.
+- **Rule:** Any code path that uses Metal compute (star detection, STF, GPU preview) must run at `.userInitiated` or higher QoS. Use `.utility` only for pure I/O or CPU-light work.
+- **Applies to:** ArchiveScanner, PrefetchCache, any background GPU task
+
+## [2026-03-28] — Skip app startup init in test host
+- **Mistake:** Test host app ran `applicationDidFinishLaunching` including DB init, iCloud sync, splash screen — blocking test execution.
+- **Root cause:** `xcodebuild test` launches the app as TEST_HOST. All startup code runs before tests.
+- **Rule:** Guard heavy startup code with `ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil` to skip when running as test host.
+- **Applies to:** AstroTriageApp.swift, any app delegate startup code
+
 ## [2026-03-27] — Z-scores normalize away uniformly bad groups — need cross-group sanity
 - **Mistake:** January night of M82 with FWHM 9-11, SNR 6-9 rated "Good" because all frames in the group were equally bad. Z-scores normalized to zero within the group.
 - **Root cause:** Z-scores are purely group-relative. When ALL frames in a group are bad, the median IS bad, and no frame is an outlier. Stage 1 garbage rules (R2/R3) also use group medians.
