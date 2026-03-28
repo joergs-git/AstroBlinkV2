@@ -122,6 +122,14 @@ struct FrameHistoryContentView: View {
             }
             .frame(maxWidth: 250)
 
+            // Edit nickname button (only when a specific setup is selected)
+            if model.selectedSetupHash != nil {
+                Button(action: { showNicknameDialog() }) {
+                    Image(systemName: "pencil")
+                }
+                .help("Set nickname for this setup")
+            }
+
             // Target picker
             if model.availableTargets.count > 1 {
                 Picker("Target", selection: $model.selectedTarget) {
@@ -371,6 +379,36 @@ struct FrameHistoryContentView: View {
             Spacer()
         }
         .frame(minHeight: 200)
+    }
+
+    // MARK: - Setup Nickname
+
+    private func showNicknameDialog() {
+        guard let hash = model.selectedSetupHash else { return }
+        let current = FrameHistoryDatabase.shared.nickname(for: hash) ?? ""
+
+        let alert = NSAlert()
+        alert.messageText = "Setup Nickname"
+        alert.informativeText = "Enter a name for this setup (e.g. \"Big Rig\", \"Travel Scope\")"
+        alert.addButton(withTitle: "Save")
+        alert.addButton(withTitle: "Cancel")
+
+        let input = NSTextField(frame: NSRect(x: 0, y: 0, width: 250, height: 24))
+        input.stringValue = current
+        input.placeholderString = "e.g. Big Rig"
+        alert.accessoryView = input
+        alert.window.initialFirstResponder = input
+
+        if alert.runModal() == .alertFirstButtonReturn {
+            let nickname = input.stringValue.trimmingCharacters(in: .whitespaces)
+            if nickname.isEmpty {
+                // Clear nickname — use raw equipment name
+                try? FrameHistoryDatabase.shared.setNickname("", for: hash)
+            } else {
+                try? FrameHistoryDatabase.shared.setNickname(nickname, for: hash)
+            }
+            model.loadData()  // Refresh setup labels
+        }
     }
 
     // MARK: - Archive Scanner

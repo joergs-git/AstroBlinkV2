@@ -141,6 +141,12 @@ final class FrameHistoryDatabase {
             try db.create(index: "idx_session_night", on: "session_record", columns: ["observingNight"])
             try db.create(index: "idx_session_setup", on: "session_record", columns: ["setupHash"])
 
+            // setup_nickname — user-defined names for equipment setups
+            try db.create(table: "setup_nickname") { t in
+                t.primaryKey("setupHash", .text).notNull()
+                t.column("nickname", .text).notNull()
+            }
+
             // scan_progress (for Archive Scanner)
             try db.create(table: "scan_progress") { t in
                 t.primaryKey("rootPath", .text).notNull()
@@ -150,6 +156,13 @@ final class FrameHistoryDatabase {
                 t.column("startedAt", .text).notNull()
                 t.column("lastUpdatedAt", .text).notNull()
                 t.column("isComplete", .integer).notNull().defaults(to: 0)
+            }
+        }
+
+        migrator.registerMigration("v2_setup_nicknames") { db in
+            try db.create(table: "setup_nickname", ifNotExists: true) { t in
+                t.primaryKey("setupHash", .text).notNull()
+                t.column("nickname", .text).notNull()
             }
         }
 
@@ -496,6 +509,40 @@ final class FrameHistoryDatabase {
         // Replace local with iCloud copy
         try? FileManager.default.removeItem(at: storageURL)
         try FileManager.default.copyItem(at: iCloudDB, to: storageURL)
+    }
+
+    // MARK: - Setup Nicknames
+
+    /// Set a user-defined nickname for a setup (e.g. "Big Rig", "Travel Scope").
+    func setNickname(_ nickname: String, for setupHash: String) throws {
+        try dbQueue.write { db in
+            try db.execute(
+                sql: "INSERT OR REPLACE INTO setup_nickname (setupHash, nickname) VALUES (?, ?)",
+                arguments: [setupHash, nickname]
+            )
+        }
+    }
+
+    /// Get nickname for a setup, or nil if not set.
+    func nickname(for setupHash: String) -> String? {
+        try? dbQueue.read { db in
+            try String.fetchOne(db, sql: "SELECT nickname FROM setup_nickname WHERE setupHash = ?",
+                               arguments: [setupHash])
+        }
+    }
+
+    /// Get all nicknames as [setupHash: nickname].
+    func allNicknames() -> [String: String] {
+        (try? dbQueue.read { db in
+            var result: [String: String] = [:]
+            let rows = try Row.fetchAll(db, sql: "SELECT setupHash, nickname FROM setup_nickname")
+            for row in rows {
+                if let hash: String = row["setupHash"], let name: String = row["nickname"] {
+                    result[hash] = name
+                }
+            }
+            return result
+        }) ?? [:]
     }
 
     // MARK: - Session Queries (for Archive Scanner scoring)

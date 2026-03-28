@@ -56,13 +56,20 @@ class FrameHistoryModel: ObservableObject {
     private func loadAvailableSetups() {
         do {
             let sessions = try FrameHistoryDatabase.shared.sessions()
+            let nicknames = FrameHistoryDatabase.shared.allNicknames()
             var seen: Set<String> = []
             var setups: [(hash: String, label: String)] = []
             for session in sessions {
                 guard let hash = session.setupHash, !seen.contains(hash) else { continue }
                 seen.insert(hash)
-                let label = [session.telescope, session.camera].compactMap { $0 }.joined(separator: " + ")
-                setups.append((hash: hash, label: label.isEmpty ? hash.prefix(8).description : label))
+                let equipment = [session.telescope, session.camera].compactMap { $0 }.joined(separator: " + ")
+                let label: String
+                if let nickname = nicknames[hash] {
+                    label = nickname + (equipment.isEmpty ? "" : " (\(equipment))")
+                } else {
+                    label = equipment.isEmpty ? hash.prefix(8).description : equipment
+                }
+                setups.append((hash: hash, label: label))
             }
             availableSetups = setups
 
