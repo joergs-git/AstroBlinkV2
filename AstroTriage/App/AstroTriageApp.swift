@@ -71,6 +71,16 @@ struct AstroBlinkV2App: App {
                 }
             }
 
+            // Advanced menu (hidden safety net for Frame History Database)
+            CommandGroup(after: .windowList) {
+                Divider()
+                Menu("Advanced") {
+                    Button("Reset Frame History Database...") {
+                        NotificationCenter.default.post(name: .resetFrameHistory, object: nil)
+                    }
+                }
+            }
+
             // Help menu
             CommandGroup(replacing: .help) {
                 Button("AstroBlink Help") {
@@ -103,12 +113,80 @@ class AstroBlinkV2AppDelegate: NSObject, NSApplicationDelegate {
 
     // Show splash screen on launch (unless user opted out)
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Skip heavy init when running as test host
+        let isTestHost = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
+
         // Start iCloud key-value sync for app settings
-        AppSettings.startCloudSync()
+        if !isTestHost {
+            AppSettings.startCloudSync()
+        }
+
+        // Initialize Frame History database (local SQLite only — instant)
+        if !isTestHost {
+            _ = FrameHistoryDatabase.shared
+        }
 
         if AppSettings.loadBool(for: .hideSplash) != true {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                 AboutWindowController.shared.show(asSplash: true)
+            }
+        }
+    }
+
+    /// Check iCloud for a newer/different Frame History database and prompt user.
+    private func checkFrameHistoryICloudSync() {
+        guard let (localMeta, iCloudMeta) = FrameHistoryDatabase.shared.checkICloudForNewerDB() else {
+            return  // No iCloud data or same as local
+        }
+
+        // Format file sizes
+        let localMB = String(format: "%.1f MB", Double(localMeta.dbSizeBytes) / (1024 * 1024))
+        let iCloudMB = String(format: "%.1f MB", Double(iCloudMeta.dbSizeBytes) / (1024 * 1024))
+
+        let alert = NSAlert()
+        alert.alertStyle = .informational
+        alert.messageText = "Frame History Database Sync"
+
+        // Safety: warn if local is larger
+        let localIsLarger = localMeta.frameCount > iCloudMeta.frameCount
+
+        var infoText = "Your local and iCloud databases differ:\n\n"
+        infoText += "Local: \(localMeta.frameCount) frames (\(localMB))\n"
+        infoText += "iCloud: \(iCloudMeta.frameCount) frames (\(iCloudMB))\n"
+
+        if localIsLarger {
+            infoText += "\nYour local database has more frames than iCloud.\nDownloading would lose local data."
+        }
+
+        alert.informativeText = infoText
+
+        if localIsLarger {
+            // Default to Keep Local when local is larger
+            alert.addButton(withTitle: "Keep Local")
+            alert.addButton(withTitle: "Use iCloud")
+            alert.addButton(withTitle: "Cancel")
+        } else {
+            // Default to Use iCloud when iCloud is larger
+            alert.addButton(withTitle: "Use iCloud")
+            alert.addButton(withTitle: "Keep Local")
+            alert.addButton(withTitle: "Cancel")
+        }
+
+        let response = alert.runModal()
+        let useICloud = localIsLarger
+            ? (response == .alertSecondButtonReturn)
+            : (response == .alertFirstButtonReturn)
+
+        if useICloud {
+            do {
+                try FrameHistoryDatabase.shared.importFromICloud()
+                print("FrameHistory: imported from iCloud (\(iCloudMeta.frameCount) frames)")
+            } catch {
+                let errorAlert = NSAlert()
+                errorAlert.alertStyle = .warning
+                errorAlert.messageText = "iCloud Import Failed"
+                errorAlert.informativeText = error.localizedDescription
+                errorAlert.runModal()
             }
         }
     }
@@ -330,6 +408,7 @@ extension Notification.Name {
     static let fontScaleIncrease = Notification.Name("fontScaleIncrease")
     static let fontScaleDecrease = Notification.Name("fontScaleDecrease")
     static let fontScaleReset = Notification.Name("fontScaleReset")
+    static let resetFrameHistory = Notification.Name("resetFrameHistory")
 }
 
 // AppDelegate extension for help window

@@ -109,6 +109,7 @@ struct AIsaacSessionContext {
     let isCaching: Bool
     let scoredCount: Int  // frames with quality scores computed
     let loadingStatus: String?  // Human-readable loading/caching status for AIsaac context
+    let setupHash: String?     // SetupFingerprint hash for Frame History DB queries
 
     // Per-frame metrics for deep analysis (compact representation)
     let frameMetrics: [FrameMetric]

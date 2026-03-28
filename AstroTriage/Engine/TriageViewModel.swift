@@ -62,6 +62,9 @@ class TriageViewModel: ObservableObject {
     // Reference coordinates (RA/DEC) for pier side matching
     private var referenceCoords: (ra: String, dec: String)?
 
+    // Frame History: unique session ID for the current session (reset on each folder open)
+    private var currentSessionId = UUID().uuidString
+
     // Prefetch progress (0.0 to 1.0)
     @Published var cacheProgress: Double = 0
     @Published var cachingCount: Int = 0
@@ -604,7 +607,9 @@ class TriageViewModel: ObservableObject {
 
         CompareWindowController.open(
             selectedEntry: entry, bestEntry: best,
-            device: device, nightMode: nightMode, debayerEnabled: debayerEnabled
+            device: device, nightMode: nightMode, debayerEnabled: debayerEnabled,
+            rotateSelected: shouldRotateForMeridian(entry),
+            rotateBest: shouldRotateForMeridian(best)
         )
     }
 
@@ -832,6 +837,7 @@ class TriageViewModel: ObservableObject {
     }
 
     func loadSession(url: URL) {
+        currentSessionId = UUID().uuidString
         wireSessionOverviewCallbacks()
         benchmarkStats.markSessionStart()
         isLoading = true
@@ -1092,6 +1098,12 @@ class TriageViewModel: ObservableObject {
                             self.images[idx].trailingConsensus = t.consensusFraction
                         }
                     }
+                }
+            },
+            onFileHash: { [weak self] url, hash in
+                guard let self = self else { return }
+                if let idx = self.images.firstIndex(where: { $0.url == url }) {
+                    self.images[idx].fileHash = hash
                 }
             }
         )
@@ -1360,6 +1372,12 @@ class TriageViewModel: ObservableObject {
                         }
                     }
                 }
+            },
+            onFileHash: { [weak self] url, hash in
+                guard let self = self else { return }
+                if let idx = self.images.firstIndex(where: { $0.url == url }) {
+                    self.images[idx].fileHash = hash
+                }
             }
         )
     }
@@ -1611,6 +1629,8 @@ class TriageViewModel: ObservableObject {
                 self.benchmarkStats.markHeaderEnrichEnd()
                 self.sessionOverviewModel.updateStats(from: self.images)
                 self.hasOSCImages = foundOSC
+                // Compute moon illumination + target distance (needs date + coordinates from headers)
+                self.computeMoonData()
                 // Compute relative quality scores now that all header metadata is available
                 self.recomputeQualityScores()
                 self.detectMeridianFlip()
@@ -1684,11 +1704,23 @@ class TriageViewModel: ObservableObject {
             }
         }
 
+        // Query historical baselines from Frame History Database (if enough past data exists)
+        let histBaselines: HistoricalBaselines? = {
+            guard let setupHash = currentSetupFingerprint?.hash else { return nil }
+            let records = try? FrameHistoryDatabase.shared.historicalFrames(
+                setupHash: setupHash,
+                excludingSession: currentSessionId
+            )
+            guard let records, records.count >= 30 else { return nil }
+            return HistoricalBaselines.build(from: records)
+        }()
+
         let scores = QualityEstimator.computeScores(
             for: images,
             calibrationDB: CalibrationDatabase.shared,
             fingerprint: currentSetupFingerprint,
-            communityBaseline: communityBaseline
+            communityBaseline: communityBaseline,
+            historicalBaselines: histBaselines
         )
         for index in images.indices {
             images[index].qualityBreakdown = scores[images[index].url]
@@ -1730,6 +1762,89 @@ class TriageViewModel: ObservableObject {
         }
 
         updateConvergence()
+
+        // Save frame records to history database (async, non-blocking)
+        saveToFrameHistory()
+    }
+
+    // MARK: - Frame History Persistence
+
+    /// Compute moon phase and distance for all images that have date + location data.
+    /// Called during header enrichment when site coordinates become available.
+    private func computeMoonData() {
+        let isoFormatter = ISO8601DateFormatter()
+        isoFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let fallbackFormatter = DateFormatter()
+        fallbackFormatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        fallbackFormatter.locale = Locale(identifier: "en_US_POSIX")
+        fallbackFormatter.timeZone = TimeZone(identifier: "UTC")
+
+        for index in images.indices {
+            guard let dateStr = images[index].date, let timeStr = images[index].time else { continue }
+            let dateTimeStr = "\(dateStr) \(timeStr)"
+            guard let utcDate = fallbackFormatter.date(from: dateTimeStr) else { continue }
+
+            // Moon illumination (needs only date, no location)
+            images[index].moonIllumination = MoonCalculator.illumination(utcDate: utcDate)
+
+            // Moon-target distance (needs target RA/Dec)
+            if let solvedRA = images[index].solvedRA, let solvedDec = images[index].solvedDec {
+                images[index].moonDistance = MoonCalculator.moonTargetDistance(
+                    utcDate: utcDate, targetRADeg: solvedRA, targetDecDeg: solvedDec
+                )
+            } else if let ra = images[index].objctRA, let dec = images[index].objctDec {
+                images[index].moonDistance = MoonCalculator.moonTargetDistance(
+                    utcDate: utcDate, targetRA: ra, targetDec: dec
+                )
+            }
+        }
+    }
+
+    /// Save all frame records to the Frame History Database.
+    /// Called after quality scoring completes. Runs on a background thread.
+    private func saveToFrameHistory() {
+        guard !images.isEmpty else { return }
+        let sessionId = currentSessionId
+        let setupHash = currentSetupFingerprint?.hash
+        let sessionPath = sessionRootURL?.path ?? ""
+
+        // Build records from current image state
+        let records: [FrameRecord] = images.compactMap { entry in
+            guard let hash = entry.fileHash else { return nil }
+            return FrameRecord.from(entry: entry, fileHash: hash, sessionId: sessionId, setupHash: setupHash)
+        }
+
+        guard !records.isEmpty else { return }
+
+        // Build session record
+        let trashCount = images.filter { $0.qualityTier == .trash }.count
+        let deletedCount = images.filter { $0.isMarkedForDeletion }.count
+        let sessionRecord = SessionRecord(
+            id: sessionId,
+            sessionPath: sessionPath,
+            observingNight: images.first?.observingNight,
+            setupHash: setupHash,
+            telescope: images.first?.telescope,
+            camera: images.first?.camera,
+            target: images.first?.target,
+            frameCount: images.count,
+            trashCount: trashCount,
+            deletedCount: deletedCount,
+            recordedAt: ISO8601DateFormatter().string(from: Date())
+        )
+
+        // Save on background to avoid blocking UI
+        Task.detached {
+            do {
+                try FrameHistoryDatabase.shared.saveFrameRecords(records)
+                try FrameHistoryDatabase.shared.saveSessionRecord(sessionRecord)
+                // Export to iCloud after save
+                FrameHistoryDatabase.shared.exportToICloud()
+                print("FrameHistory: saved \(records.count) frames for session \(sessionId)")
+            } catch {
+                print("FrameHistory: save failed: \(error)")
+            }
+        }
     }
 
     /// Generate session guidance hints about scoring accuracy
@@ -2969,6 +3084,14 @@ class TriageViewModel: ObservableObject {
             // Upload anonymous session summary to community (if opted in)
             CommunityDetectionService.shared.uploadSessionData(entries: images, fingerprint: fp)
         }
+
+        // Mark deleted frames in Frame History Database
+        let deletedHashes = images.filter { $0.isMarkedForDeletion }.compactMap { $0.fileHash }
+        if !deletedHashes.isEmpty {
+            Task.detached {
+                try? FrameHistoryDatabase.shared.markDeleted(fileHashes: deletedHashes)
+            }
+        }
         recomputeQualityScores()
         updateConvergence()
     }
@@ -3574,6 +3697,12 @@ class TriageViewModel: ObservableObject {
                         if !metrics.starDetails.isEmpty {
                             self.images[idx].starDetails = metrics.starDetails
                         }
+                    }
+                },
+                onFileHash: { [weak self] url, hash in
+                    guard let self = self else { return }
+                    if let idx = self.images.firstIndex(where: { $0.url == url }) {
+                        self.images[idx].fileHash = hash
                     }
                 }
             )

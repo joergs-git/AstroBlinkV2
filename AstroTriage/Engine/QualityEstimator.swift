@@ -76,6 +76,11 @@ struct QualityBreakdown: Hashable {
     // across groups. Empty if frame passed session sanity or check didn't apply.
     var sessionSanityReasons: [String] = []
 
+    // Historical comparison (Phase 2) — how this frame compares to ALL previous sessions.
+    // nil if no historical data available for this setup+filter+exposure combination.
+    var historicalZScore: Double?       // Combined z-score against historical baselines
+    var historicalPercentile: Double?   // 0-100, where in historical distribution this frame falls
+
     // Smart recommendation label based on per-metric analysis
     // Smart recommendation based on per-metric analysis and eccentricity.
     // Research shows: round stars = always keep (even with worse FWHM/noise).
@@ -223,7 +228,8 @@ struct QualityEstimator {
         for entries: [ImageEntry],
         calibrationDB: CalibrationDatabase? = nil,
         fingerprint: SetupFingerprint? = nil,
-        communityBaseline: CommunityBaseline? = nil
+        communityBaseline: CommunityBaseline? = nil,
+        historicalBaselines: HistoricalBaselines? = nil
     ) -> [URL: QualityBreakdown] {
         // Two-pass night-aware scoring for multi-night sessions:
         // Pass 1: combined groups (all nights merged) → every entry gets a baseline score
@@ -468,9 +474,22 @@ struct QualityEstimator {
                 }
 
                 // Rule 8: Background anomaly — clouds, light pollution gradient, or fog
+                // Moon-aware: bright moon near target raises legitimate background for broadband.
+                // Narrowband is mostly immune to moonlight — don't relax threshold.
                 if let bg = bgValues[localIdx],
                    let median = bgMedian, let mad = bgMAD, mad > 0 {
-                    let bgThreshold = max(5.0, 5.0 + (20.0 - Double(min(groupEntries.count, 20))) * 0.15)
+                    var bgThreshold = max(5.0, 5.0 + (20.0 - Double(min(groupEntries.count, 20))) * 0.15)
+
+                    // Relax threshold when bright moon is close and filter is broadband
+                    if let moonIll = entry.moonIllumination, moonIll > 0.4,
+                       let moonDist = entry.moonDistance, moonDist < 60,
+                       broadbandCanonical.contains(ColorCombineEngine.canonicalFilterName(entry.filter ?? "")) {
+                        // Closer moon + brighter = more background expected
+                        // Scale: 50% moon at 60° = +20%, full moon at 10° = +100%
+                        let moonFactor = moonIll * (1.0 - moonDist / 90.0)
+                        bgThreshold *= (1.0 + moonFactor)
+                    }
+
                     let deviation = (bg - median) / mad
                     if deviation > bgThreshold {
                         garbageReasons.append(.backgroundAnomaly)
@@ -756,7 +775,76 @@ struct QualityEstimator {
             }
         }
 
+        // ── Historical Comparison (Phase 2) ──
+        // Annotate each breakdown with historical z-score if baselines available.
+        // Does NOT change tier assignment — purely informational for charts and AIsaac.
+        if let hist = historicalBaselines {
+            annotateHistorical(entries: entries, result: &result, baselines: hist)
+        }
+
         return result
+    }
+
+    // MARK: - Historical Annotation
+
+    /// Compute historical z-scores by comparing each frame's metrics against
+    /// the accumulated baseline from all previous sessions with the same setup.
+    private static func annotateHistorical(
+        entries: [ImageEntry],
+        result: inout [URL: QualityBreakdown],
+        baselines: HistoricalBaselines
+    ) {
+        for entry in entries {
+            guard var bd = result[entry.url] else { continue }
+            let filter = (entry.filter ?? "").uppercased()
+            let exposure = entry.exposure.map { Int($0.rounded()) } ?? 0
+            let key = "\(filter)|\(exposure)"
+            guard let baseline = baselines.baselines[key], baseline.frameCount >= 10 else { continue }
+
+            // Compute per-metric z-scores against historical baselines
+            var zScores: [Double] = []
+
+            if let fwhm = entry.computedFWHM, baseline.fwhmMAD > 0 {
+                zScores.append((fwhm - baseline.fwhmMedian) / baseline.fwhmMAD)
+            }
+            if let stars = entry.computedStarCount, baseline.starCountMAD > 0 {
+                // Stars: higher = better, so negate
+                zScores.append(-(Double(stars) - baseline.starCountMedian) / baseline.starCountMAD)
+            }
+            if let noise = entry.noiseMAD, baseline.noiseMAD > 0 {
+                zScores.append((Double(noise) - baseline.noiseMedian) / baseline.noiseMAD)
+            }
+            if let trailing = entry.trailingScore, baseline.trailingMAD > 0 {
+                zScores.append((trailing - baseline.trailingMedian) / baseline.trailingMAD)
+            }
+
+            guard !zScores.isEmpty else { continue }
+
+            // Combined historical z-score (simple mean — all metrics weighted equally)
+            let historicalZ = zScores.reduce(0, +) / Double(zScores.count)
+            bd.historicalZScore = historicalZ
+
+            // Percentile: approximate using normal CDF
+            // Higher z = worse, so percentile = 100 × P(Z > z) = 100 × (1 - Phi(z))
+            bd.historicalPercentile = 100.0 * (1.0 - normalCDF(historicalZ))
+
+            result[entry.url] = bd
+        }
+    }
+
+    /// Standard normal CDF approximation (Abramowitz & Stegun, max error 1.5e-7).
+    private static func normalCDF(_ x: Double) -> Double {
+        let a1 =  0.254829592
+        let a2 = -0.284496736
+        let a3 =  1.421413741
+        let a4 = -1.453152027
+        let a5 =  1.061405429
+        let p  =  0.3275911
+        let sign = x < 0 ? -1.0 : 1.0
+        let absX = Swift.abs(x)
+        let t = 1.0 / (1.0 + p * absX)
+        let y = 1.0 - (((((a5 * t + a4) * t) + a3) * t + a2) * t + a1) * t * exp(-absX * absX / 2.0)
+        return 0.5 * (1.0 + sign * y)
     }
 
     // MARK: - Session-Wide Sanity Check (Stage 1.5)

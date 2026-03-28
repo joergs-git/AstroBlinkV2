@@ -42,6 +42,9 @@ struct ColumnDefinition {
         ColumnDefinition(identifier: "gain",        title: "Gain",      defaultWidth: 45,  minWidth: 35,  isDefaultVisible: true,  isHideable: true),
         ColumnDefinition(identifier: "fileSize",    title: "Size",      defaultWidth: 70,  minWidth: 50,  isDefaultVisible: true,  isHideable: true),
         ColumnDefinition(identifier: "subfolder",   title: "Subfolder", defaultWidth: 80,  minWidth: 50,  isDefaultVisible: true,  isHideable: true),
+        // Moon data (computed from date + site coordinates)
+        ColumnDefinition(identifier: "moonPhase",   title: "Moon%",     defaultWidth: 50,  minWidth: 40,  isDefaultVisible: true,  isHideable: true),
+        ColumnDefinition(identifier: "moonDist",    title: "MoonDist",  defaultWidth: 60,  minWidth: 45,  isDefaultVisible: true,  isHideable: true),
         // Hidden-by-default columns
         ColumnDefinition(identifier: "date",        title: "Date",      defaultWidth: 85,  minWidth: 70,  isDefaultVisible: false, isHideable: true),
         ColumnDefinition(identifier: "telescope",   title: "Telescope", defaultWidth: 80,  minWidth: 60,  isDefaultVisible: false, isHideable: true),
@@ -55,7 +58,9 @@ struct ColumnDefinition {
     // Column tail: shared columns that appear after the primary metrics
     private static let columnTail: [String] = [
         "filename", "frameType", "camera",
-        "ambientTemp", "focuserTemp", "sensorTemp", "gain", "fileSize", "subfolder",
+        "ambientTemp", "focuserTemp", "sensorTemp", "gain",
+        "moonPhase", "moonDist",
+        "fileSize", "subfolder",
         "date", "telescope", "binning", "offset"
     ]
 
@@ -96,7 +101,10 @@ struct ColumnDefinition {
     // The "quality" column returns "" — its cell is rendered as an SF Symbol icon, not text.
     static func value(for columnId: String, from entry: ImageEntry) -> String {
         switch columnId {
-        case "frameNumber": return entry.sessionIndex > 0 ? String(entry.sessionIndex) : (entry.frameNumber.map { String($0) } ?? "")
+        case "frameNumber":
+            // Show shortId from file hash when available, fall back to session index
+            if let sid = entry.shortId { return "#\(sid)" }
+            return entry.sessionIndex > 0 ? String(entry.sessionIndex) : (entry.frameNumber.map { String($0) } ?? "")
         case "filter":      return entry.filter ?? ""
         case "quality":     return ""  // Icon cell; handled separately in FileListView
         case "time":        return entry.time ?? ""
@@ -128,6 +136,10 @@ struct ColumnDefinition {
             return entry.qualityBreakdown?.snrContribution.map { String(format: "%.0f%%", $0) } ?? ""
         case "eccentricity":
             return entry.computedEccentricity.map { String(format: "%.2f", $0) } ?? ""
+        case "moonPhase":
+            return entry.moonIllumination.map { String(format: "%.0f%%", $0 * 100) } ?? ""
+        case "moonDist":
+            return entry.moonDistance.map { String(format: "%.1f°", $0) } ?? ""
         default:            return ""
         }
     }
@@ -152,6 +164,8 @@ struct ColumnDefinition {
             return Double(med / mad)
         case "snrContrib":  return entry.qualityBreakdown?.snrContribution
         case "eccentricity": return entry.computedEccentricity
+        case "moonPhase":    return entry.moonIllumination
+        case "moonDist":     return entry.moonDistance
         default:            return nil
         }
     }
@@ -180,7 +194,8 @@ struct ColumnDefinition {
     static func isNumericColumn(_ columnId: String) -> Bool {
         switch columnId {
         case "frameNumber", "exposure", "hfr", "starCount", "sensorTemp",
-             "fwhm", "gain", "offset", "focuserTemp", "ambientTemp", "fileSize", "snr", "quality", "snrContrib", "eccentricity":
+             "fwhm", "gain", "offset", "focuserTemp", "ambientTemp", "fileSize", "snr", "quality", "snrContrib", "eccentricity",
+             "moonPhase", "moonDist":
             return true
         default:
             return false
@@ -219,9 +234,13 @@ struct ColumnDefinition {
         case "gain":
             return "Camera gain setting.\nFrom GAIN header keyword.\nHigher gain = more sensitivity but more read noise."
         case "frameNumber":
-            return "Frame sequence number from NINA filename (#0001, #0002, ...)."
+            return "Unique frame ID derived from file content hash.\nFormat: #XX-NNNN — deterministic, same file always gets same ID.\nFalls back to session index if hash not yet computed."
         case "filename":
             return "Full filename including NINA tokens.\nDouble-click column header to auto-resize width."
+        case "moonPhase":
+            return "Moon illumination at capture time.\n0% = new moon, 100% = full moon.\nComputed from capture date (synodic period).\nHigh moon + broadband filter = elevated background."
+        case "moonDist":
+            return "Angular distance from moon to target in degrees.\nComputed from moon position + target RA/Dec.\nCloser moon = more sky glow (especially broadband).\nNarrowband is mostly immune to moonlight."
         default:
             return nil
         }

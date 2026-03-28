@@ -183,6 +183,7 @@ class AIsaacWindowController: NSWindowController {
             isCaching: viewModel.isCaching,
             scoredCount: allImages.filter { $0.qualityTier != nil }.count,
             loadingStatus: loadingStatus,
+            setupHash: viewModel.currentSetupFingerprint?.hash,
             frameMetrics: Self.buildFrameMetrics(from: allImages)
         )
 

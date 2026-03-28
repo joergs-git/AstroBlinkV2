@@ -120,6 +120,13 @@ struct AIsaacContextBuilder {
             parts.append(weather)
         }
 
+        // Historical context from Frame History Database
+        if let ctx = context, let setupHash = ctx.setupHash {
+            if let histBlock = buildHistoricalBlock(setupHash: setupHash) {
+                parts.append(histBlock)
+            }
+        }
+
         // Per-frame metrics — only for presets that need deep analysis
         let needsFrameData: Bool
         switch preset {
@@ -140,6 +147,31 @@ struct AIsaacContextBuilder {
         }
 
         return parts.joined(separator: "\n\n")
+    }
+
+    // MARK: - Historical Context Block
+
+    private static func buildHistoricalBlock(setupHash: String) -> String? {
+        guard let summary = try? FrameHistoryDatabase.shared.setupSummary(setupHash: setupHash) else {
+            return nil
+        }
+        guard summary.totalFrames >= 30 else { return nil }
+
+        var lines = ["HISTORICAL DATA (Frame History Database — all previous sessions with this setup):"]
+        lines.append("- Total frames analyzed: \(summary.totalFrames) across \(summary.sessionCount) sessions")
+        if let first = summary.firstNight, let last = summary.lastNight {
+            lines.append("- Date range: \(first) to \(last)")
+        }
+        lines.append("- Historical median FWHM: \(String(format: "%.2f", summary.medianFWHM)) px")
+        lines.append("- Historical median star count: \(Int(summary.medianStarCount))")
+        lines.append("- Historical median noise: \(String(format: "%.4f", summary.medianNoise))")
+        lines.append("- Trash rate: \(String(format: "%.0f", summary.trashRate * 100))%")
+        if !summary.targets.isEmpty {
+            lines.append("- Targets imaged: \(summary.targets.joined(separator: ", "))")
+        }
+        lines.append("Use this to compare tonight's performance against the user's historical norm.")
+        lines.append("If metrics deviate significantly, mention possible causes (seeing, focus drift, moon, clouds).")
+        return lines.joined(separator: "\n")
     }
 
     // MARK: - Session Context Block

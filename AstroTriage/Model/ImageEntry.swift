@@ -80,6 +80,30 @@ struct ImageEntry: Identifiable, Hashable {
     // Star chain detection (tracking hop pattern)
     var starChainFraction: Double?     // Fraction of stars in parallel close-neighbor chains [0..1]
 
+    // File identity hash (SHA256 of first 64KB) — for Frame History Database
+    var fileHash: String?
+    // Human-readable short ID derived from fileHash (e.g. "A3-2917")
+    var shortId: String? {
+        guard let hash = fileHash else { return nil }
+        return Self.computeShortId(from: hash)
+    }
+
+    /// Compute human-readable short ID from file hash.
+    /// Format: "XX-NNNN" (2 uppercase hex chars + 4-digit number).
+    static func computeShortId(from hash: String) -> String {
+        let hex = hash.uppercased()
+        let prefix = String(hex.prefix(2))
+        let start = hex.index(hex.startIndex, offsetBy: min(2, hex.count))
+        let end = hex.index(start, offsetBy: min(4, hex.distance(from: start, to: hex.endIndex)))
+        let numHex = String(hex[start..<end])
+        let num = (UInt64(numHex, radix: 16) ?? 0) % 10000
+        return "\(prefix)-\(String(format: "%04d", num))"
+    }
+
+    // Moon data (computed from date + site coordinates)
+    var moonIllumination: Double?      // 0.0 = new moon, 1.0 = full moon
+    var moonDistance: Double?          // Angular distance from target in degrees
+
     // Pixel scale for display (computed from focal length + pixel size)
     var arcsecPerPixel: Double? {
         guard let fl = focalLength, fl > 0, let px = pixelSizeMicrons, px > 0 else { return nil }

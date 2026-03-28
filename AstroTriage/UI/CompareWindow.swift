@@ -64,7 +64,8 @@ enum CompareWindowController {
 
     /// Open a comparison window: best image (left) vs selected image (right)
     static func open(selectedEntry: ImageEntry, bestEntry: ImageEntry,
-                     device: MTLDevice, nightMode: Bool, debayerEnabled: Bool) {
+                     device: MTLDevice, nightMode: Bool, debayerEnabled: Bool,
+                     rotateSelected: Bool = false, rotateBest: Bool = false) {
         let selectedURL = selectedEntry.decodingURL
         let bestURL = bestEntry.decodingURL
         let bayerSel = debayerEnabled ? selectedEntry.bayerPattern : nil
@@ -150,6 +151,8 @@ enum CompareWindowController {
                     whyWorseText: whyWorse,
                     problemStars: selStarProblems,
                     consensusPA: selConsensusPA,
+                    rotateLeft: rotateBest,
+                    rotateRight: rotateSelected,
                     syncState: syncState
                 )
                 // Load font scale from persisted settings
@@ -184,6 +187,8 @@ struct CompareView: View {
     // Problem stars: normalized (0-1) coordinates + shape metrics for overlay on right panel
     let problemStars: [(x: CGFloat, y: CGFloat, ecc: Double, pa: Double?, axisRatio: Double?)]
     let consensusPA: Double?
+    let rotateLeft: Bool
+    let rotateRight: Bool
     @ObservedObject var syncState: SyncedZoomState
     @Environment(\.fontScale) private var fontScale
 
@@ -195,7 +200,7 @@ struct CompareView: View {
             HStack(spacing: 2) {
                 // Left: Best image (no star overlay)
                 VStack(spacing: 0) {
-                    SyncedZoomableView(texture: leftTexture, syncState: syncState)
+                    SyncedZoomableView(texture: leftTexture, syncState: syncState, rotate180: rotateLeft)
                         .id("compare-left")
                     Text(leftLabel)
                         .font(.system(size: fs(11), design: .monospaced))
@@ -216,7 +221,8 @@ struct CompareView: View {
                         texture: rightTexture, syncState: syncState,
                         starOverlayData: problemStars,
                         consensusPA: consensusPA,
-                        showStarOverlay: showStarOverlay
+                        showStarOverlay: showStarOverlay,
+                        rotate180: rotateRight
                     )
                     .id("compare-right")
                     Text(rightLabel)
@@ -325,6 +331,7 @@ struct SyncedZoomableView: NSViewRepresentable {
     var starOverlayData: [(x: CGFloat, y: CGFloat, ecc: Double, pa: Double?, axisRatio: Double?)] = []
     var consensusPA: Double?
     var showStarOverlay: Bool = false
+    var rotate180: Bool = false
 
     func makeNSView(context: Context) -> SyncedZoomMTKView {
         let view = SyncedZoomMTKView()
@@ -341,6 +348,7 @@ struct SyncedZoomableView: NSViewRepresentable {
 
     func updateNSView(_ mtkView: SyncedZoomMTKView, context: Context) {
         context.coordinator.texture = texture
+        context.coordinator.rotate180 = rotate180
         mtkView.imageWidth = texture.width
         mtkView.imageHeight = texture.height
         mtkView.zoomScale = syncState.zoomScale
@@ -364,18 +372,20 @@ struct SyncedZoomableView: NSViewRepresentable {
     }
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(texture: texture)
+        Coordinator(texture: texture, rotate180: rotate180)
     }
 
     // Reuses the same rendering logic as ZoomableMetalTextureView.Coordinator
     class Coordinator: NSObject, MTKViewDelegate {
         var texture: MTLTexture
+        var rotate180: Bool
         private var renderPipeline: MTLRenderPipelineState?
         private var sampler: MTLSamplerState?
         private var commandQueue: MTLCommandQueue?
 
-        init(texture: MTLTexture) {
+        init(texture: MTLTexture, rotate180: Bool = false) {
             self.texture = texture
+            self.rotate180 = rotate180
             super.init()
             let device = texture.device
             commandQueue = device.makeCommandQueue()
@@ -423,11 +433,15 @@ struct SyncedZoomableView: NSViewRepresentable {
             let panX = Float(zv.panOffset.x) * bs / dw * 2.0
             let panY = Float(zv.panOffset.y) * bs / dh * 2.0
 
+            // UV coords: flip both U and V for 180° rotation (meridian flip)
+            let (u0, u1, v0, v1): (Float, Float, Float, Float) = rotate180
+                ? (1, 0, 0, 1)   // Flipped: U reversed, V reversed
+                : (0, 1, 1, 0)   // Normal
             var vertices: [Float] = [
-                -ndcHW + panX, -ndcHH - panY, 0, 1,
-                 ndcHW + panX, -ndcHH - panY, 1, 1,
-                -ndcHW + panX,  ndcHH - panY, 0, 0,
-                 ndcHW + panX,  ndcHH - panY, 1, 0,
+                -ndcHW + panX, -ndcHH - panY, u0, v0,
+                 ndcHW + panX, -ndcHH - panY, u1, v0,
+                -ndcHW + panX,  ndcHH - panY, u0, v1,
+                 ndcHW + panX,  ndcHH - panY, u1, v1,
             ]
             enc.setVertexBytes(&vertices, length: vertices.count * 4, index: 0)
             enc.setFragmentTexture(texture, index: 0)

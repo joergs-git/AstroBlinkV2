@@ -1086,7 +1086,9 @@ struct FileListView: NSViewRepresentable {
                     bestEntry: bestEntry,
                     device: device,
                     nightMode: viewModel.nightMode,
-                    debayerEnabled: viewModel.debayerEnabled
+                    debayerEnabled: viewModel.debayerEnabled,
+                    rotateSelected: viewModel.shouldRotateForMeridian(entry),
+                    rotateBest: viewModel.shouldRotateForMeridian(bestEntry)
                 )
             }
         }

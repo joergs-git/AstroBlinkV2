@@ -75,7 +75,8 @@ class PrefetchCache {
         lockedSTFParams: [STFParams]? = nil,
         postProcessParams: (sharpening: Float, contrast: Float, darkLevel: Float)? = nil,
         onNoiseStats: ((URL, STFCalculator.NoiseStats) -> Void)? = nil,
-        onStarMetrics: ((URL, StarMetrics) -> Void)? = nil
+        onStarMetrics: ((URL, StarMetrics) -> Void)? = nil,
+        onFileHash: ((URL, String) -> Void)? = nil
     ) {
         // Cancel any previous priority operations — new navigation supersedes old
         priorityQueue?.cancelAllOperations()
@@ -130,7 +131,10 @@ class PrefetchCache {
                 self?.cachedURLsLock.unlock()
                 guard !alreadyCached else { return }
 
-                // Full pipeline: decode → debayer → noise → stars → STF → GPU preview
+                // Full pipeline: hash → decode → debayer → noise → stars → STF → GPU preview
+                // Compute file hash from first 64KB (cheap: ~0.5ms)
+                let fileHashResult = FileHasher.hash(for: decodingURL)
+
                 let decodeResult = ImageDecoder.decode(url: decodingURL, device: device)
                 guard case .success(let decoded) = decodeResult else { return }
 
@@ -191,6 +195,7 @@ class PrefetchCache {
 
                 // Single MainActor task: deliver ALL results atomically
                 Task { @MainActor [weak self] in
+                    if let hash = fileHashResult { onFileHash?(url, hash) }
                     if let stats = noiseStatsResult { onNoiseStats?(url, stats) }
                     if let metrics = starMetricsResult { onStarMetrics?(url, metrics) }
                     if let preview = resultPreview {
@@ -219,7 +224,8 @@ class PrefetchCache {
         resolveDecodingURL: ((URL) -> URL)? = nil,  // Late-resolve URL at execution time (for NAS pipeline)
         onProgress: @escaping (Int, Int) -> Void,
         onNoiseStats: ((URL, STFCalculator.NoiseStats) -> Void)? = nil,
-        onStarMetrics: ((URL, StarMetrics) -> Void)? = nil
+        onStarMetrics: ((URL, StarMetrics) -> Void)? = nil,
+        onFileHash: ((URL, String) -> Void)? = nil
     ) {
         // Build lookup for Bayer patterns by URL (only used when debayer is enabled)
         let bayerPatterns: [URL: String]
@@ -301,6 +307,9 @@ class PrefetchCache {
                         decodingURL = fallbackDecodingURL
                     }
 
+                    // 0. Compute file hash from first 64KB (~0.5ms)
+                    let fileHashResult = FileHasher.hash(for: decodingURL)
+
                     // 1. Decode full-res uint16
                     let decodeResult = ImageDecoder.decode(url: decodingURL, device: device)
                     guard case .success(let decoded) = decodeResult else {
@@ -381,6 +390,7 @@ class PrefetchCache {
                     // onProgress fires the final scoring pass (fixes R9 timing race).
                     let completed = completedCount.increment()
                     Task { @MainActor in
+                        if let hash = fileHashResult { onFileHash?(url, hash) }
                         if let stats = noiseStatsResult { onNoiseStats?(url, stats) }
                         if let metrics = starMetricsResult { onStarMetrics?(url, metrics) }
                         if let preview = resultPreview {

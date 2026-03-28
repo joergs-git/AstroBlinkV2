@@ -65,6 +65,9 @@ struct ContentView: View {
                     sfToolbarButton("chart.bar", "Session", "Session overview — group stats by filter, night, and target") {
                         viewModel.showSessionOverview.toggle()
                     }
+                    sfToolbarButton("clock.arrow.circlepath", "History", "Frame history — quality trends across all sessions") {
+                        FrameHistoryController.shared.toggleWindow()
+                    }
 
                     toolbarDivider
 
@@ -734,6 +737,22 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: .showAIsaac)) { _ in
             AIsaacWindowController.shared.updateContext(images: viewModel.images, viewModel: viewModel)
             AIsaacWindowController.shared.toggleWindow()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .resetFrameHistory)) { _ in
+            let alert = NSAlert()
+            alert.alertStyle = .critical
+            alert.messageText = "Reset Frame History Database?"
+            if let stats = try? FrameHistoryDatabase.shared.databaseStats() {
+                alert.informativeText = "This will permanently delete \(stats.frameCount) frame records from \(stats.sessionCount) sessions.\n\nThis cannot be undone."
+            } else {
+                alert.informativeText = "This will permanently delete all frame history data.\n\nThis cannot be undone."
+            }
+            alert.addButton(withTitle: "Reset")
+            alert.addButton(withTitle: "Cancel")
+            if alert.runModal() == .alertFirstButtonReturn {
+                try? FrameHistoryDatabase.shared.resetDatabase()
+                viewModel.statusMessage = "Frame History Database reset"
+            }
         }
         // AIsaac state observers extracted to reduce type-check pressure
         .modifier(AIsaacStateObserver(viewModel: viewModel))
