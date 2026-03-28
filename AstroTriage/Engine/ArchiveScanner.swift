@@ -484,15 +484,22 @@ class ArchiveScanner: ObservableObject {
     // MARK: - Header Application (lightweight, same logic as TriageViewModel)
 
     private func applyHeaders(_ entry: inout ImageEntry, from headers: [String: String]) {
-        if let v = headers["FILTER"] ?? headers["Filter"] { entry.filter = v.trimmingCharacters(in: .whitespaces) }
+        // Helper: only override if header value is non-empty (preserves filename-parsed values
+        // when FITS headers are blank — common with ASIAIR, SharpCap, non-NINA software)
+        func override(_ current: inout String?, from value: String?) {
+            guard let v = value?.trimmingCharacters(in: .whitespaces), !v.isEmpty else { return }
+            current = v
+        }
+
+        override(&entry.filter, from: headers["FILTER"] ?? headers["Filter"])
         if let v = headers["EXPTIME"] ?? headers["EXPOSURE"] { entry.exposure = Double(v) }
         if let v = headers["CCD-TEMP"] { entry.sensorTemp = Double(v) }
         if let v = headers["GAIN"] { entry.gain = Int(Double(v) ?? 0) }
         if let v = headers["OFFSET"] { entry.offset = Int(Double(v) ?? 0) }
         if let v = headers["XBINNING"] { entry.binning = "\(v)x\(v)" }
-        if let v = headers["TELESCOP"] { entry.telescope = v.trimmingCharacters(in: .whitespaces) }
-        if let v = headers["INSTRUME"] { entry.camera = v.trimmingCharacters(in: .whitespaces) }
-        if let v = headers["OBJECT"] { entry.target = v.trimmingCharacters(in: .whitespaces) }
+        override(&entry.telescope, from: headers["TELESCOP"])
+        override(&entry.camera, from: headers["INSTRUME"])
+        override(&entry.target, from: headers["OBJECT"])
         if let v = headers["IMAGETYP"] ?? headers["FRAME"] {
             entry.frameType = MetadataExtractor.normalizeFrameType(v)
         }
