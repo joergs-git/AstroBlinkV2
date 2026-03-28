@@ -58,6 +58,7 @@
 		970927BE4AF96FBF6FE430EE /* StructureEnhancement.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC55336CE3C3552EF83E3A21 /* StructureEnhancement.swift */; };
 		9B91613EEB76EB27A7DCB3FC /* CalibrationDatabase.swift in Sources */ = {isa = PBXBuildFile; fileRef = 511D5503EE634473FF2EC433 /* CalibrationDatabase.swift */; };
 		9D950EBF4E4EBC1A00430834 /* StarAnalyzerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C73F68266BEC1BE0872283EB /* StarAnalyzerTests.swift */; };
+		9FE0865A0F4D4378F7A43D7A /* ArchiveScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 32B55DBDF2FD18BEF1399C8D /* ArchiveScanner.swift */; };
 		A25E05A896A91A675B10AB27 /* AIsaacUserProfile.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BC8D6B7579B8D8EE0A8190B /* AIsaacUserProfile.swift */; };
 		A404D91B8F156794B11A8ECC /* AIsaacService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76A68D583C36500C4A7BD068 /* AIsaacService.swift */; };
 		A4F9C54A9D8BDA57CA1126FE /* AIsaacWeather.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6F15B76878AB89E64790D0D4 /* AIsaacWeather.swift */; };
@@ -158,6 +159,7 @@
 		1C731CAA9FB954423A4E9179 /* SunCalculator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SunCalculator.swift; sourceTree = "<group>"; };
 		218287CA9A583C11D2A4196E /* AIsaacKeychain.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIsaacKeychain.swift; sourceTree = "<group>"; };
 		24F8E2016E26D881862A1E76 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		32B55DBDF2FD18BEF1399C8D /* ArchiveScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArchiveScanner.swift; sourceTree = "<group>"; };
 		3BCBBE41D0B90CC98443F843 /* GradientRemoval.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GradientRemoval.swift; sourceTree = "<group>"; };
 		3E84C4C954C1B6E8C561713D /* ThumbnailProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThumbnailProvider.swift; sourceTree = "<group>"; };
 		40D54AA4B026ABD4997C7758 /* STFCalculator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = STFCalculator.swift; sourceTree = "<group>"; };
@@ -363,6 +365,7 @@
 			isa = PBXGroup;
 			children = (
 				571C5A1575E51796C6AEABB1 /* AppSettings.swift */,
+				32B55DBDF2FD18BEF1399C8D /* ArchiveScanner.swift */,
 				EC91195CA425D12B99F20516 /* BatchOperations.swift */,
 				6A3C4F920C008F3B9EEA4CED /* BenchmarkSharing.swift */,
 				7E3E8374566F596C93B1AE16 /* BenchmarkStats.swift */,
@@ -674,6 +677,7 @@
 				A4F9C54A9D8BDA57CA1126FE /* AIsaacWeather.swift in Sources */,
 				AF2D1D16D710F786CE5B7279 /* AIsaacWindowController.swift in Sources */,
 				B2444CC3BD5AB4C5BC49A87E /* AppSettings.swift in Sources */,
+				9FE0865A0F4D4378F7A43D7A /* ArchiveScanner.swift in Sources */,
 				8B9102B9DEB924145CD66AAA /* AstroTriageApp.swift in Sources */,
 				6A801D391463BD0101AE4EAA /* BatchOperations.swift in Sources */,
 				FC52D331F7CBDD33BFA3B800 /* BatchRenameWindow.swift in Sources */,

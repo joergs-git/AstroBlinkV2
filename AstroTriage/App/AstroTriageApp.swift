@@ -131,6 +131,13 @@ class AstroBlinkV2AppDelegate: NSObject, NSApplicationDelegate {
                 AboutWindowController.shared.show(asSplash: true)
             }
         }
+
+        // Check for incomplete archive scans (deferred to after window is ready)
+        if !isTestHost {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                self.checkIncompleteArchiveScans()
+            }
+        }
     }
 
     /// Check iCloud for a newer/different Frame History database and prompt user.
@@ -193,6 +200,53 @@ class AstroBlinkV2AppDelegate: NSObject, NSApplicationDelegate {
 
     static func showAboutPanel() {
         AboutWindowController.shared.show(asSplash: false)
+    }
+
+    /// Check for incomplete archive scans and offer to resume.
+    private func checkIncompleteArchiveScans() {
+        let incomplete = ArchiveScanner.incompleteScanPaths()
+        guard let scan = incomplete.first else { return }
+
+        // Check if the root path is still accessible
+        guard FileManager.default.fileExists(atPath: scan.rootPath) else { return }
+
+        let folderName = URL(fileURLWithPath: scan.rootPath).lastPathComponent
+        let percent = scan.total > 0 ? Int(Double(scan.processed) / Double(scan.total) * 100) : 0
+
+        let alert = NSAlert()
+        alert.alertStyle = .informational
+        alert.messageText = "Resume Archive Scan?"
+        alert.informativeText = """
+            Previous scan of "\(folderName)" stopped at \(scan.processed)/\(scan.total) files (\(percent)%).
+            Last updated: \(scan.lastUpdated.prefix(16))
+
+            Resume scanning from where it stopped?
+            """
+        alert.addButton(withTitle: "Resume")
+        alert.addButton(withTitle: "Later")
+        alert.addButton(withTitle: "Discard")
+
+        let response = alert.runModal()
+        switch response {
+        case .alertFirstButtonReturn:
+            // Resume — open History window and start scan
+            FrameHistoryController.shared.showWindow()
+            ArchiveScanner.shared.resumeScan(rootPath: scan.rootPath)
+        case .alertThirdButtonReturn:
+            // Discard — mark as complete to stop asking
+            let progress = ScanProgress(
+                rootPath: scan.rootPath,
+                lastScannedPath: nil,
+                totalFound: scan.total,
+                totalProcessed: scan.processed,
+                startedAt: scan.lastUpdated,
+                lastUpdatedAt: ISO8601DateFormatter().string(from: Date()),
+                isComplete: 1
+            )
+            try? FrameHistoryDatabase.shared.saveScanProgress(progress)
+        default:
+            break  // "Later" — do nothing, ask again next launch
+        }
     }
 }
 

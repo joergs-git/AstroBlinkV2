@@ -48,6 +48,7 @@ class FrameHistoryController {
 
 struct FrameHistoryContentView: View {
     @ObservedObject var model: FrameHistoryModel
+    @ObservedObject var scanner: ArchiveScanner = .shared
     @Environment(\.fontScale) private var fontScale
 
     private func fs(_ base: CGFloat) -> CGFloat { round(base * fontScale) }
@@ -76,6 +77,12 @@ struct FrameHistoryContentView: View {
                     .padding(.bottom, 8)
             } else {
                 emptyState
+            }
+
+            // Archive scanner controls (bottom bar)
+            if scanner.isScanning {
+                Divider()
+                scannerProgressBar
             }
         }
         .background(Color(NSColor.windowBackgroundColor))
@@ -125,6 +132,17 @@ struct FrameHistoryContentView: View {
                 }
                 .frame(maxWidth: 150)
             }
+
+            // Build Archive button
+            Button(action: { startArchiveScan() }) {
+                HStack(spacing: 4) {
+                    Image(systemName: "externaldrive.badge.plus")
+                    Text("Scan")
+                        .font(.system(size: fs(11)))
+                }
+            }
+            .disabled(scanner.isScanning)
+            .help("Scan a folder tree to build archive database")
 
             // Refresh button
             Button(action: { model.loadData() }) {
@@ -353,6 +371,80 @@ struct FrameHistoryContentView: View {
             Spacer()
         }
         .frame(minHeight: 200)
+    }
+
+    // MARK: - Archive Scanner
+
+    private func startArchiveScan() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.message = "Select root folder to scan for FITS/XISF images"
+        panel.prompt = "Scan"
+
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        scanner.startScan(rootURL: url)
+    }
+
+    private var scannerProgressBar: some View {
+        HStack(spacing: 8) {
+            // Folder indicator
+            Image(systemName: "folder.badge.gearshape")
+                .foregroundColor(.accentColor)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(scanner.currentFolder)
+                    .font(.system(size: fs(11)))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+
+                HStack(spacing: 8) {
+                    // Progress
+                    let progress = scanner.totalFound > 0
+                        ? Double(scanner.totalProcessed) / Double(scanner.totalFound) : 0
+                    ProgressView(value: progress)
+                        .frame(width: 200)
+
+                    Text("\(scanner.totalProcessed)/\(scanner.totalFound)")
+                        .font(.system(size: fs(10), design: .monospaced))
+                        .foregroundColor(.secondary)
+
+                    if scanner.filesPerSecond > 0 {
+                        Text(String(format: "%.1f/s", scanner.filesPerSecond))
+                            .font(.system(size: fs(10), design: .monospaced))
+                            .foregroundColor(.secondary)
+                    }
+
+                    if let eta = scanner.estimatedSecondsRemaining {
+                        let min = eta / 60
+                        let sec = eta % 60
+                        Text(min > 0 ? "~\(min)m \(sec)s" : "~\(sec)s")
+                            .font(.system(size: fs(10), design: .monospaced))
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+
+            Spacer()
+
+            // Pause/Resume
+            Button(action: {
+                if scanner.isPaused { scanner.unpauseScan() } else { scanner.pauseScan() }
+            }) {
+                Image(systemName: scanner.isPaused ? "play.fill" : "pause.fill")
+            }
+            .help(scanner.isPaused ? "Resume" : "Pause")
+
+            // Cancel
+            Button(action: { scanner.cancelScan(); model.loadData() }) {
+                Image(systemName: "xmark.circle.fill")
+                    .foregroundColor(.red)
+            }
+            .help("Cancel scan")
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
     }
 
     // MARK: - Custom Filter Legend

@@ -498,6 +498,52 @@ final class FrameHistoryDatabase {
         try FileManager.default.copyItem(at: iCloudDB, to: storageURL)
     }
 
+    // MARK: - Session Queries (for Archive Scanner scoring)
+
+    /// Fetch all frame records for a specific scan session.
+    func frameRecords(forSession sessionId: String) throws -> [FrameRecord] {
+        try dbQueue.read { db in
+            try FrameRecord
+                .filter(Column("sessionId") == sessionId)
+                .fetchAll(db)
+        }
+    }
+
+    /// Batch update quality tiers for frame records.
+    func updateQualityTiers(_ updates: [(hash: String, tier: Int, zScore: Double)]) throws {
+        try dbQueue.write { db in
+            for update in updates {
+                try db.execute(
+                    sql: "UPDATE frame_record SET qualityTier = ?, combinedZScore = ? WHERE fileHash = ?",
+                    arguments: [update.tier, update.zScore, update.hash]
+                )
+            }
+        }
+    }
+
+    // MARK: - Scan Progress
+
+    /// Save or update scan progress (UPSERT).
+    func saveScanProgress(_ progress: ScanProgress) throws {
+        try dbQueue.write { db in try progress.save(db) }
+    }
+
+    /// Get scan progress for a root path.
+    func scanProgress(for rootPath: String) throws -> ScanProgress? {
+        try dbQueue.read { db in try ScanProgress.fetchOne(db, key: rootPath) }
+    }
+
+    /// Get all incomplete scan progresses (for resume dialog).
+    func incompleteScanProgress() throws -> [(rootPath: String, processed: Int, total: Int, lastUpdated: String)] {
+        try dbQueue.read { db in
+            let rows = try ScanProgress
+                .filter(Column("isComplete") == 0)
+                .order(Column("lastUpdatedAt").desc)
+                .fetchAll(db)
+            return rows.map { ($0.rootPath, $0.totalProcessed, $0.totalFound, $0.lastUpdatedAt) }
+        }
+    }
+
     // MARK: - Advanced: Reset
 
     /// Delete the entire database and recreate empty. Requires explicit user confirmation first.
