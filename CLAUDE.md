@@ -26,7 +26,7 @@ bis 192 GB Unified Memory, 800 GB/s Memory Bandwidth). Lauffähig ab MacBook M1.
 | C++ Bridge         | SPM C/C++ Target                    | Sauber, kein fragiles ObjC Bridging                 |
 | DB                 | SQLite via GRDB.swift               | Metadaten-Cache, Pre-Delete-State                   |
 | Thumbnail          | HEIF via ImageIO (on-disk)          | Schnelles Re-Open, pre-stretched                    |
-| Min macOS          | 13 Ventura                          | Metal stabil, Swift Concurrency stabil              |
+| Min macOS          | 14 Sonoma                           | SwiftUI Charts zoom, onChange new syntax             |
 | CPU Parallelismus  | GCD + Swift async/await             | P-Core vs E-Core QoS-Steuerung                     |
 | GPU Parallelismus  | MTLHazardTrackingModeUntracked      | Echter concurrent GPU Kernel Dispatch               |
 
@@ -444,7 +444,7 @@ Fallback: Filename-Token-Parsing
 4. libxisf + cfitsio: statisch gelinkt (kein dylib für Enduser)
 5. `MTLHazardTrackingModeUntracked` auf allen Prefetch-Ressourcen
 6. `MTLStorageModeShared` für alle Decode-Buffers (Zero-Copy)
-7. Min macOS 13 Ventura – keine macOS 14+ APIs
+7. Min macOS 14 Sonoma – SwiftUI Charts, onChange new syntax
 8. Performance-Gate: < 200ms First Display (Cold), < 32ms nach Cache-Hit
 
 ---
