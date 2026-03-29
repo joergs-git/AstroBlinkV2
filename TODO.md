@@ -64,17 +64,30 @@ All original implementation phases are complete:
 - [ ] Would enable mosaic planning and astrometric quality checks
 
 ### History Window Chart Improvements
-- [x] Y-axis percentile clamping — P2/P98 range, outliers clamped with triangle markers
+- [x] Y-axis percentile clamping — P2/P98 range, outliers clamped
 - [x] Fixed window-width charts — no horizontal scrolling
 - [x] Summary cards row (Frames, Nights, Best FWHM, Trash Rate, Targets)
-- [ ] **X-axis chronological sorting** — parse night strings to Date, not categorical strings
-- [ ] **Filter name normalization in charts** — group L/LE/Lext/Lextr/Lcle/Lenh/Lqua as "L"
-- [ ] **"All Setups" readability** — PointMark only (no lines), or monthly aggregation when >50 nights
-- [ ] **Line continuity** — only connect consecutive nights within same filter (no month-gap zigzags)
-- [ ] **Monthly aggregation** — auto-aggregate to monthly averages when date range >6 months
-- [ ] Zoom in/out on chart data (date range selection or pinch zoom)
-- [ ] Interactive hover popovers (click point → detail popover)
+- [x] X-axis chronological sorting — Date-based, not categorical strings
+- [x] Filter name normalization — L/LE/Lext → "L", H→Ha, etc.
+- [x] "All Setups" = scatter dots (no spaghetti lines)
+- [x] 6 KPI charts: Score, Efficiency, Performance, Conditions, Progress, Setups
+- [x] Legends on all charts explaining colors
+- [x] Target name enrichment — M42 (Orion Nebula), NGC7000 (North America)
+- [x] Moon impact split by broadband vs narrowband
+- [x] Equipment Health per-setup warning
+- [ ] **Hover tooltips** — chartOverlay + GeometryReader for data point details
+- [ ] **Time range selector** — All, This Month, Last 3/6/9/12/24/36 months
+- [ ] **Rolling average window picker** — 5/10/20 sessions
+- [ ] **Integration Progress rethink** — hours not frames, per-filter breakdown, estimated completion
+- [ ] Monthly aggregation when date range >6 months
 - [ ] Historical median reference line (dashed horizontal)
+
+### AIsaac Session Planner
+- [ ] "Plan Tonight" preset — combines weather + moon + target progress + filter gaps
+- [ ] Meteoblue/Clear Outside seeing forecast integration
+- [ ] Astronomical twilight timing from SunCalculator
+- [ ] Filter recommendation based on moon phase + target history
+- [ ] Output: specific targets, filters, timing windows, stop conditions
 
 ### Frame History Re-Analysis
 - [ ] Detect stale records: `WHERE algorithmVersion < kAlgorithmVersion`
