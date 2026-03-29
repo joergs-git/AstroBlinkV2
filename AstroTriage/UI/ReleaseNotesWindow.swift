@@ -34,6 +34,12 @@ class ReleaseNotesWindowController {
 // MARK: - Release notes data (shared between view and copy)
 
 private let allReleases: [(version: String, date: String, items: [(ReleaseNotesView.ChangeType, String, String)])] = [
+    ("5.8.1", "March 29, 2026", [
+        (.added, "Rich Tooltips Everywhere", "All 6 History charts show full context on hover: targets, filters, FWHM, moon %, cause analysis for bad nights. Performance shows per-setup FWHM breakdown."),
+        (.added, "Conditions Chart Redesign", "Toggleable X-axis: Moon / FWHM / Temperature / Bortle. Nearest-point hover shows all environmental factors. See what really impacts your background noise."),
+        (.added, "Setups Tooltip", "Hover Setup Comparison bars to see frame count, date range, trash rate, and target list per equipment combo."),
+        (.fixed, "GRDB Crash", "Fixed reentrant database access crash when hovering Performance chart with All Setups selected."),
+    ]),
     ("5.8.0", "March 29, 2026", [
         (.added, "Chart Hover Tooltips", "Mouse over Score, Efficiency, and Performance charts to see per-night details — score, retention, FWHM with dashed crosshair."),
         (.added, "Time Range Filter", "All / 3M / 6M / 9M / 12M / 24M / 36M picker filters all History charts and summary cards by date range."),

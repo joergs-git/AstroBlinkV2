@@ -4,6 +4,17 @@ All notable changes to AstroBlink & AIsaac will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [5.8.1] — 2026-03-29
+
+### Added
+- **Rich tooltips on all 6 charts** — Every chart data point now shows full context on hover: targets, filters, FWHM, moon %, frame counts. Bad nights get a "Likely:" cause analysis (seeing, bright moon + broadband, few frames)
+- **Performance per-setup breakdown** — Hovering "All Setups" Performance chart shows per-setup FWHM with orange highlight on outliers dragging the average
+- **Conditions chart redesign** — Toggleable X-axis factor: Moon / FWHM (seeing) / Temperature / Bortle. Nearest-point hover shows all environmental factors at once. Broadband vs narrowband color coding
+- **Setups chart tooltip** — Hover shows frame count, date range, trash rate, and target list per setup
+
+### Fixed
+- **GRDB reentrant crash** — `perSetupFWHM()` called `allNicknames()` inside `dbQueue.read` block, causing reentrant serialized queue access. Moved outside read block
+
 ## [5.8.0] — 2026-03-29
 
 ### Added
