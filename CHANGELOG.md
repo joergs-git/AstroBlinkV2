@@ -4,6 +4,23 @@ All notable changes to AstroBlink & AIsaac will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [5.8.0] — 2026-03-29
+
+### Added
+- **Chart hover tooltips** — Mouse over Score, Efficiency, and Performance charts to see per-night details (score, retention %, FWHM) with dashed crosshair rule mark
+- **Time range filter** — All / 3M / 6M / 9M / 12M / 24M / 36M picker in History header filters all charts and summary cards
+- **Rolling average picker** — 5 / 10 / 20 session segmented control on Performance chart for configurable FWHM trending window
+- **Integration Progress redesign** — Custom row-based view with target names, hours (not frames), per-filter stacked bars, hover detail (filter breakdown, nights, best FWHM), sort toggle (asc/desc)
+- **AIsaac Session Planner context** — Plan Tonight preset now includes: tonight's moon phase + guidance, astronomical dark start/end from SunCalculator, per-target integration status with filter gaps, recent 2-3 session performance trends, weather-adaptive exposure advice (wind/humidity/seeing), dome vs portable setup awareness
+- **Target catalog expansion** — 300+ named targets covering all Messier objects, major NGC/IC nebulae and galaxies, Sharpless HII regions, Barnard/LDN dark nebulae, vdB reflection nebulae, Abell planetaries and galaxy clusters, with comprehensive cross-references
+
+### Fixed
+- **Chart bar overflow** — `.clipped()` on all chart plot areas prevents bars from bleeding into header, tabs, or summary cards
+- **Chart flickering** — All chart data structs use stable content-based IDs (night string, target+filter) instead of UUID(). Eliminates animation jitter
+- **Flexible catalog matching** — Robust regex-free prefix detection handles any separator: IC1848 = IC 1848 = IC-1848 = iC18 48. Works for NGC, IC, M, SH2, and 20+ catalog prefixes
+- **Target deduplication** — TargetCatalog.canonicalName() applied in Progress chart grouping, summary stats, and target picker. "M 82" and "M82" merge correctly
+- **Progress chart sort stability** — Alphabetical tiebreaker prevents equal-hours targets from shuffling on re-render. Bar scaling uses absolute max, not first-item
+
 ## [5.7.1] — 2026-03-29
 
 ### Added

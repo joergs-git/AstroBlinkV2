@@ -120,6 +120,11 @@ struct AIsaacContextBuilder {
             parts.append(weather)
         }
 
+        // Planning context — moon tonight, per-target integration totals, filter gaps
+        if preset == .planTonight || preset == .filterAdvice {
+            parts.append(buildPlanningContext(profile: profile))
+        }
+
         // Historical context from Frame History Database
         if let ctx = context, let setupHash = ctx.setupHash {
             if let histBlock = buildHistoricalBlock(setupHash: setupHash) {
@@ -171,6 +176,205 @@ struct AIsaacContextBuilder {
         }
         lines.append("Use this to compare tonight's performance against the user's historical norm.")
         lines.append("If metrics deviate significantly, mention possible causes (seeing, focus drift, moon, clouds).")
+        return lines.joined(separator: "\n")
+    }
+
+    // MARK: - Planning Context Block
+
+    /// Build rich planning context for "Plan Tonight" and "Filter Advice" presets.
+    /// Includes tonight's moon data, twilight times, per-target integration status, and filter gaps.
+    private static func buildPlanningContext(profile: AIsaacUserProfile) -> String {
+        var lines = ["PLANNING CONTEXT (computed for tonight):"]
+
+        let now = Date()
+        let calendar = Calendar.current
+
+        // --- Moon phase tonight ---
+        let moonPct = MoonCalculator.illumination(utcDate: now) * 100
+        let moonPhaseDesc: String
+        if moonPct < 5 { moonPhaseDesc = "New Moon" }
+        else if moonPct < 35 { moonPhaseDesc = "Crescent" }
+        else if moonPct < 65 { moonPhaseDesc = "Half Moon" }
+        else if moonPct < 90 { moonPhaseDesc = "Gibbous" }
+        else { moonPhaseDesc = "Full Moon" }
+        lines.append(String(format: "- Moon illumination: %.0f%% (%@)", moonPct, moonPhaseDesc))
+
+        // Moon impact guidance
+        if moonPct > 70 {
+            lines.append("  -> BRIGHT MOON: Prioritize narrowband filters (Ha/OIII/SII). Broadband (LRGB) will have high background.")
+        } else if moonPct > 40 {
+            lines.append("  -> MODERATE MOON: Broadband OK but narrowband preferred for faint targets.")
+        } else {
+            lines.append("  -> DARK SKY: All filters viable. Great night for broadband (L/RGB).")
+        }
+
+        // --- Twilight times tonight ---
+        if let location = profile.locations.first {
+            let lat = location.latitude
+            let lon = location.longitude
+            lines.append(String(format: "- Location: %.1fN, %.1fE", lat, lon))
+
+            // Find astronomical twilight start/end by sampling every 15 min from now
+            var twilightStart: Date?
+            var twilightEnd: Date?
+            let tonight = calendar.date(bySettingHour: 16, minute: 0, second: 0, of: now) ?? now
+            for minuteOffset in stride(from: 0, through: 15 * 60, by: 15) {
+                guard let sample = calendar.date(byAdding: .minute, value: minuteOffset, to: tonight) else { continue }
+                if let phase = SunCalculator.twilightPhase(utcDate: sample, latitude: lat, longitude: lon) {
+                    if phase == .night && twilightStart == nil {
+                        twilightStart = sample
+                    }
+                    if twilightStart != nil && phase != .night && twilightEnd == nil {
+                        twilightEnd = sample
+                    }
+                }
+            }
+
+            let tf = DateFormatter()
+            tf.dateFormat = "HH:mm"
+            tf.timeZone = TimeZone.current
+            if let start = twilightStart {
+                lines.append("- Astronomical dark begins: ~\(tf.string(from: start))")
+            }
+            if let end = twilightEnd {
+                lines.append("- Astronomical dark ends: ~\(tf.string(from: end))")
+            }
+            if let start = twilightStart, let end = twilightEnd {
+                let darkHours = end.timeIntervalSince(start) / 3600.0
+                lines.append(String(format: "- Total dark time: ~%.1f hours", darkHours))
+            }
+        }
+
+        // --- Per-target integration status from Frame History DB ---
+        if !profile.imagedObjects.isEmpty {
+            lines.append("")
+            lines.append("TARGET INTEGRATION STATUS (from your history):")
+            let sorted = profile.imagedObjects.sorted { ($0.totalFrames) > ($1.totalFrames) }
+            for obj in sorted.prefix(15) {
+                var detail = "- \(obj.name):"
+                if let perFilter = obj.perFilterIntegrationMin, !perFilter.isEmpty {
+                    let filterParts = perFilter.sorted { $0.value > $1.value }.map { filter, min in
+                        String(format: "%@ %.1fh", filter, Double(min) / 60.0)
+                    }
+                    detail += " " + filterParts.joined(separator: ", ")
+                } else if let perFilter = obj.perFilterFrames, !perFilter.isEmpty {
+                    let filterParts = perFilter.sorted { $0.value > $1.value }.map { "\($0) \($1)f" }
+                    detail += " " + filterParts.joined(separator: ", ")
+                } else {
+                    detail += " \(obj.totalFrames) frames across \(obj.filters.sorted().joined(separator: "/"))"
+                }
+                if let score = obj.avgQualityScore {
+                    detail += String(format: " (quality: %+.1f)", score)
+                }
+                if obj.needsMoreData == true {
+                    detail += " [NEEDS MORE DATA]"
+                }
+                if let note = obj.userNote {
+                    detail += " — \(note)"
+                }
+                lines.append(detail)
+            }
+
+            // Filter gap analysis — which targets have unbalanced filters?
+            let unbalanced = sorted.filter { obj in
+                guard let pf = obj.perFilterFrames, pf.count >= 2 else { return false }
+                let counts = pf.values.sorted()
+                guard let max = counts.last, let min = counts.first, max > 0 else { return false }
+                return Double(min) / Double(max) < 0.5  // <50% of strongest filter = gap
+            }
+            if !unbalanced.isEmpty {
+                lines.append("")
+                lines.append("FILTER GAPS (unbalanced — suggest prioritizing the weaker filter):")
+                for obj in unbalanced.prefix(5) {
+                    if let pf = obj.perFilterFrames {
+                        let sorted = pf.sorted { $0.value > $1.value }
+                        let gapFilters = sorted.dropFirst().filter { Double($0.value) / Double(sorted[0].value) < 0.5 }
+                        if !gapFilters.isEmpty {
+                            let gaps = gapFilters.map { "\($0.key) (\($0.value) vs \(sorted[0].value) \(sorted[0].key))" }
+                            lines.append("- \(obj.name): needs more \(gaps.joined(separator: ", "))")
+                        }
+                    }
+                }
+            }
+        }
+
+        // --- Recent performance trend (last 2-3 sessions) ---
+        // Query Frame History DB for recent nights to give AIsaac trend awareness
+        if let recentTrend = buildRecentPerformanceTrend() {
+            lines.append("")
+            lines.append(recentTrend)
+        }
+
+        // --- Setup type awareness (dome vs portable) ---
+        lines.append("")
+        lines.append("SETUP AWARENESS:")
+        if profile.equipmentSetups.count > 1 {
+            lines.append("- User has \(profile.equipmentSetups.count) equipment setups — may have different sites/conditions per setup.")
+        }
+        lines.append("""
+        When making recommendations, consider:
+        - If wind speed >15 km/h: suggest shorter exposures (60-120s) to reduce trailing risk. \
+        Explain that wind-induced vibration degrades FWHM/HFR.
+        - If seeing is poor (>2.5"): favor shorter focal length setups if available, or use binning.
+        - If humidity >85%: warn about dew risk, recommend checking dew heater.
+        - If moon >60%: strongly prefer narrowband. If user only has broadband, suggest focusing \
+        on targets far from moon (>60° separation).
+        - For portable setups (no dome): factor in setup/teardown time (~30-45 min each end), \
+        recommend starting with the easiest target to polar align on.
+        - For observatory/dome setups: can plan more aggressive multi-target sequences.
+        - Always recommend a specific number of subs per filter based on the target's \
+        existing integration time — don't suggest "as many as possible".
+        """)
+
+        return lines.joined(separator: "\n")
+    }
+
+    /// Build a performance trend summary from the last 2-3 sessions in Frame History DB.
+    private static func buildRecentPerformanceTrend() -> String? {
+        guard let allSummaries = try? FrameHistoryDatabase.shared.nightlyTrendAll() else { return nil }
+        guard !allSummaries.isEmpty else { return nil }
+
+        // Get unique nights sorted descending, take last 3
+        let nights = Set(allSummaries.map(\.night)).sorted().suffix(3)
+        guard !nights.isEmpty else { return nil }
+
+        let recent = allSummaries.filter { nights.contains($0.night) }
+        guard !recent.isEmpty else { return nil }
+
+        var lines = ["RECENT PERFORMANCE (last \(nights.count) sessions):"]
+        for night in nights.sorted() {
+            let nightData = recent.filter { $0.night == night }
+            let totalFrames = nightData.reduce(0) { $0 + $1.frameCount }
+            let trashFrames = nightData.reduce(0) { $0 + $1.trashCount }
+            let fwhms = nightData.compactMap(\.medianFWHM)
+            let avgFWHM = fwhms.isEmpty ? nil : fwhms.reduce(0, +) / Double(fwhms.count)
+            let targets = Set(nightData.compactMap(\.target))
+            let filters = Set(nightData.compactMap(\.filter))
+            let retention = totalFrames > 0 ? Double(totalFrames - trashFrames) / Double(totalFrames) * 100 : 0
+
+            var detail = "- \(night): \(totalFrames) frames"
+            if let fwhm = avgFWHM { detail += String(format: ", FWHM %.1fpx", fwhm) }
+            detail += String(format: ", %.0f%% kept", retention)
+            if !targets.isEmpty { detail += " [\(targets.sorted().joined(separator: ", "))]" }
+            if !filters.isEmpty { detail += " (\(filters.sorted().joined(separator: "/")))" }
+            lines.append(detail)
+        }
+
+        // Trend direction
+        let nightsSorted = nights.sorted()
+        if nightsSorted.count >= 2 {
+            let firstFWHMs = recent.filter { $0.night == nightsSorted.first! }.compactMap(\.medianFWHM)
+            let lastFWHMs = recent.filter { $0.night == nightsSorted.last! }.compactMap(\.medianFWHM)
+            if let firstAvg = firstFWHMs.isEmpty ? nil : firstFWHMs.reduce(0, +) / Double(firstFWHMs.count),
+               let lastAvg = lastFWHMs.isEmpty ? nil : lastFWHMs.reduce(0, +) / Double(lastFWHMs.count) {
+                let trend = lastAvg < firstAvg ? "improving" : (lastAvg > firstAvg * 1.2 ? "degrading" : "stable")
+                lines.append("- FWHM trend: \(trend) (\(String(format: "%.1f → %.1f", firstAvg, lastAvg)) px)")
+                if trend == "degrading" {
+                    lines.append("  -> Consider: collimation check, focus drift, or worsening seeing conditions")
+                }
+            }
+        }
+
         return lines.joined(separator: "\n")
     }
 
@@ -693,17 +897,23 @@ struct AIsaacContextBuilder {
         case .planTonight:
             return """
             TASK: Plan a complete imaging session for tonight.
-            Use the USER EQUIPMENT PROFILE for telescopes, cameras, filters, location, \
-            and previously imaged objects. Provide a CONCRETE plan with:
-            - 2-4 target objects with reasoning (why tonight, altitude, transit time)
+            Use the PLANNING CONTEXT above for tonight's moon, twilight times, and dark hours.
+            Use the USER EQUIPMENT PROFILE for telescopes, cameras, filters, and location.
+            Use TARGET INTEGRATION STATUS to identify what needs more data and which filters have gaps.
+
+            Provide a CONCRETE plan with:
+            - 2-4 target objects with reasoning (why tonight, altitude, transit time, seasonal visibility)
             - For EACH target: which filters, exposure time per sub, number of subs, total integration
             - Suggested start and end time for each target (based on altitude/transit)
-            - Overall session timeline from dusk to dawn
-            - Moon phase and its impact on filter choice (avoid broadband near full moon)
-            - Which targets from previous sessions need more data
-            - Bortle zone considerations for filter selection
+            - Overall session timeline from dusk to dawn using the twilight times provided
+            - Moon impact: use the moon illumination % from PLANNING CONTEXT for filter choice
+            - Prioritize targets that have FILTER GAPS or are marked [NEEDS MORE DATA]
+            - Bortle zone considerations for filter selection (if location is known)
+            - Stop conditions: when to move to next target (e.g., "stop after 2h or when altitude drops below 30°")
+
             Format as a clear timeline the user can follow at the telescope.
-            If you don't know the location, ask. Use today's date for calculations.
+            Use the exact dark hours from PLANNING CONTEXT — don't guess sunset/sunrise times.
+            If no location or equipment is known, ask.
             """
 
         case .gettingStarted, .workflowTips, .whatsNew:

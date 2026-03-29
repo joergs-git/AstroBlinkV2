@@ -311,7 +311,8 @@ final class FrameHistoryDatabase {
                     AVG(noiseMAD) as avgNoise,
                     AVG(trailingScore) as avgTrailing,
                     AVG(moonIllumination) as avgMoon,
-                    AVG(moonDistance) as avgMoonDist
+                    AVG(moonDistance) as avgMoonDist,
+                    AVG(exposure) as avgExposure
                 FROM frame_record
                 WHERE setupHash = ? AND observingNight IS NOT NULL
                 """
@@ -341,7 +342,8 @@ final class FrameHistoryDatabase {
                     medianNoise: row["avgNoise"],
                     medianTrailing: row["avgTrailing"],
                     medianMoonIllumination: row["avgMoon"],
-                    medianMoonDistance: row["avgMoonDist"]
+                    medianMoonDistance: row["avgMoonDist"],
+                    medianExposure: row["avgExposure"]
                 )
             }
         }
@@ -363,7 +365,8 @@ final class FrameHistoryDatabase {
                     AVG(noiseMAD) as avgNoise,
                     AVG(trailingScore) as avgTrailing,
                     AVG(moonIllumination) as avgMoon,
-                    AVG(moonDistance) as avgMoonDist
+                    AVG(moonDistance) as avgMoonDist,
+                    AVG(exposure) as avgExposure
                 FROM frame_record
                 WHERE observingNight IS NOT NULL
                 """
@@ -393,7 +396,8 @@ final class FrameHistoryDatabase {
                     medianNoise: row["avgNoise"],
                     medianTrailing: row["avgTrailing"],
                     medianMoonIllumination: row["avgMoon"],
-                    medianMoonDistance: row["avgMoonDist"]
+                    medianMoonDistance: row["avgMoonDist"],
+                    medianExposure: row["avgExposure"]
                 )
             }
         }

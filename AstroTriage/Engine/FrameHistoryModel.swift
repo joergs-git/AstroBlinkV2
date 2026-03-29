@@ -42,6 +42,39 @@ class FrameHistoryModel: ObservableObject {
 
     @Published var selectedChart: ChartType = .sessionScore
 
+    // Time range filter
+    enum TimeRange: String, CaseIterable, Identifiable {
+        case all = "All"
+        case threeMonths = "3M"
+        case sixMonths = "6M"
+        case nineMonths = "9M"
+        case twelveMonths = "12M"
+        case twoYears = "24M"
+        case threeYears = "36M"
+        var id: String { rawValue }
+
+        /// Cutoff date for filtering (nil = no filter)
+        var cutoffDate: Date? {
+            guard self != .all else { return nil }
+            let months: Int
+            switch self {
+            case .all: return nil
+            case .threeMonths: months = 3
+            case .sixMonths: months = 6
+            case .nineMonths: months = 9
+            case .twelveMonths: months = 12
+            case .twoYears: months = 24
+            case .threeYears: months = 36
+            }
+            return Calendar.current.date(byAdding: .month, value: -months, to: Date())
+        }
+    }
+
+    @Published var selectedTimeRange: TimeRange = .all
+
+    // Rolling average window size for Performance chart
+    @Published var rollingWindowSize: Int = 5
+
     // Stale records indicator (older algorithm version)
     @Published var staleRecordCount: Int = 0
 
@@ -101,11 +134,22 @@ class FrameHistoryModel: ObservableObject {
                 )
             }
 
-            // Build available targets from summaries
-            let targets = Set(nightlySummaries.compactMap(\.target)).sorted()
+            // Build available targets from summaries (canonicalized for deduplication)
+            let targets = Set(nightlySummaries.compactMap { $0.target.map { TargetCatalog.canonicalName($0) } }).sorted()
             availableTargets = targets
         } catch {
             print("FrameHistoryModel: loadNightlyTrend failed: \(error)")
+        }
+    }
+
+    // MARK: - Time-Filtered Summaries
+
+    /// Summaries filtered by the selected time range. All chart computations use this.
+    var filteredSummaries: [NightSummary] {
+        guard let cutoff = selectedTimeRange.cutoffDate else { return nightlySummaries }
+        return nightlySummaries.filter { s in
+            guard let date = Self.nightDateFormatter.date(from: s.night) else { return false }
+            return date >= cutoff
         }
     }
 
@@ -113,7 +157,7 @@ class FrameHistoryModel: ObservableObject {
 
     /// Per-night quality tier breakdown (for stacked bar chart).
     struct NightQuality: Identifiable {
-        let id = UUID()
+        var id: String { night }  // Stable ID — night string is unique per entry
         let night: String
         let date: Date
         let excellent: Int
@@ -125,7 +169,7 @@ class FrameHistoryModel: ObservableObject {
 
     var nightlyQuality: [NightQuality] {
         var byNight: [String: (exc: Int, good: Int, bord: Int, trash: Int)] = [:]
-        for s in nightlySummaries {
+        for s in filteredSummaries {
             var val = byNight[s.night] ?? (0, 0, 0, 0)
             val.exc += s.excellentCount
             val.good += s.goodCount
@@ -142,7 +186,7 @@ class FrameHistoryModel: ObservableObject {
 
     /// Per-night metric values by filter (for multi-line chart).
     struct MetricPoint: Identifiable {
-        let id = UUID()
+        var id: String { "\(night)_\(filter)" }  // Stable ID
         let night: String
         let date: Date        // Parsed date for proper X-axis sorting
         let filter: String    // Normalized filter name
@@ -185,7 +229,7 @@ class FrameHistoryModel: ObservableObject {
     }
 
     func metricPoints(for metric: MetricType) -> [MetricPoint] {
-        nightlySummaries.compactMap { s in
+        filteredSummaries.compactMap { s in
             let value: Double?
             switch metric {
             case .fwhm:     value = s.medianFWHM
@@ -204,7 +248,7 @@ class FrameHistoryModel: ObservableObject {
 
     /// Moon impact data points (for scatter chart).
     struct MoonPoint: Identifiable {
-        let id = UUID()
+        let id: String  // Stable ID — set at creation from night+filter
         let moonIllumination: Double
         let background: Double
         let filter: String
@@ -212,20 +256,20 @@ class FrameHistoryModel: ObservableObject {
     }
 
     var moonPoints: [MoonPoint] {
-        nightlySummaries.compactMap { s in
+        filteredSummaries.compactMap { s in
             guard let moon = s.medianMoonIllumination,
                   let noise = s.medianNoise,
                   let filter = s.filter else { return nil }
             let canonical = filter.uppercased()
             let isBroadband = ["L", "R", "G", "B"].contains(canonical)
-            return MoonPoint(moonIllumination: moon * 100, background: noise,
-                           filter: filter, isBroadband: isBroadband)
+            return MoonPoint(id: "\(s.night)_\(filter)", moonIllumination: moon * 100,
+                           background: noise, filter: filter, isBroadband: isBroadband)
         }
     }
 
     /// Setup comparison data (all setups, one bar per setup per metric).
     struct SetupMetric: Identifiable {
-        let id = UUID()
+        var id: String { setupLabel }  // Stable ID
         let setupLabel: String
         let value: Double
     }
@@ -233,7 +277,7 @@ class FrameHistoryModel: ObservableObject {
     // MARK: - KPI 1: Session Score (0-100)
 
     struct SessionScorePoint: Identifiable {
-        let id = UUID()
+        var id: String { night }  // Stable ID
         let date: Date
         let night: String
         let score: Double       // 0-100 composite score
@@ -246,12 +290,12 @@ class FrameHistoryModel: ObservableObject {
     /// trailing absence (20%), and background stability (10%).
     var sessionScores: [SessionScorePoint] {
         // Get setup baseline FWHM for normalization
-        let allFWHMs = nightlySummaries.compactMap(\.medianFWHM)
+        let allFWHMs = filteredSummaries.compactMap(\.medianFWHM)
         let baselineFWHM = allFWHMs.isEmpty ? 5.0 : allFWHMs.sorted()[allFWHMs.count / 2]
 
         // Aggregate by night (across filters)
         var byNight: [String: (frames: Int, kept: Int, fwhm: Double?, trailing: Double?, noise: Double?)] = [:]
-        for s in nightlySummaries {
+        for s in filteredSummaries {
             var v = byNight[s.night] ?? (0, 0, nil, nil, nil)
             v.frames += s.frameCount
             v.kept += s.goodCount + s.excellentCount + s.borderlineCount
@@ -289,7 +333,7 @@ class FrameHistoryModel: ObservableObject {
     // MARK: - KPI 2: Imaging Efficiency
 
     struct EfficiencyPoint: Identifiable {
-        let id = UUID()
+        var id: String { night }  // Stable ID
         let date: Date
         let night: String
         let total: Int
@@ -314,7 +358,7 @@ class FrameHistoryModel: ObservableObject {
     // MARK: - KPI 3: Seeing Index
 
     struct SeeingPoint: Identifiable {
-        let id = UUID()
+        var id: String { "\(night)_\(filter)" }  // Stable ID
         let date: Date
         let night: String
         let seeingIndex: Double   // theoretical/actual — 1.0 = diffraction limited
@@ -347,61 +391,103 @@ class FrameHistoryModel: ObservableObject {
     // MARK: - KPI 4: Integration Progress
 
     struct TargetProgress: Identifiable {
-        let id = UUID()
+        var id: String { target }  // Stable ID — target name is unique per entry
         let target: String
-        let totalIntegrationMinutes: Double
-        let usableIntegrationMinutes: Double  // excluding trash
+        let totalIntegrationHours: Double     // Total integration time in hours
+        let usableIntegrationHours: Double    // Excluding trash, in hours
         let nightCount: Int
         let bestFWHM: Double?
-        let avgRetention: Double  // % kept
+        let avgRetention: Double              // % kept
+        let filterBreakdown: [FilterIntegration]  // Per-filter detail
+    }
+
+    struct FilterIntegration: Identifiable {
+        let id: String  // Stable ID — set at creation as "target_filter"
+        let filter: String
+        let hours: Double                     // Usable integration hours
+        let frameCount: Int
     }
 
     var targetProgressData: [TargetProgress] {
-        // Group summaries by canonical target
-        var byTarget: [String: (total: Double, usable: Double, nights: Set<String>,
-                                bestFWHM: Double?, totalFrames: Int, keptFrames: Int)] = [:]
-        for s in nightlySummaries {
-            guard let target = s.target, !target.isEmpty else { continue }
-            var v = byTarget[target] ?? (0, 0, [], nil, 0, 0)
-            // Estimate integration time: frameCount × median exposure (approximate)
-            // We don't have exposure in NightSummary, so use frame count as proxy
+        // Group summaries by canonical target, then by filter
+        struct TargetAccum {
+            var totalSeconds: Double = 0
+            var usableSeconds: Double = 0
+            var nights: Set<String> = []
+            var bestFWHM: Double? = nil
+            var totalFrames: Int = 0
+            var keptFrames: Int = 0
+            var filterData: [String: (seconds: Double, frames: Int)] = [:]
+        }
+
+        var byTarget: [String: TargetAccum] = [:]
+        for s in filteredSummaries {
+            guard let rawTarget = s.target, !rawTarget.isEmpty else { continue }
+            let target = TargetCatalog.canonicalName(rawTarget)
+            var v = byTarget[target] ?? TargetAccum()
+            let exposure = s.medianExposure ?? 120  // Default 120s if unknown
             let totalFrames = s.frameCount
             let keptFrames = s.excellentCount + s.goodCount + s.borderlineCount
-            v.total += Double(totalFrames)
-            v.usable += Double(keptFrames)
+            let totalSec = Double(totalFrames) * exposure
+            let usableSec = Double(keptFrames) * exposure
+            v.totalSeconds += totalSec
+            v.usableSeconds += usableSec
             v.nights.insert(s.night)
             if let f = s.medianFWHM { v.bestFWHM = min(v.bestFWHM ?? f, f) }
             v.totalFrames += totalFrames
             v.keptFrames += keptFrames
+
+            // Per-filter accumulation
+            let filter = FrameHistoryModel.normalizeFilterForChart(s.filter ?? "?")
+            var fd = v.filterData[filter] ?? (0, 0)
+            fd.seconds += usableSec
+            fd.frames += keptFrames
+            v.filterData[filter] = fd
+
             byTarget[target] = v
         }
 
         return byTarget.map { target, v in
             let retention = v.totalFrames > 0 ? Double(v.keptFrames) / Double(v.totalFrames) : 0
+            let filters = v.filterData.map { filter, data in
+                FilterIntegration(id: "\(target)_\(filter)", filter: filter, hours: data.seconds / 3600.0, frameCount: data.frames)
+            }.sorted { $0.hours > $1.hours }
             return TargetProgress(
                 target: target,
-                totalIntegrationMinutes: v.total,  // frames as proxy for minutes
-                usableIntegrationMinutes: v.usable,
+                totalIntegrationHours: v.totalSeconds / 3600.0,
+                usableIntegrationHours: v.usableSeconds / 3600.0,
                 nightCount: v.nights.count,
                 bestFWHM: v.bestFWHM,
-                avgRetention: retention
+                avgRetention: retention,
+                filterBreakdown: filters
             )
-        }.sorted { $0.usableIntegrationMinutes > $1.usableIntegrationMinutes }
+        }.sorted {
+            // Stable sort: by hours descending, then alphabetically as tiebreaker
+            if $0.usableIntegrationHours != $1.usableIntegrationHours {
+                return progressSortAscending
+                    ? $0.usableIntegrationHours < $1.usableIntegrationHours
+                    : $0.usableIntegrationHours > $1.usableIntegrationHours
+            }
+            return $0.target < $1.target
+        }
     }
+
+    // Progress chart sort direction
+    @Published var progressSortAscending: Bool = false
 
     // MARK: - KPI 5: Equipment Health (rolling FWHM trend)
 
     struct HealthTrendPoint: Identifiable {
-        let id = UUID()
+        var id: String { night }  // Stable ID
         let date: Date
         let night: String
-        let rollingFWHM: Double     // 5-session rolling average
+        let rollingFWHM: Double     // Configurable rolling average
         let rawFWHM: Double
     }
 
     var equipmentHealthData: [HealthTrendPoint] {
         // Per-night average FWHM (across all filters)
-        let nightly: [(date: Date, fwhm: Double)] = nightlySummaries.compactMap { s in
+        let nightly: [(date: Date, fwhm: Double)] = filteredSummaries.compactMap { s in
             guard let fwhm = s.medianFWHM, let date = Self.nightDateFormatter.date(from: s.night) else { return nil }
             return (date, fwhm)
         }.sorted { $0.date < $1.date }
@@ -412,10 +498,9 @@ class FrameHistoryModel: ObservableObject {
         let sorted = byDate.map { (date: $0.key, fwhm: $0.value.reduce(0, +) / Double($0.value.count)) }
             .sorted { $0.date < $1.date }
 
-        // 5-point rolling average
-        let windowSize = 5
+        // Configurable rolling average
         return sorted.enumerated().compactMap { idx, item in
-            let start = max(0, idx - windowSize + 1)
+            let start = max(0, idx - rollingWindowSize + 1)
             let window = sorted[start...idx]
             let rolling = window.map(\.fwhm).reduce(0, +) / Double(window.count)
             let night = Self.nightDateFormatter.string(from: item.date)
@@ -434,12 +519,13 @@ class FrameHistoryModel: ObservableObject {
     }
 
     var summaryStats: SummaryStats {
-        let nights = Set(nightlySummaries.map(\.night))
-        let totalFrames = nightlySummaries.reduce(0) { $0 + $1.frameCount }
-        let totalTrash = nightlySummaries.reduce(0) { $0 + $1.trashCount }
+        let data = filteredSummaries
+        let nights = Set(data.map(\.night))
+        let totalFrames = data.reduce(0) { $0 + $1.frameCount }
+        let totalTrash = data.reduce(0) { $0 + $1.trashCount }
         let trashRate = totalFrames > 0 ? Double(totalTrash) / Double(totalFrames) : 0
-        let bestFWHM = nightlySummaries.compactMap(\.medianFWHM).min()
-        let targets = Set(nightlySummaries.compactMap(\.target))
+        let bestFWHM = data.compactMap(\.medianFWHM).min()
+        let targets = Set(data.compactMap { $0.target.map { TargetCatalog.canonicalName($0) } })
         return SummaryStats(
             totalFrames: totalFrames,
             totalNights: nights.count,

@@ -34,6 +34,18 @@ class ReleaseNotesWindowController {
 // MARK: - Release notes data (shared between view and copy)
 
 private let allReleases: [(version: String, date: String, items: [(ReleaseNotesView.ChangeType, String, String)])] = [
+    ("5.8.0", "March 29, 2026", [
+        (.added, "Chart Hover Tooltips", "Mouse over Score, Efficiency, and Performance charts to see per-night details — score, retention, FWHM with dashed crosshair."),
+        (.added, "Time Range Filter", "All / 3M / 6M / 9M / 12M / 24M / 36M picker filters all History charts and summary cards by date range."),
+        (.added, "Rolling Average Picker", "5 / 10 / 20 session window selector on Performance chart for smoother or more responsive FWHM trending."),
+        (.added, "Integration Progress Redesign", "Hours instead of frames, per-filter stacked bars with hover detail showing filter breakdown, nights, best FWHM. Sortable asc/desc."),
+        (.added, "AIsaac Session Planner", "Plan Tonight now includes moon phase, twilight times, per-target filter gaps, recent performance trends, and weather-adaptive exposure advice."),
+        (.added, "Target Catalog Expansion", "300+ targets with common names — all Messier, major NGC/IC, Sharpless, Barnard, Abell, vdB, LDN objects and cross-references."),
+        (.fixed, "Chart Bar Overflow", "Bars no longer bleed through header, tabs, or summary cards. Global clipping on all chart plot areas."),
+        (.fixed, "Chart Flickering", "Stable content-based IDs replace UUID() in all chart data structs. No more animation jitter on re-render."),
+        (.fixed, "Flexible Catalog Matching", "IC1848 = IC 1848 = IC-1848 = iC18 48. Handles any separator/spacing combo for NGC, IC, M, SH2, and 20+ catalog prefixes."),
+        (.fixed, "Target Deduplication", "M 82 and M82 now merge into one entry in Progress chart, target picker, and summary stats."),
+    ]),
     ("5.7.1", "March 29, 2026", [
         (.added, "Bortle Sky Quality (VIIRS 2024)", "Real satellite-measured light pollution for every frame. Fractional Bortle (B4.8) from NOAA VIIRS 2024 via Supabase. Offline fallback via embedded Falchi atlas."),
         (.added, "In-App Messaging", "Server-driven announcements and feedback collection without app updates. Rich actions, targeting, email collection with AIsaac boost."),

@@ -53,6 +53,10 @@ struct FrameHistoryContentView: View {
     let nightMode: Bool
     @Environment(\.fontScale) private var fontScale
 
+    // Hover state for chart tooltips
+    @State private var hoveredDate: Date?
+    @State private var hoverLocation: CGPoint = .zero
+
     private func fs(_ base: CGFloat) -> CGFloat { round(base * fontScale) }
     private var fg: Color { AppColors.fg(nightMode) }
     private var fgDim: Color { AppColors.fgDim(nightMode) }
@@ -170,6 +174,15 @@ struct FrameHistoryContentView: View {
             }
             .frame(maxWidth: 150)
 
+            // Time range picker
+            Picker("Range", selection: $model.selectedTimeRange) {
+                ForEach(FrameHistoryModel.TimeRange.allCases) { range in
+                    Text(range.rawValue).tag(range)
+                }
+            }
+            .frame(maxWidth: 80)
+            .help("Filter data by time range")
+
             // Build Archive button
             Button(action: { startArchiveScan() }) {
                 HStack(spacing: 4) {
@@ -232,11 +245,29 @@ struct FrameHistoryContentView: View {
                         point.score >= 50 ? Color.yellow :
                         point.score >= 25 ? Color.orange : Color.red
                     )
+                    if let hd = hoveredDate, Calendar.current.isDate(hd, inSameDayAs: point.date) {
+                        RuleMark(x: .value("Hover", point.date, unit: .day))
+                            .foregroundStyle(fg.opacity(0.3))
+                            .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 3]))
+                    }
                 }
                 .chartYScale(domain: 0...100)
                 .chartYAxisLabel("Score (0-100)")
-                .chartPlotStyle { plot in plot.background(chartBg) }
+                .chartPlotStyle { plot in plot.background(chartBg).clipped() }
+                .chartOverlay { proxy in chartHoverTracker(proxy: proxy) }
                 .frame(minHeight: 300)
+                .overlay(alignment: .topLeading) {
+                    if let hd = hoveredDate,
+                       let point = scores.first(where: { Calendar.current.isDate($0.date, inSameDayAs: hd) }) {
+                        chartTooltip {
+                            Text(point.night).font(.system(size: fs(10), weight: .bold))
+                            Text(String(format: "Score: %.0f", point.score)).font(.system(size: fs(10)))
+                            Text("\(point.frameCount) frames, \(String(format: "%.0f%%", point.retentionRate * 100)) kept")
+                                .font(.system(size: fs(9)))
+                        }
+                        .offset(x: hoverLocation.x + 12, y: max(0, hoverLocation.y - 40))
+                    }
+                }
 
                 // Legend + stats
                 HStack(spacing: 12) {
@@ -283,11 +314,29 @@ struct FrameHistoryContentView: View {
                         point.retentionPct >= 60 ? Color.yellow :
                         point.retentionPct >= 40 ? Color.orange : Color.red
                     )
+                    if let hd = hoveredDate, Calendar.current.isDate(hd, inSameDayAs: point.date) {
+                        RuleMark(x: .value("Hover", point.date, unit: .day))
+                            .foregroundStyle(fg.opacity(0.3))
+                            .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 3]))
+                    }
                 }
                 .chartYScale(domain: 0...100)
                 .chartYAxisLabel("Frames Kept %")
-                .chartPlotStyle { plot in plot.background(chartBg) }
+                .chartPlotStyle { plot in plot.background(chartBg).clipped() }
+                .chartOverlay { proxy in chartHoverTracker(proxy: proxy) }
                 .frame(minHeight: 300)
+                .overlay(alignment: .topLeading) {
+                    if let hd = hoveredDate,
+                       let point = data.first(where: { Calendar.current.isDate($0.date, inSameDayAs: hd) }) {
+                        chartTooltip {
+                            Text(point.night).font(.system(size: fs(10), weight: .bold))
+                            Text(String(format: "%.0f%% kept", point.retentionPct)).font(.system(size: fs(10)))
+                            Text("\(point.excellent)E + \(point.good)G + \(point.borderline)B / \(point.total)")
+                                .font(.system(size: fs(9)))
+                        }
+                        .offset(x: hoverLocation.x + 12, y: max(0, hoverLocation.y - 40))
+                    }
+                }
 
                 // Legend + stats
                 HStack(spacing: 12) {
@@ -328,6 +377,15 @@ struct FrameHistoryContentView: View {
                         .font(.system(size: fs(9)))
                         .foregroundColor(.orange)
                 }
+                // Rolling average window picker
+                Picker("Window", selection: $model.rollingWindowSize) {
+                    Text("5").tag(5)
+                    Text("10").tag(10)
+                    Text("20").tag(20)
+                }
+                .pickerStyle(.segmented)
+                .frame(width: 100)
+                .help("Rolling average window (sessions)")
                 // Trend arrow
                 if data.count >= 5 {
                     let recent = data.suffix(3).map(\.rollingFWHM).reduce(0, +) / 3.0
@@ -363,11 +421,29 @@ struct FrameHistoryContentView: View {
                         .foregroundStyle(AppColors.accent(nightMode))
                         .lineStyle(StrokeStyle(lineWidth: 2))
                     }
+                    if let hd = hoveredDate {
+                        RuleMark(x: .value("Hover", hd))
+                            .foregroundStyle(fg.opacity(0.3))
+                            .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 3]))
+                    }
                 }
                 .chartYAxisLabel("FWHM (px)")
                 .modifier(PercentileYScale(values: data.map(\.rawFWHM)))
-                .chartPlotStyle { plot in plot.background(chartBg) }
+                .chartPlotStyle { plot in plot.background(chartBg).clipped() }
+                .chartOverlay { proxy in chartHoverTracker(proxy: proxy) }
                 .frame(minHeight: 300)
+                .overlay(alignment: .topLeading) {
+                    if let hd = hoveredDate,
+                       let point = data.min(by: { Swift.abs($0.date.timeIntervalSince(hd)) < Swift.abs($1.date.timeIntervalSince(hd)) }),
+                       Swift.abs(point.date.timeIntervalSince(hd)) < 86400 * 3 {
+                        chartTooltip {
+                            Text(point.night).font(.system(size: fs(10), weight: .bold))
+                            Text(String(format: "FWHM: %.2f px", point.rawFWHM)).font(.system(size: fs(10)))
+                            Text(String(format: "Rolling: %.2f px", point.rollingFWHM)).font(.system(size: fs(9)))
+                        }
+                        .offset(x: hoverLocation.x + 12, y: max(0, hoverLocation.y - 40))
+                    }
+                }
 
                 // Legend
                 HStack(spacing: 16) {
@@ -377,7 +453,7 @@ struct FrameHistoryContentView: View {
                     }
                     HStack(spacing: 4) {
                         RoundedRectangle(cornerRadius: 1).fill(AppColors.accent(nightMode)).frame(width: 16, height: 2)
-                        Text("5-session rolling avg").font(.system(size: fs(9))).foregroundColor(fgDim)
+                        Text("\(model.rollingWindowSize)-session rolling avg").font(.system(size: fs(9))).foregroundColor(fgDim)
                     }
                 }
             }
@@ -390,14 +466,14 @@ struct FrameHistoryContentView: View {
 
         // Separate broadband (L/R/G/B) vs narrowband (Ha/OIII/SII)
         struct MoonScorePoint: Identifiable {
-            let id = UUID()
+            let id: String  // Stable ID from source data
             let moonPct: Double
             let noise: Double
             let filterType: String  // "Broadband" or "Narrowband"
         }
         let points: [MoonScorePoint] = moonData.map { p in
             let filterType = p.isBroadband ? "Broadband (LRGB)" : "Narrowband (Ha/OIII/SII)"
-            return MoonScorePoint(moonPct: p.moonIllumination, noise: p.background, filterType: filterType)
+            return MoonScorePoint(id: p.id, moonPct: p.moonIllumination, noise: p.background, filterType: filterType)
         }
 
         return VStack(alignment: .leading, spacing: 4) {
@@ -424,7 +500,7 @@ struct FrameHistoryContentView: View {
                 .chartXAxisLabel("Moon Illumination %")
                 .chartYAxisLabel("Background Noise (MAD)")
                 .modifier(PercentileYScale(values: points.map(\.noise)))
-                .chartPlotStyle { plot in plot.background(chartBg) }
+                .chartPlotStyle { plot in plot.background(chartBg).clipped() }
                 .chartLegend(.visible)
                 .frame(minHeight: 300)
 
@@ -435,36 +511,143 @@ struct FrameHistoryContentView: View {
         }
     }
 
-    // KPI 5: Target Progress — integration time per target
+    // KPI 5: Target Progress — integration hours per target with per-filter breakdown
+    // Hover state for progress chart
+    @State private var hoveredTarget: String?
+
     private var targetProgressChart: some View {
-        let data = model.targetProgressData.prefix(15) // Top 15 targets
+        let data = Array(model.targetProgressData.prefix(15))  // Top 15 targets
+        // Stable max — always use absolute max regardless of sort direction
+        let maxHours = data.map(\.usableIntegrationHours).max() ?? 1
+
         return VStack(alignment: .leading, spacing: 4) {
-            Text("Integration Progress by Target")
-                .font(.system(size: fs(13), weight: .semibold))
-                .foregroundColor(fg)
+            HStack {
+                Text("Integration Progress by Target")
+                    .font(.system(size: fs(13), weight: .semibold))
+                    .foregroundColor(fg)
+                Spacer()
+                // Sort toggle
+                Button(action: { model.progressSortAscending.toggle() }) {
+                    HStack(spacing: 2) {
+                        Image(systemName: model.progressSortAscending ? "arrow.up" : "arrow.down")
+                        Text("Hours")
+                    }
+                    .font(.system(size: fs(10)))
+                }
+                .buttonStyle(.plain)
+                .foregroundColor(fgDim)
+                .help(model.progressSortAscending ? "Sorted: least hours first" : "Sorted: most hours first")
+
+                let totalHours = data.reduce(0.0) { $0 + $1.usableIntegrationHours }
+                Text(String(format: "Total: %.1fh usable", totalHours))
+                    .font(.system(size: fs(11), design: .monospaced))
+                    .foregroundColor(fgDim)
+            }
 
             if data.isEmpty {
                 noDataView
             } else {
-                Chart(Array(data)) { target in
-                    BarMark(
-                        x: .value("Frames", target.usableIntegrationMinutes),
-                        y: .value("Target", TargetCatalog.displayName(target.target))
-                    )
-                    .foregroundStyle(
-                        target.avgRetention >= 0.8 ? Color.green.gradient :
-                        target.avgRetention >= 0.6 ? Color.yellow.gradient :
-                        Color.orange.gradient
-                    )
-                    .annotation(position: .trailing) {
-                        Text("\(Int(target.usableIntegrationMinutes)) kept")
-                            .font(.system(size: fs(9), design: .monospaced))
+                ScrollView {
+                    VStack(spacing: 0) {
+                        ForEach(data) { target in
+                            progressRow(target: target, maxHours: maxHours)
+                        }
+                    }
+                }
+                .frame(minHeight: min(500, max(300, CGFloat(data.count) * 44)))
+
+                // Filter legend
+                HStack(spacing: 10) {
+                    let allFilters = Array(Set(data.flatMap { $0.filterBreakdown.map(\.filter) })).sorted()
+                    ForEach(allFilters, id: \.self) { filter in
+                        HStack(spacing: 3) {
+                            Circle().fill(Self.filterColor(for: filter)).frame(width: 7, height: 7)
+                            Text(filter).font(.system(size: fs(9))).foregroundColor(fgDim)
+                        }
+                    }
+                    Spacer()
+                    Text("Usable frames only (excellent + good + borderline)")
+                        .font(.system(size: fs(9)))
+                        .foregroundColor(fgDim)
+                }
+            }
+        }
+    }
+
+    /// Single target progress row with label, stacked bar, and hover detail.
+    private func progressRow(target: FrameHistoryModel.TargetProgress, maxHours: Double) -> some View {
+        let displayName = TargetCatalog.displayName(target.target)
+        let isHovered = hoveredTarget == target.target
+        let barFraction = maxHours > 0 ? target.usableIntegrationHours / maxHours : 0
+
+        return VStack(alignment: .leading, spacing: 2) {
+            // Target name + hours
+            HStack(spacing: 6) {
+                Text(displayName)
+                    .font(.system(size: fs(11), weight: .medium))
+                    .foregroundColor(fg)
+                    .lineLimit(1)
+                Spacer()
+                Text(String(format: "%.1fh", target.usableIntegrationHours))
+                    .font(.system(size: fs(11), weight: .bold, design: .monospaced))
+                    .foregroundColor(fg)
+                Text(String(format: "/ %.1fh (%.0f%%)", target.totalIntegrationHours, target.avgRetention * 100))
+                    .font(.system(size: fs(9), design: .monospaced))
+                    .foregroundColor(fgDim)
+            }
+
+            // Stacked filter bar
+            GeometryReader { geo in
+                let totalWidth = geo.size.width * barFraction
+                HStack(spacing: 0) {
+                    ForEach(target.filterBreakdown) { fi in
+                        let segWidth = target.usableIntegrationHours > 0
+                            ? totalWidth * (fi.hours / target.usableIntegrationHours)
+                            : 0
+                        Rectangle()
+                            .fill(Self.filterColor(for: fi.filter))
+                            .frame(width: max(segWidth, segWidth > 0 ? 2 : 0), height: 14)
+                    }
+                    Spacer(minLength: 0)
+                }
+            }
+            .frame(height: 14)
+
+            // Hover detail: per-filter breakdown
+            if isHovered {
+                HStack(spacing: 12) {
+                    ForEach(target.filterBreakdown) { fi in
+                        HStack(spacing: 3) {
+                            Circle().fill(Self.filterColor(for: fi.filter)).frame(width: 6, height: 6)
+                            Text(String(format: "%@ %.1fh (%d)", fi.filter, fi.hours, fi.frameCount))
+                                .font(.system(size: fs(9), design: .monospaced))
+                                .foregroundColor(fgDim)
+                        }
+                    }
+                    if target.nightCount > 0 {
+                        Text("\(target.nightCount) nights")
+                            .font(.system(size: fs(9)))
+                            .foregroundColor(fgDim)
+                    }
+                    if let fwhm = target.bestFWHM {
+                        Text(String(format: "Best FWHM: %.1f", fwhm))
+                            .font(.system(size: fs(9)))
                             .foregroundColor(fgDim)
                     }
                 }
-                .chartXAxisLabel("Usable Frames")
-                .chartPlotStyle { plot in plot.background(chartBg) }
-                .frame(minHeight: max(300, CGFloat(data.count) * 28))
+                .padding(.top, 1)
+                .transition(.opacity)
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(
+            RoundedRectangle(cornerRadius: 4)
+                .fill(isHovered ? AppColors.bgControl(nightMode).opacity(0.5) : Color.clear)
+        )
+        .onHover { hovering in
+            withAnimation(.easeInOut(duration: 0.15)) {
+                hoveredTarget = hovering ? target.target : nil
             }
         }
     }
@@ -520,7 +703,7 @@ struct FrameHistoryContentView: View {
                 }
                 .chartYAxisLabel(model.selectedMetric.rawValue)
                 .modifier(PercentileYScale(values: points.map(\.value)))
-                .chartPlotStyle { plot in plot.background(chartBg) }
+                .chartPlotStyle { plot in plot.background(chartBg).clipped() }
                 .chartXAxis {
                     AxisMarks { _ in
                         AxisValueLabel()
@@ -702,6 +885,41 @@ struct FrameHistoryContentView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
+    }
+
+    // MARK: - Chart Hover Tooltip Helpers
+
+    /// Transparent overlay that tracks mouse position and resolves to nearest date.
+    private func chartHoverTracker(proxy: ChartProxy) -> some View {
+        GeometryReader { geo in
+            Rectangle()
+                .fill(Color.clear)
+                .contentShape(Rectangle())
+                .onContinuousHover { phase in
+                    switch phase {
+                    case .active(let location):
+                        hoverLocation = location
+                        hoveredDate = proxy.value(atX: location.x, as: Date.self)
+                    case .ended:
+                        hoveredDate = nil
+                    }
+                }
+        }
+    }
+
+    /// Tooltip container with consistent styling.
+    private func chartTooltip<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            content()
+        }
+        .padding(6)
+        .background(
+            RoundedRectangle(cornerRadius: 6)
+                .fill(AppColors.bgControl(nightMode).opacity(0.95))
+                .shadow(color: .black.opacity(0.3), radius: 4)
+        )
+        .foregroundColor(fg)
+        .allowsHitTesting(false)
     }
 
     // MARK: - Custom Filter Legend

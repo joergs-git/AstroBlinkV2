@@ -2,7 +2,7 @@
 
 Status: [ ] offen | [~] in Arbeit | [x] fertig
 
-Current version: **v5.7.1** (build 43)
+Current version: **v5.8.0** (build 44)
 
 ---
 
@@ -72,22 +72,25 @@ All original implementation phases are complete:
 - [x] "All Setups" = scatter dots (no spaghetti lines)
 - [x] 6 KPI charts: Score, Efficiency, Performance, Conditions, Progress, Setups
 - [x] Legends on all charts explaining colors
-- [x] Target name enrichment — M42 (Orion Nebula), NGC7000 (North America)
+- [x] Target name enrichment — 300+ targets (all Messier, major NGC/IC/SH2/Barnard/Abell/vdB/LDN)
 - [x] Moon impact split by broadband vs narrowband
 - [x] Equipment Health per-setup warning
-- [ ] **Hover tooltips** — chartOverlay + GeometryReader for data point details
-- [ ] **Time range selector** — All, This Month, Last 3/6/9/12/24/36 months
-- [ ] **Rolling average window picker** — 5/10/20 sessions
-- [ ] **Integration Progress rethink** — hours not frames, per-filter breakdown, estimated completion
+- [x] **Hover tooltips** — chartOverlay + GeometryReader on Score/Efficiency/Performance charts
+- [x] **Time range selector** — All/3M/6M/9M/12M/24M/36M filter in header bar
+- [x] **Rolling average window picker** — 5/10/20 sessions (segmented on Performance chart)
+- [x] **Integration Progress rethink** — hours not frames, per-filter stacked bars, detail annotations
+- [x] **Chart clipping** — `.clipped()` on all chart plot areas prevents bar overflow
 - [ ] Monthly aggregation when date range >6 months
 - [ ] Historical median reference line (dashed horizontal)
 
 ### AIsaac Session Planner
-- [ ] "Plan Tonight" preset — combines weather + moon + target progress + filter gaps
-- [ ] Meteoblue/Clear Outside seeing forecast integration
-- [ ] Astronomical twilight timing from SunCalculator
-- [ ] Filter recommendation based on moon phase + target history
-- [ ] Output: specific targets, filters, timing windows, stop conditions
+- [x] "Plan Tonight" context — moon phase, twilight times, target integration status, filter gaps
+- [x] Astronomical twilight timing from SunCalculator (15min sampling)
+- [x] Filter recommendation based on moon phase + target history
+- [x] Recent performance trend (last 2-3 sessions FWHM/retention in prompt)
+- [x] Weather-adaptive advice (wind→shorter exp, humidity→dew warning, moon→narrowband)
+- [x] Setup awareness (dome vs portable guidance in system prompt)
+- [ ] Meteoblue/Clear Outside seeing forecast integration (7Timer + Open-Meteo already wired)
 
 ### Frame History Re-Analysis
 - [ ] Detect stale records: `WHERE algorithmVersion < kAlgorithmVersion`

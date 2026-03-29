@@ -255,6 +255,7 @@ struct NightSummary: Identifiable {
     let medianTrailing: Double?
     let medianMoonIllumination: Double?
     let medianMoonDistance: Double?
+    let medianExposure: Double?     // Seconds per sub (for integration time calculation)
 }
 
 /// Aggregate setup history for AIsaac context.
