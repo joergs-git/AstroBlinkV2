@@ -98,6 +98,44 @@ enum BortleEstimator {
         return max(1, min(9, Int(interpolated.rounded())))
     }
 
+    /// Estimate Bortle via Supabase Edge Function (actual VIIRS satellite data).
+    /// Falls back to local grid if offline. Caches result in UserDefaults.
+    /// Call from background thread — does network I/O.
+    static func estimateOnline(latitude: Double, longitude: Double) async -> Int? {
+        guard latitude >= -90 && latitude <= 90,
+              longitude >= -180 && longitude <= 180 else { return nil }
+
+        // Cache key: round to 0.01° (~1km)
+        let key = String(format: "bortle_%.2f_%.2f", latitude, longitude)
+        if let cached = UserDefaults.standard.object(forKey: key) as? Int {
+            return cached
+        }
+
+        // Try Edge Function
+        if BenchmarkConfig.isConfigured {
+            let urlString = "\(BenchmarkConfig.supabaseURL)/functions/v1/get-bortle?lat=\(latitude)&lon=\(longitude)"
+            if let url = URL(string: urlString) {
+                var request = URLRequest(url: url)
+                request.setValue(BenchmarkConfig.supabaseAnonKey, forHTTPHeaderField: "apikey")
+                request.timeoutInterval = 10
+
+                if let (data, response) = try? await URLSession.shared.data(for: request),
+                   let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode),
+                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                   let bortle = json["bortle"] as? Double {
+                    let rounded = max(1, min(9, Int(bortle.rounded())))
+                    UserDefaults.standard.set(rounded, forKey: key)
+                    return rounded
+                }
+            }
+        }
+
+        // Fallback to local grid
+        let local = estimate(latitude: latitude, longitude: longitude)
+        if let local { UserDefaults.standard.set(local, forKey: key) }
+        return local
+    }
+
     /// Bortle class description string.
     static func description(for bortle: Int) -> String {
         switch bortle {

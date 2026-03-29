@@ -1802,11 +1802,20 @@ class TriageViewModel: ObservableObject {
                 )
             }
 
-            // Bortle class (needs site coordinates — computed once, same for all frames at same site)
+            // Bortle class (needs site coordinates)
             if images[index].bortleClass == nil,
                let lat = images[index].siteLatitude,
                let lon = images[index].siteLongitude {
+                // Use local grid immediately (instant), then try online for precision
                 images[index].bortleClass = BortleEstimator.estimate(latitude: lat, longitude: lon)
+                let idx = index
+                Task.detached(priority: .utility) {
+                    if let online = await BortleEstimator.estimateOnline(latitude: lat, longitude: lon) {
+                        await MainActor.run {
+                            self.images[idx].bortleClass = online
+                        }
+                    }
+                }
             }
 
             // Canonical target name (normalized for grouping across sessions)
