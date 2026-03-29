@@ -63,6 +63,12 @@ All original implementation phases are complete:
 - [ ] Approaches: index-based solver (astrometry.net style) or GPU-accelerated star pattern matching
 - [ ] Would enable mosaic planning and astrometric quality checks
 
+### History Window Chart Improvements
+- [x] Y-axis percentile clamping — P2/P98 range, outliers clamped with triangle markers
+- [ ] Fixed window-width charts — no horizontal scrolling, always fit to window
+- [ ] Zoom in/out on chart data (date range selection or pinch zoom)
+- [ ] Consider dual Y-axis for metrics with vastly different scales
+
 ### SSWEIGHT Reset / Removal
 - [ ] Option to remove or reset SSWEIGHT keywords from FITS/XISF headers
 - [ ] Undo path for cases where weights were written based on incorrect scoring

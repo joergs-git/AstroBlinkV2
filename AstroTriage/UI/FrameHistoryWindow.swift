@@ -272,7 +272,22 @@ struct FrameHistoryContentView: View {
                 .chartYAxisLabel(model.selectedMetric.rawValue)
                 .chartLegend(.hidden)
                 .chartScrollableAxes(.horizontal)
+                // Percentile-clamped Y-axis: P2–P98 range prevents outliers from crushing the scale
+                .modifier(PercentileYScale(values: points.map(\.value)))
                 .frame(minHeight: 300)
+
+                // Outlier indicator
+                let outliers = model.outlierCount(for: model.selectedMetric)
+                if outliers > 0 {
+                    HStack(spacing: 4) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.system(size: 9))
+                            .foregroundColor(.orange)
+                        Text("\(outliers) outlier\(outliers == 1 ? "" : "s") beyond P98 not shown")
+                            .font(.system(size: fs(10)))
+                            .foregroundColor(.secondary)
+                    }
+                }
                 filterLegend(filters: filterGroups.keys.sorted())
             }
         }
@@ -298,6 +313,7 @@ struct FrameHistoryContentView: View {
                 }
                 .chartXAxisLabel("Moon Illumination %")
                 .chartYAxisLabel("Background Noise (MAD)")
+                .modifier(PercentileYScale(values: points.map(\.background)))
                 .frame(minHeight: 300)
                 filterLegend(filters: Array(Set(points.map(\.filter))).sorted())
             }
@@ -347,6 +363,7 @@ struct FrameHistoryContentView: View {
                     }
                 }
                 .chartYAxisLabel(model.selectedMetric.rawValue)
+                .modifier(PercentileYScale(values: points.map(\.value)))
                 .frame(minHeight: 300)
             }
         }
@@ -527,5 +544,22 @@ struct FrameHistoryContentView: View {
         // KeyValuePairs can't be built dynamically — use the chart modifier approach instead
         // This is handled by applying .foregroundStyle directly per mark
         return [:]
+    }
+}
+
+// MARK: - Percentile Y-Axis Clamping
+
+/// ViewModifier that clamps chart Y-axis to P2–P98 range, preventing outliers
+/// from crushing the scale. Falls back to auto-scaling when data is insufficient.
+struct PercentileYScale: ViewModifier {
+    let values: [Double]
+
+    func body(content: Content) -> some View {
+        if let range = FrameHistoryModel.percentileRange(values) {
+            content
+                .chartYScale(domain: range.min...range.max)
+        } else {
+            content
+        }
     }
 }

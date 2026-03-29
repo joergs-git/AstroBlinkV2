@@ -184,6 +184,36 @@ class FrameHistoryModel: ObservableObject {
         let value: Double
     }
 
+    // MARK: - Percentile Clamping
+
+    /// Compute percentile-based Y-axis range for a set of values.
+    /// Returns (min, max) where values outside P2–P98 are considered outliers.
+    /// Adds 5% padding above for visual breathing room.
+    static func percentileRange(_ values: [Double], lower: Double = 0.02, upper: Double = 0.98) -> (min: Double, max: Double)? {
+        let sorted = values.filter { $0.isFinite }.sorted()
+        guard sorted.count >= 3 else { return nil }
+
+        let lowerIdx = Int(Double(sorted.count - 1) * lower)
+        let upperIdx = Int(Double(sorted.count - 1) * upper)
+        let pLow = sorted[lowerIdx]
+        let pHigh = sorted[upperIdx]
+
+        // Ensure non-zero range
+        guard pHigh > pLow else { return nil }
+
+        let padding = (pHigh - pLow) * 0.05
+        let rangeMin = max(0, pLow - padding)  // Never go below 0 for counts/metrics
+        let rangeMax = pHigh + padding
+        return (rangeMin, rangeMax)
+    }
+
+    /// Count of outlier values above P98 for a given metric (for annotation display).
+    func outlierCount(for metric: MetricType) -> Int {
+        let points = metricPoints(for: metric)
+        guard let range = Self.percentileRange(points.map(\.value)) else { return 0 }
+        return points.filter { $0.value > range.max }.count
+    }
+
     func setupComparisonPoints(for metric: MetricType) -> [SetupMetric] {
         availableSetups.compactMap { setup in
             guard let summary = try? FrameHistoryDatabase.shared.setupSummary(setupHash: setup.hash) else {
