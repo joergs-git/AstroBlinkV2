@@ -261,9 +261,25 @@ struct FrameHistoryContentView: View {
                        let point = scores.first(where: { Calendar.current.isDate($0.date, inSameDayAs: hd) }) {
                         chartTooltip {
                             Text(point.night).font(.system(size: fs(10), weight: .bold))
-                            Text(String(format: "Score: %.0f", point.score)).font(.system(size: fs(10)))
-                            Text("\(point.frameCount) frames, \(String(format: "%.0f%%", point.retentionRate * 100)) kept")
-                                .font(.system(size: fs(9)))
+                            Text(String(format: "Score: %.0f — %d frames, %.0f%% kept", point.score, point.frameCount, point.retentionRate * 100))
+                                .font(.system(size: fs(10)))
+                            if !point.targets.isEmpty {
+                                Text(point.targets.map { TargetCatalog.displayName($0) }.joined(separator: ", "))
+                                    .font(.system(size: fs(9))).foregroundColor(fgDim)
+                            }
+                            HStack(spacing: 8) {
+                                if !point.filters.isEmpty {
+                                    Text(point.filters.joined(separator: "/")).font(.system(size: fs(9)))
+                                }
+                                if let fwhm = point.avgFWHM {
+                                    Text(String(format: "FWHM %.1f", fwhm)).font(.system(size: fs(9)))
+                                }
+                                if let moon = point.moonPct {
+                                    Text(String(format: "Moon %.0f%%", moon)).font(.system(size: fs(9)))
+                                        .foregroundColor(moon > 60 ? .orange : fgDim)
+                                }
+                            }
+                            .foregroundColor(fgDim)
                         }
                         .offset(x: hoverLocation.x + 12, y: max(0, hoverLocation.y - 40))
                     }
@@ -330,9 +346,37 @@ struct FrameHistoryContentView: View {
                        let point = data.first(where: { Calendar.current.isDate($0.date, inSameDayAs: hd) }) {
                         chartTooltip {
                             Text(point.night).font(.system(size: fs(10), weight: .bold))
-                            Text(String(format: "%.0f%% kept", point.retentionPct)).font(.system(size: fs(10)))
-                            Text("\(point.excellent)E + \(point.good)G + \(point.borderline)B / \(point.total)")
-                                .font(.system(size: fs(9)))
+                            Text(String(format: "%.0f%% kept — %d frames", point.retentionPct, point.total))
+                                .font(.system(size: fs(10)))
+                            Text("\(point.excellent) excellent, \(point.good) good, \(point.borderline) borderline, \(point.trash) trash")
+                                .font(.system(size: fs(9))).foregroundColor(fgDim)
+                            if !point.targets.isEmpty {
+                                Text(point.targets.map { TargetCatalog.displayName($0) }.joined(separator: ", "))
+                                    .font(.system(size: fs(9))).foregroundColor(fgDim)
+                            }
+                            HStack(spacing: 8) {
+                                if !point.filters.isEmpty {
+                                    Text(point.filters.joined(separator: "/")).font(.system(size: fs(9)))
+                                }
+                                if let fwhm = point.avgFWHM {
+                                    Text(String(format: "FWHM %.1f px", fwhm)).font(.system(size: fs(9)))
+                                        .foregroundColor(fwhm > 6 ? .orange : fgDim)
+                                }
+                                if let moon = point.moonPct {
+                                    Text(String(format: "Moon %.0f%%", moon)).font(.system(size: fs(9)))
+                                        .foregroundColor(moon > 60 ? .orange : fgDim)
+                                }
+                            }
+                            .foregroundColor(fgDim)
+                            // Highlight likely cause for bad nights
+                            if point.retentionPct < 50 {
+                                let causes = badNightCauses(point)
+                                if !causes.isEmpty {
+                                    Text("Likely: " + causes.joined(separator: ", "))
+                                        .font(.system(size: fs(9), weight: .medium))
+                                        .foregroundColor(.orange)
+                                }
+                            }
                         }
                         .offset(x: hoverLocation.x + 12, y: max(0, hoverLocation.y - 40))
                     }
@@ -885,6 +929,22 @@ struct FrameHistoryContentView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
+    }
+
+    // MARK: - Bad Night Cause Analysis
+
+    /// Analyze an efficiency data point and suggest likely causes for poor retention.
+    private func badNightCauses(_ point: FrameHistoryModel.EfficiencyPoint) -> [String] {
+        var causes: [String] = []
+        if let fwhm = point.avgFWHM, fwhm > 8 { causes.append("bad seeing (FWHM \(String(format: "%.1f", fwhm)))") }
+        else if let fwhm = point.avgFWHM, fwhm > 5 { causes.append("mediocre seeing") }
+        if let moon = point.moonPct, moon > 70 {
+            let hasBroadband = point.filters.contains(where: { ["L", "R", "G", "B"].contains($0) })
+            if hasBroadband { causes.append("bright moon + broadband") }
+        }
+        if point.trash > point.total / 2 { causes.append("high trash rate") }
+        if point.total < 10 { causes.append("very few frames") }
+        return causes
     }
 
     // MARK: - Chart Hover Tooltip Helpers

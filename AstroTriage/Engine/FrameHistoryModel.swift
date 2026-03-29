@@ -284,6 +284,11 @@ class FrameHistoryModel: ObservableObject {
         let retentionRate: Double  // % kept
         let fwhmNormalized: Double // relative to setup median (1.0 = average, <1 = better)
         let frameCount: Int
+        // Context for tooltip
+        let targets: [String]
+        let filters: [String]
+        let avgFWHM: Double?
+        let moonPct: Double?
     }
 
     /// Compute per-night Session Score. Combines retention rate (40%), FWHM quality (30%),
@@ -323,9 +328,17 @@ class FrameHistoryModel: ObservableObject {
             // Composite: retention 40%, FWHM 30%, trailing 20%, background 10%
             let composite = retention * 40 + fwhmScore * 30 + trailingScore * 20 + noiseScore * 10
 
+            // Context from summaries for this night
+            let nightSummaries = filteredSummaries.filter { $0.night == night }
+            let targets = Array(Set(nightSummaries.compactMap { $0.target.map { TargetCatalog.canonicalName($0) } })).sorted()
+            let filters = Array(Set(nightSummaries.compactMap { $0.filter.map { FrameHistoryModel.normalizeFilterForChart($0) } })).sorted()
+            let moons = nightSummaries.compactMap(\.medianMoonIllumination)
+            let moonPct = moons.isEmpty ? nil : (moons.reduce(0, +) / Double(moons.count)) * 100
+
             return SessionScorePoint(
                 date: date, night: night, score: min(100, composite),
-                retentionRate: retention, fwhmNormalized: fwhmRatio, frameCount: v.frames
+                retentionRate: retention, fwhmNormalized: fwhmRatio, frameCount: v.frames,
+                targets: targets, filters: filters, avgFWHM: v.fwhm, moonPct: moonPct
             )
         }.sorted { $0.date < $1.date }
     }
@@ -342,15 +355,30 @@ class FrameHistoryModel: ObservableObject {
         let borderline: Int
         let trash: Int
         var retentionPct: Double { total > 0 ? Double(excellent + good) / Double(total) * 100 : 0 }
+        // Context for tooltip
+        let targets: [String]       // Targets imaged that night
+        let filters: [String]       // Filters used
+        let avgFWHM: Double?        // Average FWHM
+        let moonPct: Double?        // Moon illumination %
     }
 
     var efficiencyData: [EfficiencyPoint] {
         let quality = nightlyQuality
         return quality.compactMap { nq in
+            // Gather context from filtered summaries for this night
+            let nightSummaries = filteredSummaries.filter { $0.night == nq.night }
+            let targets = Array(Set(nightSummaries.compactMap { $0.target.map { TargetCatalog.canonicalName($0) } })).sorted()
+            let filters = Array(Set(nightSummaries.compactMap { $0.filter.map { FrameHistoryModel.normalizeFilterForChart($0) } })).sorted()
+            let fwhms = nightSummaries.compactMap(\.medianFWHM)
+            let avgFWHM = fwhms.isEmpty ? nil : fwhms.reduce(0, +) / Double(fwhms.count)
+            let moons = nightSummaries.compactMap(\.medianMoonIllumination)
+            let moonPct = moons.isEmpty ? nil : (moons.reduce(0, +) / Double(moons.count)) * 100
+
             return EfficiencyPoint(
                 date: nq.date, night: nq.night,
                 total: nq.total, excellent: nq.excellent,
-                good: nq.good, borderline: nq.borderline, trash: nq.trash
+                good: nq.good, borderline: nq.borderline, trash: nq.trash,
+                targets: targets, filters: filters, avgFWHM: avgFWHM, moonPct: moonPct
             )
         }
     }
