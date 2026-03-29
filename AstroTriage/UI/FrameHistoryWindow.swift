@@ -25,7 +25,8 @@ class FrameHistoryController {
         model.loadData()
 
         let savedScale = AppSettings.loadFloat(for: .fontScale).map { CGFloat($0) } ?? 1.0
-        let view = FrameHistoryContentView(model: model)
+        let nightMode = AppSettings.loadBool(for: .nightMode) == true
+        let view = FrameHistoryContentView(model: model, nightMode: nightMode)
             .environment(\.fontScale, savedScale)
         let hostingView = NSHostingView(rootView: view)
 
@@ -49,9 +50,14 @@ class FrameHistoryController {
 struct FrameHistoryContentView: View {
     @ObservedObject var model: FrameHistoryModel
     @ObservedObject var scanner: ArchiveScanner = .shared
+    let nightMode: Bool
     @Environment(\.fontScale) private var fontScale
 
     private func fs(_ base: CGFloat) -> CGFloat { round(base * fontScale) }
+    private var fg: Color { AppColors.fg(nightMode) }
+    private var fgDim: Color { AppColors.fgDim(nightMode) }
+    private var bg: Color { AppColors.bg(nightMode) }
+    private var chartBg: Color { AppColors.chartBg(nightMode) }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -85,7 +91,7 @@ struct FrameHistoryContentView: View {
                 scannerProgressBar
             }
         }
-        .background(Color(NSColor.windowBackgroundColor))
+        .background(bg)
         .onChange(of: model.selectedSetupHash) { _, _ in model.loadNightlyTrend() }
         .onChange(of: model.selectedTarget) { _, _ in model.loadNightlyTrend() }
     }
@@ -99,15 +105,17 @@ struct FrameHistoryContentView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("\(stats.frameCount) frames")
                         .font(.system(size: fs(13), weight: .semibold))
+                    .foregroundColor(fg)
+                        .foregroundColor(fg)
                     Text("\(stats.sessionCount) sessions")
                         .font(.system(size: fs(11)))
-                        .foregroundColor(.secondary)
+                        .foregroundColor(fgDim)
                 }
 
                 if let first = stats.firstNight, let last = stats.lastNight {
                     Text("\(first) — \(last)")
                         .font(.system(size: fs(11), design: .monospaced))
-                        .foregroundColor(.secondary)
+                        .foregroundColor(fgDim)
                 }
             }
 
@@ -203,6 +211,7 @@ struct FrameHistoryContentView: View {
         return VStack(alignment: .leading, spacing: 4) {
             Text("Quality Distribution by Night")
                 .font(.system(size: fs(13), weight: .semibold))
+                    .foregroundColor(fg)
 
             if bars.isEmpty {
                 noDataView
@@ -223,6 +232,7 @@ struct FrameHistoryContentView: View {
                 .chartYAxisLabel("Frames")
                 .chartLegend(.visible)
                 .chartScrollableAxes(.horizontal)
+                .chartPlotStyle { plot in plot.background(chartBg) }
                 .frame(minHeight: 300)
             }
         }
@@ -235,6 +245,7 @@ struct FrameHistoryContentView: View {
             HStack {
                 Text("Metric Trend by Night")
                     .font(.system(size: fs(13), weight: .semibold))
+                    .foregroundColor(fg)
                 Spacer()
                 Picker("Metric", selection: $model.selectedMetric) {
                     ForEach(FrameHistoryModel.MetricType.allCases) { m in
@@ -272,8 +283,8 @@ struct FrameHistoryContentView: View {
                 .chartYAxisLabel(model.selectedMetric.rawValue)
                 .chartLegend(.hidden)
                 .chartScrollableAxes(.horizontal)
-                // Percentile-clamped Y-axis: P2–P98 range prevents outliers from crushing the scale
                 .modifier(PercentileYScale(values: points.map(\.value)))
+                .chartPlotStyle { plot in plot.background(chartBg) }
                 .frame(minHeight: 300)
 
                 // Outlier indicator
@@ -285,7 +296,7 @@ struct FrameHistoryContentView: View {
                             .foregroundColor(.orange)
                         Text("\(outliers) outlier\(outliers == 1 ? "" : "s") beyond P98 not shown")
                             .font(.system(size: fs(10)))
-                            .foregroundColor(.secondary)
+                            .foregroundColor(fgDim)
                     }
                 }
                 filterLegend(filters: filterGroups.keys.sorted())
@@ -299,6 +310,7 @@ struct FrameHistoryContentView: View {
         return VStack(alignment: .leading, spacing: 4) {
             Text("Moon Impact on Background")
                 .font(.system(size: fs(13), weight: .semibold))
+                    .foregroundColor(fg)
 
             if points.isEmpty {
                 noDataView
@@ -314,6 +326,7 @@ struct FrameHistoryContentView: View {
                 .chartXAxisLabel("Moon Illumination %")
                 .chartYAxisLabel("Background Noise (MAD)")
                 .modifier(PercentileYScale(values: points.map(\.background)))
+                .chartPlotStyle { plot in plot.background(chartBg) }
                 .frame(minHeight: 300)
                 filterLegend(filters: Array(Set(points.map(\.filter))).sorted())
             }
@@ -327,6 +340,7 @@ struct FrameHistoryContentView: View {
             HStack {
                 Text("Setup Comparison")
                     .font(.system(size: fs(13), weight: .semibold))
+                    .foregroundColor(fg)
                 Spacer()
                 Picker("Metric", selection: $model.selectedMetric) {
                     ForEach(FrameHistoryModel.MetricType.allCases) { m in
@@ -341,10 +355,10 @@ struct FrameHistoryContentView: View {
                     Spacer()
                     Image(systemName: "camera.2")
                         .font(.system(size: 40))
-                        .foregroundColor(.secondary)
+                        .foregroundColor(fgDim)
                     Text("Need at least 2 setups to compare.\nLoad sessions from different telescope/camera combos.")
                         .font(.system(size: fs(13)))
-                        .foregroundColor(.secondary)
+                        .foregroundColor(fgDim)
                         .multilineTextAlignment(.center)
                     Spacer()
                 }
@@ -359,11 +373,12 @@ struct FrameHistoryContentView: View {
                     .annotation(position: .top) {
                         Text(String(format: "%.1f", point.value))
                             .font(.system(size: fs(10)))
-                            .foregroundColor(.secondary)
+                            .foregroundColor(fgDim)
                     }
                 }
                 .chartYAxisLabel(model.selectedMetric.rawValue)
                 .modifier(PercentileYScale(values: points.map(\.value)))
+                .chartPlotStyle { plot in plot.background(chartBg) }
                 .frame(minHeight: 300)
             }
         }
@@ -376,12 +391,12 @@ struct FrameHistoryContentView: View {
             Spacer()
             Image(systemName: "clock.arrow.circlepath")
                 .font(.system(size: 48))
-                .foregroundColor(.secondary)
+                .foregroundColor(fgDim)
             Text("No Frame History Yet")
                 .font(.system(size: fs(16), weight: .semibold))
             Text("Load and score sessions to build your history.\nQuality data is saved automatically after scoring.")
                 .font(.system(size: fs(13)))
-                .foregroundColor(.secondary)
+                .foregroundColor(fgDim)
                 .multilineTextAlignment(.center)
             Spacer()
         }
@@ -392,7 +407,7 @@ struct FrameHistoryContentView: View {
             Spacer()
             Text("No data for selected filters")
                 .font(.system(size: fs(13)))
-                .foregroundColor(.secondary)
+                .foregroundColor(fgDim)
             Spacer()
         }
         .frame(minHeight: 200)
@@ -463,12 +478,12 @@ struct FrameHistoryContentView: View {
 
                     Text("\(scanner.totalProcessed)/\(scanner.totalFound)")
                         .font(.system(size: fs(10), design: .monospaced))
-                        .foregroundColor(.secondary)
+                        .foregroundColor(fgDim)
 
                     if scanner.filesPerSecond > 0 {
                         Text(String(format: "%.1f/s", scanner.filesPerSecond))
                             .font(.system(size: fs(10), design: .monospaced))
-                            .foregroundColor(.secondary)
+                            .foregroundColor(fgDim)
                     }
 
                     if let eta = scanner.estimatedSecondsRemaining {
@@ -476,7 +491,7 @@ struct FrameHistoryContentView: View {
                         let sec = eta % 60
                         Text(min > 0 ? "~\(min)m \(sec)s" : "~\(sec)s")
                             .font(.system(size: fs(10), design: .monospaced))
-                            .foregroundColor(.secondary)
+                            .foregroundColor(fgDim)
                     }
                 }
             }
@@ -513,7 +528,7 @@ struct FrameHistoryContentView: View {
                         .frame(width: 8, height: 8)
                     Text(filter)
                         .font(.system(size: fs(10)))
-                        .foregroundColor(.secondary)
+                        .foregroundColor(fgDim)
                 }
             }
         }

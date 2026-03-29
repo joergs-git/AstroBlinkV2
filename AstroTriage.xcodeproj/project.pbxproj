@@ -90,6 +90,7 @@
 		D8490084CA833D518635A281 /* ImageDecoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7AE6DE7943D690C501401C4C /* ImageDecoder.swift */; };
 		D8CFF1148342DB49FB72D618 /* QuickLookDecoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = CAB86491BE4F5019B5883E46 /* QuickLookDecoder.swift */; };
 		DAC6D8E84989CFAB2D257222 /* AIsaacContextBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD52DEA0A1A02E46E1C26A18 /* AIsaacContextBuilder.swift */; };
+		DE72EE4660AD670E0A17857B /* AppColors.swift in Sources */ = {isa = PBXBuildFile; fileRef = 086FF25EBE46523DDAFB5D52 /* AppColors.swift */; };
 		E54F7D793DBBAA3ADA082451 /* SessionScannerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A05ABE70A121689E1D00FB32 /* SessionScannerTests.swift */; };
 		E7B11296D22A64F4E5DE0F60 /* BatchQualityAnalysisTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2EFA8337CE7A626EABADBED /* BatchQualityAnalysisTests.swift */; };
 		E85D3B8048F5775EF0C70BB9 /* DecoderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE83C9556D164ED7CC41C0FC /* DecoderTests.swift */; };
@@ -152,6 +153,7 @@
 
 /* Begin PBXFileReference section */
 		01FF98B4BC98399919553F34 /* ColorCombineEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ColorCombineEngine.swift; sourceTree = "<group>"; };
+		086FF25EBE46523DDAFB5D52 /* AppColors.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppColors.swift; sourceTree = "<group>"; };
 		08F0D2BEEDC92E723A57A4DE /* AIsaacSpeech.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIsaacSpeech.swift; sourceTree = "<group>"; };
 		0BFB130B08CCDD11AC1018A7 /* StarMetricsCalculator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StarMetricsCalculator.swift; sourceTree = "<group>"; };
 		0F4C747A549511B45DCACC15 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
@@ -456,6 +458,7 @@
 		D30D71B63D6BDC840F33D230 /* UI */ = {
 			isa = PBXGroup;
 			children = (
+				086FF25EBE46523DDAFB5D52 /* AppColors.swift */,
 				AAA1D33879A273B47565E70D /* AppMessageBannerView.swift */,
 				85A0D5497E7EBF43F03546F6 /* BatchRenameWindow.swift */,
 				96AD4E25EE11AD6039128785 /* BenchmarkLeaderboardWindow.swift */,
@@ -703,6 +706,7 @@
 				BF9CBFE8BFFC1A572EE95211 /* AIsaacView.swift in Sources */,
 				A4F9C54A9D8BDA57CA1126FE /* AIsaacWeather.swift in Sources */,
 				AF2D1D16D710F786CE5B7279 /* AIsaacWindowController.swift in Sources */,
+				DE72EE4660AD670E0A17857B /* AppColors.swift in Sources */,
 				D4A041A8487DE17C0BBF8DCC /* AppMessage.swift in Sources */,
 				AF96C56B68B6F1DA1A35F740 /* AppMessageBannerView.swift in Sources */,
 				69A68510D3DC87E254921021 /* AppMessageService.swift in Sources */,
