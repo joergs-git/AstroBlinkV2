@@ -108,8 +108,13 @@ enum BortleEstimator {
 
         // Cache key: round to 0.01° (~1km) — same coordinates always get same result
         let key = String(format: "bortle_%.2f_%.2f", latitude, longitude)
-        if let cached = UserDefaults.standard.object(forKey: key) as? Double {
-            return cached
+        // Only use cache if it's a Double (fractional) — discard old Int cache from v5.7.0
+        if let cached = UserDefaults.standard.object(forKey: key) {
+            if let d = cached as? Double, d != d.rounded() {
+                // Fractional value = from Supabase, trust it
+                return d
+            }
+            // Integer value = old local grid cache, ignore and re-query
         }
 
         // Query Supabase REST API directly (no Edge Function needed)
