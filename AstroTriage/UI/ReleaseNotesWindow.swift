@@ -34,6 +34,10 @@ class ReleaseNotesWindowController {
 // MARK: - Release notes data (shared between view and copy)
 
 private let allReleases: [(version: String, date: String, items: [(ReleaseNotesView.ChangeType, String, String)])] = [
+    ("5.8.2", "March 29, 2026", [
+        (.added, "AIsaac Remote Knowledge", "AIsaac's knowledge can now be updated from the server without app releases. New features, tips, and corrections appear automatically within an hour."),
+        (.added, "AIsaac Bortle Awareness", "AIsaac now understands fractional Bortle sky quality from VIIRS 2024 satellite data and can advise on filter choice based on your light pollution."),
+    ]),
     ("5.8.1", "March 29, 2026", [
         (.added, "Rich Tooltips Everywhere", "All 6 History charts show full context on hover: targets, filters, FWHM, moon %, cause analysis for bad nights. Performance shows per-setup FWHM breakdown."),
         (.added, "Conditions Chart Redesign", "Toggleable X-axis: Moon / FWHM / Temperature / Bortle. Nearest-point hover shows all environmental factors. See what really impacts your background noise."),

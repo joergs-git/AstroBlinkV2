@@ -4,6 +4,13 @@ All notable changes to AstroBlink & AIsaac will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [5.8.2] — 2026-03-29
+
+### Added
+- **AIsaac remote knowledge refresh** — Knowledge snippets fetched from Supabase `aisaac_knowledge` table. Cached locally (1h refresh), version-gated, priority-sorted. AIsaac's knowledge can now be updated without app releases
+- **Bortle VIIRS 2024 in AIsaac knowledge** — AIsaac now knows about fractional Bortle from satellite data, can advise on filter choice based on light pollution
+- **Updated chart knowledge** — AIsaac knows about all 6 KPI charts, hover tooltips, time range filter, Conditions factor picker
+
 ## [5.8.1] — 2026-03-29
 
 ### Added
