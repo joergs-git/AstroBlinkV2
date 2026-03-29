@@ -80,6 +80,10 @@ All original implementation phases are complete:
 - [x] **Rolling average window picker** — 5/10/20 sessions (segmented on Performance chart)
 - [x] **Integration Progress rethink** — hours not frames, per-filter stacked bars, detail annotations
 - [x] **Chart clipping** — `.clipped()` on all chart plot areas prevents bar overflow
+- [x] **Rich tooltips** — Score/Efficiency show targets, filters, FWHM, moon%, "Likely:" cause for bad nights
+- [ ] **Performance tooltip** — show per-setup FWHM breakdown when "All Setups" selected
+- [ ] **Conditions tooltip** — show night date, target, actual noise value on scatter hover
+- [ ] **Setups tooltip** — show frame count, date range, targets per setup
 - [ ] Monthly aggregation when date range >6 months
 - [ ] Historical median reference line (dashed horizontal)
 
