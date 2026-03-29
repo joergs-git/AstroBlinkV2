@@ -482,8 +482,25 @@ struct FrameHistoryContentView: View {
                        Swift.abs(point.date.timeIntervalSince(hd)) < 86400 * 3 {
                         chartTooltip {
                             Text(point.night).font(.system(size: fs(10), weight: .bold))
-                            Text(String(format: "FWHM: %.2f px", point.rawFWHM)).font(.system(size: fs(10)))
-                            Text(String(format: "Rolling: %.2f px", point.rollingFWHM)).font(.system(size: fs(9)))
+                            Text(String(format: "FWHM: %.2f px  (rolling: %.2f)", point.rawFWHM, point.rollingFWHM))
+                                .font(.system(size: fs(10)))
+                            // Per-setup breakdown when "All Setups" selected
+                            if model.selectedSetupHash == nil {
+                                let perSetup = (try? FrameHistoryDatabase.shared.perSetupFWHM(night: point.night)) ?? []
+                                if perSetup.count > 1 {
+                                    Divider().frame(height: 1)
+                                    ForEach(Array(perSetup.prefix(5).enumerated()), id: \.offset) { _, entry in
+                                        HStack(spacing: 4) {
+                                            Text(entry.setup).font(.system(size: fs(9)))
+                                                .lineLimit(1).foregroundColor(fgDim)
+                                            Spacer()
+                                            Text(String(format: "%.2f px", entry.fwhm))
+                                                .font(.system(size: fs(9), weight: .medium, design: .monospaced))
+                                                .foregroundColor(entry.fwhm > point.rawFWHM * 1.2 ? .orange : fg)
+                                        }
+                                    }
+                                }
+                            }
                         }
                         .offset(x: hoverLocation.x + 12, y: max(0, hoverLocation.y - 40))
                     }
@@ -504,53 +521,134 @@ struct FrameHistoryContentView: View {
         }
     }
 
-    // KPI 4: Conditions vs Results — Moon impact by filter type
-    private var conditionsChart: some View {
-        let moonData = model.moonPoints
+    // KPI 4: Conditions — environmental factor impact on background noise
+    @State private var hoveredConditionsPoint: String?  // ID of hovered point
 
-        // Separate broadband (L/R/G/B) vs narrowband (Ha/OIII/SII)
-        struct MoonScorePoint: Identifiable {
-            let id: String  // Stable ID from source data
-            let moonPct: Double
-            let noise: Double
-            let filterType: String  // "Broadband" or "Narrowband"
-        }
-        let points: [MoonScorePoint] = moonData.map { p in
-            let filterType = p.isBroadband ? "Broadband (LRGB)" : "Narrowband (Ha/OIII/SII)"
-            return MoonScorePoint(id: p.id, moonPct: p.moonIllumination, noise: p.background, filterType: filterType)
+    private var conditionsChart: some View {
+        let allPoints = model.conditionsPoints
+        // Filter to points that have the selected X-axis factor
+        let factor = model.selectedConditionsFactor
+        let points = allPoints.filter { p in
+            switch factor {
+            case .moon: return p.moonPct != nil
+            case .seeing: return p.fwhm != nil
+            case .temperature: return p.ambientTemp != nil
+            case .bortle: return p.bortle != nil
+            }
         }
 
         return VStack(alignment: .leading, spacing: 4) {
-            Text("Moon Impact by Filter Type")
-                .font(.system(size: fs(13), weight: .semibold))
-                .foregroundColor(fg)
+            HStack {
+                Text("Conditions Impact on Background")
+                    .font(.system(size: fs(13), weight: .semibold))
+                    .foregroundColor(fg)
+                Spacer()
+                // Factor selector
+                Picker("Factor", selection: $model.selectedConditionsFactor) {
+                    ForEach(FrameHistoryModel.ConditionsFactor.allCases) { f in
+                        Text(f.rawValue).tag(f)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .frame(maxWidth: 350)
+            }
 
             if points.isEmpty {
-                noDataView
+                VStack {
+                    Spacer()
+                    Text("No \(factor.rawValue) data available for selected filters")
+                        .font(.system(size: fs(13))).foregroundColor(fgDim)
+                    Spacer()
+                }
+                .frame(minHeight: 200)
             } else {
                 Chart(points) { point in
+                    let xValue: Double = {
+                        switch factor {
+                        case .moon: return point.moonPct ?? 0
+                        case .seeing: return point.fwhm ?? 0
+                        case .temperature: return point.ambientTemp ?? 0
+                        case .bortle: return point.bortle ?? 0
+                        }
+                    }()
                     PointMark(
-                        x: .value("Moon %", point.moonPct),
-                        y: .value("Background", point.noise)
+                        x: .value(factor.rawValue, xValue),
+                        y: .value("Background", point.background)
                     )
-                    .foregroundStyle(by: .value("Filter", point.filterType))
-                    .symbolSize(30)
+                    .foregroundStyle(point.isBroadband ? Color.blue : Color.orange)
+                    .symbolSize(hoveredConditionsPoint == point.id ? 80 : 30)
                 }
-                .chartForegroundStyleScale([
-                    "Broadband (LRGB)": Color.blue,
-                    "Narrowband (Ha/OIII/SII)": Color.orange
-                ])
-                .chartXScale(domain: 0...100)
-                .chartXAxisLabel("Moon Illumination %")
+                .chartXAxisLabel(factor.rawValue)
                 .chartYAxisLabel("Background Noise (MAD)")
-                .modifier(PercentileYScale(values: points.map(\.noise)))
+                .modifier(PercentileYScale(values: points.map(\.background)))
                 .chartPlotStyle { plot in plot.background(chartBg).clipped() }
-                .chartLegend(.visible)
-                .frame(minHeight: 300)
+                .chartOverlay { proxy in
+                    GeometryReader { geo in
+                        Rectangle().fill(Color.clear).contentShape(Rectangle())
+                            .onContinuousHover { phase in
+                                switch phase {
+                                case .active(let loc):
+                                    hoverLocation = loc
+                                    // Find nearest point by distance
+                                    guard let xVal: Double = proxy.value(atX: loc.x),
+                                          let yVal: Double = proxy.value(atY: loc.y) else {
+                                        hoveredConditionsPoint = nil
+                                        return
+                                    }
+                                    let xRange = points.compactMap({ p -> Double? in
+                                        switch factor {
+                                        case .moon: return p.moonPct
+                                        case .seeing: return p.fwhm
+                                        case .temperature: return p.ambientTemp
+                                        case .bortle: return p.bortle
+                                        }
+                                    })
+                                    let xSpan = (xRange.max() ?? 1) - (xRange.min() ?? 0)
+                                    let ySpan = (points.map(\.background).max() ?? 1) - (points.map(\.background).min() ?? 0)
+                                    guard xSpan > 0, ySpan > 0 else { hoveredConditionsPoint = nil; return }
 
-                Text("Broadband rises with moon — narrowband stays flat (immune to moonlight)")
-                    .font(.system(size: fs(9)))
-                    .foregroundColor(fgDim)
+                                    let nearest = points.min(by: { a, b in
+                                        let ax: Double = { switch factor { case .moon: return a.moonPct ?? 0; case .seeing: return a.fwhm ?? 0; case .temperature: return a.ambientTemp ?? 0; case .bortle: return a.bortle ?? 0 } }()
+                                        let bx: Double = { switch factor { case .moon: return b.moonPct ?? 0; case .seeing: return b.fwhm ?? 0; case .temperature: return b.ambientTemp ?? 0; case .bortle: return b.bortle ?? 0 } }()
+                                        let da = pow((ax - xVal) / xSpan, 2) + pow((a.background - yVal) / ySpan, 2)
+                                        let db = pow((bx - xVal) / xSpan, 2) + pow((b.background - yVal) / ySpan, 2)
+                                        return da < db
+                                    })
+                                    hoveredConditionsPoint = nearest?.id
+                                case .ended:
+                                    hoveredConditionsPoint = nil
+                                }
+                            }
+                    }
+                }
+                .frame(minHeight: 300)
+                .overlay(alignment: .topLeading) {
+                    if let hid = hoveredConditionsPoint,
+                       let point = points.first(where: { $0.id == hid }) {
+                        chartTooltip {
+                            Text(point.night).font(.system(size: fs(10), weight: .bold))
+                            if let t = point.target { Text(TargetCatalog.displayName(TargetCatalog.canonicalName(t))).font(.system(size: fs(9))).foregroundColor(fgDim) }
+                            Text("\(FrameHistoryModel.normalizeFilterForChart(point.filter)) — \(point.isBroadband ? "Broadband" : "Narrowband") (\(point.frameCount) frames)")
+                                .font(.system(size: fs(9)))
+                            Divider().frame(height: 1)
+                            if let m = point.moonPct { Text(String(format: "Moon: %.0f%%", m)).font(.system(size: fs(9))).foregroundColor(m > 60 ? .orange : fgDim) }
+                            if let f = point.fwhm { Text(String(format: "FWHM: %.1f px", f)).font(.system(size: fs(9))).foregroundColor(f > 6 ? .orange : fgDim) }
+                            if let t = point.ambientTemp { Text(String(format: "Temp: %.0f°C", t)).font(.system(size: fs(9))).foregroundColor(fgDim) }
+                            if let b = point.bortle { Text(String(format: "Bortle: %.1f", b)).font(.system(size: fs(9))).foregroundColor(b > 6 ? .orange : fgDim) }
+                            Text(String(format: "Background: %.5f", point.background)).font(.system(size: fs(9), design: .monospaced)).foregroundColor(fgDim)
+                        }
+                        .offset(x: hoverLocation.x + 12, y: max(0, hoverLocation.y - 40))
+                    }
+                }
+
+                // Legend
+                HStack(spacing: 16) {
+                    HStack(spacing: 4) { Circle().fill(.blue).frame(width: 7); Text("Broadband (LRGB)").font(.system(size: fs(9))).foregroundColor(fgDim) }
+                    HStack(spacing: 4) { Circle().fill(.orange).frame(width: 7); Text("Narrowband").font(.system(size: fs(9))).foregroundColor(fgDim) }
+                    Spacer()
+                    Text("Each dot = one night+filter combo")
+                        .font(.system(size: fs(9))).foregroundColor(fgDim)
+                }
             }
         }
     }
@@ -697,6 +795,8 @@ struct FrameHistoryContentView: View {
     }
 
     // Chart 4: Setup Comparison — compare equipment performance
+    @State private var hoveredSetup: String?
+
     private var setupComparisonChart: some View {
         let points = model.setupComparisonPoints(for: model.selectedMetric)
         return VStack(alignment: .leading, spacing: 4) {
@@ -754,7 +854,55 @@ struct FrameHistoryContentView: View {
                             .font(.system(size: fs(9)))
                     }
                 }
+                .chartOverlay { proxy in
+                    GeometryReader { geo in
+                        Rectangle().fill(Color.clear).contentShape(Rectangle())
+                            .onContinuousHover { phase in
+                                switch phase {
+                                case .active(let loc):
+                                    hoverLocation = loc
+                                    if let label: String = proxy.value(atX: loc.x) {
+                                        hoveredSetup = points.first(where: {
+                                            let truncated = $0.setupLabel.count > 25
+                                                ? String($0.setupLabel.prefix(25)) + "…"
+                                                : $0.setupLabel
+                                            return truncated == label
+                                        })?.setupLabel
+                                    }
+                                case .ended:
+                                    hoveredSetup = nil
+                                }
+                            }
+                    }
+                }
                 .frame(minHeight: 300)
+                .overlay(alignment: .topLeading) {
+                    if let hLabel = hoveredSetup,
+                       let point = points.first(where: { $0.setupLabel == hLabel }) {
+                        chartTooltip {
+                            Text(point.setupLabel).font(.system(size: fs(10), weight: .bold))
+                            Text(String(format: "%@ = %.2f", model.selectedMetric.rawValue, point.value))
+                                .font(.system(size: fs(10)))
+                            Divider().frame(height: 1)
+                            Text("\(point.totalFrames) frames")
+                                .font(.system(size: fs(9))).foregroundColor(fgDim)
+                            if let first = point.firstNight, let last = point.lastNight {
+                                Text("\(first) — \(last)")
+                                    .font(.system(size: fs(9), design: .monospaced)).foregroundColor(fgDim)
+                            }
+                            Text(String(format: "Trash: %.0f%%", point.trashRate * 100))
+                                .font(.system(size: fs(9)))
+                                .foregroundColor(point.trashRate > 0.3 ? .orange : fgDim)
+                            if !point.targets.isEmpty {
+                                Text(point.targets.prefix(5).map { TargetCatalog.displayName($0) }.joined(separator: ", ")
+                                     + (point.targets.count > 5 ? " +\(point.targets.count - 5)" : ""))
+                                    .font(.system(size: fs(9))).foregroundColor(fgDim)
+                                    .lineLimit(2)
+                            }
+                        }
+                        .offset(x: hoverLocation.x + 12, y: max(0, hoverLocation.y - 40))
+                    }
+                }
             }
         }
     }

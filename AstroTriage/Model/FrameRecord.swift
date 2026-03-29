@@ -256,6 +256,8 @@ struct NightSummary: Identifiable {
     let medianMoonIllumination: Double?
     let medianMoonDistance: Double?
     let medianExposure: Double?     // Seconds per sub (for integration time calculation)
+    let medianAmbientTemp: Double?  // Ambient temperature (°C)
+    let medianBortle: Double?       // Bortle sky quality (1-9)
 }
 
 /// Aggregate setup history for AIsaac context.

@@ -246,32 +246,64 @@ class FrameHistoryModel: ObservableObject {
         }.sorted { $0.date < $1.date }
     }
 
-    /// Moon impact data points (for scatter chart).
-    struct MoonPoint: Identifiable {
-        let id: String  // Stable ID — set at creation from night+filter
-        let moonIllumination: Double
-        let background: Double
+    /// Multi-factor conditions data point — carries all environmental factors per night+filter.
+    struct ConditionsPoint: Identifiable {
+        let id: String              // Stable ID from night+filter
+        let night: String
+        let target: String?
         let filter: String
         let isBroadband: Bool
+        let background: Double      // Y-axis: background noise (MAD)
+        // X-axis factors (user selects which one via toggle)
+        let moonPct: Double?        // Moon illumination %
+        let fwhm: Double?           // FWHM (proxy for seeing)
+        let ambientTemp: Double?    // Temperature (°C)
+        let bortle: Double?         // Bortle sky quality
+        let frameCount: Int
     }
 
-    var moonPoints: [MoonPoint] {
+    /// Selected X-axis factor for the Conditions chart
+    enum ConditionsFactor: String, CaseIterable, Identifiable {
+        case moon = "Moon %"
+        case seeing = "FWHM (seeing)"
+        case temperature = "Temperature"
+        case bortle = "Bortle"
+        var id: String { rawValue }
+    }
+
+    @Published var selectedConditionsFactor: ConditionsFactor = .moon
+
+    var conditionsPoints: [ConditionsPoint] {
         filteredSummaries.compactMap { s in
-            guard let moon = s.medianMoonIllumination,
-                  let noise = s.medianNoise,
+            guard let noise = s.medianNoise,
                   let filter = s.filter else { return nil }
-            let canonical = filter.uppercased()
+            let canonical = FrameHistoryModel.normalizeFilterForChart(filter).uppercased()
             let isBroadband = ["L", "R", "G", "B"].contains(canonical)
-            return MoonPoint(id: "\(s.night)_\(filter)", moonIllumination: moon * 100,
-                           background: noise, filter: filter, isBroadband: isBroadband)
+            let moon = s.medianMoonIllumination.map { $0 * 100 }
+            return ConditionsPoint(
+                id: "\(s.night)_\(filter)", night: s.night,
+                target: s.target, filter: filter, isBroadband: isBroadband,
+                background: noise, moonPct: moon, fwhm: s.medianFWHM,
+                ambientTemp: s.medianAmbientTemp, bortle: s.medianBortle,
+                frameCount: s.frameCount
+            )
         }
     }
+
+    // Keep backward compat for any code referencing moonPoints
+    var moonPoints: [ConditionsPoint] { conditionsPoints }
 
     /// Setup comparison data (all setups, one bar per setup per metric).
     struct SetupMetric: Identifiable {
         var id: String { setupLabel }  // Stable ID
         let setupLabel: String
         let value: Double
+        // Rich context for tooltip
+        let totalFrames: Int
+        let firstNight: String?
+        let lastNight: String?
+        let trashRate: Double
+        let targets: [String]
     }
 
     // MARK: - KPI 1: Session Score (0-100)
@@ -608,7 +640,14 @@ class FrameHistoryModel: ObservableObject {
             case .eccentricity: value = 0
             }
             guard value > 0 else { return nil }
-            return SetupMetric(setupLabel: setup.label, value: value)
+            return SetupMetric(
+                setupLabel: setup.label, value: value,
+                totalFrames: summary.totalFrames,
+                firstNight: summary.firstNight,
+                lastNight: summary.lastNight,
+                trashRate: summary.trashRate,
+                targets: summary.targets
+            )
         }
     }
 }

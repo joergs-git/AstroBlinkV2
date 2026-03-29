@@ -312,7 +312,9 @@ final class FrameHistoryDatabase {
                     AVG(trailingScore) as avgTrailing,
                     AVG(moonIllumination) as avgMoon,
                     AVG(moonDistance) as avgMoonDist,
-                    AVG(exposure) as avgExposure
+                    AVG(exposure) as avgExposure,
+                    AVG(ambientTemp) as avgTemp,
+                    AVG(bortleClass) as avgBortle
                 FROM frame_record
                 WHERE setupHash = ? AND observingNight IS NOT NULL
                 """
@@ -343,7 +345,9 @@ final class FrameHistoryDatabase {
                     medianTrailing: row["avgTrailing"],
                     medianMoonIllumination: row["avgMoon"],
                     medianMoonDistance: row["avgMoonDist"],
-                    medianExposure: row["avgExposure"]
+                    medianExposure: row["avgExposure"],
+                    medianAmbientTemp: row["avgTemp"],
+                    medianBortle: row["avgBortle"]
                 )
             }
         }
@@ -366,7 +370,9 @@ final class FrameHistoryDatabase {
                     AVG(trailingScore) as avgTrailing,
                     AVG(moonIllumination) as avgMoon,
                     AVG(moonDistance) as avgMoonDist,
-                    AVG(exposure) as avgExposure
+                    AVG(exposure) as avgExposure,
+                    AVG(ambientTemp) as avgTemp,
+                    AVG(bortleClass) as avgBortle
                 FROM frame_record
                 WHERE observingNight IS NOT NULL
                 """
@@ -397,7 +403,9 @@ final class FrameHistoryDatabase {
                     medianTrailing: row["avgTrailing"],
                     medianMoonIllumination: row["avgMoon"],
                     medianMoonDistance: row["avgMoonDist"],
-                    medianExposure: row["avgExposure"]
+                    medianExposure: row["avgExposure"],
+                    medianAmbientTemp: row["avgTemp"],
+                    medianBortle: row["avgBortle"]
                 )
             }
         }
@@ -452,6 +460,29 @@ final class FrameHistoryDatabase {
             let firstNight = try String.fetchOne(db, sql: "SELECT MIN(observingNight) FROM frame_record")
             let lastNight = try String.fetchOne(db, sql: "SELECT MAX(observingNight) FROM frame_record")
             return (frameCount, sessionCount, firstNight, lastNight)
+        }
+    }
+
+    /// Per-setup FWHM for a given night (for "All Setups" performance tooltip).
+    func perSetupFWHM(night: String) throws -> [(setup: String, fwhm: Double)] {
+        try dbQueue.read { db in
+            let nicknames = allNicknames()
+            let rows = try Row.fetchAll(db, sql: """
+                SELECT setupHash,
+                    COALESCE(telescope, '') || ' + ' || COALESCE(camera, '') as equipment,
+                    AVG(computedFWHM) as avgFWHM
+                FROM frame_record
+                WHERE observingNight = ? AND computedFWHM IS NOT NULL
+                GROUP BY setupHash
+                ORDER BY avgFWHM ASC
+                """, arguments: [night])
+            return rows.compactMap { row -> (String, Double)? in
+                guard let fwhm: Double = row["avgFWHM"],
+                      let hash: String = row["setupHash"] else { return nil }
+                let equipment: String = row["equipment"] ?? hash.prefix(8).description
+                let label = nicknames[hash].map { "\($0)" } ?? equipment
+                return (label, fwhm)
+            }
         }
     }
 

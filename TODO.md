@@ -81,9 +81,9 @@ All original implementation phases are complete:
 - [x] **Integration Progress rethink** — hours not frames, per-filter stacked bars, detail annotations
 - [x] **Chart clipping** — `.clipped()` on all chart plot areas prevents bar overflow
 - [x] **Rich tooltips** — Score/Efficiency show targets, filters, FWHM, moon%, "Likely:" cause for bad nights
-- [ ] **Performance tooltip** — show per-setup FWHM breakdown when "All Setups" selected
-- [ ] **Conditions tooltip** — show night date, target, actual noise value on scatter hover
-- [ ] **Setups tooltip** — show frame count, date range, targets per setup
+- [x] **Performance tooltip** — per-setup FWHM breakdown when "All Setups" selected, orange highlight on outliers
+- [x] **Conditions redesign** — multi-factor X-axis: Moon/FWHM/Temp/Bortle segmented picker, nearest-point hover with full breakdown
+- [x] **Setups tooltip** — frame count, date range, trash rate, targets per setup on bar hover
 - [ ] Monthly aggregation when date range >6 months
 - [ ] Historical median reference line (dashed horizontal)
 
