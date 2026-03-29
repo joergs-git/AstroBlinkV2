@@ -394,10 +394,16 @@ struct FrameHistoryContentView: View {
                 }
                 .frame(minHeight: 200)
             } else {
+                // Truncate long setup labels for readability
+                let maxLabelLen = 25
                 Chart(points) { point in
+                    let label = point.setupLabel.count > maxLabelLen
+                        ? String(point.setupLabel.prefix(maxLabelLen)) + "…"
+                        : point.setupLabel
                     BarMark(
-                        x: .value("Setup", point.setupLabel),
-                        y: .value(model.selectedMetric.rawValue, point.value)
+                        x: .value("Setup", label),
+                        y: .value(model.selectedMetric.rawValue, point.value),
+                        width: .fixed(min(80, max(30, 400 / CGFloat(points.count))))
                     )
                     .foregroundStyle(Color.accentColor.gradient)
                     .annotation(position: .top) {
@@ -409,6 +415,12 @@ struct FrameHistoryContentView: View {
                 .chartYAxisLabel(model.selectedMetric.rawValue)
                 .modifier(PercentileYScale(values: points.map(\.value)))
                 .chartPlotStyle { plot in plot.background(chartBg) }
+                .chartXAxis {
+                    AxisMarks { _ in
+                        AxisValueLabel()
+                            .font(.system(size: fs(9)))
+                    }
+                }
                 .frame(minHeight: 300)
             }
         }

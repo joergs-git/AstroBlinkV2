@@ -159,21 +159,26 @@ class FrameHistoryModel: ObservableObject {
     /// L/LE/Lext/Lextr/Lcle/Lenh/Lqua → "L", H/Ha → "Ha", etc.
     static func normalizeFilterForChart(_ raw: String) -> String {
         let upper = raw.uppercased().trimmingCharacters(in: .whitespaces)
-        // Luminance variants
-        if upper == "L" || upper.hasPrefix("L") && !["LRGB"].contains(upper) {
-            let known = ["LE", "LEXT", "LEXTR", "LCLE", "LENH", "LQUA", "LBOO", "LENHANCE", "LEXTREME"]
-            if known.contains(where: { upper == $0 || upper.hasPrefix($0) }) { return "L" }
-            if upper == "L" { return "L" }
-        }
+        // Luminance variants — L-Enhance, L-Extreme, L-Pro, etc. all → "L"
+        let luminanceVariants = ["L", "LE", "LEXT", "LEXTR", "LCLE", "LENH", "LQUA", "LBOO",
+                                  "LENHANCE", "LEXTREME", "LPRO", "LUMA", "LUM", "EXTR"]
+        if luminanceVariants.contains(upper) { return "L" }
         // Ha variants
-        if upper == "H" || upper == "HA" || upper == "HALPHA" { return "Ha" }
+        if ["H", "HA", "HALPHA", "H-ALPHA"].contains(upper) { return "Ha" }
         // OIII variants
-        if upper == "O" || upper == "OIII" || upper == "O3" { return "OIII" }
+        if ["O", "OIII", "O3"].contains(upper) { return "OIII" }
         // SII variants
-        if upper == "S" || upper == "SII" || upper == "S2" { return "SII" }
+        if ["S", "SII", "S2"].contains(upper) { return "SII" }
         // Standard broadband
         if ["R", "G", "B"].contains(upper) { return upper }
-        // Pass through others
+        // Infrared
+        if ["IR", "IRPASS", "IR-PASS", "IRCUT"].contains(upper) { return "IR" }
+        // Quad-band (dual narrowband) — keep distinct
+        if upper.contains("QUAD") || upper.contains("DUOBAND") { return "Quad" }
+        // Unknown / special — group minor variants
+        if upper == "NOFILTER" || upper == "NONE" || upper == "NO FILTER" { return "NoFilter" }
+        if upper == "FILTER1" || upper == "?" || upper.isEmpty { return "?" }
+        // Pass through others (Hbeta, NII, Spec, etc.)
         return raw
     }
 
