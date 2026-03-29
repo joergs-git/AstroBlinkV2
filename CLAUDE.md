@@ -454,6 +454,14 @@ Jede Änderung an Quality-kritischen Dateien erfordert /validate-scoring vor Com
 Quality-kritische Dateien: QualityEstimator.swift, TrailingAnalyzer.swift,
 CalibrationDatabase.swift, ConvergenceDetector.swift, StarMetricsCalculator.swift,
 STFCalculator.swift, ColorCombineEngine.swift (Filter-Mapping).
+
+**Algorithm Versioning (MANDATORY):**
+When ANY quality-critical file above is modified (scoring logic, detection algorithms,
+metric calculations — NOT UI/display changes), you MUST:
+1. Bump `kAlgorithmVersion` in `FrameRecord.swift`
+2. Add a detailed entry to `ALGORITHM_CHANGELOG.md` (what changed, why, impact)
+3. Commit both together with the logic change
+Frame History DB records carry this version — it enables re-analysis of stale records.
 Scoring-Richtung (NIEMALS invertieren)
 MetrikMesswertRichtungZ-Score Vorzeichen in combinedZFWHMPixelsniedrig = gutNEGIERT (−z)HFRPixelsniedrig = gutNEGIERT (−z), nur Fallback wenn kein FWHMStarsAnzahlhoch = gutDIREKT (+z)Noise MAD[0,1]niedrig = gutNEGIERT (−z)Trailing[0,1]niedrig = gutNEGIERT (−z)
 SNR = noiseMedian / noiseMAD — höher = besser.

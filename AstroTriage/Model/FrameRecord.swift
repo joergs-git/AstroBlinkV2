@@ -1,6 +1,18 @@
 import Foundation
 import GRDB
 
+// MARK: - Algorithm Version
+
+/// Current algorithm version for quality scoring and star metrics.
+/// Bump this whenever scoring logic, detection algorithms, or metric calculations change.
+/// Records in the Frame History DB with older versions can be identified for re-analysis.
+///
+/// IMPORTANT: When bumping this version, you MUST also update ALGORITHM_CHANGELOG.md
+/// with a detailed entry describing what changed and why.
+///
+/// See: ALGORITHM_CHANGELOG.md for full version history.
+let kAlgorithmVersion = 10
+
 // MARK: - FrameRecord
 
 /// Persistent per-frame quality record for the Frame History Database.
@@ -162,7 +174,7 @@ extension FrameRecord {
             isLockedKeep: (entry.qualityBreakdown?.isLockedKeep ?? false) ? 1 : 0,
             filterTrailingMultiplier: entry.qualityBreakdown?.filterTrailingMultiplier,
             wasDeleted: entry.isMarkedForDeletion ? 1 : 0,
-            algorithmVersion: 1,
+            algorithmVersion: kAlgorithmVersion,
             recordedAt: iso.string(from: Date()),
             width: entry.width,
             height: entry.height

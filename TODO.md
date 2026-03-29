@@ -69,6 +69,13 @@ All original implementation phases are complete:
 - [ ] Zoom in/out on chart data (date range selection or pinch zoom)
 - [ ] Consider dual Y-axis for metrics with vastly different scales
 
+### Frame History Re-Analysis
+- [ ] Detect stale records: `WHERE algorithmVersion < kAlgorithmVersion`
+- [ ] UI indicator in History window showing how many records are outdated
+- [ ] "Re-analyze" button that re-runs quality scoring on stale records
+- [ ] Batch re-analysis for Archive Scanner results (background, resumable)
+- [ ] Option to re-analyze on session load if DB has older-version scores
+
 ### SSWEIGHT Reset / Removal
 - [ ] Option to remove or reset SSWEIGHT keywords from FITS/XISF headers
 - [ ] Undo path for cases where weights were written based on incorrect scoring

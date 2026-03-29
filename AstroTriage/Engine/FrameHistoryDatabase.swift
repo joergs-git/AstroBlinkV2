@@ -166,6 +166,11 @@ final class FrameHistoryDatabase {
             }
         }
 
+        // Set all existing records to algorithm version 10 (v5.6.0 scoring baseline)
+        migrator.registerMigration("v3_algorithm_version_baseline") { db in
+            try db.execute(sql: "UPDATE frame_record SET algorithmVersion = 10 WHERE algorithmVersion < 10")
+        }
+
         try migrator.migrate(db)
     }
 
