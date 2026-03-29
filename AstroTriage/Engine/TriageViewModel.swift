@@ -1808,6 +1808,11 @@ class TriageViewModel: ObservableObject {
                let lon = images[index].siteLongitude {
                 images[index].bortleClass = BortleEstimator.estimate(latitude: lat, longitude: lon)
             }
+
+            // Canonical target name (normalized for grouping across sessions)
+            if images[index].canonicalTarget == nil, let target = images[index].target {
+                images[index].canonicalTarget = TargetCatalog.canonicalName(target)
+            }
         }
     }
 

@@ -81,8 +81,9 @@ struct FrameRecord: Codable, FetchableRecord, PersistableRecord {
     var isLockedKeep: Int           // 0 or 1
     var filterTrailingMultiplier: Double?
 
-    // Light pollution
+    // Light pollution + target clustering
     var bortleClass: Int?           // Bortle 1-9 from BortleEstimator
+    var canonicalTarget: String?    // Normalized target name for grouping
 
     var wasDeleted: Int             // 0 or 1
 
@@ -178,6 +179,7 @@ extension FrameRecord {
             isLockedKeep: (entry.qualityBreakdown?.isLockedKeep ?? false) ? 1 : 0,
             filterTrailingMultiplier: entry.qualityBreakdown?.filterTrailingMultiplier,
             bortleClass: entry.bortleClass,
+            canonicalTarget: entry.canonicalTarget,
             wasDeleted: entry.isMarkedForDeletion ? 1 : 0,
             algorithmVersion: kAlgorithmVersion,
             recordedAt: iso.string(from: Date()),

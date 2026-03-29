@@ -107,6 +107,9 @@ struct ImageEntry: Identifiable, Hashable {
     // Light pollution (computed from site coordinates via BortleGrid)
     var bortleClass: Int?              // Bortle 1 (pristine) to 9 (inner city)
 
+    // Canonical target name (normalized for grouping: "NGC 7000" = "NGC7000", "Orion Nebula" = "M42")
+    var canonicalTarget: String?
+
     // Pixel scale for display (computed from focal length + pixel size)
     var arcsecPerPixel: Double? {
         guard let fl = focalLength, fl > 0, let px = pixelSizeMicrons, px > 0 else { return nil }

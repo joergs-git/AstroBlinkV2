@@ -29,6 +29,7 @@
 		399A544B01D518D97920F138 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AE4E059ADDE28F88AF19A8DF /* Assets.xcassets */; };
 		3AE8C59AED6435B5F41CA9AF /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24F8E2016E26D881862A1E76 /* ContentView.swift */; };
 		3D029D52F10611A437BC2B5F /* NINAFilenameParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 958EAAFB0801AA6BF89E7E57 /* NINAFilenameParser.swift */; };
+		4CDFC8CC583603D7DB09BC1D /* TargetCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = C023AB6340F89534CACE284C /* TargetCatalog.swift */; };
 		4D0A1CEEB5119E5907758C3B /* FrameHistoryWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C81EB8161036824934AF68B0 /* FrameHistoryWindow.swift */; };
 		4E375B87AAA7578C60D7169E /* BenchmarkStatsWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A5DA4A13F92A7266A8F0998 /* BenchmarkStatsWindow.swift */; };
 		4E6737835242429BC0A1C652 /* ReleaseNotesWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = F523409C99088A95634ED4F9 /* ReleaseNotesWindow.swift */; };
@@ -222,6 +223,7 @@
 		B7D54DB9FE9BF17CD5203F2D /* SessionScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionScanner.swift; sourceTree = "<group>"; };
 		B8942CE397AE911C7346F9D1 /* TrailingAnalyzer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrailingAnalyzer.swift; sourceTree = "<group>"; };
 		BC55336CE3C3552EF83E3A21 /* StructureEnhancement.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StructureEnhancement.swift; sourceTree = "<group>"; };
+		C023AB6340F89534CACE284C /* TargetCatalog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TargetCatalog.swift; sourceTree = "<group>"; };
 		C0EFA1508203190F9C1216AE /* PreviewGenerator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreviewGenerator.swift; sourceTree = "<group>"; };
 		C17E45E7EC559D0FCD362808 /* AstroTriageQuickLookPreview.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = AstroTriageQuickLookPreview.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		C3E8644313598CB076771595 /* ColorCombineWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ColorCombineWindow.swift; sourceTree = "<group>"; };
@@ -402,6 +404,7 @@
 				0BFB130B08CCDD11AC1018A7 /* StarMetricsCalculator.swift */,
 				BC55336CE3C3552EF83E3A21 /* StructureEnhancement.swift */,
 				1C731CAA9FB954423A4E9179 /* SunCalculator.swift */,
+				C023AB6340F89534CACE284C /* TargetCatalog.swift */,
 				B8942CE397AE911C7346F9D1 /* TrailingAnalyzer.swift */,
 				B4F0D3CE86492EF1F5EF6BB7 /* TriageViewModel.swift */,
 				5DAC3DD9E30EB2E746271068 /* WienerDeconvolution.swift */,
@@ -754,6 +757,7 @@
 				C66ED07D541C5E62EC36991E /* StarMetricsCalculator.swift in Sources */,
 				970927BE4AF96FBF6FE430EE /* StructureEnhancement.swift in Sources */,
 				8D073D0D163390286003304D /* SunCalculator.swift in Sources */,
+				4CDFC8CC583603D7DB09BC1D /* TargetCatalog.swift in Sources */,
 				7A69119E8C46AEEEC3903EDA /* TexturePool.swift in Sources */,
 				7025BB820EB0394F1BD3F5B8 /* TrailingAnalyzer.swift in Sources */,
 				C26CB03B2AE2C731BC2B72BF /* TriageViewModel.swift in Sources */,

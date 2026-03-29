@@ -171,10 +171,20 @@ final class FrameHistoryDatabase {
             try db.execute(sql: "UPDATE frame_record SET algorithmVersion = 10 WHERE algorithmVersion < 10")
         }
 
-        // Add Bortle class column for light pollution data
-        migrator.registerMigration("v4_bortle_class") { db in
+        // Add Bortle class + canonical target columns
+        migrator.registerMigration("v4_bortle_and_canonical_target") { db in
             try db.alter(table: "frame_record") { t in
                 t.add(column: "bortleClass", .integer)
+                t.add(column: "canonicalTarget", .text)
+            }
+            // Backfill canonical target names for existing records
+            let rows = try Row.fetchAll(db, sql: "SELECT fileHash, target FROM frame_record WHERE target IS NOT NULL")
+            for row in rows {
+                let hash: String = row["fileHash"]
+                let target: String = row["target"]
+                let canonical = TargetCatalog.canonicalName(target)
+                try db.execute(sql: "UPDATE frame_record SET canonicalTarget = ? WHERE fileHash = ?",
+                              arguments: [canonical, hash])
             }
         }
 
@@ -273,7 +283,7 @@ final class FrameHistoryDatabase {
     func nightlyTrend(setupHash: String, target: String? = nil) throws -> [NightSummary] {
         try dbQueue.read { db in
             var sql = """
-                SELECT observingNight, target, filter,
+                SELECT observingNight, COALESCE(canonicalTarget, target) as cTarget, filter,
                     COUNT(*) as cnt,
                     SUM(CASE WHEN qualityTier = 0 THEN 1 ELSE 0 END) as trash,
                     SUM(CASE WHEN qualityTier = 2 THEN 1 ELSE 0 END) as good,
@@ -292,7 +302,7 @@ final class FrameHistoryDatabase {
             var args: [DatabaseValueConvertible] = [setupHash]
 
             if let target {
-                sql += " AND target = ?"
+                sql += " AND COALESCE(canonicalTarget, target) = ?"
                 args.append(target)
             }
 
@@ -302,7 +312,7 @@ final class FrameHistoryDatabase {
             return rows.map { row in
                 NightSummary(
                     night: row["observingNight"] ?? "",
-                    target: row["target"],
+                    target: row["cTarget"],
                     filter: row["filter"],
                     frameCount: row["cnt"] ?? 0,
                     trashCount: row["trash"] ?? 0,
@@ -325,7 +335,7 @@ final class FrameHistoryDatabase {
     func nightlyTrendAll(target: String? = nil) throws -> [NightSummary] {
         try dbQueue.read { db in
             var sql = """
-                SELECT observingNight, target, filter,
+                SELECT observingNight, COALESCE(canonicalTarget, target) as cTarget, filter,
                     COUNT(*) as cnt,
                     SUM(CASE WHEN qualityTier = 0 THEN 1 ELSE 0 END) as trash,
                     SUM(CASE WHEN qualityTier = 2 THEN 1 ELSE 0 END) as good,
@@ -344,7 +354,7 @@ final class FrameHistoryDatabase {
             var args: [DatabaseValueConvertible] = []
 
             if let target {
-                sql += " AND target = ?"
+                sql += " AND COALESCE(canonicalTarget, target) = ?"
                 args.append(target)
             }
 
@@ -354,7 +364,7 @@ final class FrameHistoryDatabase {
             return rows.map { row in
                 NightSummary(
                     night: row["observingNight"] ?? "",
-                    target: row["target"],
+                    target: row["cTarget"],
                     filter: row["filter"],
                     frameCount: row["cnt"] ?? 0,
                     trashCount: row["trash"] ?? 0,
