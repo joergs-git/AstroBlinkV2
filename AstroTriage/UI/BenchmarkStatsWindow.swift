@@ -28,7 +28,11 @@ class BenchmarkStatsWindowController: NSWindowController {
     // Show the window with current benchmark data
     func show(stats: BenchmarkStats, sessionRootURL: URL? = nil) {
         statsRef = stats
-        let hostingView = NSHostingView(rootView: BenchmarkStatsContentView(stats: stats, sessionRootURL: sessionRootURL))
+        let savedScale = AppSettings.loadFloat(for: .fontScale).map { CGFloat($0) } ?? 1.0
+        let nightMode = AppSettings.loadBool(for: .nightMode) == true
+        let view = BenchmarkStatsContentView(stats: stats, sessionRootURL: sessionRootURL, nightMode: nightMode)
+            .environment(\.fontScale, savedScale)
+        let hostingView = NSHostingView(rootView: view)
         window?.contentView = hostingView
         showWindow(nil)
         window?.makeKeyAndOrderFront(nil)
@@ -39,6 +43,12 @@ class BenchmarkStatsWindowController: NSWindowController {
 struct BenchmarkStatsContentView: View {
     @ObservedObject var stats: BenchmarkStats
     let sessionRootURL: URL?
+    let nightMode: Bool
+    @Environment(\.fontScale) private var fontScale
+    private func fs(_ base: CGFloat) -> CGFloat { round(base * fontScale) }
+    private var fg: Color { AppColors.fg(nightMode) }
+    private var fgDim: Color { AppColors.fgDim(nightMode) }
+    private var bg: Color { AppColors.bg(nightMode) }
     @State private var memorySnapshot: BenchmarkStats.MemorySnapshot?
     @StateObject private var benchmarkService = BenchmarkService()
 
@@ -79,12 +89,13 @@ struct BenchmarkStatsContentView: View {
             // Header
             HStack {
                 Text("Session Load Benchmark")
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(.system(size: fs(16), weight: .semibold))
+                    .foregroundColor(fg)
                 Spacer()
                 if stats.fileCount > 0 {
                     Text("\(stats.formattedTotalSize) from \(stats.fileCount) files")
-                        .font(.system(size: 13))
-                        .foregroundColor(.secondary)
+                        .font(.system(size: fs(13)))
+                        .foregroundColor(fgDim)
                 }
             }
 
@@ -93,11 +104,11 @@ struct BenchmarkStatsContentView: View {
                 VStack(spacing: 8) {
                     Spacer()
                     Text("No benchmark data yet")
-                        .font(.system(size: 14))
-                        .foregroundColor(.secondary)
+                        .font(.system(size: fs(14)))
+                        .foregroundColor(fgDim)
                     Text("Open a folder to start measuring performance.")
-                        .font(.system(size: 12))
-                        .foregroundColor(.secondary)
+                        .font(.system(size: fs(12)))
+                        .foregroundColor(fgDim)
                     Spacer()
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -116,8 +127,8 @@ struct BenchmarkStatsContentView: View {
                             .scaleEffect(0.6)
                             .frame(width: 14, height: 14)
                         Text("Session loading in progress...")
-                            .font(.system(size: 11))
-                            .foregroundColor(.secondary)
+                            .font(.system(size: fs(11)))
+                            .foregroundColor(fgDim)
                     }
                 }
 
@@ -137,9 +148,9 @@ struct BenchmarkStatsContentView: View {
                     Button(action: { shareBenchmarks() }) {
                         HStack(spacing: 4) {
                             Image(systemName: benchmarkService.isUploading ? "arrow.triangle.2.circlepath" : "trophy")
-                                .font(.system(size: 12))
+                                .font(.system(size: fs(12)))
                             Text("Share & Compare")
-                                .font(.system(size: 12, weight: .medium, design: .monospaced))
+                                .font(.system(size: fs(12), weight: .medium, design: .monospaced))
                         }
                     }
                     .buttonStyle(.borderedProminent)
@@ -156,6 +167,7 @@ struct BenchmarkStatsContentView: View {
         }
         .padding(20)
         .frame(minWidth: 340, minHeight: 320)
+        .background(bg)
         .onAppear {
             memorySnapshot = stats.captureMemorySnapshot()
         }
@@ -215,7 +227,8 @@ struct BenchmarkStatsContentView: View {
         VStack(alignment: .leading, spacing: 3) {
             HStack {
                 Text(label)
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.system(size: fs(12), weight: .medium))
+                    .foregroundColor(fg)
                     .frame(width: 110, alignment: .leading)
 
                 GeometryReader { geo in
@@ -230,8 +243,8 @@ struct BenchmarkStatsContentView: View {
                 .frame(height: 18)
 
                 Text(BenchmarkStats.formatDuration(duration))
-                    .font(.system(size: 12, design: .monospaced))
-                    .foregroundColor(.secondary)
+                    .font(.system(size: fs(12), design: .monospaced))
+                    .foregroundColor(fgDim)
                     .frame(width: 70, alignment: .trailing)
             }
         }
@@ -241,7 +254,8 @@ struct BenchmarkStatsContentView: View {
     private var memorySection: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Memory")
-                .font(.system(size: 13, weight: .semibold))
+                .font(.system(size: fs(13), weight: .semibold))
+                .foregroundColor(fg)
 
             if let mem = memorySnapshot {
                 HStack(spacing: 20) {
@@ -284,13 +298,13 @@ struct BenchmarkStatsContentView: View {
                     .frame(height: 10)
 
                     Text(String(format: "%.1f%% of system RAM", usageFraction * 100))
-                        .font(.system(size: 10))
-                        .foregroundColor(.secondary)
+                        .font(.system(size: fs(10)))
+                        .foregroundColor(fgDim)
                 }
             } else {
                 Text("Measuring...")
-                    .font(.system(size: 12))
-                    .foregroundColor(.secondary)
+                    .font(.system(size: fs(12)))
+                    .foregroundColor(fgDim)
             }
         }
     }
@@ -298,10 +312,11 @@ struct BenchmarkStatsContentView: View {
     private func memoryItem(label: String, value: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(label)
-                .font(.system(size: 10))
-                .foregroundColor(.secondary)
+                .font(.system(size: fs(10)))
+                .foregroundColor(fgDim)
             Text(value)
-                .font(.system(size: 13, weight: .medium, design: .monospaced))
+                .font(.system(size: fs(13), weight: .medium, design: .monospaced))
+                .foregroundColor(fg)
         }
     }
 }

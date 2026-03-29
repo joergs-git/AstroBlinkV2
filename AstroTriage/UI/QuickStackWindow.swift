@@ -644,6 +644,9 @@ struct QuickStackV2ProgressView: View {
     let nightMode: Bool
     var onDismiss: () -> Void
 
+    @Environment(\.fontScale) private var fontScale
+    private func fs(_ base: CGFloat) -> CGFloat { round(base * fontScale) }
+
     // Track stack start time to compute duration for benchmark
     @State private var stackStartDate = Date()
 
@@ -665,10 +668,10 @@ struct QuickStackV2ProgressView: View {
         VStack(spacing: 12) {
             HStack {
                 Image(systemName: "square.3.layers.3d.down.right")
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(.system(size: fs(16), weight: .semibold))
                     .foregroundColor(fg)
                 Text("LightspeedStacker")
-                    .font(.system(size: 14, weight: .semibold, design: .monospaced))
+                    .font(.system(size: fs(14), weight: .semibold, design: .monospaced))
                     .foregroundColor(fg)
                 Spacer()
 
@@ -678,7 +681,7 @@ struct QuickStackV2ProgressView: View {
                         onDismiss()
                     }) {
                         Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 14))
+                            .font(.system(size: fs(14)))
                             .foregroundColor(fgDim)
                     }
                     .buttonStyle(.plain)
@@ -700,7 +703,7 @@ struct QuickStackV2ProgressView: View {
                             .progressViewStyle(.circular)
                             .tint(nightMode ? .red : nil)
                         Text("Preparing...")
-                            .font(.system(size: 11, design: .monospaced))
+                            .font(.system(size: fs(11), design: .monospaced))
                             .foregroundColor(.gray)
                     }
                 }
@@ -723,7 +726,7 @@ struct QuickStackV2ProgressView: View {
             if engine.phase == .idle || engine.phase == .decoding || engine.phase == .detecting {
                 HStack(spacing: 6) {
                     Text("Interpolation:")
-                        .font(.system(size: 10, design: .monospaced))
+                        .font(.system(size: fs(10), design: .monospaced))
                         .foregroundColor(fgDim)
                     Picker("", selection: $engine.interpolationMode) {
                         ForEach(QuickStackEngineV2.InterpolationMode.allCases, id: \.self) { mode in
@@ -738,12 +741,12 @@ struct QuickStackV2ProgressView: View {
             }
 
             Text(engine.phase.rawValue)
-                .font(.system(size: 11, weight: .medium, design: .monospaced))
+                .font(.system(size: fs(11), weight: .medium, design: .monospaced))
                 .foregroundColor(fg)
 
             if engine.phase == .aligning || engine.phase == .stacking {
                 Text("Layer \(engine.currentLayer) / \(engine.totalLayers)")
-                    .font(.system(size: 10, design: .monospaced))
+                    .font(.system(size: fs(10), design: .monospaced))
                     .foregroundColor(fgDim)
             }
 
@@ -753,7 +756,7 @@ struct QuickStackV2ProgressView: View {
 
             if let error = engine.errorMessage {
                 Text(error)
-                    .font(.system(size: 11, design: .monospaced))
+                    .font(.system(size: fs(11), design: .monospaced))
                     .foregroundColor(.red)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 4)
@@ -763,9 +766,9 @@ struct QuickStackV2ProgressView: View {
                 Button(action: { openResultWindow() }) {
                     HStack(spacing: 6) {
                         Image(systemName: "photo")
-                            .font(.system(size: 12))
+                            .font(.system(size: fs(12)))
                         Text("Open Result (\(engine.resultWidth)x\(engine.resultHeight))")
-                            .font(.system(size: 12, weight: .medium, design: .monospaced))
+                            .font(.system(size: fs(12), weight: .medium, design: .monospaced))
                     }
                 }
                 .buttonStyle(.borderedProminent)
@@ -797,8 +800,9 @@ struct QuickStackV2ProgressView: View {
         guard engine.resultTexture != nil else { return }
 
         let stackMs = Int(Date().timeIntervalSince(stackStartDate) * 1000)
+        let savedScale = AppSettings.loadFloat(for: .fontScale).map { CGFloat($0) } ?? 1.0
         let resultView = StackResultViewV2(engine: engine, nightMode: nightMode, stackTimeMs: stackMs)
-        let hostingView = NSHostingView(rootView: resultView)
+        let hostingView = NSHostingView(rootView: resultView.environment(\.fontScale, savedScale))
         let maxDim: CGFloat = 1200
         let scale = min(maxDim / CGFloat(engine.resultWidth), maxDim / CGFloat(engine.resultHeight), 1.0)
         let winW = max(1100, CGFloat(engine.resultWidth) * scale + 40)
@@ -825,6 +829,8 @@ struct StackResultViewV2: View {
     let engine: QuickStackEngineV2
     let nightMode: Bool
     let stackTimeMs: Int
+    @Environment(\.fontScale) private var fontScale
+    private func fs(_ base: CGFloat) -> CGFloat { round(base * fontScale) }
     // Gradient removal state
     @State private var removeGradient: Bool = false
     @State private var structureAmount: Double = 0.0
@@ -885,7 +891,7 @@ struct StackResultViewV2: View {
                     VStack {
                         HStack {
                             Text("ORIGINAL")
-                                .font(.system(size: 14, weight: .bold, design: .monospaced))
+                                .font(.system(size: fs(14), weight: .bold, design: .monospaced))
                                 .foregroundColor(.white)
                                 .padding(.horizontal, 10)
                                 .padding(.vertical, 4)
@@ -918,7 +924,7 @@ struct StackResultViewV2: View {
             HStack(spacing: 10) {
                 Button(action: resetSliders) {
                     Image(systemName: "arrow.counterclockwise")
-                        .font(.system(size: 12, weight: .medium))
+                        .font(.system(size: fs(12), weight: .medium))
                 }
                 .buttonStyle(.plain)
                 .foregroundColor(nightMode ? .red : .primary)
@@ -928,9 +934,9 @@ struct StackResultViewV2: View {
                 Button(action: freezeCurrentState) {
                     HStack(spacing: 2) {
                         Image(systemName: "snowflake")
-                            .font(.system(size: 10))
+                            .font(.system(size: fs(10)))
                         Text("Freeze")
-                            .font(.system(size: 10, weight: .medium, design: .monospaced))
+                            .font(.system(size: fs(10), weight: .medium, design: .monospaced))
                     }
                 }
                 .buttonStyle(.bordered).controlSize(.mini)
@@ -942,9 +948,9 @@ struct StackResultViewV2: View {
                     Button(action: unfreezeLastState) {
                         HStack(spacing: 2) {
                             Image(systemName: "flame")
-                                .font(.system(size: 10))
+                                .font(.system(size: fs(10)))
                             Text("Unfreeze (\(frozenStack.count))")
-                                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                                .font(.system(size: fs(10), weight: .medium, design: .monospaced))
                         }
                     }
                     .buttonStyle(.bordered).controlSize(.mini)
@@ -971,7 +977,7 @@ struct StackResultViewV2: View {
                         .help("Color saturation.\n0 = monochrome, 1.0 = natural, >1 = boosted.")
                     Toggle("Linked", isOn: $linkedStretch)
                         .toggleStyle(.switch).controlSize(.mini)
-                        .font(.system(size: 10, design: .monospaced))
+                        .font(.system(size: fs(10), design: .monospaced))
                         .foregroundColor(nightMode ? .red.opacity(0.7) : .secondary)
                         .help("OFF = Balanced: per-channel background clip + shared midtone (best white balance).\nON = Linked: identical stretch for all channels (raw color ratios).")
                         .onChange(of: linkedStretch) { _ in scheduleRender() }
@@ -997,7 +1003,7 @@ struct StackResultViewV2: View {
                 }
                 .pickerStyle(.segmented)
                 .frame(width: 130)
-                .font(.system(size: 9))
+                .font(.system(size: fs(9)))
                 .help("RL = Richardson-Lucy iterative (GPU, recommended).\nUSM = multi-scale unsharp mask (GPU, fastest).\nWiener = noise-regularized sharpening using measured FWHM (GPU, experimental).")
                 .onChange(of: deconvMode) { newMode in
                     useRL = (newMode == .rl)
@@ -1010,7 +1016,7 @@ struct StackResultViewV2: View {
                 Rectangle().fill(Color.gray.opacity(0.3)).frame(width: 1, height: 16)
                 Toggle("Gradient", isOn: $removeGradient)
                     .toggleStyle(.switch).controlSize(.mini)
-                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                    .font(.system(size: fs(10), weight: .medium, design: .monospaced))
                     .foregroundColor(removeGradient ? .cyan : .secondary)
                     .help("Remove background gradient (light pollution, vignetting).\nUses median grid + bicubic interpolation.")
                     .onChange(of: removeGradient) { _ in
@@ -1020,7 +1026,7 @@ struct StackResultViewV2: View {
                 Rectangle().fill(Color.gray.opacity(0.3)).frame(width: 1, height: 16)
                 Toggle("A/B", isOn: $showOriginal)
                     .toggleStyle(.switch).controlSize(.mini)
-                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                    .font(.system(size: fs(10), weight: .medium, design: .monospaced))
                     .foregroundColor(showOriginal ? .orange : .secondary)
                     .help("Toggle original vs processed view. Preserves zoom. No recalculation.")
                     .frame(width: 60)
@@ -1033,10 +1039,10 @@ struct StackResultViewV2: View {
             if let bestMetrics = bestFrameMetrics {
                 HStack(spacing: 4) {
                     Image(systemName: "chart.bar.fill")
-                        .font(.system(size: 10))
+                        .font(.system(size: fs(10)))
                         .foregroundColor(.cyan.opacity(0.8))
                     Text(bestMetrics)
-                        .font(.system(size: 10, design: .monospaced))
+                        .font(.system(size: fs(10), design: .monospaced))
                         .foregroundColor(fgDim)
                         .lineLimit(1)
                 }
@@ -1046,12 +1052,12 @@ struct StackResultViewV2: View {
 
             HStack(spacing: 12) {
                 Text("\(engine.resultWidth)x\(engine.resultHeight) — LightspeedStacker")
-                    .font(.system(size: 11, design: .monospaced))
+                    .font(.system(size: fs(11), design: .monospaced))
                     .foregroundColor(fgDim)
 
                 if !engine.alignmentInfo.isEmpty {
                     Text(engine.alignmentInfo)
-                        .font(.system(size: 10, weight: .medium, design: .monospaced))
+                        .font(.system(size: fs(10), weight: .medium, design: .monospaced))
                         .foregroundColor(engine.alignmentInfo.contains("skipped") ? .orange : .green)
                 }
 
@@ -1061,9 +1067,9 @@ struct StackResultViewV2: View {
                 Button(action: { shareLightspeedBenchmark() }) {
                     HStack(spacing: 4) {
                         Image(systemName: benchmarkService.isUploading ? "arrow.triangle.2.circlepath" : "trophy")
-                            .font(.system(size: 12))
+                            .font(.system(size: fs(12)))
                         Text("Share & Compare")
-                            .font(.system(size: 11, weight: .medium, design: .monospaced))
+                            .font(.system(size: fs(11), weight: .medium, design: .monospaced))
                     }
                 }
                 .buttonStyle(.borderedProminent)
@@ -1079,9 +1085,9 @@ struct StackResultViewV2: View {
                 Button(action: saveAsPNG) {
                     HStack(spacing: 4) {
                         Image(systemName: "square.and.arrow.down")
-                            .font(.system(size: 12))
+                            .font(.system(size: fs(12)))
                         Text("Save PNG")
-                            .font(.system(size: 11, weight: .medium, design: .monospaced))
+                            .font(.system(size: fs(11), weight: .medium, design: .monospaced))
                     }
                 }
                 .buttonStyle(.bordered)
@@ -1089,7 +1095,7 @@ struct StackResultViewV2: View {
                 .help("Export current view as PNG file")
                 if let msg = savedMessage {
                     Text(msg)
-                        .font(.system(size: 10, design: .monospaced))
+                        .font(.system(size: fs(10), design: .monospaced))
                         .foregroundColor(.green)
                 }
             }
@@ -1106,14 +1112,14 @@ struct StackResultViewV2: View {
                                display: String) -> some View {
         HStack(spacing: 3) {
             Text(label)
-                .font(.system(size: 10, design: .monospaced))
+                .font(.system(size: fs(10), design: .monospaced))
                 .foregroundColor(fgDim)
                 .frame(width: 48, alignment: .trailing)
             Slider(value: value, in: range, step: step)
                 .frame(minWidth: 60, maxWidth: 100)
                 .onChange(of: value.wrappedValue) { _ in scheduleRender() }
             Text(display)
-                .font(.system(size: 10, design: .monospaced))
+                .font(.system(size: fs(10), design: .monospaced))
                 .foregroundColor(fgDim)
                 .frame(width: 32, alignment: .leading)
         }
@@ -1432,13 +1438,14 @@ enum ImagePreviewWindowController {
     private static func showWindow(floatData: [Float], width: Int, height: Int, channelCount: Int,
                                     stfParams: [STFParams]? = nil,
                                     filename: String, nightMode: Bool, device: MTLDevice) {
+        let savedScale = AppSettings.loadFloat(for: .fontScale).map { CGFloat($0) } ?? 1.0
         let view = ImagePreviewView(
             floatData: floatData,
             width: width, height: height, channelCount: channelCount,
             stfParams: stfParams,
             filename: filename, nightMode: nightMode, device: device
         )
-        let hostingView = NSHostingView(rootView: view)
+        let hostingView = NSHostingView(rootView: view.environment(\.fontScale, savedScale))
 
         // Fixed window size matching typical stacking result window
         let winW: CGFloat = 1100
@@ -1496,6 +1503,9 @@ struct ImagePreviewView: View {
     let nightMode: Bool
     let device: MTLDevice
 
+    @Environment(\.fontScale) private var fontScale
+    private func fs(_ base: CGFloat) -> CGFloat { round(base * fontScale) }
+
     @State private var stretchValue: Double = 0.25
     @State private var sharpening: Double = 0.0
     @State private var contrast: Double = 0.0
@@ -1534,7 +1544,7 @@ struct ImagePreviewView: View {
 
             HStack(spacing: 10) {
                 Button(action: resetSliders) {
-                    Image(systemName: "arrow.counterclockwise").font(.system(size: 12, weight: .medium))
+                    Image(systemName: "arrow.counterclockwise").font(.system(size: fs(12), weight: .medium))
                 }
                 .buttonStyle(.plain).foregroundColor(nightMode ? .red : .primary).help("Reset all sliders")
 
@@ -1556,7 +1566,7 @@ struct ImagePreviewView: View {
                         .help("Color saturation.\n0 = monochrome, 1.0 = natural, >1 = boosted.")
                     Toggle("Linked", isOn: $linkedStretch)
                         .toggleStyle(.switch).controlSize(.mini)
-                        .font(.system(size: 10, design: .monospaced))
+                        .font(.system(size: fs(10), design: .monospaced))
                         .foregroundColor(fgDim)
                         .help("OFF = Balanced: per-channel background clip + shared midtone (best white balance).\nON = Linked: identical stretch for all channels (raw color ratios).")
                         .onChange(of: linkedStretch) { _ in scheduleRender() }
@@ -1569,7 +1579,7 @@ struct ImagePreviewView: View {
                     .help("Deconvolution sharpening to recover detail.\nUSM = multi-scale unsharp mask, RL = Richardson-Lucy iterative.")
                 Toggle(useRL ? "RL" : "USM", isOn: $useRL)
                     .toggleStyle(.switch).controlSize(.mini)
-                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                    .font(.system(size: fs(10), weight: .medium, design: .monospaced))
                     .foregroundColor(useRL ? .orange : .secondary)
                     .help("USM = Multi-scale Unsharp Mask (fast).\nRL = Richardson-Lucy deconvolution (better quality, slower).")
                     .onChange(of: useRL) { _ in scheduleRender() }
@@ -1580,18 +1590,18 @@ struct ImagePreviewView: View {
 
             HStack(spacing: 12) {
                 Text("\(width)x\(height) — \(filename)")
-                    .font(.system(size: 11, design: .monospaced)).foregroundColor(fgDim)
+                    .font(.system(size: fs(11), design: .monospaced)).foregroundColor(fgDim)
                 Spacer()
                 Button(action: saveAsPNG) {
                     HStack(spacing: 4) {
-                        Image(systemName: "square.and.arrow.down").font(.system(size: 12))
-                        Text("Save PNG").font(.system(size: 11, weight: .medium, design: .monospaced))
+                        Image(systemName: "square.and.arrow.down").font(.system(size: fs(12)))
+                        Text("Save PNG").font(.system(size: fs(11), weight: .medium, design: .monospaced))
                     }
                 }
                 .buttonStyle(.bordered).controlSize(.small)
                 .help("Export current view as PNG file")
                 if let msg = savedMessage {
-                    Text(msg).font(.system(size: 10, design: .monospaced)).foregroundColor(.green)
+                    Text(msg).font(.system(size: fs(10), design: .monospaced)).foregroundColor(.green)
                 }
             }
             .padding(.horizontal, 8).padding(.vertical, 4)
@@ -1604,12 +1614,12 @@ struct ImagePreviewView: View {
     private func resultSlider(_ label: String, value: Binding<Double>,
                                range: ClosedRange<Double>, step: Double, display: String) -> some View {
         HStack(spacing: 3) {
-            Text(label).font(.system(size: 10, design: .monospaced)).foregroundColor(fgDim)
+            Text(label).font(.system(size: fs(10), design: .monospaced)).foregroundColor(fgDim)
                 .frame(width: 55, alignment: .trailing)
             Slider(value: value, in: range, step: step)
                 .frame(minWidth: 80, maxWidth: .infinity)
                 .onChange(of: value.wrappedValue) { _ in scheduleRender() }
-            Text(display).font(.system(size: 10, design: .monospaced)).foregroundColor(fgDim)
+            Text(display).font(.system(size: fs(10), design: .monospaced)).foregroundColor(fgDim)
                 .frame(width: 32, alignment: .leading)
         }
     }

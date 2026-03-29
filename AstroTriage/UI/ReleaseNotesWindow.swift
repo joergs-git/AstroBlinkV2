@@ -13,7 +13,8 @@ class ReleaseNotesWindowController {
             return
         }
 
-        let hostingView = NSHostingView(rootView: ReleaseNotesView())
+        let savedScale = AppSettings.loadFloat(for: .fontScale).map { CGFloat($0) } ?? 1.0
+        let hostingView = NSHostingView(rootView: ReleaseNotesView().environment(\.fontScale, savedScale))
         let win = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 560, height: 620),
             styleMask: [.titled, .closable, .resizable, .miniaturizable],
@@ -167,6 +168,8 @@ private let allReleases: [(version: String, date: String, items: [(ReleaseNotesV
 // MARK: - Release Notes View
 
 struct ReleaseNotesView: View {
+    @Environment(\.fontScale) private var fontScale
+    private func fs(_ base: CGFloat) -> CGFloat { round(base * fontScale) }
     @State private var copied = false
 
     var body: some View {
@@ -194,7 +197,7 @@ struct ReleaseNotesView: View {
                         Image(systemName: "square.and.arrow.up")
                         Text("Tell a Friend")
                     }
-                    .font(.system(size: 12))
+                    .font(.system(size: fs(12)))
                 }
                 .buttonStyle(.borderedProminent)
                 .padding(10)
@@ -206,7 +209,7 @@ struct ReleaseNotesView: View {
                         Image(systemName: copied ? "checkmark" : "doc.on.doc")
                         Text(copied ? "Copied" : "Copy All")
                     }
-                    .font(.system(size: 12))
+                    .font(.system(size: fs(12)))
                 }
                 .buttonStyle(.bordered)
                 .padding(10)
@@ -273,27 +276,27 @@ struct ReleaseNotesView: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline) {
                 Text("v\(version)")
-                    .font(.system(size: 18, weight: .bold, design: .monospaced))
+                    .font(.system(size: fs(18), weight: .bold, design: .monospaced))
                 Text("—")
                     .foregroundColor(.secondary)
                 Text(date)
-                    .font(.system(size: 13))
+                    .font(.system(size: fs(13)))
                     .foregroundColor(.secondary)
             }
 
             ForEach(Array(items.enumerated()), id: \.offset) { _, item in
                 HStack(alignment: .top, spacing: 8) {
                     Image(systemName: item.0.icon)
-                        .font(.system(size: 12))
+                        .font(.system(size: fs(12)))
                         .foregroundColor(item.0.color)
                         .frame(width: 16, alignment: .center)
                         .padding(.top, 2)
 
                     VStack(alignment: .leading, spacing: 2) {
                         Text(item.1)
-                            .font(.system(size: 13, weight: .semibold))
+                            .font(.system(size: fs(13), weight: .semibold))
                         Text(item.2)
-                            .font(.system(size: 12))
+                            .font(.system(size: fs(12)))
                             .foregroundColor(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }

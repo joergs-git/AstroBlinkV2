@@ -17,14 +17,17 @@ class BenchmarkLeaderboardWindowController {
             return
         }
 
+        let savedScale = AppSettings.loadFloat(for: .fontScale).map { CGFloat($0) } ?? 1.0
+        let nightMode = AppSettings.loadBool(for: .nightMode) == true
         let view = BenchmarkLeaderboardView(
             service: service,
             myMachineHash: myMachineHash,
             engine: engine,
+            nightMode: nightMode,
             preferSessionTab: preferSessionTab
         )
 
-        let hostingView = NSHostingView(rootView: view)
+        let hostingView = NSHostingView(rootView: view.environment(\.fontScale, savedScale))
         let win = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 920, height: 560),
             styleMask: [.titled, .closable, .resizable, .miniaturizable],
@@ -86,26 +89,28 @@ private enum SL {
     static let pad: CGFloat = 5
 }
 
-// Shared font sizes
-private let headerFont: Font = .system(size: 11, weight: .semibold, design: .monospaced)
-private let cellFont: Font = .system(size: 11, design: .monospaced)
-private let cellFontBold: Font = .system(size: 11, weight: .medium, design: .monospaced)
-private let dateFont: Font = .system(size: 10, design: .monospaced)
-
 // MARK: - Main Leaderboard View
 
 struct BenchmarkLeaderboardView: View {
     @ObservedObject var service: BenchmarkService
     let myMachineHash: String
     let engine: String
+    let nightMode: Bool
     let preferSessionTab: Bool
+
+    @Environment(\.fontScale) private var fontScale
+    private func fs(_ base: CGFloat) -> CGFloat { round(base * fontScale) }
+    private var fg: Color { AppColors.fg(nightMode) }
+    private var fgDim: Color { AppColors.fgDim(nightMode) }
+    private var bg: Color { AppColors.bg(nightMode) }
 
     @State private var selectedTab: LeaderboardTab = .stacking
 
-    init(service: BenchmarkService, myMachineHash: String, engine: String, preferSessionTab: Bool = false) {
+    init(service: BenchmarkService, myMachineHash: String, engine: String, nightMode: Bool = false, preferSessionTab: Bool = false) {
         self.service = service
         self.myMachineHash = myMachineHash
         self.engine = engine
+        self.nightMode = nightMode
         self.preferSessionTab = preferSessionTab
         _selectedTab = State(initialValue: preferSessionTab ? .sessionLoad : .stacking)
     }
@@ -131,10 +136,11 @@ struct BenchmarkLeaderboardView: View {
             // Header with tab picker
             HStack {
                 Image(systemName: "trophy.fill")
-                    .font(.system(size: 18))
+                    .font(.system(size: fs(18)))
                     .foregroundColor(.yellow)
                 Text("Community Benchmarks")
-                    .font(.system(size: 16, weight: .semibold, design: .monospaced))
+                    .font(.system(size: fs(16), weight: .semibold, design: .monospaced))
+                    .foregroundColor(fg)
 
                 Spacer()
 
@@ -148,24 +154,24 @@ struct BenchmarkLeaderboardView: View {
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
-            .background(Color(NSColor.controlBackgroundColor))
+            .background(nightMode ? Color.black : Color(NSColor.controlBackgroundColor))
 
             Divider()
 
             if service.isFetching {
                 Spacer()
                 ProgressView("Loading leaderboard...")
-                    .font(.system(size: 12, design: .monospaced))
+                    .font(.system(size: fs(12), design: .monospaced))
                 Spacer()
             } else if let error = service.errorMessage {
                 Spacer()
                 VStack(spacing: 8) {
                     Image(systemName: "exclamationmark.triangle")
-                        .font(.system(size: 24))
+                        .font(.system(size: fs(24)))
                         .foregroundColor(.orange)
                     Text(error)
-                        .font(.system(size: 12, design: .monospaced))
-                        .foregroundColor(.secondary)
+                        .font(.system(size: fs(12), design: .monospaced))
+                        .foregroundColor(fgDim)
                 }
                 Spacer()
             } else {
@@ -181,32 +187,33 @@ struct BenchmarkLeaderboardView: View {
             Divider()
             HStack {
                 Image(systemName: "lock.shield")
-                    .font(.system(size: 10))
-                    .foregroundColor(.secondary)
+                    .font(.system(size: fs(10)))
+                    .foregroundColor(fgDim)
                 Text("Anonymous — only hardware specs and timing are shared")
-                    .font(.system(size: 10, design: .monospaced))
-                    .foregroundColor(.secondary)
+                    .font(.system(size: fs(10), design: .monospaced))
+                    .foregroundColor(fgDim)
                 Spacer()
                 Button(action: copyToClipboard) {
                     HStack(spacing: 3) {
                         Image(systemName: "doc.on.doc")
-                            .font(.system(size: 9))
+                            .font(.system(size: fs(9)))
                         Text("Copy")
-                            .font(.system(size: 10, design: .monospaced))
+                            .font(.system(size: fs(10), design: .monospaced))
                     }
                 }
                 .buttonStyle(.plain)
-                .foregroundColor(.secondary)
+                .foregroundColor(fgDim)
                 .padding(.trailing, 8)
                 let count = selectedTab == .stacking ? service.leaderboard.count : service.sessionLeaderboard.count
                 Text("\(count) entries")
-                    .font(.system(size: 10, design: .monospaced))
-                    .foregroundColor(.secondary)
+                    .font(.system(size: fs(10), design: .monospaced))
+                    .foregroundColor(fgDim)
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
-            .background(Color(NSColor.controlBackgroundColor))
+            .background(nightMode ? Color.black : Color(NSColor.controlBackgroundColor))
         }
+        .background(bg)
         .onAppear {
             Task { try? await service.fetchSessionLeaderboard(sourceType: nil) }
         }
@@ -241,8 +248,8 @@ struct BenchmarkLeaderboardView: View {
         if service.leaderboard.isEmpty {
             Spacer()
             Text("No stacking benchmarks yet — run a Quick Stack and Share & Compare!")
-                .font(.system(size: 12, design: .monospaced))
-                .foregroundColor(.secondary)
+                .font(.system(size: fs(12), design: .monospaced))
+                .foregroundColor(fgDim)
             Spacer()
         } else {
             // Column headers
@@ -262,11 +269,11 @@ struct BenchmarkLeaderboardView: View {
                 stackHeader(.date, width: SC.date)
                 Spacer()
             }
-            .font(headerFont)
-            .foregroundColor(.secondary)
+            .font(.system(size: fs(11), weight: .semibold, design: .monospaced))
+            .foregroundColor(fgDim)
             .padding(.horizontal, 14)
             .padding(.vertical, 7)
-            .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
+            .background(nightMode ? Color(red: 0.08, green: 0, blue: 0) : Color(NSColor.controlBackgroundColor).opacity(0.5))
 
             Divider()
 
@@ -287,7 +294,7 @@ struct BenchmarkLeaderboardView: View {
                 Text(col.rawValue)
                 if service.sortColumn == col {
                     Image(systemName: service.sortAscending ? "chevron.up" : "chevron.down")
-                        .font(.system(size: 8, weight: .bold))
+                        .font(.system(size: fs(8), weight: .bold))
                 }
             }
             .frame(width: width, alignment: alignment)
@@ -297,54 +304,56 @@ struct BenchmarkLeaderboardView: View {
     }
 
     private func stackingRow(rank: Int, entry: BenchmarkEntry, isMe: Bool, isLatestMe: Bool = false) -> some View {
-        let font = isLatestMe ? cellFontBold : cellFont
+        let font: Font = isLatestMe ? .system(size: fs(11), weight: .medium, design: .monospaced) : .system(size: fs(11), design: .monospaced)
         return HStack(spacing: SC.pad) {
             rankBadge(rank)
                 .frame(width: SC.rank, alignment: .center)
-                .font(.system(size: 12, weight: rank <= 3 || isLatestMe ? .bold : .regular, design: .monospaced))
+                .font(.system(size: fs(12), weight: rank <= 3 || isLatestMe ? .bold : .regular, design: .monospaced))
 
             Text(String(format: "%.2fs", entry.timePerFrame))
                 .frame(width: SC.tPerFrame, alignment: .trailing)
-                .font(cellFontBold)
-                .foregroundColor(isMe ? .blue : .primary)
+                .font(.system(size: fs(11), weight: .medium, design: .monospaced))
+                .foregroundColor(isMe ? .blue : fg)
             Text(entry.formattedTime)
                 .frame(width: SC.totalTime, alignment: .trailing)
                 .font(font)
-                .foregroundColor(isLatestMe ? .primary : .secondary)
+                .foregroundColor(isLatestMe ? fg : fgDim)
             Text("\(entry.file_count)")
                 .frame(width: SC.frames, alignment: .trailing)
                 .font(font)
+                .foregroundColor(fg)
             Text(String(format: "%.1f", entry.image_megapixels))
                 .frame(width: SC.mp, alignment: .trailing)
                 .font(font)
-                .foregroundColor(isLatestMe ? .primary : .secondary)
+                .foregroundColor(isLatestMe ? fg : fgDim)
             Text(String(format: "%.0f", entry.msPerMPPerFrame))
                 .frame(width: SC.msPerMP, alignment: .trailing)
                 .font(font)
-                .foregroundColor(isLatestMe ? .primary : .secondary)
+                .foregroundColor(isLatestMe ? fg : fgDim)
 
             Spacer().frame(width: SC.gap)
 
             Text(entry.chip_name.replacingOccurrences(of: "Apple ", with: ""))
                 .frame(width: SC.chip, alignment: .leading)
                 .font(font)
+                .foregroundColor(fg)
                 .lineLimit(1)
             Text("\(entry.cpu_cores)")
                 .frame(width: SC.cores, alignment: .trailing)
                 .font(font)
-                .foregroundColor(isLatestMe ? .primary : .secondary)
+                .foregroundColor(isLatestMe ? fg : fgDim)
             Text("\(entry.ram_gb)G")
                 .frame(width: SC.ram, alignment: .trailing)
                 .font(font)
-                .foregroundColor(isLatestMe ? .primary : .secondary)
+                .foregroundColor(isLatestMe ? fg : fgDim)
             Text(entry.app_version)
                 .frame(width: SC.version, alignment: .trailing)
                 .font(font)
-                .foregroundColor(isLatestMe ? .primary : .secondary)
+                .foregroundColor(isLatestMe ? fg : fgDim)
             Text(entry.formattedDateTime)
                 .frame(width: SC.date, alignment: .trailing)
-                .font(isLatestMe ? .system(size: 10, weight: .medium, design: .monospaced) : dateFont)
-                .foregroundColor(isLatestMe ? .primary : .secondary)
+                .font(.system(size: fs(10), weight: isLatestMe ? .medium : .regular, design: .monospaced))
+                .foregroundColor(isLatestMe ? fg : fgDim)
 
             Spacer()
             youBadge(isMe, isLatest: isLatestMe)
@@ -360,8 +369,8 @@ struct BenchmarkLeaderboardView: View {
         if service.sessionLeaderboard.isEmpty {
             Spacer()
             Text("No session load benchmarks yet — open a folder and Share & Compare from Benchmark Stats!")
-                .font(.system(size: 12, design: .monospaced))
-                .foregroundColor(.secondary)
+                .font(.system(size: fs(12), design: .monospaced))
+                .foregroundColor(fgDim)
                 .multilineTextAlignment(.center)
                 .padding()
             Spacer()
@@ -385,11 +394,11 @@ struct BenchmarkLeaderboardView: View {
                 sessionHeader(.date, width: SL.date)
                 Spacer()
             }
-            .font(headerFont)
-            .foregroundColor(.secondary)
+            .font(.system(size: fs(11), weight: .semibold, design: .monospaced))
+            .foregroundColor(fgDim)
             .padding(.horizontal, 14)
             .padding(.vertical, 7)
-            .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
+            .background(nightMode ? Color(red: 0.08, green: 0, blue: 0) : Color(NSColor.controlBackgroundColor).opacity(0.5))
 
             Divider()
 
@@ -410,7 +419,7 @@ struct BenchmarkLeaderboardView: View {
                 Text(col.rawValue)
                 if service.sessionSortColumn == col {
                     Image(systemName: service.sessionSortAscending ? "chevron.up" : "chevron.down")
-                        .font(.system(size: 8, weight: .bold))
+                        .font(.system(size: fs(8), weight: .bold))
                 }
             }
             .frame(width: width, alignment: alignment)
@@ -420,72 +429,74 @@ struct BenchmarkLeaderboardView: View {
     }
 
     private func sessionRow(rank: Int, entry: SessionBenchmarkEntry, isMe: Bool, isLatestMe: Bool = false) -> some View {
-        let font = isLatestMe ? cellFontBold : cellFont
+        let font: Font = isLatestMe ? .system(size: fs(11), weight: .medium, design: .monospaced) : .system(size: fs(11), design: .monospaced)
         return HStack(spacing: SL.pad) {
             rankBadge(rank)
                 .frame(width: SL.rank, alignment: .center)
-                .font(.system(size: 12, weight: rank <= 3 || isLatestMe ? .bold : .regular, design: .monospaced))
+                .font(.system(size: fs(12), weight: rank <= 3 || isLatestMe ? .bold : .regular, design: .monospaced))
 
             Text(String(format: "%.0f", entry.throughputMBs))
                 .frame(width: SL.throughput, alignment: .trailing)
-                .font(cellFontBold)
-                .foregroundColor(isMe ? .blue : .primary)
+                .font(.system(size: fs(11), weight: .medium, design: .monospaced))
+                .foregroundColor(isMe ? .blue : fg)
 
             Text(entry.formattedTotalTime)
                 .frame(width: SL.totalTime, alignment: .trailing)
                 .font(font)
-                .foregroundColor(isLatestMe ? .primary : .secondary)
+                .foregroundColor(isLatestMe ? fg : fgDim)
 
             Text(formatMs(entry.scan_ms))
                 .frame(width: SL.scan, alignment: .trailing)
                 .font(font)
-                .foregroundColor(isLatestMe ? .primary : .secondary)
+                .foregroundColor(isLatestMe ? fg : fgDim)
 
             Text(formatMs(entry.first_image_ms))
                 .frame(width: SL.firstImg, alignment: .trailing)
                 .font(font)
-                .foregroundColor(isLatestMe ? .primary : .secondary)
+                .foregroundColor(isLatestMe ? fg : fgDim)
 
             Text(formatMs(entry.header_ms))
                 .frame(width: SL.headers, alignment: .trailing)
                 .font(font)
-                .foregroundColor(isLatestMe ? .primary : .secondary)
+                .foregroundColor(isLatestMe ? fg : fgDim)
 
             Text(formatMs(entry.caching_ms))
                 .frame(width: SL.cache, alignment: .trailing)
                 .font(font)
-                .foregroundColor(isLatestMe ? .primary : .secondary)
+                .foregroundColor(isLatestMe ? fg : fgDim)
 
             Text("\(entry.file_count)")
                 .frame(width: SL.files, alignment: .trailing)
                 .font(font)
+                .foregroundColor(fg)
 
             Text(entry.formattedSize)
                 .frame(width: SL.size, alignment: .trailing)
                 .font(font)
-                .foregroundColor(isLatestMe ? .primary : .secondary)
+                .foregroundColor(isLatestMe ? fg : fgDim)
 
             Text(entry.source_type == "local" ? "SSD" : entry.source_type == "network" ? "Net" : "?")
                 .frame(width: SL.source, alignment: .trailing)
-                .font(cellFontBold)
-                .foregroundColor(entry.source_type == "local" ? .green : (entry.source_type == "network" ? .orange : .secondary))
+                .font(.system(size: fs(11), weight: .medium, design: .monospaced))
+                .foregroundColor(entry.source_type == "local" ? .green : (entry.source_type == "network" ? .orange : fgDim))
 
             Spacer().frame(width: SL.gap)
 
             Text(entry.chip_name.replacingOccurrences(of: "Apple ", with: ""))
                 .frame(width: SL.chip, alignment: .leading)
                 .font(font)
+                .foregroundColor(fg)
                 .lineLimit(1)
 
             Text("\(entry.ram_gb)G")
                 .frame(width: SL.ram, alignment: .trailing)
                 .font(font)
-                .foregroundColor(isLatestMe ? .primary : .secondary)
+                .foregroundColor(isLatestMe ? fg : fgDim)
 
             Text(entry.formattedDateTime)
                 .frame(width: SL.date, alignment: .trailing)
-                .font(isLatestMe ? .system(size: 10, weight: .medium, design: .monospaced) : dateFont)
-                .foregroundColor(isLatestMe ? .primary : .secondary)
+                .font(.system(size: fs(10), weight: isLatestMe ? .medium : .regular, design: .monospaced))
+                .foregroundColor(isLatestMe ? fg : fgDim)
 
             Spacer()
             youBadge(isMe, isLatest: isLatestMe)
@@ -513,7 +524,7 @@ struct BenchmarkLeaderboardView: View {
         } else if rank == 3 {
             Text("3").foregroundColor(.orange)
         } else {
-            Text("\(rank)").foregroundColor(.secondary)
+            Text("\(rank)").foregroundColor(fgDim)
         }
     }
 
@@ -521,7 +532,7 @@ struct BenchmarkLeaderboardView: View {
     private func youBadge(_ isMe: Bool, isLatest: Bool = false) -> some View {
         if isMe {
             Text(isLatest ? "LATEST" : "YOU")
-                .font(.system(size: 9, weight: .bold, design: .monospaced))
+                .font(.system(size: fs(9), weight: .bold, design: .monospaced))
                 .foregroundColor(.white)
                 .padding(.horizontal, 5)
                 .padding(.vertical, 1)
@@ -532,11 +543,11 @@ struct BenchmarkLeaderboardView: View {
     private func rowBackground(rank: Int, isMe: Bool) -> some View {
         Group {
             if isMe {
-                Color.blue.opacity(0.08)
+                Color.blue.opacity(nightMode ? 0.15 : 0.08)
             } else if rank % 2 == 0 {
-                Color.clear
+                nightMode ? Color.black : Color.clear
             } else {
-                Color(NSColor.controlBackgroundColor).opacity(0.3)
+                nightMode ? Color(red: 0.06, green: 0, blue: 0) : Color(NSColor.controlBackgroundColor).opacity(0.3)
             }
         }
     }

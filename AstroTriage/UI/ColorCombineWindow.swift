@@ -15,6 +15,9 @@ struct ColorCombineSetupView: View {
     var onDismiss: () -> Void
     var debayerEnabled: Bool
 
+    @Environment(\.fontScale) private var fontScale
+    private func fs(_ base: CGFloat) -> CGFloat { round(base * fontScale) }
+
     private var fg: Color { nightMode ? .red : .primary }
     private var fgDim: Color { nightMode ? .red.opacity(0.7) : .secondary }
     private var bg: Color { nightMode ? .black : Color(NSColor.windowBackgroundColor) }
@@ -24,10 +27,10 @@ struct ColorCombineSetupView: View {
             // Header
             HStack {
                 Image(systemName: "paintpalette.fill")
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(.system(size: fs(16), weight: .semibold))
                     .foregroundColor(fg)
                 Text("Color Combine")
-                    .font(.system(size: 14, weight: .semibold, design: .monospaced))
+                    .font(.system(size: fs(14), weight: .semibold, design: .monospaced))
                     .foregroundColor(fg)
                 Spacer()
                 Button(action: {
@@ -35,7 +38,7 @@ struct ColorCombineSetupView: View {
                     onDismiss()
                 }) {
                     Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 14))
+                        .font(.system(size: fs(14)))
                         .foregroundColor(fgDim)
                 }
                 .buttonStyle(.plain)
@@ -46,11 +49,11 @@ struct ColorCombineSetupView: View {
             if !engine.availableFilters.isEmpty {
                 HStack(spacing: 6) {
                     Text("Filters:")
-                        .font(.system(size: 10, design: .monospaced))
+                        .font(.system(size: fs(10), design: .monospaced))
                         .foregroundColor(fgDim)
                     ForEach(engine.availableFilters) { info in
                         Text("\(info.display)(\(info.count))")
-                            .font(.system(size: 10, weight: .medium, design: .monospaced))
+                            .font(.system(size: fs(10), weight: .medium, design: .monospaced))
                             .foregroundColor(fg)
                             .padding(.horizontal, 4).padding(.vertical, 1)
                             .background(RoundedRectangle(cornerRadius: 3).fill(Color.gray.opacity(0.2)))
@@ -63,7 +66,7 @@ struct ColorCombineSetupView: View {
             if engine.phase == .idle || engine.phase == .setup {
                 HStack(spacing: 6) {
                     Text("Preset:")
-                        .font(.system(size: 10, design: .monospaced))
+                        .font(.system(size: fs(10), design: .monospaced))
                         .foregroundColor(fgDim)
                     Picker("", selection: $engine.selectedPreset) {
                         ForEach(ColorCombineEngine.ChannelPreset.allCases) { preset in
@@ -97,7 +100,7 @@ struct ColorCombineSetupView: View {
                     ))
                     .toggleStyle(.checkbox)
                     .controlSize(.small)
-                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                    .font(.system(size: fs(10), weight: .bold, design: .monospaced))
                     .foregroundColor(.white)
 
                     if !engine.channelMapping.luminanceFilter.isEmpty {
@@ -111,12 +114,12 @@ struct ColorCombineSetupView: View {
                         .controlSize(.mini)
 
                         Text("Blend:")
-                            .font(.system(size: 9, design: .monospaced))
+                            .font(.system(size: fs(9), design: .monospaced))
                             .foregroundColor(fgDim)
                         Slider(value: $engine.channelMapping.luminanceBlend, in: 0...1, step: 0.05)
                             .frame(width: 60)
                         Text(String(format: "%.0f%%", engine.channelMapping.luminanceBlend * 100))
-                            .font(.system(size: 9, design: .monospaced))
+                            .font(.system(size: fs(9), design: .monospaced))
                             .foregroundColor(fgDim)
                             .frame(width: 28)
                     }
@@ -127,9 +130,9 @@ struct ColorCombineSetupView: View {
                 Button(action: { engine.startCombine(debayerEnabled: debayerEnabled) }) {
                     HStack(spacing: 4) {
                         Image(systemName: "play.fill")
-                            .font(.system(size: 10))
+                            .font(.system(size: fs(10)))
                         Text("Start Combine")
-                            .font(.system(size: 12, weight: .medium, design: .monospaced))
+                            .font(.system(size: fs(12), weight: .medium, design: .monospaced))
                     }
                 }
                 .buttonStyle(.borderedProminent)
@@ -143,7 +146,7 @@ struct ColorCombineSetupView: View {
                     Text(engine.phase == .stacking
                          ? "Stacking \(engine.currentFilter)... (\(engine.filtersDone + 1)/\(engine.filtersTotal))"
                          : engine.phase.rawValue)
-                        .font(.system(size: 11, weight: .medium, design: .monospaced))
+                        .font(.system(size: fs(11), weight: .medium, design: .monospaced))
                         .foregroundColor(fg)
 
                     ProgressView(value: engine.progress)
@@ -155,7 +158,7 @@ struct ColorCombineSetupView: View {
             // Error
             if let error = engine.errorMessage {
                 Text(error)
-                    .font(.system(size: 11, design: .monospaced))
+                    .font(.system(size: fs(11), design: .monospaced))
                     .foregroundColor(.red)
                     .multilineTextAlignment(.center)
             }
@@ -165,9 +168,9 @@ struct ColorCombineSetupView: View {
                 Button(action: { openResultWindow() }) {
                     HStack(spacing: 6) {
                         Image(systemName: "photo")
-                            .font(.system(size: 12))
+                            .font(.system(size: fs(12)))
                         Text("Open Color Result (\(engine.resultWidth)x\(engine.resultHeight))")
-                            .font(.system(size: 12, weight: .medium, design: .monospaced))
+                            .font(.system(size: fs(12), weight: .medium, design: .monospaced))
                     }
                 }
                 .buttonStyle(.borderedProminent)
@@ -200,7 +203,7 @@ struct ColorCombineSetupView: View {
     private func channelRow(_ label: String, color: Color, sources: Binding<[ColorCombineEngine.ChannelSource]>, filters: [String]) -> some View {
         HStack(spacing: 4) {
             Text(label)
-                .font(.system(size: 11, weight: .bold, design: .monospaced))
+                .font(.system(size: fs(11), weight: .bold, design: .monospaced))
                 .foregroundColor(color)
                 .frame(width: 14, alignment: .trailing)
 
@@ -236,7 +239,7 @@ struct ColorCombineSetupView: View {
             Slider(value: weightBinding, in: 0...3.0, step: 0.05)
                 .frame(width: 80)
             Text(String(format: "%.2f", weightBinding.wrappedValue))
-                .font(.system(size: 9, design: .monospaced))
+                .font(.system(size: fs(9), design: .monospaced))
                 .foregroundColor(fgDim)
                 .frame(width: 28, alignment: .leading)
 
@@ -249,12 +252,13 @@ struct ColorCombineSetupView: View {
     private func openResultWindow() {
         guard engine.resultFloatData != nil else { return }
 
+        let savedScale = AppSettings.loadFloat(for: .fontScale).map { CGFloat($0) } ?? 1.0
         let resultView = ColorCombineResultView(
             engine: engine,
             nightMode: nightMode
         )
 
-        let hostingView = NSHostingView(rootView: resultView)
+        let hostingView = NSHostingView(rootView: resultView.environment(\.fontScale, savedScale))
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 1100, height: 700),
             styleMask: [.titled, .closable, .resizable, .miniaturizable],
@@ -274,6 +278,9 @@ struct ColorCombineSetupView: View {
 struct ColorCombineResultView: View {
     let engine: ColorCombineEngine
     let nightMode: Bool
+
+    @Environment(\.fontScale) private var fontScale
+    private func fs(_ base: CGFloat) -> CGFloat { round(base * fontScale) }
 
     // Per-channel weights (live recombine)
     @State private var redWeight: Float = 1.0
@@ -327,7 +334,7 @@ struct ColorCombineResultView: View {
             // Channel weight sliders (trigger recombine)
             HStack(spacing: 8) {
                 Text("Weights:")
-                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                    .font(.system(size: fs(10), weight: .bold, design: .monospaced))
                     .foregroundColor(fgDim)
                 channelWeightSlider("R", color: .red, value: $redWeight)
                 channelWeightSlider("G", color: .green, value: $greenWeight)
@@ -337,7 +344,7 @@ struct ColorCombineResultView: View {
                     Divider().frame(height: 12)
                     HStack(spacing: 2) {
                         Text("L:")
-                            .font(.system(size: 10, weight: .bold, design: .monospaced))
+                            .font(.system(size: fs(10), weight: .bold, design: .monospaced))
                             .foregroundColor(.white)
                         Slider(value: $lumBlend, in: Float(0)...Float(1), step: Float(0.05),
                                onEditingChanged: { editing in
@@ -345,7 +352,7 @@ struct ColorCombineResultView: View {
                         })
                             .frame(width: 60)
                         Text(String(format: "%.0f%%", lumBlend * 100))
-                            .font(.system(size: 9, design: .monospaced))
+                            .font(.system(size: fs(9), design: .monospaced))
                             .foregroundColor(fgDim)
                             .frame(width: 28)
                     }
@@ -359,7 +366,7 @@ struct ColorCombineResultView: View {
             HStack(spacing: 10) {
                 Button(action: resetSliders) {
                     Image(systemName: "arrow.counterclockwise")
-                        .font(.system(size: 12, weight: .medium))
+                        .font(.system(size: fs(12), weight: .medium))
                 }
                 .buttonStyle(.plain)
                 .foregroundColor(nightMode ? .red : .primary)
@@ -377,7 +384,7 @@ struct ColorCombineResultView: View {
                              display: String(format: "%.1f", saturation))
                 Toggle("Linked", isOn: $linkedStretch)
                     .toggleStyle(.switch).controlSize(.mini)
-                    .font(.system(size: 10, design: .monospaced))
+                    .font(.system(size: fs(10), design: .monospaced))
                     .foregroundColor(fgDim)
                     .onChange(of: linkedStretch) { _ in scheduleRender() }
                 resultSlider("Denoise", value: $denoise, range: 0.0...2.0, step: 0.02,
@@ -386,7 +393,7 @@ struct ColorCombineResultView: View {
                              display: deconvolve < 0.01 ? "Off" : String(format: "%.1f", deconvolve))
                 Toggle(useRL ? "RL" : "USM", isOn: $useRL)
                     .toggleStyle(.switch).controlSize(.mini)
-                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                    .font(.system(size: fs(10), weight: .medium, design: .monospaced))
                     .foregroundColor(useRL ? .orange : .secondary)
                     .onChange(of: useRL) { _ in scheduleRender() }
                     .frame(width: 52)
@@ -398,7 +405,7 @@ struct ColorCombineResultView: View {
             // Bottom bar
             HStack(spacing: 12) {
                 Text("\(engine.resultWidth)x\(engine.resultHeight) — Color Combine (\(engine.selectedPreset.rawValue))")
-                    .font(.system(size: 11, design: .monospaced))
+                    .font(.system(size: fs(11), design: .monospaced))
                     .foregroundColor(fgDim)
 
                 Spacer()
@@ -406,16 +413,16 @@ struct ColorCombineResultView: View {
                 Button(action: saveAsPNG) {
                     HStack(spacing: 4) {
                         Image(systemName: "square.and.arrow.down")
-                            .font(.system(size: 12))
+                            .font(.system(size: fs(12)))
                         Text("Save PNG")
-                            .font(.system(size: 11, weight: .medium, design: .monospaced))
+                            .font(.system(size: fs(11), weight: .medium, design: .monospaced))
                     }
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
                 if let msg = savedMessage {
                     Text(msg)
-                        .font(.system(size: 10, design: .monospaced))
+                        .font(.system(size: fs(10), design: .monospaced))
                         .foregroundColor(.green)
                 }
             }
@@ -439,7 +446,7 @@ struct ColorCombineResultView: View {
     private func channelWeightSlider(_ label: String, color: Color, value: Binding<Float>) -> some View {
         HStack(spacing: 2) {
             Text(label)
-                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                .font(.system(size: fs(10), weight: .bold, design: .monospaced))
                 .foregroundColor(color)
             Slider(value: value, in: Float(0)...Float(3.0), step: Float(0.05),
                    onEditingChanged: { editing in
@@ -447,7 +454,7 @@ struct ColorCombineResultView: View {
             })
                 .frame(width: 60)
             Text(String(format: "%.2f", value.wrappedValue))
-                .font(.system(size: 9, design: .monospaced))
+                .font(.system(size: fs(9), design: .monospaced))
                 .foregroundColor(fgDim)
                 .frame(width: 28)
         }
@@ -460,14 +467,14 @@ struct ColorCombineResultView: View {
                                display: String) -> some View {
         HStack(spacing: 3) {
             Text(label)
-                .font(.system(size: 10, design: .monospaced))
+                .font(.system(size: fs(10), design: .monospaced))
                 .foregroundColor(fgDim)
                 .frame(width: 48, alignment: .trailing)
             Slider(value: value, in: range, step: step)
                 .frame(minWidth: 60, maxWidth: 100)
                 .onChange(of: value.wrappedValue) { _ in scheduleRender() }
             Text(display)
-                .font(.system(size: 10, design: .monospaced))
+                .font(.system(size: fs(10), design: .monospaced))
                 .foregroundColor(fgDim)
                 .frame(width: 32, alignment: .leading)
         }
