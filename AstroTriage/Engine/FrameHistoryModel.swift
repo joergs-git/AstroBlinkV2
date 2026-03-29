@@ -40,11 +40,17 @@ class FrameHistoryModel: ObservableObject {
 
     @Published var selectedChart: ChartType = .qualityTimeline
 
+    // Stale records indicator (older algorithm version)
+    @Published var staleRecordCount: Int = 0
+
     // MARK: - Load Data
 
     func loadData() {
         // Get database stats
         stats = try? FrameHistoryDatabase.shared.databaseStats()
+
+        // Check for stale records
+        staleRecordCount = (try? FrameHistoryDatabase.shared.staleRecordCount()) ?? 0
 
         // Get available setups (distinct telescope+camera combos)
         loadAvailableSetups()

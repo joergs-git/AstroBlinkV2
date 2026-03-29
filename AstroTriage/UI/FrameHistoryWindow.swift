@@ -72,6 +72,25 @@ struct FrameHistoryContentView: View {
                     .padding(.horizontal, 12)
                     .padding(.top, 6)
 
+                // Stale records indicator
+                if model.staleRecordCount > 0 {
+                    HStack(spacing: 6) {
+                        Image(systemName: "arrow.triangle.2.circlepath")
+                            .font(.system(size: fs(10)))
+                            .foregroundColor(.orange)
+                        Text("\(model.staleRecordCount) frames scored with older algorithm (v\(kAlgorithmVersion) is current)")
+                            .font(.system(size: fs(10), design: .monospaced))
+                            .foregroundColor(fgDim)
+                        Spacer()
+                        Text("Re-analysis available in future update")
+                            .font(.system(size: fs(9)))
+                            .foregroundColor(fgDim)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 4)
+                    .background(AppColors.bgControl(nightMode))
+                }
+
                 // Chart selector
                 Picker("Chart", selection: $model.selectedChart) {
                     ForEach(FrameHistoryModel.ChartType.allCases) { type in

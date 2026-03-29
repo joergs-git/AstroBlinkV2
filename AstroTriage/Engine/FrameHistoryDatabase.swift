@@ -435,6 +435,14 @@ final class FrameHistoryDatabase {
         }
     }
 
+    /// Count records with older algorithm versions (candidates for re-analysis).
+    func staleRecordCount() throws -> Int {
+        try dbQueue.read { db in
+            try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM frame_record WHERE algorithmVersion < ?",
+                            arguments: [kAlgorithmVersion]) ?? 0
+        }
+    }
+
     /// Check if a file hash already exists in the database.
     func recordExists(fileHash: String) throws -> Bool {
         try dbQueue.read { db in
