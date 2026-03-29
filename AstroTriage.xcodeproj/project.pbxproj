@@ -17,6 +17,7 @@
 		1864DE963C0E5E7717212E46 /* FileListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6D16C070C8599AC5C5A265B /* FileListView.swift */; };
 		1C5494999757C263A4969E6F /* QuickLookRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D9A7A3939A213218612E649 /* QuickLookRenderer.swift */; };
 		1D1723961ACDCF8669AA1478 /* IntegrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F98D55D2A66E2F51D5244BCF /* IntegrationTests.swift */; };
+		1E96A2D9C4227C9FDD1B0C55 /* BortleGrid.bin in Resources */ = {isa = PBXBuildFile; fileRef = 2888071D5D7B050F791FC4C6 /* BortleGrid.bin */; };
 		2356F4E612C0145A8DAD2063 /* ConvergenceDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EC5D8FEF949DAD6CA5217B2 /* ConvergenceDetector.swift */; };
 		25CFB819D42305A82ABD33FA /* ImageDecoderBridge in Frameworks */ = {isa = PBXBuildFile; productRef = A7854A8F318978072FE7EB54 /* ImageDecoderBridge */; };
 		25F39B9B112136B825F99E0C /* ImageDecoderBridge in Frameworks */ = {isa = PBXBuildFile; productRef = 0823264441FF3A7874FE3975 /* ImageDecoderBridge */; };
@@ -34,6 +35,7 @@
 		4FD361F2A70A9911B8E51359 /* ColorCombineWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3E8644313598CB076771595 /* ColorCombineWindow.swift */; };
 		4FF1837BB573517518363D80 /* ColorCombineEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 01FF98B4BC98399919553F34 /* ColorCombineEngine.swift */; };
 		56FFE42C0B6D9DB482139AC0 /* ThumbnailProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E84C4C954C1B6E8C561713D /* ThumbnailProvider.swift */; };
+		5BD68D26E5187C38B85F1B0C /* BortleEstimator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 996DDBDBA183F21943272D83 /* BortleEstimator.swift */; };
 		5BEA8CB806944696DA8FF49D /* ImageEntry.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5A5655E4FCDB14E3F9CECE3 /* ImageEntry.swift */; };
 		5E675BB37EE91BCC5AA74C71 /* MetadataExtractorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 19E7CEF533FCAE62802CFC77 /* MetadataExtractorTests.swift */; };
 		5EBF03BBD7C5676AA602ECF7 /* QuickLookRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D9A7A3939A213218612E649 /* QuickLookRenderer.swift */; };
@@ -162,6 +164,7 @@
 		1C731CAA9FB954423A4E9179 /* SunCalculator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SunCalculator.swift; sourceTree = "<group>"; };
 		218287CA9A583C11D2A4196E /* AIsaacKeychain.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIsaacKeychain.swift; sourceTree = "<group>"; };
 		24F8E2016E26D881862A1E76 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		2888071D5D7B050F791FC4C6 /* BortleGrid.bin */ = {isa = PBXFileReference; lastKnownFileType = archive.macbinary; path = BortleGrid.bin; sourceTree = "<group>"; };
 		32B55DBDF2FD18BEF1399C8D /* ArchiveScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArchiveScanner.swift; sourceTree = "<group>"; };
 		3BCBBE41D0B90CC98443F843 /* GradientRemoval.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GradientRemoval.swift; sourceTree = "<group>"; };
 		3E84C4C954C1B6E8C561713D /* ThumbnailProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThumbnailProvider.swift; sourceTree = "<group>"; };
@@ -202,6 +205,7 @@
 		958EAAFB0801AA6BF89E7E57 /* NINAFilenameParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NINAFilenameParser.swift; sourceTree = "<group>"; };
 		96AD4E25EE11AD6039128785 /* BenchmarkLeaderboardWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BenchmarkLeaderboardWindow.swift; sourceTree = "<group>"; };
 		977D1208D10ED6C156B236C7 /* AIsaacKnowledgeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIsaacKnowledgeTests.swift; sourceTree = "<group>"; };
+		996DDBDBA183F21943272D83 /* BortleEstimator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BortleEstimator.swift; sourceTree = "<group>"; };
 		9C97DD4541DE740AC52CBFEC /* DecodedImage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DecodedImage.swift; sourceTree = "<group>"; };
 		A05ABE70A121689E1D00FB32 /* SessionScannerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionScannerTests.swift; sourceTree = "<group>"; };
 		A1ABC62333FF8D3609F74755 /* ImageEntryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageEntryTests.swift; sourceTree = "<group>"; };
@@ -376,6 +380,7 @@
 				EC91195CA425D12B99F20516 /* BatchOperations.swift */,
 				6A3C4F920C008F3B9EEA4CED /* BenchmarkSharing.swift */,
 				7E3E8374566F596C93B1AE16 /* BenchmarkStats.swift */,
+				996DDBDBA183F21943272D83 /* BortleEstimator.swift */,
 				511D5503EE634473FF2EC433 /* CalibrationDatabase.swift */,
 				01FF98B4BC98399919553F34 /* ColorCombineEngine.swift */,
 				78F34710ED7DC2766AE2501F /* CommunityBaseline.swift */,
@@ -428,12 +433,21 @@
 				8B6572146F03A4BF20670F99 /* Engine */,
 				363A9B34E9ED9865E9412A9B /* Metal */,
 				EDBF5FF129EFE56886D3F2A2 /* Model */,
+				D103F3D6558615FF441AC04B /* Resources */,
 				D30D71B63D6BDC840F33D230 /* UI */,
 				AE4E059ADDE28F88AF19A8DF /* Assets.xcassets */,
 				7EA258813A0F669A15FDE38A /* AstroTriage.entitlements */,
 				0F4C747A549511B45DCACC15 /* Info.plist */,
 			);
 			path = AstroTriage;
+			sourceTree = "<group>";
+		};
+		D103F3D6558615FF441AC04B /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				2888071D5D7B050F791FC4C6 /* BortleGrid.bin */,
+			);
+			path = Resources;
 			sourceTree = "<group>";
 		};
 		D30D71B63D6BDC840F33D230 /* UI */ = {
@@ -631,6 +645,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				399A544B01D518D97920F138 /* Assets.xcassets in Resources */,
+				1E96A2D9C4227C9FDD1B0C55 /* BortleGrid.bin in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -697,6 +712,7 @@
 				0058FC7C75B67B4C7AD5A246 /* BenchmarkSharing.swift in Sources */,
 				D1C96F46237D0B999DA95C52 /* BenchmarkStats.swift in Sources */,
 				4E375B87AAA7578C60D7169E /* BenchmarkStatsWindow.swift in Sources */,
+				5BD68D26E5187C38B85F1B0C /* BortleEstimator.swift in Sources */,
 				9B91613EEB76EB27A7DCB3FC /* CalibrationDatabase.swift in Sources */,
 				4FF1837BB573517518363D80 /* ColorCombineEngine.swift in Sources */,
 				4FD361F2A70A9911B8E51359 /* ColorCombineWindow.swift in Sources */,

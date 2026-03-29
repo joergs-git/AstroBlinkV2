@@ -80,6 +80,10 @@ struct FrameRecord: Codable, FetchableRecord, PersistableRecord {
     var garbageReasons: String?     // JSON array of strings
     var isLockedKeep: Int           // 0 or 1
     var filterTrailingMultiplier: Double?
+
+    // Light pollution
+    var bortleClass: Int?           // Bortle 1-9 from BortleEstimator
+
     var wasDeleted: Int             // 0 or 1
 
     // Meta
@@ -173,6 +177,7 @@ extension FrameRecord {
             garbageReasons: garbageJSON,
             isLockedKeep: (entry.qualityBreakdown?.isLockedKeep ?? false) ? 1 : 0,
             filterTrailingMultiplier: entry.qualityBreakdown?.filterTrailingMultiplier,
+            bortleClass: entry.bortleClass,
             wasDeleted: entry.isMarkedForDeletion ? 1 : 0,
             algorithmVersion: kAlgorithmVersion,
             recordedAt: iso.string(from: Date()),

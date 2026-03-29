@@ -104,6 +104,9 @@ struct ImageEntry: Identifiable, Hashable {
     var moonIllumination: Double?      // 0.0 = new moon, 1.0 = full moon
     var moonDistance: Double?          // Angular distance from target in degrees
 
+    // Light pollution (computed from site coordinates via BortleGrid)
+    var bortleClass: Int?              // Bortle 1 (pristine) to 9 (inner city)
+
     // Pixel scale for display (computed from focal length + pixel size)
     var arcsecPerPixel: Double? {
         guard let fl = focalLength, fl > 0, let px = pixelSizeMicrons, px > 0 else { return nil }

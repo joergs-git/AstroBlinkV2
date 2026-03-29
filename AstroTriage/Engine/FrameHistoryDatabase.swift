@@ -171,6 +171,13 @@ final class FrameHistoryDatabase {
             try db.execute(sql: "UPDATE frame_record SET algorithmVersion = 10 WHERE algorithmVersion < 10")
         }
 
+        // Add Bortle class column for light pollution data
+        migrator.registerMigration("v4_bortle_class") { db in
+            try db.alter(table: "frame_record") { t in
+                t.add(column: "bortleClass", .integer)
+            }
+        }
+
         try migrator.migrate(db)
     }
 

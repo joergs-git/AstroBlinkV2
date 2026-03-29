@@ -45,6 +45,8 @@ struct ColumnDefinition {
         // Moon data (computed from date + site coordinates)
         ColumnDefinition(identifier: "moonPhase",   title: "Moon%",     defaultWidth: 50,  minWidth: 40,  isDefaultVisible: true,  isHideable: true),
         ColumnDefinition(identifier: "moonDist",    title: "MoonDist",  defaultWidth: 60,  minWidth: 45,  isDefaultVisible: true,  isHideable: true),
+        // Light pollution (computed from site coordinates)
+        ColumnDefinition(identifier: "bortle",      title: "Bortle",    defaultWidth: 50,  minWidth: 40,  isDefaultVisible: true,  isHideable: true),
         // Hidden-by-default columns
         ColumnDefinition(identifier: "date",        title: "Date",      defaultWidth: 85,  minWidth: 70,  isDefaultVisible: false, isHideable: true),
         ColumnDefinition(identifier: "telescope",   title: "Telescope", defaultWidth: 80,  minWidth: 60,  isDefaultVisible: false, isHideable: true),
@@ -59,7 +61,7 @@ struct ColumnDefinition {
     private static let columnTail: [String] = [
         "filename", "frameType", "camera",
         "ambientTemp", "focuserTemp", "sensorTemp", "gain",
-        "moonPhase", "moonDist",
+        "moonPhase", "moonDist", "bortle",
         "fileSize", "subfolder",
         "date", "telescope", "binning", "offset"
     ]
@@ -140,6 +142,8 @@ struct ColumnDefinition {
             return entry.moonIllumination.map { String(format: "%.0f%%", $0 * 100) } ?? ""
         case "moonDist":
             return entry.moonDistance.map { String(format: "%.1f°", $0) } ?? ""
+        case "bortle":
+            return entry.bortleClass.map { "B\($0)" } ?? ""
         default:            return ""
         }
     }
@@ -166,6 +170,7 @@ struct ColumnDefinition {
         case "eccentricity": return entry.computedEccentricity
         case "moonPhase":    return entry.moonIllumination
         case "moonDist":     return entry.moonDistance
+        case "bortle":       return entry.bortleClass.map { Double($0) }
         default:            return nil
         }
     }
@@ -241,6 +246,8 @@ struct ColumnDefinition {
             return "Moon illumination at capture time.\n0% = new moon, 100% = full moon.\nComputed from capture date (synodic period).\nHigh moon + broadband filter = elevated background."
         case "moonDist":
             return "Angular distance from moon to target in degrees.\nComputed from moon position + target RA/Dec.\nCloser moon = more sky glow (especially broadband).\nNarrowband is mostly immune to moonlight."
+        case "bortle":
+            return "Bortle dark-sky scale (1-9).\n1 = pristine dark site, 9 = inner city.\nEstimated from site coordinates via light pollution model.\nAccuracy: ±1 class (±2 for terrain-shielded sites).\nB1-3: dark, B4-5: suburban, B6-7: bright, B8-9: city."
         default:
             return nil
         }

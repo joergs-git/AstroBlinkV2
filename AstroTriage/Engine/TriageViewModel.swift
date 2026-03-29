@@ -1801,6 +1801,13 @@ class TriageViewModel: ObservableObject {
                     utcDate: utcDate, targetRA: ra, targetDec: dec
                 )
             }
+
+            // Bortle class (needs site coordinates — computed once, same for all frames at same site)
+            if images[index].bortleClass == nil,
+               let lat = images[index].siteLatitude,
+               let lon = images[index].siteLongitude {
+                images[index].bortleClass = BortleEstimator.estimate(latitude: lat, longitude: lon)
+            }
         }
     }
 
