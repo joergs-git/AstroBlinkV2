@@ -25,33 +25,42 @@ enum BortleEstimator {
             print("[BortleEstimator] Failed to load BortleGrid.bin")
             return nil
         }
-        // Verify magic header "BRTG" (gzipped format)
+        // Verify magic header "BRTL"
         guard fileData.count > headerSize,
-              fileData[0] == 0x42, fileData[1] == 0x52, fileData[2] == 0x54, fileData[3] == 0x47 else {
+              fileData[0] == 0x42, fileData[1] == 0x52, fileData[2] == 0x54, fileData[3] == 0x4C else {
             print("[BortleEstimator] Invalid BortleGrid.bin header")
             return nil
         }
 
-        // Decompress gzip data
-        let compressedData = fileData.dropFirst(headerSize)
+        // Decompress zlib data using Compression framework
+        let compressedData = fileData.subdata(in: headerSize..<fileData.count)
         let expectedSize = gridLon * gridLat
         var decompressed = [UInt8](repeating: 0, count: expectedSize)
 
-        let result = compressedData.withUnsafeBytes { srcPtr -> Int in
+        // Strip zlib header (2 bytes) and checksum (4 bytes) — COMPRESSION_ZLIB expects raw deflate
+        let deflateStart = 2  // skip zlib header
+        let deflateEnd = compressedData.count - 4  // skip adler32 checksum
+        guard deflateEnd > deflateStart else {
+            print("[BortleEstimator] Compressed data too short")
+            return nil
+        }
+
+        let deflateData = compressedData.subdata(in: deflateStart..<deflateEnd)
+        let decodedSize = deflateData.withUnsafeBytes { srcPtr -> Int in
             let src = srcPtr.bindMemory(to: UInt8.self)
             return compression_decode_buffer(
                 &decompressed, expectedSize,
-                src.baseAddress!, compressedData.count,
+                src.baseAddress!, deflateData.count,
                 nil, COMPRESSION_ZLIB
             )
         }
 
-        guard result > 0 else {
-            print("[BortleEstimator] Decompression failed")
+        guard decodedSize == expectedSize else {
+            print("[BortleEstimator] Decompression size mismatch: \(decodedSize) vs \(expectedSize)")
             return nil
         }
 
-        print("[BortleEstimator] Grid loaded: \(gridLon)×\(gridLat) at \(resolution)° (\(result) bytes)")
+        print("[BortleEstimator] Grid loaded: \(gridLon)×\(gridLat) at \(resolution)° (\(decodedSize) bytes)")
         return decompressed
     }()
 
