@@ -167,6 +167,11 @@ class AstroBlinkV2AppDelegate: NSObject, NSApplicationDelegate {
                 self.triggerMessageCheck()
             }
         }
+
+        // Anonymous app start telemetry (fire-and-forget, never blocks)
+        if !isTestHost {
+            AppMessageService.recordAppStart()
+        }
     }
 
     /// Trigger in-app message check on the TriageViewModel that owns the ContentView.

@@ -435,4 +435,38 @@ final class AppMessageService {
             lastFetchDate = AppMessage.parseDate(dateStr)
         }
     }
+
+    // MARK: - App Usage Telemetry
+
+    /// Fire-and-forget app start ping. Writes one row to app_events table.
+    /// Never blocks the app — errors are silently ignored.
+    static func recordAppStart() {
+        guard BenchmarkConfig.isConfigured else { return }
+
+        Task.detached(priority: .utility) {
+            guard let url = URL(string: "\(BenchmarkConfig.supabaseURL)/rest/v1/app_events") else { return }
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.setValue(BenchmarkConfig.supabaseAnonKey, forHTTPHeaderField: "apikey")
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.setValue("return=minimal", forHTTPHeaderField: "Prefer")
+            request.timeoutInterval = 15
+
+            let payload: [String: Any] = [
+                "machine_hash": MachineInfo.machineHash,
+                "app_version": MachineInfo.appVersion,
+                "event": "app_started",
+                "chip_name": MachineInfo.chipName,
+                "cpu_cores": MachineInfo.cpuCores,
+                "ram_gb": MachineInfo.ramGB
+            ]
+
+            do {
+                request.httpBody = try JSONSerialization.data(withJSONObject: payload)
+                let (_, _) = try await URLSession.shared.data(for: request)
+            } catch {
+                // Silent — never impact app startup
+            }
+        }
+    }
 }
