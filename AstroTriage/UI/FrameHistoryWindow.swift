@@ -67,6 +67,11 @@ struct FrameHistoryContentView: View {
             Divider()
 
             if let stats = model.stats, stats.frameCount > 0 {
+                // Summary cards
+                summaryCardsRow
+                    .padding(.horizontal, 12)
+                    .padding(.top, 6)
+
                 // Chart selector
                 Picker("Chart", selection: $model.selectedChart) {
                     ForEach(FrameHistoryModel.ChartType.allCases) { type in
@@ -105,7 +110,6 @@ struct FrameHistoryContentView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("\(stats.frameCount) frames")
                         .font(.system(size: fs(13), weight: .semibold))
-                    .foregroundColor(fg)
                         .foregroundColor(fg)
                     Text("\(stats.sessionCount) sessions")
                         .font(.system(size: fs(11)))
@@ -231,7 +235,7 @@ struct FrameHistoryContentView: View {
                 ])
                 .chartYAxisLabel("Frames")
                 .chartLegend(.visible)
-                .chartScrollableAxes(.horizontal)
+                // Fixed to window width — no horizontal scrolling
                 .chartPlotStyle { plot in plot.background(chartBg) }
                 .frame(minHeight: 300)
             }
@@ -282,7 +286,7 @@ struct FrameHistoryContentView: View {
                 }
                 .chartYAxisLabel(model.selectedMetric.rawValue)
                 .chartLegend(.hidden)
-                .chartScrollableAxes(.horizontal)
+                // Fixed to window width — no horizontal scrolling
                 .modifier(PercentileYScale(values: points.map(\.value)))
                 .chartPlotStyle { plot in plot.background(chartBg) }
                 .frame(minHeight: 300)
@@ -382,6 +386,45 @@ struct FrameHistoryContentView: View {
                 .frame(minHeight: 300)
             }
         }
+    }
+
+    // MARK: - Summary Cards
+
+    private var summaryCardsRow: some View {
+        let s = model.summaryStats
+        return HStack(spacing: 8) {
+            summaryCard(icon: "photo.stack", label: "Frames", value: "\(s.totalFrames)")
+            summaryCard(icon: "moon.stars", label: "Nights", value: "\(s.totalNights)")
+            if let fwhm = s.bestFWHM {
+                summaryCard(icon: "sparkle", label: "Best FWHM", value: String(format: "%.1f\"", fwhm))
+            }
+            summaryCard(icon: "xmark.circle", label: "Trash Rate",
+                       value: String(format: "%.0f%%", s.avgTrashRate * 100),
+                       color: s.avgTrashRate > 0.3 ? .red : (s.avgTrashRate > 0.15 ? .orange : AppColors.green(nightMode)))
+            summaryCard(icon: "scope", label: "Targets", value: "\(s.totalTargets)")
+        }
+    }
+
+    private func summaryCard(icon: String, label: String, value: String, color: Color? = nil) -> some View {
+        VStack(spacing: 2) {
+            HStack(spacing: 4) {
+                Image(systemName: icon)
+                    .font(.system(size: fs(10)))
+                    .foregroundColor(fgDim)
+                Text(value)
+                    .font(.system(size: fs(14), weight: .bold, design: .monospaced))
+                    .foregroundColor(color ?? fg)
+            }
+            Text(label)
+                .font(.system(size: fs(9)))
+                .foregroundColor(fgDim)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 6)
+        .background(
+            RoundedRectangle(cornerRadius: 6)
+                .fill(chartBg)
+        )
     }
 
     // MARK: - Empty State

@@ -184,6 +184,32 @@ class FrameHistoryModel: ObservableObject {
         let value: Double
     }
 
+    // MARK: - Summary Statistics (for cards above charts)
+
+    struct SummaryStats {
+        let totalFrames: Int
+        let totalNights: Int
+        let bestFWHM: Double?        // Best (lowest) median FWHM across all nights
+        let avgTrashRate: Double     // Percentage of frames that are trash
+        let totalTargets: Int
+    }
+
+    var summaryStats: SummaryStats {
+        let nights = Set(nightlySummaries.map(\.night))
+        let totalFrames = nightlySummaries.reduce(0) { $0 + $1.frameCount }
+        let totalTrash = nightlySummaries.reduce(0) { $0 + $1.trashCount }
+        let trashRate = totalFrames > 0 ? Double(totalTrash) / Double(totalFrames) : 0
+        let bestFWHM = nightlySummaries.compactMap(\.medianFWHM).min()
+        let targets = Set(nightlySummaries.compactMap(\.target))
+        return SummaryStats(
+            totalFrames: totalFrames,
+            totalNights: nights.count,
+            bestFWHM: bestFWHM,
+            avgTrashRate: trashRate,
+            totalTargets: targets.count
+        )
+    }
+
     // MARK: - Percentile Clamping
 
     /// Compute percentile-based Y-axis range for a set of values.
