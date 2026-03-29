@@ -213,35 +213,35 @@ struct FrameHistoryContentView: View {
     private struct TierBar: Identifiable {
         let id = UUID()
         let night: String
+        let date: Date
         let tier: String
         let count: Int
-        let order: Int  // Sort order for stacking: trash bottom, excellent top
+        let order: Int
     }
 
     // Chart 1: Quality Timeline — stacked bars per night
     private var qualityTimelineChart: some View {
         let data = model.nightlyQuality
-        // Flatten into individual tier bars for proper stacking
         let bars: [TierBar] = data.flatMap { night -> [TierBar] in
             [
-                TierBar(night: night.night, tier: "Trash", count: night.trash, order: 0),
-                TierBar(night: night.night, tier: "Borderline", count: night.borderline, order: 1),
-                TierBar(night: night.night, tier: "Good", count: night.good, order: 2),
-                TierBar(night: night.night, tier: "Excellent", count: night.excellent, order: 3),
+                TierBar(night: night.night, date: night.date, tier: "Trash", count: night.trash, order: 0),
+                TierBar(night: night.night, date: night.date, tier: "Borderline", count: night.borderline, order: 1),
+                TierBar(night: night.night, date: night.date, tier: "Good", count: night.good, order: 2),
+                TierBar(night: night.night, date: night.date, tier: "Excellent", count: night.excellent, order: 3),
             ].filter { $0.count > 0 }
         }
 
         return VStack(alignment: .leading, spacing: 4) {
             Text("Quality Distribution by Night")
                 .font(.system(size: fs(13), weight: .semibold))
-                    .foregroundColor(fg)
+                .foregroundColor(fg)
 
             if bars.isEmpty {
                 noDataView
             } else {
                 Chart(bars) { bar in
                     BarMark(
-                        x: .value("Night", bar.night),
+                        x: .value("Night", bar.date, unit: .day),
                         y: .value("Frames", bar.count)
                     )
                     .foregroundStyle(by: .value("Tier", bar.tier))
@@ -281,31 +281,38 @@ struct FrameHistoryContentView: View {
             if points.isEmpty {
                 noDataView
             } else {
-                // Group points by filter and draw each with explicit color
                 let filterGroups = Dictionary(grouping: points, by: \.filter)
+                let isAllSetups = model.selectedSetupHash == nil
                 Chart {
                     ForEach(filterGroups.keys.sorted(), id: \.self) { filter in
                         let color = Self.filterColor(for: filter)
-                        ForEach(filterGroups[filter]!) { point in
-                            LineMark(
-                                x: .value("Night", point.night),
-                                y: .value(model.selectedMetric.rawValue, point.value),
-                                series: .value("Filter", filter)
-                            )
-                            .foregroundStyle(color)
+                        let filterPoints = filterGroups[filter]!.sorted { $0.date < $1.date }
 
+                        // Lines only for single setup (not All Setups — too many = spaghetti)
+                        if !isAllSetups {
+                            ForEach(filterPoints) { point in
+                                LineMark(
+                                    x: .value("Night", point.date),
+                                    y: .value(model.selectedMetric.rawValue, point.value),
+                                    series: .value("Filter", filter)
+                                )
+                                .foregroundStyle(color)
+                            }
+                        }
+
+                        // Points always
+                        ForEach(filterPoints) { point in
                             PointMark(
-                                x: .value("Night", point.night),
+                                x: .value("Night", point.date),
                                 y: .value(model.selectedMetric.rawValue, point.value)
                             )
                             .foregroundStyle(color)
-                            .symbolSize(30)
+                            .symbolSize(isAllSetups ? 15 : 30)
                         }
                     }
                 }
                 .chartYAxisLabel(model.selectedMetric.rawValue)
                 .chartLegend(.hidden)
-                // Fixed to window width — no horizontal scrolling
                 .modifier(PercentileYScale(values: points.map(\.value)))
                 .chartPlotStyle { plot in plot.background(chartBg) }
                 .frame(minHeight: 300)

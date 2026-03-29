@@ -113,6 +113,7 @@ class FrameHistoryModel: ObservableObject {
     struct NightQuality: Identifiable {
         let id = UUID()
         let night: String
+        let date: Date
         let excellent: Int
         let good: Int
         let borderline: Int
@@ -121,29 +122,59 @@ class FrameHistoryModel: ObservableObject {
     }
 
     var nightlyQuality: [NightQuality] {
-        // Aggregate summaries by night (sum across filters)
         var byNight: [String: (exc: Int, good: Int, bord: Int, trash: Int)] = [:]
         for s in nightlySummaries {
-            let key = s.night
-            var val = byNight[key] ?? (0, 0, 0, 0)
+            var val = byNight[s.night] ?? (0, 0, 0, 0)
             val.exc += s.excellentCount
             val.good += s.goodCount
             val.bord += s.borderlineCount
             val.trash += s.trashCount
-            byNight[key] = val
+            byNight[s.night] = val
         }
-        return byNight.map { (night, val) in
-            NightQuality(night: night, excellent: val.exc, good: val.good,
+        return byNight.compactMap { (night, val) in
+            guard let date = Self.nightDateFormatter.date(from: night) else { return nil }
+            return NightQuality(night: night, date: date, excellent: val.exc, good: val.good,
                         borderline: val.bord, trash: val.trash)
-        }.sorted { $0.night < $1.night }
+        }.sorted { $0.date < $1.date }
     }
 
     /// Per-night metric values by filter (for multi-line chart).
     struct MetricPoint: Identifiable {
         let id = UUID()
         let night: String
-        let filter: String
+        let date: Date        // Parsed date for proper X-axis sorting
+        let filter: String    // Normalized filter name
         let value: Double
+    }
+
+    // Date parser for "YYYY-MM-DD" night strings
+    private static let nightDateFormatter: DateFormatter = {
+        let df = DateFormatter()
+        df.dateFormat = "yyyy-MM-dd"
+        df.locale = Locale(identifier: "en_US_POSIX")
+        return df
+    }()
+
+    /// Normalize filter name for chart display — group variants under canonical names.
+    /// L/LE/Lext/Lextr/Lcle/Lenh/Lqua → "L", H/Ha → "Ha", etc.
+    static func normalizeFilterForChart(_ raw: String) -> String {
+        let upper = raw.uppercased().trimmingCharacters(in: .whitespaces)
+        // Luminance variants
+        if upper == "L" || upper.hasPrefix("L") && !["LRGB"].contains(upper) {
+            let known = ["LE", "LEXT", "LEXTR", "LCLE", "LENH", "LQUA", "LBOO", "LENHANCE", "LEXTREME"]
+            if known.contains(where: { upper == $0 || upper.hasPrefix($0) }) { return "L" }
+            if upper == "L" { return "L" }
+        }
+        // Ha variants
+        if upper == "H" || upper == "HA" || upper == "HALPHA" { return "Ha" }
+        // OIII variants
+        if upper == "O" || upper == "OIII" || upper == "O3" { return "OIII" }
+        // SII variants
+        if upper == "S" || upper == "SII" || upper == "S2" { return "SII" }
+        // Standard broadband
+        if ["R", "G", "B"].contains(upper) { return upper }
+        // Pass through others
+        return raw
     }
 
     func metricPoints(for metric: MetricType) -> [MetricPoint] {
@@ -155,11 +186,13 @@ class FrameHistoryModel: ObservableObject {
             case .starCount: value = s.medianStarCount
             case .noise:    value = s.medianNoise
             case .trailing: value = s.medianTrailing
-            case .eccentricity: value = nil  // Not aggregated in NightSummary
+            case .eccentricity: value = nil
             }
             guard let v = value else { return nil }
-            return MetricPoint(night: s.night, filter: s.filter ?? "?", value: v)
-        }
+            guard let date = Self.nightDateFormatter.date(from: s.night) else { return nil }
+            let filter = Self.normalizeFilterForChart(s.filter ?? "?")
+            return MetricPoint(night: s.night, date: date, filter: filter, value: v)
+        }.sorted { $0.date < $1.date }
     }
 
     /// Moon impact data points (for scatter chart).
