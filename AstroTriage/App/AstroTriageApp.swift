@@ -29,6 +29,28 @@ struct AstroBlinkV2App: App {
                     NotificationCenter.default.post(name: .openFolderRequest, object: nil)
                 }
                 .keyboardShortcut("o", modifiers: .command)
+
+                Divider()
+
+                Button("Open Database Directory") {
+                    let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+                    let dbDir = appSupport.appendingPathComponent("AstroBlinkV2", isDirectory: true)
+                    NSWorkspace.shared.open(dbDir)
+                }
+
+                Button("Open iCloud Directory") {
+                    if let iCloudURL = FileManager.default.url(forUbiquityContainerIdentifier: "iCloud.com.joergsflow.AstroBlinkV2") {
+                        let docsURL = iCloudURL.appendingPathComponent("Documents", isDirectory: true)
+                        NSWorkspace.shared.open(docsURL)
+                    } else {
+                        let alert = NSAlert()
+                        alert.messageText = "iCloud Not Available"
+                        alert.informativeText = "iCloud Drive is not enabled for this app, or you are not signed in to iCloud."
+                        alert.alertStyle = .informational
+                        alert.addButton(withTitle: "OK")
+                        alert.runModal()
+                    }
+                }
             }
 
             // View menu: Font size + Columns visibility + Reset Settings
