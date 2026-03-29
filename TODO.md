@@ -65,9 +65,16 @@ All original implementation phases are complete:
 
 ### History Window Chart Improvements
 - [x] Y-axis percentile clamping — P2/P98 range, outliers clamped with triangle markers
-- [ ] Fixed window-width charts — no horizontal scrolling, always fit to window
+- [x] Fixed window-width charts — no horizontal scrolling
+- [x] Summary cards row (Frames, Nights, Best FWHM, Trash Rate, Targets)
+- [ ] **X-axis chronological sorting** — parse night strings to Date, not categorical strings
+- [ ] **Filter name normalization in charts** — group L/LE/Lext/Lextr/Lcle/Lenh/Lqua as "L"
+- [ ] **"All Setups" readability** — PointMark only (no lines), or monthly aggregation when >50 nights
+- [ ] **Line continuity** — only connect consecutive nights within same filter (no month-gap zigzags)
+- [ ] **Monthly aggregation** — auto-aggregate to monthly averages when date range >6 months
 - [ ] Zoom in/out on chart data (date range selection or pinch zoom)
-- [ ] Consider dual Y-axis for metrics with vastly different scales
+- [ ] Interactive hover popovers (click point → detail popover)
+- [ ] Historical median reference line (dashed horizontal)
 
 ### Frame History Re-Analysis
 - [ ] Detect stale records: `WHERE algorithmVersion < kAlgorithmVersion`
