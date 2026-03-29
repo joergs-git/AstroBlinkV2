@@ -240,19 +240,26 @@ struct FrameHistoryContentView: View {
                 .chartPlotStyle { plot in plot.background(chartBg) }
                 .frame(minHeight: 300)
 
-                // Stats
-                let avg = scores.map(\.score).reduce(0, +) / Double(scores.count)
-                let best = scores.max(by: { $0.score < $1.score })
-                HStack(spacing: 16) {
+                // Legend + stats
+                HStack(spacing: 12) {
+                    HStack(spacing: 3) { Circle().fill(.green).frame(width: 6); Text("75+").font(.system(size: fs(9))).foregroundColor(fgDim) }
+                    HStack(spacing: 3) { Circle().fill(.yellow).frame(width: 6); Text("50-74").font(.system(size: fs(9))).foregroundColor(fgDim) }
+                    HStack(spacing: 3) { Circle().fill(.orange).frame(width: 6); Text("25-49").font(.system(size: fs(9))).foregroundColor(fgDim) }
+                    HStack(spacing: 3) { Circle().fill(.red).frame(width: 6); Text("<25").font(.system(size: fs(9))).foregroundColor(fgDim) }
+                    Spacer()
+                    let avg = scores.map(\.score).reduce(0, +) / Double(scores.count)
                     Text("Avg: \(String(format: "%.0f", avg))")
-                        .font(.system(size: fs(11), design: .monospaced))
-                        .foregroundColor(fgDim)
-                    if let best {
+                        .font(.system(size: fs(11), weight: .medium, design: .monospaced))
+                        .foregroundColor(fg)
+                    if let best = scores.max(by: { $0.score < $1.score }) {
                         Text("Best: \(String(format: "%.0f", best.score)) (\(best.night))")
                             .font(.system(size: fs(11), design: .monospaced))
                             .foregroundColor(fgDim)
                     }
                 }
+                Text("Score = 40% retention + 30% FWHM quality + 20% trailing + 10% stability")
+                    .font(.system(size: fs(9)))
+                    .foregroundColor(fgDim)
             }
         }
     }
@@ -284,31 +291,45 @@ struct FrameHistoryContentView: View {
                 .chartPlotStyle { plot in plot.background(chartBg) }
                 .frame(minHeight: 300)
 
-                // Average efficiency
-                let avgEfficiency = data.map(\.retentionPct).reduce(0, +) / Double(data.count)
-                let totalFrames = data.reduce(0) { $0 + $1.total }
-                let totalKept = data.reduce(0) { $0 + $1.excellent + $1.good }
-                HStack(spacing: 16) {
+                // Legend + stats
+                HStack(spacing: 12) {
+                    HStack(spacing: 3) { Circle().fill(.green).frame(width: 6); Text("80%+").font(.system(size: fs(9))).foregroundColor(fgDim) }
+                    HStack(spacing: 3) { Circle().fill(.yellow).frame(width: 6); Text("60-79%").font(.system(size: fs(9))).foregroundColor(fgDim) }
+                    HStack(spacing: 3) { Circle().fill(.orange).frame(width: 6); Text("40-59%").font(.system(size: fs(9))).foregroundColor(fgDim) }
+                    HStack(spacing: 3) { Circle().fill(.red).frame(width: 6); Text("<40%").font(.system(size: fs(9))).foregroundColor(fgDim) }
+                    Spacer()
+                    let avgEfficiency = data.map(\.retentionPct).reduce(0, +) / Double(data.count)
+                    let totalFrames = data.reduce(0) { $0 + $1.total }
+                    let totalKept = data.reduce(0) { $0 + $1.excellent + $1.good }
                     Text("Avg: \(String(format: "%.0f%%", avgEfficiency))")
-                        .font(.system(size: fs(11), design: .monospaced))
-                        .foregroundColor(fgDim)
-                    Text("Total: \(totalKept)/\(totalFrames) kept")
+                        .font(.system(size: fs(11), weight: .medium, design: .monospaced))
+                        .foregroundColor(fg)
+                    Text("\(totalKept)/\(totalFrames) kept overall")
                         .font(.system(size: fs(11), design: .monospaced))
                         .foregroundColor(fgDim)
                 }
+                Text("Excellent + Good frames / Total frames per night")
+                    .font(.system(size: fs(9)))
+                    .foregroundColor(fgDim)
             }
         }
     }
 
-    // KPI 3: Equipment Health — rolling FWHM trend with direction indicator
+    // KPI 3: Equipment Health — rolling FWHM trend per setup
     private var equipmentHealthChart: some View {
         let data = model.equipmentHealthData
+        let setupLabel = model.selectedSetupHash == nil ? "All Setups" : "This Setup"
         return VStack(alignment: .leading, spacing: 4) {
             HStack {
-                Text("Equipment Health — FWHM Trend")
+                Text("Equipment Health — FWHM Trend (\(setupLabel))")
                     .font(.system(size: fs(13), weight: .semibold))
                     .foregroundColor(fg)
                 Spacer()
+                if model.selectedSetupHash == nil {
+                    Text("Select a setup above for accurate tracking")
+                        .font(.system(size: fs(9)))
+                        .foregroundColor(.orange)
+                }
                 // Trend arrow
                 if data.count >= 5 {
                     let recent = data.suffix(3).map(\.rollingFWHM).reduce(0, +) / 3.0
@@ -328,7 +349,6 @@ struct FrameHistoryContentView: View {
                 noDataView
             } else {
                 Chart {
-                    // Raw points (scatter)
                     ForEach(data) { point in
                         PointMark(
                             x: .value("Night", point.date),
@@ -337,7 +357,6 @@ struct FrameHistoryContentView: View {
                         .foregroundStyle(fgDim.opacity(0.4))
                         .symbolSize(15)
                     }
-                    // Rolling average line
                     ForEach(data) { point in
                         LineMark(
                             x: .value("Night", point.date),
@@ -351,58 +370,69 @@ struct FrameHistoryContentView: View {
                 .modifier(PercentileYScale(values: data.map(\.rawFWHM)))
                 .chartPlotStyle { plot in plot.background(chartBg) }
                 .frame(minHeight: 300)
+
+                // Legend
+                HStack(spacing: 16) {
+                    HStack(spacing: 4) {
+                        Circle().fill(fgDim.opacity(0.4)).frame(width: 6)
+                        Text("Per-night FWHM").font(.system(size: fs(9))).foregroundColor(fgDim)
+                    }
+                    HStack(spacing: 4) {
+                        RoundedRectangle(cornerRadius: 1).fill(AppColors.accent(nightMode)).frame(width: 16, height: 2)
+                        Text("5-session rolling avg").font(.system(size: fs(9))).foregroundColor(fgDim)
+                    }
+                }
             }
         }
     }
 
-    // KPI 4: Conditions vs Results — Moon/session score correlation
+    // KPI 4: Conditions vs Results — Moon impact by filter type
     private var conditionsChart: some View {
-        let scores = model.sessionScores
-        let moonData = model.nightlySummaries
+        let moonData = model.moonPoints
 
-        // Build moon × score pairs
-        struct ConditionPoint: Identifiable {
+        // Separate broadband (L/R/G/B) vs narrowband (Ha/OIII/SII)
+        struct MoonScorePoint: Identifiable {
             let id = UUID()
             let moonPct: Double
-            let score: Double
-            let night: String
+            let noise: Double
+            let filterType: String  // "Broadband" or "Narrowband"
         }
-        var moonByNight: [String: Double] = [:]
-        for s in moonData {
-            if let moon = s.medianMoonIllumination {
-                moonByNight[s.night] = moon * 100
-            }
-        }
-        let condPoints: [ConditionPoint] = scores.compactMap { s in
-            guard let moon = moonByNight[s.night] else { return nil }
-            return ConditionPoint(moonPct: moon, score: s.score, night: s.night)
+        let points: [MoonScorePoint] = moonData.map { p in
+            let filterType = p.isBroadband ? "Broadband (LRGB)" : "Narrowband (Ha/OIII/SII)"
+            return MoonScorePoint(moonPct: p.moonIllumination, noise: p.background, filterType: filterType)
         }
 
         return VStack(alignment: .leading, spacing: 4) {
-            Text("Conditions vs Quality — Does Moon Hurt Your Data?")
+            Text("Moon Impact by Filter Type")
                 .font(.system(size: fs(13), weight: .semibold))
                 .foregroundColor(fg)
 
-            if condPoints.isEmpty {
+            if points.isEmpty {
                 noDataView
             } else {
-                Chart(condPoints) { point in
+                Chart(points) { point in
                     PointMark(
                         x: .value("Moon %", point.moonPct),
-                        y: .value("Session Score", point.score)
+                        y: .value("Background", point.noise)
                     )
-                    .foregroundStyle(
-                        point.score >= 75 ? Color.green :
-                        point.score >= 50 ? Color.yellow : Color.red
-                    )
-                    .symbolSize(40)
+                    .foregroundStyle(by: .value("Filter", point.filterType))
+                    .symbolSize(30)
                 }
+                .chartForegroundStyleScale([
+                    "Broadband (LRGB)": Color.blue,
+                    "Narrowband (Ha/OIII/SII)": Color.orange
+                ])
                 .chartXScale(domain: 0...100)
-                .chartYScale(domain: 0...100)
                 .chartXAxisLabel("Moon Illumination %")
-                .chartYAxisLabel("Session Score")
+                .chartYAxisLabel("Background Noise (MAD)")
+                .modifier(PercentileYScale(values: points.map(\.noise)))
                 .chartPlotStyle { plot in plot.background(chartBg) }
+                .chartLegend(.visible)
                 .frame(minHeight: 300)
+
+                Text("Broadband rises with moon — narrowband stays flat (immune to moonlight)")
+                    .font(.system(size: fs(9)))
+                    .foregroundColor(fgDim)
             }
         }
     }
