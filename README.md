@@ -49,6 +49,9 @@ AIsaac knows your equipment, remembers your imaging history, understands light p
 - **Culling Autopilot** — one-click auto-marking (Conservative/Balanced/Aggressive) with integration impact preview.
 - **SSWEIGHT Export** — writes PixInsight-compatible weight keywords into FITS/XISF headers for WBPP.
 - **Native FITS/XISF QuickLook** — Finder thumbnails and spacebar previews with debayer support for color cameras.
+- **Bortle Sky Quality (VIIRS 2024)** — real satellite-measured light pollution for every frame. Fractional Bortle (e.g. B4.8) from NOAA VIIRS 2024 annual composite via Supabase lookup. Computed from SITELAT/SITELONG FITS headers. Offline fallback via embedded Falchi 2015 atlas.
+- **Frame History Database** — persistent SQLite tracking all per-frame quality metrics across sessions. Cross-session scoring, global frame IDs, iCloud backup, archive NAS scanning.
+- **In-App Messaging** — server-driven announcements, feedback collection, email signup without app updates. Rich actions, user targeting, feature unlocking.
 - **iCloud Settings Sync** — all preferences and calibration data sync across Macs.
 
 For the full version-by-version changelog, see [CHANGELOG.md](CHANGELOG.md).

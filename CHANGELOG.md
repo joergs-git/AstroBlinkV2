@@ -4,11 +4,21 @@ All notable changes to AstroBlink & AIsaac will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [5.7.1] — 2026-03-29
+
+### Added
+- **Bortle from real satellite data** — Fractional Bortle values (B4.8, not just B5) from NOAA VIIRS 2024 annual composite via Supabase. 136K grid cells at 0.1° resolution. Local Falchi 2015 grid as offline fallback. One Supabase call per unique location, cached forever.
+
+### Fixed
+- **Archive Scanner calibration exclusion** — FLAT/DARK/BIAS frames no longer scanned into Frame History DB. Checks full path for calibration keywords. 1,792 existing calibration records cleaned up via DB migration.
+- **Bortle accuracy** — Replaced population-based model (±2 near cities) with actual VIIRS satellite radiance data. User suburb: B6→B4.8 (matches lightpollutionmap.app).
+- **GRDB migration crash** — Fixed assertion failure from renamed migration (v4→v5). Migrations are now immutable once applied.
+
 ## [5.7.0] — 2026-03-29
 
 ### Added
 - **In-app messaging system** — Server-driven messages from Supabase without app updates. Rich actions (yes/no/email/radio/slider/text), targeting by version/usage/entitlements, repeat modes (once/always/interval), auto-entitlement on email submission (AIsaac boost 50/day)
-- **Bortle sky quality column** — Estimates Bortle class (B1-B9) from site coordinates using embedded 253KB light pollution grid (GeoNames + Garstang model). Accuracy ±1 class
+- **Bortle sky quality column** — Fractional Bortle class (e.g. B4.8) from site coordinates. Primary: VIIRS 2024 satellite data via Supabase. Fallback: embedded Falchi 2015 atlas grid (1.6 MB).
 - **Target name normalization** — Canonical target names for consistent cross-session grouping. "NGC 7000" = "NGC7000", "Orion Nebula" = "M42", "IC 63 Ghost" = "IC63". ~150 common name aliases
 - **History chart summary cards** — Row of 5 cards above charts: Frames, Nights, Best FWHM, Trash Rate, Targets. Color-coded trash rate
 - **Algorithm versioning** — kAlgorithmVersion constant (=10) + ALGORITHM_CHANGELOG.md. DB records carry version for future re-analysis. Stale records indicator in History window

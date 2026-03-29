@@ -34,6 +34,15 @@ class ReleaseNotesWindowController {
 // MARK: - Release notes data (shared between view and copy)
 
 private let allReleases: [(version: String, date: String, items: [(ReleaseNotesView.ChangeType, String, String)])] = [
+    ("5.7.1", "March 29, 2026", [
+        (.added, "Bortle Sky Quality (VIIRS 2024)", "Real satellite-measured light pollution for every frame. Fractional Bortle (B4.8) from NOAA VIIRS 2024 via Supabase. Offline fallback via embedded Falchi atlas."),
+        (.added, "In-App Messaging", "Server-driven announcements and feedback collection without app updates. Rich actions, targeting, email collection with AIsaac boost."),
+        (.added, "Target Clustering", "Canonical target names for cross-session grouping. \"NGC 7000\" = \"NGC7000\", \"Orion Nebula\" = \"M42\". ~150 aliases."),
+        (.added, "Chart Summary Cards", "Frames, Nights, Best FWHM, Trash Rate, Targets at a glance above History charts."),
+        (.added, "Algorithm Versioning", "DB records track scoring algorithm version for future re-analysis detection."),
+        (.changed, "UI Consistency", "Night mode and Cmd+/- font scaling now work in ALL windows (Benchmark, Stack, Color Combine, Release Notes)."),
+        (.fixed, "Archive Scanner Calibration", "FLAT/DARK/BIAS frames no longer scanned into Frame History. 1,792 calibration records cleaned up."),
+    ]),
     ("5.5.0", "March 27, 2026", [
         (.added, "Session-Wide Sanity Check", "Cross-group quality comparison catches uniformly bad nights. Uses P10/P90 benchmarks — 2+ metrics far below session norm = trash."),
         (.added, "Uncertain Quality Tier", "Blue ? icon for small groups (<8 frames) with ambiguous quality. Visual inspection recommended."),
