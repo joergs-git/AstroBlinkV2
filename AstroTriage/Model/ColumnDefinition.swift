@@ -143,7 +143,7 @@ struct ColumnDefinition {
         case "moonDist":
             return entry.moonDistance.map { String(format: "%.1f°", $0) } ?? ""
         case "bortle":
-            return entry.bortleClass.map { "B\($0)" } ?? ""
+            return entry.bortleClass.map { String(format: "B%.1f", $0) } ?? ""
         default:            return ""
         }
     }

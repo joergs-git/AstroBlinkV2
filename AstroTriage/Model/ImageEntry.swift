@@ -105,7 +105,7 @@ struct ImageEntry: Identifiable, Hashable {
     var moonDistance: Double?          // Angular distance from target in degrees
 
     // Light pollution (computed from site coordinates via BortleGrid)
-    var bortleClass: Int?              // Bortle 1 (pristine) to 9 (inner city)
+    var bortleClass: Double?            // Bortle 1.0 (pristine) to 9.0 (inner city), fractional
 
     // Canonical target name (normalized for grouping: "NGC 7000" = "NGC7000", "Orion Nebula" = "M42")
     var canonicalTarget: String?

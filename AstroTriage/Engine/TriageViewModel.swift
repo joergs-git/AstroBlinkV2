@@ -1635,6 +1635,8 @@ class TriageViewModel: ObservableObject {
                 self.hasOSCImages = foundOSC
                 // Compute moon illumination + target distance (needs date + coordinates from headers)
                 self.computeMoonData()
+                // Refine Bortle online (one call per unique coordinate, fire-and-forget)
+                self.refineBortleOnline()
                 // Compute relative quality scores now that all header metadata is available
                 self.recomputeQualityScores()
                 self.detectMeridianFlip()
@@ -1806,21 +1808,43 @@ class TriageViewModel: ObservableObject {
             if images[index].bortleClass == nil,
                let lat = images[index].siteLatitude,
                let lon = images[index].siteLongitude {
-                // Use local grid immediately (instant), then try online for precision
-                images[index].bortleClass = BortleEstimator.estimate(latitude: lat, longitude: lon)
-                let idx = index
-                Task.detached(priority: .utility) {
-                    if let online = await BortleEstimator.estimateOnline(latitude: lat, longitude: lon) {
-                        await MainActor.run {
-                            self.images[idx].bortleClass = online
-                        }
-                    }
-                }
+                // Local grid instant (integer precision)
+                images[index].bortleClass = BortleEstimator.estimate(latitude: lat, longitude: lon).map(Double.init)
             }
 
             // Canonical target name (normalized for grouping across sessions)
             if images[index].canonicalTarget == nil, let target = images[index].target {
                 images[index].canonicalTarget = TargetCatalog.canonicalName(target)
+            }
+        }
+    }
+
+    /// Refine Bortle values via Supabase (one call per unique lat/lon, not per frame).
+    /// Called once after header enrichment completes. Fire-and-forget.
+    private func refineBortleOnline() {
+        // Collect unique coordinates
+        var uniqueCoords: [String: (lat: Double, lon: Double, indices: [Int])] = [:]
+        for (i, img) in images.enumerated() {
+            guard let lat = img.siteLatitude, let lon = img.siteLongitude else { continue }
+            let key = String(format: "%.2f,%.2f", lat, lon)
+            if uniqueCoords[key] == nil {
+                uniqueCoords[key] = (lat, lon, [i])
+            } else {
+                uniqueCoords[key]!.indices.append(i)
+            }
+        }
+        guard !uniqueCoords.isEmpty else { return }
+
+        Task.detached(priority: .utility) {
+            for (_, coord) in uniqueCoords {
+                if let bortle = await BortleEstimator.estimateOnline(latitude: coord.lat, longitude: coord.lon) {
+                    await MainActor.run { [weak self] in
+                        guard let self else { return }
+                        for idx in coord.indices where idx < self.images.count {
+                            self.images[idx].bortleClass = bortle
+                        }
+                    }
+                }
             }
         }
     }

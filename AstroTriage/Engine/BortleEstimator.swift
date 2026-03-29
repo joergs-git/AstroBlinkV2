@@ -68,6 +68,7 @@ enum BortleEstimator {
 
     /// Estimate Bortle class (1-9) for the given coordinates.
     /// Uses bilinear interpolation between grid cells for smooth boundaries.
+    /// Returns integer Bortle from local grid (offline fallback).
     static func estimate(latitude: Double, longitude: Double) -> Int? {
         guard let grid = gridData else { return nil }
         guard latitude >= -90 && latitude <= 90,
@@ -98,42 +99,49 @@ enum BortleEstimator {
         return max(1, min(9, Int(interpolated.rounded())))
     }
 
-    /// Estimate Bortle via Supabase Edge Function (actual VIIRS satellite data).
+    /// Estimate Bortle via Supabase REST API (actual VIIRS satellite data).
     /// Falls back to local grid if offline. Caches result in UserDefaults.
     /// Call from background thread — does network I/O.
-    static func estimateOnline(latitude: Double, longitude: Double) async -> Int? {
+    static func estimateOnline(latitude: Double, longitude: Double) async -> Double? {
         guard latitude >= -90 && latitude <= 90,
               longitude >= -180 && longitude <= 180 else { return nil }
 
-        // Cache key: round to 0.01° (~1km)
+        // Cache key: round to 0.01° (~1km) — same coordinates always get same result
         let key = String(format: "bortle_%.2f_%.2f", latitude, longitude)
-        if let cached = UserDefaults.standard.object(forKey: key) as? Int {
+        if let cached = UserDefaults.standard.object(forKey: key) as? Double {
             return cached
         }
 
-        // Try Edge Function
+        // Query Supabase REST API directly (no Edge Function needed)
         if BenchmarkConfig.isConfigured {
-            let urlString = "\(BenchmarkConfig.supabaseURL)/functions/v1/get-bortle?lat=\(latitude)&lon=\(longitude)"
+            let gridLat = String(format: "%.1f", (latitude * 10).rounded() / 10)
+            let gridLon = String(format: "%.1f", (longitude * 10).rounded() / 10)
+            let urlString = "\(BenchmarkConfig.supabaseURL)/rest/v1/bortle_grid" +
+                "?lat=eq.\(gridLat)&lon=eq.\(gridLon)&select=bortle"
             if let url = URL(string: urlString) {
                 var request = URLRequest(url: url)
                 request.setValue(BenchmarkConfig.supabaseAnonKey, forHTTPHeaderField: "apikey")
+                request.setValue("application/json", forHTTPHeaderField: "Accept")
                 request.timeoutInterval = 10
 
                 if let (data, response) = try? await URLSession.shared.data(for: request),
                    let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode),
-                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                   let bortle = json["bortle"] as? Double {
-                    let rounded = max(1, min(9, Int(bortle.rounded())))
-                    UserDefaults.standard.set(rounded, forKey: key)
-                    return rounded
+                   let rows = try? JSONDecoder().decode([[String: Double]].self, from: data),
+                   let bortle = rows.first?["bortle"] {
+                    let clamped = max(1.0, min(9.0, bortle))
+                    UserDefaults.standard.set(clamped, forKey: key)
+                    return clamped
                 }
             }
         }
 
-        // Fallback to local grid
-        let local = estimate(latitude: latitude, longitude: longitude)
-        if let local { UserDefaults.standard.set(local, forKey: key) }
-        return local
+        // Fallback to local grid (integer precision)
+        if let local = estimate(latitude: latitude, longitude: longitude) {
+            let v = Double(local)
+            UserDefaults.standard.set(v, forKey: key)
+            return v
+        }
+        return nil
     }
 
     /// Bortle class description string.

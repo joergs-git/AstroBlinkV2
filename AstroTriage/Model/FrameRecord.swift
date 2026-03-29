@@ -82,7 +82,7 @@ struct FrameRecord: Codable, FetchableRecord, PersistableRecord {
     var filterTrailingMultiplier: Double?
 
     // Light pollution + target clustering
-    var bortleClass: Int?           // Bortle 1-9 from BortleEstimator
+    var bortleClass: Double?        // Bortle 1.0-9.0 fractional from BortleEstimator
     var canonicalTarget: String?    // Normalized target name for grouping
 
     var wasDeleted: Int             // 0 or 1
