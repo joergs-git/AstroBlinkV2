@@ -35,13 +35,21 @@ class ArchiveScanner: ObservableObject {
 
     // MARK: - Exclusion Rules
 
-    /// Folder names to skip entirely (case-insensitive)
+    /// Folder names to skip entirely (case-insensitive, exact match)
     private static let excludedFolders: Set<String> = [
         "dark", "darks", "flat", "flats", "bias", "darkflat", "darkflats",
         "calibration", "calibrate", "masters",
         "subframeselector", "weightedbatchpreprocessing", "wbpp",
         "_predel", ".ds_store", "__macosx",
         "pixinsight", "processed", "integration"
+    ]
+
+    /// Keywords that indicate calibration frames — if ANY of these appear anywhere
+    /// in the filename OR any parent folder name, the file is skipped.
+    /// Case-insensitive substring match. Catches: "FlatWizard", "DARK_", "MasterBias", etc.
+    private static let calibrationKeywords: [String] = [
+        "flat", "dark", "bias", "defect", "masterbias", "masterdark", "masterflat",
+        "flatwizard", "darkframe", "biasframe", "calibrat"
     ]
 
     /// Filename prefixes to skip (case-insensitive)
@@ -322,7 +330,9 @@ class ArchiveScanner: ObservableObject {
 
             if values?.isDirectory == true {
                 let folderName = url.lastPathComponent.lowercased()
-                if Self.excludedFolders.contains(folderName) {
+                // Skip excluded folders (exact match) and calibration folders (substring match)
+                if Self.excludedFolders.contains(folderName) ||
+                   SessionScanner.isFolderCalibration(url.lastPathComponent) {
                     enumerator.skipDescendants()
                     continue
                 }
@@ -333,12 +343,22 @@ class ArchiveScanner: ObservableObject {
 
             let ext = url.pathExtension.lowercased()
             guard Self.validExtensions.contains(ext) else { continue }
-            guard !Self.excludedExtensions.contains(ext) else { continue }
 
-            let filename = url.lastPathComponent.lowercased()
-            if Self.excludedPrefixes.contains(where: { filename.hasPrefix($0) }) { continue }
-            // Skip files starting with "." (hidden)
-            if filename.hasPrefix(".") { continue }
+            let filename = url.lastPathComponent
+            let filenameLower = filename.lowercased()
+            // Skip hidden files
+            if filenameLower.hasPrefix(".") { continue }
+            // Skip excluded prefixes
+            if Self.excludedPrefixes.contains(where: { filenameLower.hasPrefix($0) }) { continue }
+
+            // Skip calibration frames: uses SessionScanner's detection (NINA token parsing + keyword fallback)
+            // Also checks full path for calibration keywords in ANY parent folder
+            if SessionScanner.isFileCalibration(filename) { continue }
+
+            // Extra safety: check full path for calibration keywords in parent folders
+            // Catches: ".../FlatWizard_06-38.../file.xisf", ".../DarkFrames/file.fits"
+            let fullPath = url.deletingLastPathComponent().path.lowercased()
+            if Self.calibrationKeywords.contains(where: { fullPath.contains($0) }) { continue }
 
             result.append(url)
         }
