@@ -57,6 +57,8 @@ struct AppSettings {
         case hideSplash           // Bool — never show splash screen on launch
         case communityLearning    // Bool — opt-in to community detection learning (default: off)
         case fontScale            // Float — UI font scale factor (1.0 = default)
+        case dismissedMessageIDs  // [String] — UUIDs of permanently dismissed in-app messages
+        case snoozedMessages      // Data — encoded [String: Date] of snoozed message ID → snooze-until date
     }
 
     // Start observing iCloud changes (call once at app launch)

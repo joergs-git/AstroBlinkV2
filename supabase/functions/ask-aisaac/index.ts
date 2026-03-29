@@ -5,7 +5,9 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
 const PUSHOVER_USER = Deno.env.get("PUSHOVER_USER") || "";
 const PUSHOVER_TOKEN = Deno.env.get("PUSHOVER_TOKEN") || "";
-const DAILY_LIMIT = 20;
+const DEFAULT_DAILY_LIMIT = 20;
+const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
+const SUPABASE_SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 // Model — update when newer versions release
 const MODEL = "claude-sonnet-4-6";
 const MAX_TOKENS = 1024;
@@ -16,23 +18,60 @@ let pushoverSent = false;
 
 // In-memory rate limiter (resets on cold start — good enough for Stage 1)
 const rateLimits = new Map<string, { count: number; resetAt: number }>();
+// In-memory cache for device entitlement limits (1h TTL)
+const entitlementCache = new Map<string, { limit: number; expiresAt: number }>();
 
-function checkRateLimit(deviceId: string): { allowed: boolean; remaining: number } {
+async function getDeviceLimit(deviceId: string): Promise<number> {
+  // Check in-memory cache first
+  const cached = entitlementCache.get(deviceId);
+  if (cached && Date.now() < cached.expiresAt) return cached.limit;
+
+  // Query Supabase for aisaac_boost entitlement
+  if (SUPABASE_URL && SUPABASE_SERVICE_KEY) {
+    try {
+      const res = await fetch(
+        `${SUPABASE_URL}/rest/v1/device_entitlements?machine_hash=eq.${deviceId}&entitlement=eq.aisaac_boost&select=value`,
+        {
+          headers: {
+            apikey: SUPABASE_SERVICE_KEY,
+            Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`,
+          },
+        }
+      );
+      if (res.ok) {
+        const rows = await res.json();
+        if (rows.length > 0 && rows[0].value) {
+          const limit = parseInt(rows[0].value) || DEFAULT_DAILY_LIMIT;
+          entitlementCache.set(deviceId, { limit, expiresAt: Date.now() + 3_600_000 });
+          return limit;
+        }
+      }
+    } catch {
+      // Fallback to default on error
+    }
+  }
+
+  entitlementCache.set(deviceId, { limit: DEFAULT_DAILY_LIMIT, expiresAt: Date.now() + 3_600_000 });
+  return DEFAULT_DAILY_LIMIT;
+}
+
+async function checkRateLimit(deviceId: string): Promise<{ allowed: boolean; remaining: number; limit: number }> {
   const now = Date.now();
   let entry = rateLimits.get(deviceId);
+  const limit = await getDeviceLimit(deviceId);
 
   if (!entry || now > entry.resetAt) {
     entry = { count: 0, resetAt: now + 86_400_000 }; // 24h window
   }
 
-  if (entry.count >= DAILY_LIMIT) {
+  if (entry.count >= limit) {
     rateLimits.set(deviceId, entry);
-    return { allowed: false, remaining: 0 };
+    return { allowed: false, remaining: 0, limit };
   }
 
   entry.count++;
   rateLimits.set(deviceId, entry);
-  return { allowed: true, remaining: DAILY_LIMIT - entry.count };
+  return { allowed: true, remaining: limit - entry.count, limit };
 }
 
 async function sendPushover(title: string, message: string) {
@@ -129,13 +168,14 @@ serve(async (req) => {
 
   const deviceId = req.headers.get("x-device-id") || "anonymous";
 
-  // Rate limiting
-  const { allowed, remaining } = checkRateLimit(deviceId);
+  // Rate limiting (async — checks device_entitlements for custom limits)
+  const { allowed, remaining, limit } = await checkRateLimit(deviceId);
   if (!allowed) {
     return new Response(
       JSON.stringify({
         error: "Daily query limit reached. Try again tomorrow.",
         remaining: 0,
+        limit,
       }),
       {
         status: 429,

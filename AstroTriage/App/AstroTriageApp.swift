@@ -138,6 +138,19 @@ class AstroBlinkV2AppDelegate: NSObject, NSApplicationDelegate {
                 self.checkIncompleteArchiveScans()
             }
         }
+
+        // Check for in-app messages (deferred to after main window is rendered)
+        if !isTestHost {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+                self.triggerMessageCheck()
+            }
+        }
+    }
+
+    /// Trigger in-app message check on the TriageViewModel that owns the ContentView.
+    private func triggerMessageCheck() {
+        // Post notification — ContentView's viewModel picks it up
+        NotificationCenter.default.post(name: .checkAppMessages, object: nil)
     }
 
     /// Check iCloud for a newer/different Frame History database and prompt user.
@@ -463,6 +476,7 @@ extension Notification.Name {
     static let fontScaleDecrease = Notification.Name("fontScaleDecrease")
     static let fontScaleReset = Notification.Name("fontScaleReset")
     static let resetFrameHistory = Notification.Name("resetFrameHistory")
+    static let checkAppMessages = Notification.Name("checkAppMessages")
 }
 
 // AppDelegate extension for help window

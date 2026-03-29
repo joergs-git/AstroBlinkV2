@@ -330,6 +330,19 @@ struct ContentView: View {
 
             Rectangle().fill(nightDivider).frame(height: 1)
 
+            // In-app message banner (fetched from Supabase)
+            if let message = viewModel.bannerMessage {
+                AppMessageBannerView(
+                    message: message,
+                    nightMode: viewModel.nightMode,
+                    onDismiss: { viewModel.dismissBannerMessage() },
+                    onSnooze: { viewModel.snoozeBannerMessage() },
+                    onRespond: { actionType, value in
+                        viewModel.respondToBannerMessage(actionType: actionType, value: value)
+                    }
+                )
+            }
+
             // Main content area with optional side panels
             HStack(spacing: 0) {
                 // LEFT: Header Inspector panel
@@ -770,6 +783,10 @@ struct ContentView: View {
             viewModel.fontScale = 1.0
             AppSettings.saveFloat(1.0, for: .fontScale)
             viewModel.needsTableRefresh = true
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .checkAppMessages)) { _ in
+            viewModel.checkForMessages()
+            viewModel.startMessageCheckTimer()
         }
         .onReceive(NotificationCenter.default.publisher(for: .resetSettingsRequest)) { _ in
             let alert = NSAlert()

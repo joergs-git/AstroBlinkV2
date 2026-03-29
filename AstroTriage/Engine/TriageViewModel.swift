@@ -156,6 +156,10 @@ class TriageViewModel: ObservableObject {
         }
     }
 
+    // In-app messaging banner (fetched from Supabase, shown between toolbar and content)
+    @Published var bannerMessage: AppMessage?
+    private var messageCheckTimer: Timer?
+
     // Current setup fingerprint (computed from first image's headers)
     var currentSetupFingerprint: SetupFingerprint? {
         guard let first = images.first(where: { $0.telescope != nil || $0.camera != nil }) else {
@@ -3868,5 +3872,57 @@ class TriageViewModel: ObservableObject {
         } else {
             return String(format: "%.0fs", seconds)
         }
+    }
+
+    // MARK: - In-App Messaging
+
+    /// Check for messages from Supabase. Called on launch (deferred) and periodically.
+    func checkForMessages() {
+        Task {
+            let message = await AppMessageService.shared.checkForMessages()
+            bannerMessage = message
+            if let msg = message {
+                AppMessageService.shared.recordImpression(messageId: msg.id)
+            }
+        }
+    }
+
+    /// Start periodic message check timer (every hour, but service gates to 24h fetch interval)
+    func startMessageCheckTimer() {
+        messageCheckTimer?.invalidate()
+        messageCheckTimer = Timer.scheduledTimer(withTimeInterval: 3600, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                self?.checkForMessages()
+            }
+        }
+    }
+
+    func dismissBannerMessage() {
+        guard let msg = bannerMessage else { return }
+        Task {
+            await AppMessageService.shared.dismiss(messageId: msg.id)
+        }
+        withAnimation(.easeOut(duration: 0.3)) {
+            bannerMessage = nil
+        }
+    }
+
+    func snoozeBannerMessage() {
+        guard let msg = bannerMessage else { return }
+        Task {
+            await AppMessageService.shared.snooze(messageId: msg.id)
+        }
+        withAnimation(.easeOut(duration: 0.3)) {
+            bannerMessage = nil
+        }
+    }
+
+    func respondToBannerMessage(actionType: String, value: String?) {
+        guard let msg = bannerMessage else { return }
+        Task {
+            await AppMessageService.shared.respond(messageId: msg.id, actionType: actionType, value: value)
+        }
+        // For yes/no/radio/slider: show thank-you then remove
+        // The banner view handles the "submitted" state animation
     }
 }
