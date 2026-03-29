@@ -105,6 +105,11 @@ struct AIsaacContextBuilder {
             parts.append(buildAppKnowledge())
         }
 
+        // Remote knowledge updates from Supabase (overrides/extends embedded knowledge)
+        if let remoteKnowledge = AIsaacKnowledgeService.shared.buildRemoteKnowledgeBlock() {
+            parts.append(remoteKnowledge)
+        }
+
         // Current image FITS/XISF headers (for frame-specific questions)
         if !currentImageHeaders.isEmpty {
             let headers = currentImageHeaders
@@ -665,6 +670,20 @@ struct AIsaacContextBuilder {
         - Cmd+O: open folder (Cmd-click for multi-folder). Cmd+W: close window.
         - Cmd+/Cmd-/Cmd+0: increase/decrease/reset file list font size.
 
+        BORTLE SKY QUALITY:
+        - Fractional Bortle values (e.g. B4.8, not just B5) from NOAA VIIRS 2024 annual composite \
+        satellite data — real measured light pollution, not estimates.
+        - Computed from SITELAT/SITELONG FITS headers via Supabase lookup (136K grid cells at 0.1° resolution).
+        - Offline fallback: embedded Falchi 2015 atlas grid (1.6 MB) for when Supabase is unavailable.
+        - One Supabase call per unique location, cached forever locally.
+        - Shown in Bortle column in file list. Affects background anomaly thresholds (brighter skies = higher \
+        baseline noise expected).
+        - Moon-aware: bright moon nights with broadband filters get relaxed background thresholds \
+        because elevated background is expected, not anomalous.
+        - For planning: Bortle < 4 = excellent dark site (all filters viable). \
+        Bortle 4-6 = suburban (narrowband recommended for faint targets). \
+        Bortle > 6 = light-polluted (narrowband essential, broadband LRGB challenging).
+
         FRAME HISTORY DATABASE:
         - Persistent SQLite database storing per-frame quality metrics across ALL sessions ever loaded.
         - UPSERT by SHA256 file hash (first 64KB) — same file always gets same record, even after rename.
@@ -685,12 +704,18 @@ struct AIsaacContextBuilder {
         - Speed: ~3 seconds per file over NAS (decode + GPU analysis), faster on SSD.
 
         HISTORY CHARTS (Window menu → Frame History):
-        - 4 chart types, selectable via segmented picker:
-          * Quality Timeline: stacked bar chart by night (excellent/good/borderline/trash).
-          * Metric Trend: line chart per filter (FWHM, HFR, Stars, Noise, Trailing). Percentile-clamped Y-axis.
-          * Moon Impact: scatter plot of moon illumination vs background noise. Color-coded by filter.
-          * Setup Comparison: bar chart comparing equipment setups on selected metric.
+        - 6 KPI charts, selectable via segmented picker:
+          * Score: composite 0-100 session score per night (retention 40%, FWHM 30%, trailing 20%, stability 10%).
+          * Efficiency: frames kept % per night. Color-coded by retention tier.
+          * Performance: FWHM rolling average trend with configurable window (5/10/20 sessions).
+          * Conditions: environmental impact on background noise. Toggleable X-axis: Moon / FWHM / Temp / Bortle. \
+          Scatter plot with broadband (blue) vs narrowband (orange) separation.
+          * Progress: integration hours per target with per-filter stacked bars. Sortable. Hover for filter breakdown.
+          * Setups: equipment comparison on selectable metric (FWHM, HFR, Stars, Noise, Trailing).
+        - ALL charts have rich hover tooltips showing targets, filters, FWHM, moon %, and cause analysis.
+        - Time range filter: All / 3M / 6M / 9M / 12M / 24M / 36M.
         - Setup picker: "All Setups" (consolidated) or specific telescope+camera combo.
+        - Target picker: filter charts by specific target.
         - Target picker: filter by canonical target name (normalized: "NGC 7000" = "NGC7000", "Orion Nebula" = "M42").
         - Filter color convention: R=red, G=green, B=blue, L=grey, Ha=orange, OIII=teal, SII=yellow, Hbeta=cyan.
 

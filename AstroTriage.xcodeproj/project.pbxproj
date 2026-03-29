@@ -101,6 +101,7 @@
 		F47A29B58D39DCB30BDB290A /* ImageViewerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED760805A7C9C85AB7BB391E /* ImageViewerView.swift */; };
 		F5831BE6789DBE653994543B /* CompareWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F4E0BFE3D430285CFC280C9 /* CompareWindow.swift */; };
 		F6AABBF221940E76783E0463 /* QuickLookDebayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41189836F6D85A8AB207DF34 /* QuickLookDebayer.swift */; };
+		F7D08920863FE331F4174537 /* AIsaacKnowledgeService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1DAA2D37CDB2F342B67628A8 /* AIsaacKnowledgeService.swift */; };
 		F86A4F77FBA8E35B9205024B /* CommunityDetectionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B46C0B1EE92EE58C5BBA5EEE /* CommunityDetectionTests.swift */; };
 		F88EA7C7BDCA02082EB89F17 /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = 64E226E7142AE27A71A16CCF /* GRDB */; };
 		F94F15A86ED041565AB8DB76 /* STFCalculator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 40D54AA4B026ABD4997C7758 /* STFCalculator.swift */; };
@@ -165,6 +166,7 @@
 		1BC8D6B7579B8D8EE0A8190B /* AIsaacUserProfile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIsaacUserProfile.swift; sourceTree = "<group>"; };
 		1C26D1D4C5DFA7795B28D750 /* AstroTriageTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AstroTriageTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		1C731CAA9FB954423A4E9179 /* SunCalculator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SunCalculator.swift; sourceTree = "<group>"; };
+		1DAA2D37CDB2F342B67628A8 /* AIsaacKnowledgeService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIsaacKnowledgeService.swift; sourceTree = "<group>"; };
 		218287CA9A583C11D2A4196E /* AIsaacKeychain.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIsaacKeychain.swift; sourceTree = "<group>"; };
 		24F8E2016E26D881862A1E76 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		2888071D5D7B050F791FC4C6 /* BortleGrid.bin */ = {isa = PBXFileReference; lastKnownFileType = archive.macbinary; path = BortleGrid.bin; sourceTree = "<group>"; };
@@ -292,6 +294,7 @@
 			children = (
 				CD52DEA0A1A02E46E1C26A18 /* AIsaacContextBuilder.swift */,
 				218287CA9A583C11D2A4196E /* AIsaacKeychain.swift */,
+				1DAA2D37CDB2F342B67628A8 /* AIsaacKnowledgeService.swift */,
 				E32EDCE233764A5BFE1A1A1E /* AIsaacModel.swift */,
 				76A68D583C36500C4A7BD068 /* AIsaacService.swift */,
 				08F0D2BEEDC92E723A57A4DE /* AIsaacSpeech.swift */,
@@ -699,6 +702,7 @@
 			files = (
 				DAC6D8E84989CFAB2D257222 /* AIsaacContextBuilder.swift in Sources */,
 				1004744272F7E887C2080BE9 /* AIsaacKeychain.swift in Sources */,
+				F7D08920863FE331F4174537 /* AIsaacKnowledgeService.swift in Sources */,
 				E9341C28E986D1A9943FA9FD /* AIsaacModel.swift in Sources */,
 				A404D91B8F156794B11A8ECC /* AIsaacService.swift in Sources */,
 				6A70C46FBC8628846E42189A /* AIsaacSpeech.swift in Sources */,
