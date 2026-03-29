@@ -4,6 +4,25 @@ All notable changes to AstroBlink & AIsaac will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [5.7.0] — 2026-03-29
+
+### Added
+- **In-app messaging system** — Server-driven messages from Supabase without app updates. Rich actions (yes/no/email/radio/slider/text), targeting by version/usage/entitlements, repeat modes (once/always/interval), auto-entitlement on email submission (AIsaac boost 50/day)
+- **Bortle sky quality column** — Estimates Bortle class (B1-B9) from site coordinates using embedded 253KB light pollution grid (GeoNames + Garstang model). Accuracy ±1 class
+- **Target name normalization** — Canonical target names for consistent cross-session grouping. "NGC 7000" = "NGC7000", "Orion Nebula" = "M42", "IC 63 Ghost" = "IC63". ~150 common name aliases
+- **History chart summary cards** — Row of 5 cards above charts: Frames, Nights, Best FWHM, Trash Rate, Targets. Color-coded trash rate
+- **Algorithm versioning** — kAlgorithmVersion constant (=10) + ALGORITHM_CHANGELOG.md. DB records carry version for future re-analysis. Stale records indicator in History window
+- **App start telemetry** — Anonymous fire-and-forget ping to Supabase (machine hash, version, chip, cores, RAM)
+- **Open Database/iCloud Directory** — File menu items to quickly access hidden data directories
+- **AIsaac knowledge update** — Comprehensive knowledge about Frame History, Archive Scanner, Charts, Bortle, Target Clustering, Moon data
+- **Percentile-clamped Y-axis** — History charts use P2-P98 range, preventing outlier (e.g. 704K star count) from crushing the scale
+
+### Changed
+- **Charts fixed to window width** — No more horizontal scrolling, charts always fit the window
+- **Night mode in all windows** — FrameHistoryWindow, BenchmarkStats, BenchmarkLeaderboard get full dark-adapted night mode via shared AppColors
+- **Font scaling in all windows** — Cmd+/Cmd- now works in QuickStack, ColorCombine, Benchmark, ReleaseNotes windows
+- **AIsaac Edge Function** — Dynamic per-device rate limit from device_entitlements table (email-verified users get 50 queries/day)
+
 ## [5.5.0] — 2026-03-27
 
 ### Added
