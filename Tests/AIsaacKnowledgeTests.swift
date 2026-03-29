@@ -124,6 +124,28 @@ final class AIsaacKnowledgeTests: XCTestCase {
                       "AIsaac prompt must document luminance trailing multiplier 1.0")
     }
 
+    /// New features (v5.7.0+) must be documented in AIsaac's knowledge.
+    func testNewFeaturesDocumentedInPrompt() {
+        let prompt = AIsaacContextBuilder.appKnowledge.lowercased()
+
+        let features = [
+            "frame history database",   // Frame History DB
+            "archive scanner",          // NAS/archive scanning
+            "history chart",            // Chart window
+            "bortle",                   // Bortle sky quality
+            "target cluster",           // Target name normalization
+            "moon%",                    // Moon illumination column
+            "moondist",                 // Moon distance column
+            "algorithm version",        // Algorithm versioning
+            "icloud",                   // iCloud backup
+        ]
+
+        for feature in features {
+            XCTAssertTrue(prompt.contains(feature),
+                          "AIsaac prompt missing v5.7.0 feature: \"\(feature)\"")
+        }
+    }
+
     // MARK: - Frame Data Completeness
 
     /// The per-frame CSV header in AIsaac context must include all metric columns.

@@ -461,6 +461,52 @@ struct AIsaacContextBuilder {
         - Cmd+O: open folder (Cmd-click for multi-folder). Cmd+W: close window.
         - Cmd+/Cmd-/Cmd+0: increase/decrease/reset file list font size.
 
+        FRAME HISTORY DATABASE:
+        - Persistent SQLite database storing per-frame quality metrics across ALL sessions ever loaded.
+        - UPSERT by SHA256 file hash (first 64KB) — same file always gets same record, even after rename.
+        - Global Frame IDs: #XX-NNNN format (deterministic, rename-proof).
+        - Stores: FWHM, HFR, star count, eccentricity, noise, trailing, quality tier, z-scores, \
+        moon data, Bortle class, equipment info, observing night, filter, exposure.
+        - Cross-session scoring: historicalZScore and historicalPercentile compared against ≥30 frames.
+        - iCloud backup: rotating SQLite backup to iCloud container (syncs across Macs).
+        - Algorithm versioning: each record carries algorithmVersion — stale records can be re-analyzed.
+        - Open the database directory from File menu → Open Database Directory.
+
+        ARCHIVE SCANNER:
+        - Background folder crawler for scanning NAS/archive folders into the Frame History database.
+        - Start from History window → "Scan Archive" button. Pick any root folder (e.g., /Volumes/ASTRO/).
+        - Recursive: finds all FITS/XISF files in subfolders. Exclusion: skips _predel, Trash, Calibration folders.
+        - Resumable: tracks progress in scan_progress table. Survives app restart — offers to resume incomplete scans.
+        - GPU-accelerated: runs star detection + noise measurement on each file (same pipeline as live sessions).
+        - Speed: ~3 seconds per file over NAS (decode + GPU analysis), faster on SSD.
+
+        HISTORY CHARTS (Window menu → Frame History):
+        - 4 chart types, selectable via segmented picker:
+          * Quality Timeline: stacked bar chart by night (excellent/good/borderline/trash).
+          * Metric Trend: line chart per filter (FWHM, HFR, Stars, Noise, Trailing). Percentile-clamped Y-axis.
+          * Moon Impact: scatter plot of moon illumination vs background noise. Color-coded by filter.
+          * Setup Comparison: bar chart comparing equipment setups on selected metric.
+        - Setup picker: "All Setups" (consolidated) or specific telescope+camera combo.
+        - Target picker: filter by canonical target name (normalized: "NGC 7000" = "NGC7000", "Orion Nebula" = "M42").
+        - Filter color convention: R=red, G=green, B=blue, L=grey, Ha=orange, OIII=teal, SII=yellow, Hbeta=cyan.
+
+        BORTLE SKY QUALITY:
+        - Bortle column (B1-B9) in file list. Estimated from SITELAT/SITELONG coordinates.
+        - Uses embedded 253KB light pollution grid (GeoNames cities + Garstang model). Accuracy ±1 class.
+        - B1-2: pristine dark sky, B3-4: rural, B5-6: suburban, B7-8: urban, B9: inner city.
+        - Helps interpret quality: high Bortle means more background noise is expected (not a defect).
+
+        TARGET CLUSTERING:
+        - Target names are normalized for consistent grouping across sessions.
+        - "NGC 7000" = "NGC7000", "Orion Nebula" = "M42", "IC 63 Ghost" = "IC63".
+        - History charts and target picker use canonical names. User sees clean, deduplicated target list.
+
+        MOON DATA:
+        - Moon% column: illumination (0-100%) computed from capture date.
+        - MoonDist column: angular distance from moon to target (degrees).
+        - Moon-aware scoring: broadband background anomaly threshold relaxed near bright moon.
+        - AIsaac context includes moon data for each frame when available.
+
         LINKS:
         - GitHub: https://github.com/joergs-git/AstroBlinkV2
         - AstroBin: https://app.astrobin.com/u/joergsflow#gallery
