@@ -465,8 +465,9 @@ final class FrameHistoryDatabase {
 
     /// Per-setup FWHM for a given night (for "All Setups" performance tooltip).
     func perSetupFWHM(night: String) throws -> [(setup: String, fwhm: Double)] {
-        try dbQueue.read { db in
-            let nicknames = allNicknames()
+        // Fetch nicknames OUTSIDE the read block to avoid reentrant DatabaseQueue access
+        let nicknames = allNicknames()
+        return try dbQueue.read { db in
             let rows = try Row.fetchAll(db, sql: """
                 SELECT setupHash,
                     COALESCE(telescope, '') || ' + ' || COALESCE(camera, '') as equipment,
