@@ -171,24 +171,8 @@ final class FrameHistoryDatabase {
             try db.execute(sql: "UPDATE frame_record SET algorithmVersion = 10 WHERE algorithmVersion < 10")
         }
 
-        // Remove calibration frames (FLAT/DARK/BIAS) that were accidentally scanned
-        migrator.registerMigration("v4_remove_calibration_frames") { db in
-            try db.execute(sql: """
-                DELETE FROM frame_record
-                WHERE LOWER(filename) LIKE '%flat%'
-                   OR LOWER(filename) LIKE '%dark%'
-                   OR LOWER(filename) LIKE '%bias%'
-                   OR LOWER(filePath) LIKE '%flatwizard%'
-                   OR LOWER(filePath) LIKE '%/dark/%'
-                   OR LOWER(filePath) LIKE '%/darks/%'
-                   OR LOWER(filePath) LIKE '%/flat/%'
-                   OR LOWER(filePath) LIKE '%/flats/%'
-                   OR LOWER(filePath) LIKE '%/bias/%'
-                """)
-        }
-
         // Add Bortle class + canonical target columns
-        migrator.registerMigration("v5_bortle_and_canonical_target") { db in
+        migrator.registerMigration("v4_bortle_and_canonical_target") { db in
             try db.alter(table: "frame_record") { t in
                 t.add(column: "bortleClass", .integer)
                 t.add(column: "canonicalTarget", .text)
@@ -202,6 +186,22 @@ final class FrameHistoryDatabase {
                 try db.execute(sql: "UPDATE frame_record SET canonicalTarget = ? WHERE fileHash = ?",
                               arguments: [canonical, hash])
             }
+        }
+
+        // Remove calibration frames (FLAT/DARK/BIAS) that were accidentally scanned
+        migrator.registerMigration("v5_remove_calibration_frames") { db in
+            try db.execute(sql: """
+                DELETE FROM frame_record
+                WHERE LOWER(filename) LIKE '%flat%'
+                   OR LOWER(filename) LIKE '%dark%'
+                   OR LOWER(filename) LIKE '%bias%'
+                   OR LOWER(filePath) LIKE '%flatwizard%'
+                   OR LOWER(filePath) LIKE '%/dark/%'
+                   OR LOWER(filePath) LIKE '%/darks/%'
+                   OR LOWER(filePath) LIKE '%/flat/%'
+                   OR LOWER(filePath) LIKE '%/flats/%'
+                   OR LOWER(filePath) LIKE '%/bias/%'
+                """)
         }
 
         try migrator.migrate(db)
