@@ -270,6 +270,18 @@
 - **Rule:** Always set `window.isReleasedWhenClosed = false` on programmatically created NSWindows. Follow the LightspeedStacker result window pattern.
 - **Applies to:** Any NSWindow created in a function scope (ColorCombineWindow, QuickStackWindow)
 
+## [2026-03-29] — GRDB migration names are immutable
+- **Mistake:** Renamed migration `v4_bortle_and_canonical_target` to `v5_` when inserting a new migration before it. App crashed on launch with assertion failure.
+- **Root cause:** GRDB tracks applied migrations by name. Renaming a previously applied migration means GRDB can't find it → assertion failure.
+- **Rule:** NEVER rename or reorder existing GRDB migrations. Always add new migrations AFTER the last one with incrementing version numbers.
+- **Applies to:** FrameHistoryDatabase.swift, any GRDB migration code
+
+## [2026-03-29] — Archive Scanner must exclude calibration frames via full path check
+- **Mistake:** ArchiveScanner only checked exact folder names and filename prefixes for calibration detection. Missed "FlatWizard" in folder names and "FLAT" in mid-filename. 1,792 calibration frames entered the DB.
+- **Root cause:** ArchiveScanner had its own exclusion logic instead of reusing SessionScanner's proven `isFileCalibration()` / `isFolderCalibration()`.
+- **Rule:** Always use `SessionScanner.isFileCalibration()` for calibration detection — it handles NINA token parsing + keyword fallback. Also check full parent path for calibration keywords in ANY ancestor folder.
+- **Applies to:** ArchiveScanner.swift, any file scanning code
+
 ## [2026-03-18] — SwiftUI Slider trailing closure vs onEditingChanged
 - **Mistake:** Used `Slider(value:in:step:) { editing in ... }` thinking the trailing closure was `onEditingChanged`. It was interpreted as the `label` closure, so the callback never fired.
 - **Root cause:** `Slider` has multiple initializers. The trailing closure maps to `label:` not `onEditingChanged:`.
