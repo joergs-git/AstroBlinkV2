@@ -198,167 +198,245 @@ struct FrameHistoryContentView: View {
     @ViewBuilder
     private var chartView: some View {
         switch model.selectedChart {
-        case .qualityTimeline:
-            qualityTimelineChart
-        case .metricTrend:
-            metricTrendChart
-        case .moonImpact:
-            moonImpactChart
-        case .setupComparison:
+        case .sessionScore:
+            sessionScoreChart
+        case .efficiency:
+            efficiencyChart
+        case .performance:
+            equipmentHealthChart
+        case .conditions:
+            conditionsChart
+        case .progress:
+            targetProgressChart
+        case .setups:
             setupComparisonChart
         }
     }
 
-    // Flat data point for stacked bar chart (SwiftUI Charts needs flat list for stacking)
-    private struct TierBar: Identifiable {
-        let id = UUID()
-        let night: String
-        let date: Date
-        let tier: String
-        let count: Int
-        let order: Int
-    }
-
-    // Chart 1: Quality Timeline — stacked bars per night
-    private var qualityTimelineChart: some View {
-        let data = model.nightlyQuality
-        let bars: [TierBar] = data.flatMap { night -> [TierBar] in
-            [
-                TierBar(night: night.night, date: night.date, tier: "Trash", count: night.trash, order: 0),
-                TierBar(night: night.night, date: night.date, tier: "Borderline", count: night.borderline, order: 1),
-                TierBar(night: night.night, date: night.date, tier: "Good", count: night.good, order: 2),
-                TierBar(night: night.night, date: night.date, tier: "Excellent", count: night.excellent, order: 3),
-            ].filter { $0.count > 0 }
-        }
-
+    // KPI 1: Session Score — composite quality score per night
+    private var sessionScoreChart: some View {
+        let scores = model.sessionScores
         return VStack(alignment: .leading, spacing: 4) {
-            Text("Quality Distribution by Night")
+            Text("Session Score by Night")
                 .font(.system(size: fs(13), weight: .semibold))
                 .foregroundColor(fg)
 
-            if bars.isEmpty {
+            if scores.isEmpty {
                 noDataView
             } else {
-                Chart(bars) { bar in
+                Chart(scores) { point in
                     BarMark(
-                        x: .value("Night", bar.date, unit: .day),
-                        y: .value("Frames", bar.count)
+                        x: .value("Night", point.date, unit: .day),
+                        y: .value("Score", point.score)
                     )
-                    .foregroundStyle(by: .value("Tier", bar.tier))
+                    .foregroundStyle(
+                        point.score >= 75 ? Color.green :
+                        point.score >= 50 ? Color.yellow :
+                        point.score >= 25 ? Color.orange : Color.red
+                    )
                 }
-                .chartForegroundStyleScale([
-                    "Excellent": Color.green,
-                    "Good": Color.green.opacity(0.5),
-                    "Borderline": Color.orange,
-                    "Trash": Color.red
-                ])
-                .chartYAxisLabel("Frames")
-                .chartLegend(.visible)
-                // Fixed to window width — no horizontal scrolling
-                .chartPlotStyle { plot in plot.background(chartBg) }
-                .frame(minHeight: 300)
-            }
-        }
-    }
-
-    // Chart 2: Metric Trend — lines per filter
-    private var metricTrendChart: some View {
-        let points = model.metricPoints(for: model.selectedMetric)
-        return VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Text("Metric Trend by Night")
-                    .font(.system(size: fs(13), weight: .semibold))
-                    .foregroundColor(fg)
-                Spacer()
-                Picker("Metric", selection: $model.selectedMetric) {
-                    ForEach(FrameHistoryModel.MetricType.allCases) { m in
-                        Text(m.rawValue).tag(m)
-                    }
-                }
-                .frame(maxWidth: 120)
-            }
-
-            if points.isEmpty {
-                noDataView
-            } else {
-                let filterGroups = Dictionary(grouping: points, by: \.filter)
-                let isAllSetups = model.selectedSetupHash == nil
-                Chart {
-                    ForEach(filterGroups.keys.sorted(), id: \.self) { filter in
-                        let color = Self.filterColor(for: filter)
-                        let filterPoints = filterGroups[filter]!.sorted { $0.date < $1.date }
-
-                        // Lines only for single setup (not All Setups — too many = spaghetti)
-                        if !isAllSetups {
-                            ForEach(filterPoints) { point in
-                                LineMark(
-                                    x: .value("Night", point.date),
-                                    y: .value(model.selectedMetric.rawValue, point.value),
-                                    series: .value("Filter", filter)
-                                )
-                                .foregroundStyle(color)
-                            }
-                        }
-
-                        // Points always
-                        ForEach(filterPoints) { point in
-                            PointMark(
-                                x: .value("Night", point.date),
-                                y: .value(model.selectedMetric.rawValue, point.value)
-                            )
-                            .foregroundStyle(color)
-                            .symbolSize(isAllSetups ? 15 : 30)
-                        }
-                    }
-                }
-                .chartYAxisLabel(model.selectedMetric.rawValue)
-                .chartLegend(.hidden)
-                .modifier(PercentileYScale(values: points.map(\.value)))
+                .chartYScale(domain: 0...100)
+                .chartYAxisLabel("Score (0-100)")
                 .chartPlotStyle { plot in plot.background(chartBg) }
                 .frame(minHeight: 300)
 
-                // Outlier indicator
-                let outliers = model.outlierCount(for: model.selectedMetric)
-                if outliers > 0 {
-                    HStack(spacing: 4) {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .font(.system(size: 9))
-                            .foregroundColor(.orange)
-                        Text("\(outliers) outlier\(outliers == 1 ? "" : "s") beyond P98 not shown")
-                            .font(.system(size: fs(10)))
+                // Stats
+                let avg = scores.map(\.score).reduce(0, +) / Double(scores.count)
+                let best = scores.max(by: { $0.score < $1.score })
+                HStack(spacing: 16) {
+                    Text("Avg: \(String(format: "%.0f", avg))")
+                        .font(.system(size: fs(11), design: .monospaced))
+                        .foregroundColor(fgDim)
+                    if let best {
+                        Text("Best: \(String(format: "%.0f", best.score)) (\(best.night))")
+                            .font(.system(size: fs(11), design: .monospaced))
                             .foregroundColor(fgDim)
                     }
                 }
-                filterLegend(filters: filterGroups.keys.sorted())
             }
         }
     }
 
-    // Chart 3: Moon Impact — scatter
-    private var moonImpactChart: some View {
-        let points = model.moonPoints
+    // KPI 2: Imaging Efficiency — retention rate per night with tier breakdown
+    private var efficiencyChart: some View {
+        let data = model.efficiencyData
         return VStack(alignment: .leading, spacing: 4) {
-            Text("Moon Impact on Background")
+            Text("Imaging Efficiency — Frames Kept vs Lost")
                 .font(.system(size: fs(13), weight: .semibold))
-                    .foregroundColor(fg)
+                .foregroundColor(fg)
 
-            if points.isEmpty {
+            if data.isEmpty {
                 noDataView
             } else {
-                Chart(points) { point in
-                    PointMark(
-                        x: .value("Moon %", point.moonIllumination),
-                        y: .value("Background", point.background)
+                Chart(data) { point in
+                    BarMark(
+                        x: .value("Night", point.date, unit: .day),
+                        y: .value("Kept %", point.retentionPct)
                     )
-                    .foregroundStyle(Self.filterColor(for: point.filter))
-                    .symbolSize(40)
+                    .foregroundStyle(
+                        point.retentionPct >= 80 ? Color.green :
+                        point.retentionPct >= 60 ? Color.yellow :
+                        point.retentionPct >= 40 ? Color.orange : Color.red
+                    )
                 }
-                .chartXAxisLabel("Moon Illumination %")
-                .chartYAxisLabel("Background Noise (MAD)")
-                .modifier(PercentileYScale(values: points.map(\.background)))
+                .chartYScale(domain: 0...100)
+                .chartYAxisLabel("Frames Kept %")
                 .chartPlotStyle { plot in plot.background(chartBg) }
                 .frame(minHeight: 300)
-                filterLegend(filters: Array(Set(points.map(\.filter))).sorted())
+
+                // Average efficiency
+                let avgEfficiency = data.map(\.retentionPct).reduce(0, +) / Double(data.count)
+                let totalFrames = data.reduce(0) { $0 + $1.total }
+                let totalKept = data.reduce(0) { $0 + $1.excellent + $1.good }
+                HStack(spacing: 16) {
+                    Text("Avg: \(String(format: "%.0f%%", avgEfficiency))")
+                        .font(.system(size: fs(11), design: .monospaced))
+                        .foregroundColor(fgDim)
+                    Text("Total: \(totalKept)/\(totalFrames) kept")
+                        .font(.system(size: fs(11), design: .monospaced))
+                        .foregroundColor(fgDim)
+                }
+            }
+        }
+    }
+
+    // KPI 3: Equipment Health — rolling FWHM trend with direction indicator
+    private var equipmentHealthChart: some View {
+        let data = model.equipmentHealthData
+        return VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text("Equipment Health — FWHM Trend")
+                    .font(.system(size: fs(13), weight: .semibold))
+                    .foregroundColor(fg)
+                Spacer()
+                // Trend arrow
+                if data.count >= 5 {
+                    let recent = data.suffix(3).map(\.rollingFWHM).reduce(0, +) / 3.0
+                    let earlier = data.prefix(3).map(\.rollingFWHM).reduce(0, +) / 3.0
+                    let improving = recent < earlier
+                    HStack(spacing: 4) {
+                        Image(systemName: improving ? "arrow.down.circle.fill" : "arrow.up.circle.fill")
+                            .foregroundColor(improving ? .green : .orange)
+                        Text(improving ? "Improving" : "Degrading")
+                            .font(.system(size: fs(11)))
+                            .foregroundColor(improving ? .green : .orange)
+                    }
+                }
+            }
+
+            if data.isEmpty {
+                noDataView
+            } else {
+                Chart {
+                    // Raw points (scatter)
+                    ForEach(data) { point in
+                        PointMark(
+                            x: .value("Night", point.date),
+                            y: .value("FWHM", point.rawFWHM)
+                        )
+                        .foregroundStyle(fgDim.opacity(0.4))
+                        .symbolSize(15)
+                    }
+                    // Rolling average line
+                    ForEach(data) { point in
+                        LineMark(
+                            x: .value("Night", point.date),
+                            y: .value("Rolling Avg", point.rollingFWHM)
+                        )
+                        .foregroundStyle(AppColors.accent(nightMode))
+                        .lineStyle(StrokeStyle(lineWidth: 2))
+                    }
+                }
+                .chartYAxisLabel("FWHM (px)")
+                .modifier(PercentileYScale(values: data.map(\.rawFWHM)))
+                .chartPlotStyle { plot in plot.background(chartBg) }
+                .frame(minHeight: 300)
+            }
+        }
+    }
+
+    // KPI 4: Conditions vs Results — Moon/session score correlation
+    private var conditionsChart: some View {
+        let scores = model.sessionScores
+        let moonData = model.nightlySummaries
+
+        // Build moon × score pairs
+        struct ConditionPoint: Identifiable {
+            let id = UUID()
+            let moonPct: Double
+            let score: Double
+            let night: String
+        }
+        var moonByNight: [String: Double] = [:]
+        for s in moonData {
+            if let moon = s.medianMoonIllumination {
+                moonByNight[s.night] = moon * 100
+            }
+        }
+        let condPoints: [ConditionPoint] = scores.compactMap { s in
+            guard let moon = moonByNight[s.night] else { return nil }
+            return ConditionPoint(moonPct: moon, score: s.score, night: s.night)
+        }
+
+        return VStack(alignment: .leading, spacing: 4) {
+            Text("Conditions vs Quality — Does Moon Hurt Your Data?")
+                .font(.system(size: fs(13), weight: .semibold))
+                .foregroundColor(fg)
+
+            if condPoints.isEmpty {
+                noDataView
+            } else {
+                Chart(condPoints) { point in
+                    PointMark(
+                        x: .value("Moon %", point.moonPct),
+                        y: .value("Session Score", point.score)
+                    )
+                    .foregroundStyle(
+                        point.score >= 75 ? Color.green :
+                        point.score >= 50 ? Color.yellow : Color.red
+                    )
+                    .symbolSize(40)
+                }
+                .chartXScale(domain: 0...100)
+                .chartYScale(domain: 0...100)
+                .chartXAxisLabel("Moon Illumination %")
+                .chartYAxisLabel("Session Score")
+                .chartPlotStyle { plot in plot.background(chartBg) }
+                .frame(minHeight: 300)
+            }
+        }
+    }
+
+    // KPI 5: Target Progress — integration time per target
+    private var targetProgressChart: some View {
+        let data = model.targetProgressData.prefix(15) // Top 15 targets
+        return VStack(alignment: .leading, spacing: 4) {
+            Text("Integration Progress by Target")
+                .font(.system(size: fs(13), weight: .semibold))
+                .foregroundColor(fg)
+
+            if data.isEmpty {
+                noDataView
+            } else {
+                Chart(Array(data)) { target in
+                    BarMark(
+                        x: .value("Frames", target.usableIntegrationMinutes),
+                        y: .value("Target", target.target)
+                    )
+                    .foregroundStyle(
+                        target.avgRetention >= 0.8 ? Color.green.gradient :
+                        target.avgRetention >= 0.6 ? Color.yellow.gradient :
+                        Color.orange.gradient
+                    )
+                    .annotation(position: .trailing) {
+                        Text("\(Int(target.usableIntegrationMinutes)) kept")
+                            .font(.system(size: fs(9), design: .monospaced))
+                            .foregroundColor(fgDim)
+                    }
+                }
+                .chartXAxisLabel("Usable Frames")
+                .chartPlotStyle { plot in plot.background(chartBg) }
+                .frame(minHeight: max(300, CGFloat(data.count) * 28))
             }
         }
     }

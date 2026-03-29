@@ -31,14 +31,16 @@ class FrameHistoryModel: ObservableObject {
     @Published var selectedMetric: MetricType = .fwhm
 
     enum ChartType: String, CaseIterable, Identifiable {
-        case qualityTimeline = "Quality"
-        case metricTrend = "Metrics"
-        case moonImpact = "Moon"
-        case setupComparison = "Setups"
+        case sessionScore = "Score"
+        case efficiency = "Efficiency"
+        case performance = "Performance"
+        case conditions = "Conditions"
+        case progress = "Progress"
+        case setups = "Setups"
         var id: String { rawValue }
     }
 
-    @Published var selectedChart: ChartType = .qualityTimeline
+    @Published var selectedChart: ChartType = .sessionScore
 
     // Stale records indicator (older algorithm version)
     @Published var staleRecordCount: Int = 0
@@ -226,6 +228,199 @@ class FrameHistoryModel: ObservableObject {
         let id = UUID()
         let setupLabel: String
         let value: Double
+    }
+
+    // MARK: - KPI 1: Session Score (0-100)
+
+    struct SessionScorePoint: Identifiable {
+        let id = UUID()
+        let date: Date
+        let night: String
+        let score: Double       // 0-100 composite score
+        let retentionRate: Double  // % kept
+        let fwhmNormalized: Double // relative to setup median (1.0 = average, <1 = better)
+        let frameCount: Int
+    }
+
+    /// Compute per-night Session Score. Combines retention rate (40%), FWHM quality (30%),
+    /// trailing absence (20%), and background stability (10%).
+    var sessionScores: [SessionScorePoint] {
+        // Get setup baseline FWHM for normalization
+        let allFWHMs = nightlySummaries.compactMap(\.medianFWHM)
+        let baselineFWHM = allFWHMs.isEmpty ? 5.0 : allFWHMs.sorted()[allFWHMs.count / 2]
+
+        // Aggregate by night (across filters)
+        var byNight: [String: (frames: Int, kept: Int, fwhm: Double?, trailing: Double?, noise: Double?)] = [:]
+        for s in nightlySummaries {
+            var v = byNight[s.night] ?? (0, 0, nil, nil, nil)
+            v.frames += s.frameCount
+            v.kept += s.goodCount + s.excellentCount + s.borderlineCount
+            // Use the worst (highest) FWHM across filters for this night
+            if let f = s.medianFWHM { v.fwhm = max(v.fwhm ?? 0, f) }
+            if let t = s.medianTrailing { v.trailing = max(v.trailing ?? 0, t) }
+            if let n = s.medianNoise { v.noise = v.noise.map { ($0 + n) / 2 } ?? n }
+            byNight[s.night] = v
+        }
+
+        return byNight.compactMap { night, v in
+            guard let date = Self.nightDateFormatter.date(from: night), v.frames > 0 else { return nil }
+            let retention = Double(v.kept) / Double(v.frames)
+
+            // FWHM score: 1.0 when at baseline, 0.0 when 3x worse
+            let fwhmRatio = (v.fwhm ?? baselineFWHM) / baselineFWHM
+            let fwhmScore = max(0, min(1, 1.0 - (fwhmRatio - 1.0) / 2.0))
+
+            // Trailing score: 1.0 = no trailing, 0.0 = severe
+            let trailingScore = max(0, 1.0 - (v.trailing ?? 0) * 2.0)
+
+            // Background stability: 1.0 = stable, lower = noisy (inverse of noise variance)
+            let noiseScore = 1.0  // Simplified — would need variance across frames
+
+            // Composite: retention 40%, FWHM 30%, trailing 20%, background 10%
+            let composite = retention * 40 + fwhmScore * 30 + trailingScore * 20 + noiseScore * 10
+
+            return SessionScorePoint(
+                date: date, night: night, score: min(100, composite),
+                retentionRate: retention, fwhmNormalized: fwhmRatio, frameCount: v.frames
+            )
+        }.sorted { $0.date < $1.date }
+    }
+
+    // MARK: - KPI 2: Imaging Efficiency
+
+    struct EfficiencyPoint: Identifiable {
+        let id = UUID()
+        let date: Date
+        let night: String
+        let total: Int
+        let excellent: Int
+        let good: Int
+        let borderline: Int
+        let trash: Int
+        var retentionPct: Double { total > 0 ? Double(excellent + good) / Double(total) * 100 : 0 }
+    }
+
+    var efficiencyData: [EfficiencyPoint] {
+        let quality = nightlyQuality
+        return quality.compactMap { nq in
+            return EfficiencyPoint(
+                date: nq.date, night: nq.night,
+                total: nq.total, excellent: nq.excellent,
+                good: nq.good, borderline: nq.borderline, trash: nq.trash
+            )
+        }
+    }
+
+    // MARK: - KPI 3: Seeing Index
+
+    struct SeeingPoint: Identifiable {
+        let id = UUID()
+        let date: Date
+        let night: String
+        let seeingIndex: Double   // theoretical/actual — 1.0 = diffraction limited
+        let actualFWHM: Double    // arcseconds
+        let filter: String
+    }
+
+    /// Seeing Index = theoretical FWHM / actual FWHM.
+    /// theoretical_arcsec = 1.22 × wavelength_nm / aperture_mm × 206265 / 1e6
+    /// Requires focal length + pixel size for arcsec conversion.
+    func seeingPoints(focalLength: Double?, pixelSize: Double?) -> [SeeingPoint] {
+        guard let fl = focalLength, fl > 0, let px = pixelSize, px > 0 else { return [] }
+        let arcsecPerPixel = 206.265 * px / fl
+
+        return nightlySummaries.compactMap { s in
+            guard let fwhm = s.medianFWHM, fwhm > 0 else { return nil }
+            guard let date = Self.nightDateFormatter.date(from: s.night) else { return nil }
+            let fwhmArcsec = fwhm * arcsecPerPixel
+            // Theoretical FWHM (Dawes limit at 550nm for the aperture)
+            // aperture_mm ≈ focalLength / f-ratio, but we don't always know f-ratio
+            // Use a fixed 2.0 arcsec as "good seeing" reference instead
+            let referenceFWHM = 2.0  // arcsec — good seeing conditions
+            let index = referenceFWHM / fwhmArcsec
+            let filter = Self.normalizeFilterForChart(s.filter ?? "?")
+            return SeeingPoint(date: date, night: s.night, seeingIndex: min(2, index),
+                              actualFWHM: fwhmArcsec, filter: filter)
+        }.sorted { $0.date < $1.date }
+    }
+
+    // MARK: - KPI 4: Integration Progress
+
+    struct TargetProgress: Identifiable {
+        let id = UUID()
+        let target: String
+        let totalIntegrationMinutes: Double
+        let usableIntegrationMinutes: Double  // excluding trash
+        let nightCount: Int
+        let bestFWHM: Double?
+        let avgRetention: Double  // % kept
+    }
+
+    var targetProgressData: [TargetProgress] {
+        // Group summaries by canonical target
+        var byTarget: [String: (total: Double, usable: Double, nights: Set<String>,
+                                bestFWHM: Double?, totalFrames: Int, keptFrames: Int)] = [:]
+        for s in nightlySummaries {
+            guard let target = s.target, !target.isEmpty else { continue }
+            var v = byTarget[target] ?? (0, 0, [], nil, 0, 0)
+            // Estimate integration time: frameCount × median exposure (approximate)
+            // We don't have exposure in NightSummary, so use frame count as proxy
+            let totalFrames = s.frameCount
+            let keptFrames = s.excellentCount + s.goodCount + s.borderlineCount
+            v.total += Double(totalFrames)
+            v.usable += Double(keptFrames)
+            v.nights.insert(s.night)
+            if let f = s.medianFWHM { v.bestFWHM = min(v.bestFWHM ?? f, f) }
+            v.totalFrames += totalFrames
+            v.keptFrames += keptFrames
+            byTarget[target] = v
+        }
+
+        return byTarget.map { target, v in
+            let retention = v.totalFrames > 0 ? Double(v.keptFrames) / Double(v.totalFrames) : 0
+            return TargetProgress(
+                target: target,
+                totalIntegrationMinutes: v.total,  // frames as proxy for minutes
+                usableIntegrationMinutes: v.usable,
+                nightCount: v.nights.count,
+                bestFWHM: v.bestFWHM,
+                avgRetention: retention
+            )
+        }.sorted { $0.usableIntegrationMinutes > $1.usableIntegrationMinutes }
+    }
+
+    // MARK: - KPI 5: Equipment Health (rolling FWHM trend)
+
+    struct HealthTrendPoint: Identifiable {
+        let id = UUID()
+        let date: Date
+        let night: String
+        let rollingFWHM: Double     // 5-session rolling average
+        let rawFWHM: Double
+    }
+
+    var equipmentHealthData: [HealthTrendPoint] {
+        // Per-night average FWHM (across all filters)
+        let nightly: [(date: Date, fwhm: Double)] = nightlySummaries.compactMap { s in
+            guard let fwhm = s.medianFWHM, let date = Self.nightDateFormatter.date(from: s.night) else { return nil }
+            return (date, fwhm)
+        }.sorted { $0.date < $1.date }
+
+        // Deduplicate by night (take average if multiple filter entries per night)
+        var byDate: [Date: [Double]] = [:]
+        for n in nightly { byDate[n.date, default: []].append(n.fwhm) }
+        let sorted = byDate.map { (date: $0.key, fwhm: $0.value.reduce(0, +) / Double($0.value.count)) }
+            .sorted { $0.date < $1.date }
+
+        // 5-point rolling average
+        let windowSize = 5
+        return sorted.enumerated().compactMap { idx, item in
+            let start = max(0, idx - windowSize + 1)
+            let window = sorted[start...idx]
+            let rolling = window.map(\.fwhm).reduce(0, +) / Double(window.count)
+            let night = Self.nightDateFormatter.string(from: item.date)
+            return HealthTrendPoint(date: item.date, night: night, rollingFWHM: rolling, rawFWHM: item.fwhm)
+        }
     }
 
     // MARK: - Summary Statistics (for cards above charts)
