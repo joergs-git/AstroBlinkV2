@@ -161,16 +161,14 @@ struct FrameHistoryContentView: View {
                 .help("Set nickname for this setup")
             }
 
-            // Target picker
-            if model.availableTargets.count > 1 {
-                Picker("Target", selection: $model.selectedTarget) {
-                    Text("All").tag(Optional<String>.none)
-                    ForEach(model.availableTargets, id: \.self) { target in
-                        Text(target).tag(Optional(target))
-                    }
+            // Target picker (always visible, enriched with common names)
+            Picker("Target", selection: $model.selectedTarget) {
+                Text("All").tag(Optional<String>.none)
+                ForEach(model.availableTargets, id: \.self) { target in
+                    Text(TargetCatalog.displayName(target)).tag(Optional(target))
                 }
-                .frame(maxWidth: 150)
             }
+            .frame(maxWidth: 150)
 
             // Build Archive button
             Button(action: { startArchiveScan() }) {
@@ -451,7 +449,7 @@ struct FrameHistoryContentView: View {
                 Chart(Array(data)) { target in
                     BarMark(
                         x: .value("Frames", target.usableIntegrationMinutes),
-                        y: .value("Target", target.target)
+                        y: .value("Target", TargetCatalog.displayName(target.target))
                     )
                     .foregroundStyle(
                         target.avgRetention >= 0.8 ? Color.green.gradient :

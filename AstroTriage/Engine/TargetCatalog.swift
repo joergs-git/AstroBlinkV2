@@ -88,6 +88,50 @@ enum TargetCatalog {
         return clean.trimmingCharacters(in: .whitespaces)
     }
 
+    // MARK: - Display Name (catalog → "M42 (Orion Nebula)")
+
+    /// Returns a display name enriched with the common name if known.
+    /// "M42" → "M42 (Orion Nebula)", "NGC7000" → "NGC7000 (North America)"
+    static func displayName(_ canonical: String) -> String {
+        if let common = catalogToCommonName[canonical.uppercased()] {
+            return "\(canonical) (\(common))"
+        }
+        return canonical
+    }
+
+    /// Reverse lookup: catalog ID → common name
+    private static let catalogToCommonName: [String: String] = [
+        "M1": "Crab Nebula", "M8": "Lagoon Nebula", "M11": "Wild Duck",
+        "M13": "Hercules Cluster", "M16": "Eagle Nebula", "M17": "Omega Nebula",
+        "M20": "Trifid Nebula", "M27": "Dumbbell Nebula", "M31": "Andromeda",
+        "M33": "Triangulum", "M42": "Orion Nebula", "M45": "Pleiades",
+        "M51": "Whirlpool", "M57": "Ring Nebula", "M63": "Sunflower",
+        "M64": "Black Eye", "M76": "Little Dumbbell", "M81": "Bode's Galaxy",
+        "M82": "Cigar Galaxy", "M97": "Owl Nebula", "M99": "Starfish",
+        "M101": "Pinwheel", "M104": "Sombrero",
+        "NGC281": "Pacman Nebula", "NGC1499": "California Nebula",
+        "NGC2024": "Flame Nebula", "NGC2174": "Monkey Head",
+        "NGC2237": "Rosette Nebula", "NGC2244": "Rosette",
+        "NGC2264": "Cone Nebula", "NGC2359": "Thor's Helmet",
+        "NGC2392": "Eskimo Nebula", "NGC4565": "Needle Galaxy",
+        "NGC6543": "Cat's Eye", "NGC6826": "Blinking Nebula",
+        "NGC6888": "Crescent Nebula", "NGC6946": "Fireworks Galaxy",
+        "NGC6960": "Veil Nebula", "NGC7000": "North America",
+        "NGC7023": "Iris Nebula", "NGC7293": "Helix Nebula",
+        "NGC7380": "Wizard Nebula", "NGC7635": "Bubble Nebula",
+        "NGC7662": "Blue Snowball",
+        "IC434": "Horsehead", "IC443": "Jellyfish",
+        "IC405": "Flaming Star", "IC410": "Tadpole",
+        "IC417": "Spider Nebula", "IC1396": "Elephant's Trunk",
+        "IC1805": "Heart Nebula", "IC1848": "Soul Nebula",
+        "IC5070": "Pelican Nebula", "IC5146": "Cocoon Nebula",
+        "IC1318": "Butterfly Nebula",
+        "SH2-101": "Tulip Nebula", "SH2-132": "Lion Nebula",
+        "SH2-155": "Cave Nebula", "SH2-274": "Medusa Nebula",
+        "SH2-275": "Rosette Region",
+        "NGC3628": "Leo Triplet",
+    ]
+
     // MARK: - Common Name Aliases
 
     /// Maps common/popular names to their catalog designations.
