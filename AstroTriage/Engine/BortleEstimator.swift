@@ -8,9 +8,9 @@ import Foundation
 enum BortleEstimator {
 
     // Grid parameters (must match generator script)
-    private static let gridLon = 720     // columns: -180 to +179.5
-    private static let gridLat = 360     // rows: +90 to -89.5
-    private static let resolution = 0.5  // degrees per cell
+    private static let gridLon = 1440    // columns: -180 to +179.75
+    private static let gridLat = 720     // rows: +90 to -89.75
+    private static let resolution = 0.25 // degrees per cell (~14-28km depending on latitude)
     private static let headerSize = 8    // 4 bytes magic + 4 bytes dimensions
 
     // Lazy-loaded grid data (loaded once on first query, ~253 KB)
