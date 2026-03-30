@@ -295,9 +295,12 @@ struct AIsaacView: View {
                 .shadow(color: accentColor.opacity(0.6), radius: 4)
 
             VStack(alignment: .leading, spacing: 1) {
-                Text("AIsaac's AstroBlink")
-                    .font(.system(size: 16, weight: .bold))
-                    .foregroundColor(textColor)
+                Button(action: { withAnimation(.easeInOut(duration: 0.2)) { model.isCollapsed = true } }) {
+                    Text("AIsaac's AstroBlink")
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundColor(textColor)
+                }
+                .buttonStyle(.plain)
 
                 // Mode indicator — tappable
                 Button(action: {
