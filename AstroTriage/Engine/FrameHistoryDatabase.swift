@@ -463,6 +463,27 @@ final class FrameHistoryDatabase {
         }
     }
 
+    /// Deletion history stats for a target+setup: total frames, deleted frames, deletion %.
+    func deletionStats(target: String? = nil, setupHash: String? = nil) throws -> (total: Int, deleted: Int, deletedPct: Double) {
+        try dbQueue.read { db in
+            var sql = "SELECT COUNT(*) as total, SUM(CASE WHEN wasDeleted = 1 THEN 1 ELSE 0 END) as deleted FROM frame_record WHERE 1=1"
+            var args: [DatabaseValueConvertible] = []
+            if let target {
+                sql += " AND COALESCE(canonicalTarget, target) = ?"
+                args.append(target)
+            }
+            if let setupHash {
+                sql += " AND setupHash = ?"
+                args.append(setupHash)
+            }
+            let row = try Row.fetchOne(db, sql: sql, arguments: StatementArguments(args))
+            let total: Int = row?["total"] ?? 0
+            let deleted: Int = row?["deleted"] ?? 0
+            let pct = total > 0 ? Double(deleted) / Double(total) * 100 : 0
+            return (total, deleted, pct)
+        }
+    }
+
     /// Per-setup FWHM for a given night (for "All Setups" performance tooltip).
     func perSetupFWHM(night: String) throws -> [(setup: String, fwhm: Double)] {
         // Fetch nicknames OUTSIDE the read block to avoid reentrant DatabaseQueue access

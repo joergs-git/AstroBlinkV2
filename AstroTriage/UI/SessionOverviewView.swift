@@ -901,13 +901,27 @@ struct SessionOverviewContentView: View {
         let snrFraction = maxSNR > 0 ? CGFloat(row.avgSNR / maxSNR) : 0
 
         return HStack(spacing: 0) {
-            Text(filterName == "none" ? "—" : filterName)
-                .frame(width: 28, alignment: .leading)
-                .foregroundColor(filterName == "none" ? .secondary : .green)
-                .fontWeight(.semibold)
+            Button(action: {
+                // Navigate to first image of this filter (+ date if available)
+                let obj = model.sessionObjects?.components(separatedBy: ", ").first ?? ""
+                model.onFilterTapped?(obj, filterName, 0, row.date)
+            }) {
+                Text(filterName == "none" ? "—" : filterName)
+                    .foregroundColor(filterName == "none" ? .secondary : .accentColor)
+                    .fontWeight(.semibold)
+            }
+            .buttonStyle(.plain)
+            .frame(width: 28, alignment: .leading)
             if hasDate {
-                Text(row.date.map { String($0.suffix(5)) } ?? "all")
-                    .frame(width: 50, alignment: .leading)
+                Button(action: {
+                    let obj = model.sessionObjects?.components(separatedBy: ", ").first ?? ""
+                    model.onFilterTapped?(obj, filterName, 0, row.date)
+                }) {
+                    Text(row.date.map { String($0.suffix(5)) } ?? "all")
+                        .foregroundColor(.accentColor)
+                }
+                .buttonStyle(.plain)
+                .frame(width: 50, alignment: .leading)
                     .foregroundColor(.secondary)
             }
             Text("\(row.count)")

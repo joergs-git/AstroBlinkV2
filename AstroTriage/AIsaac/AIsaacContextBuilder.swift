@@ -271,6 +271,11 @@ struct AIsaacContextBuilder {
                 if let score = obj.avgQualityScore {
                     detail += String(format: " (quality: %+.1f)", score)
                 }
+                // Deletion history from Frame History DB
+                if let stats = try? FrameHistoryDatabase.shared.deletionStats(target: obj.name),
+                   stats.deleted > 0 {
+                    detail += String(format: " [DELETED %d/%d = %.0f%%]", stats.deleted, stats.total, stats.deletedPct)
+                }
                 if obj.needsMoreData == true {
                     detail += " [NEEDS MORE DATA]"
                 }
