@@ -250,6 +250,21 @@ struct ContentView: View {
 
                     Spacer()
 
+                    // Mini histogram for current image
+                    if !viewModel.histogramBins.isEmpty {
+                        HStack(alignment: .bottom, spacing: 0) {
+                            ForEach(Array(viewModel.histogramBins.enumerated()), id: \.offset) { _, value in
+                                Rectangle()
+                                    .fill(Color.white.opacity(0.6))
+                                    .frame(width: 1.5, height: CGFloat(value) * 24)
+                            }
+                        }
+                        .frame(width: 96, height: 24)
+                        .background(Color.black.opacity(0.3))
+                        .cornerRadius(3)
+                        .help("Luminance histogram (pre-stretch, raw data)")
+                    }
+
                     // ── Right side: Night, Benchmark, Help ──
                     // Night mode toggle
                     VStack(spacing: 2) {

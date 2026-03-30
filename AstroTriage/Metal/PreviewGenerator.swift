@@ -12,6 +12,7 @@ struct CachedPreview {
     let originalWidth: Int
     let originalHeight: Int
     let channelCount: Int
+    var histogramBins: [Float]?   // 64-bin luminance histogram (log-normalized, 0-1)
 }
 
 class PreviewGenerator {
@@ -265,7 +266,7 @@ class PreviewGenerator {
                 commandBuffer.waitUntilCompleted()
                 return CachedPreview(texture: outTexture, stfParams: stfParams,
                     originalWidth: image.width, originalHeight: image.height,
-                    channelCount: image.channelCount)
+                    channelCount: image.channelCount, histogramBins: nil)
             }
 
             encoder.setComputePipelineState(ppPipeline)
@@ -300,6 +301,34 @@ class PreviewGenerator {
         commandBuffer.commit()
         commandBuffer.waitUntilCompleted()
 
+        // Compute 64-bin luminance histogram from the binned buffer (shared memory — fast CPU read)
+        let histBins: [Float]? = {
+            let pixelCount = binnedW * binnedH
+            let ptr = binnedBuffer.contents().bindMemory(to: UInt16.self, capacity: pixelCount * channels)
+            let binCount = 64
+            var bins = [Int](repeating: 0, count: binCount)
+            let step = 4
+            for y in stride(from: 0, to: binnedH, by: step) {
+                for x in stride(from: 0, to: binnedW, by: step) {
+                    let idx = y * binnedW + x
+                    let lum: Float
+                    if channels == 1 {
+                        lum = Float(ptr[idx]) / 65535.0
+                    } else {
+                        // RGB planar: R + G + B weighted luminance
+                        let r = Float(ptr[idx]) / 65535.0
+                        let g = Float(ptr[pixelCount + idx]) / 65535.0
+                        let b = Float(ptr[2 * pixelCount + idx]) / 65535.0
+                        lum = 0.299 * r + 0.587 * g + 0.114 * b
+                    }
+                    let bin = min(binCount - 1, Int(lum * Float(binCount)))
+                    bins[bin] += 1
+                }
+            }
+            let maxBin = Float(bins.max() ?? 1)
+            return bins.map { maxBin > 0 ? log(1 + Float($0)) / log(1 + maxBin) : 0 }
+        }()
+
         // Restore original buffer data after GPU is done (gradient removal was in-place)
         if let backup = gradientBackup {
             let ptr = image.buffer.contents().bindMemory(to: UInt16.self, capacity: backup.count)
@@ -313,7 +342,8 @@ class PreviewGenerator {
             stfParams: stfParams,
             originalWidth: image.width,
             originalHeight: image.height,
-            channelCount: image.channelCount
+            channelCount: image.channelCount,
+            histogramBins: histBins
         )
     }
 
@@ -435,7 +465,7 @@ class PreviewGenerator {
                 commandBuffer.addCompletedHandler { _ in
                     completion(CachedPreview(texture: outTexture, stfParams: stfParams,
                         originalWidth: image.width, originalHeight: image.height,
-                        channelCount: image.channelCount))
+                        channelCount: image.channelCount, histogramBins: nil))
                 }
                 return
             }
@@ -479,7 +509,8 @@ class PreviewGenerator {
                 stfParams: stfParams,
                 originalWidth: origWidth,
                 originalHeight: origHeight,
-                channelCount: origChannels
+                channelCount: origChannels,
+                histogramBins: nil
             ))
         }
         commandBuffer.commit()

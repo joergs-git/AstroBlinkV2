@@ -48,6 +48,7 @@ class TriageViewModel: ObservableObject {
     @Published var contrast: Float = 0.0      // Range -1 to 1 (0 = off)
     @Published var darkLevel: Float = 0.0     // Range 0–0.5 (0 = off)
     @Published var gradientRemovalEnabled: Bool = false  // Quick gradient removal preview
+    @Published var histogramBins: [Float] = []  // 64 bins for mini histogram display
 
     // True when the current session contains OSC images (detected via BAYERPAT header)
     @Published var hasOSCImages: Bool = false
@@ -2629,7 +2630,19 @@ class TriageViewModel: ObservableObject {
         }
     }
 
-    // Toggle gradient removal and re-generate current preview
+    // Update histogram from the pre-computed bins in CachedPreview.
+    func updateHistogram() {
+        guard let image = selectedImage,
+              let preview = prefetchCache?.getPreview(for: image.url),
+              let bins = preview.histogramBins else {
+            histogramBins = []
+            return
+        }
+        histogramBins = bins
+    }
+
+    // Toggle gradient removal and re-generate current preview.
+    // Auto-disables on image change (see displayCurrentImage).
     func toggleGradientRemoval() {
         gradientRemovalEnabled.toggle()
         // Force re-display with gradient removal applied/removed
@@ -3695,6 +3708,9 @@ class TriageViewModel: ObservableObject {
 
         currentDecodeTask?.cancel()
 
+        // Auto-disable gradient removal on image change (user must click GBE again per image)
+        if gradientRemovalEnabled { gradientRemovalEnabled = false }
+
         // Update header inspector model (panel updates reactively via SwiftUI)
         headerInspectorModel.update(for: image.decodingURL, filename: image.filename)
         headerInspectorModel.updateQualityMetrics(from: image.qualityBreakdown, entry: image)
@@ -3719,6 +3735,7 @@ class TriageViewModel: ObservableObject {
                 renderer.setPostProcessParams(sharpening: 0, contrast: 0, darkLevel: 0)
                 renderer.setPreview(preview, in: mtkView)
                 benchmarkStats.markFirstImageDisplayed()
+                updateHistogram()
             }
 
             statusMessage = isCaching
