@@ -452,6 +452,85 @@ final class FrameHistoryDatabase {
         }
     }
 
+    /// Global summary for AIsaac — recent sessions, all targets, all setups.
+    func globalSummaryForAIsaac() throws -> String {
+        try dbQueue.read { db in
+            var lines: [String] = []
+
+            // Recent 5 sessions
+            let recentSessions = try Row.fetchAll(db, sql: """
+                SELECT observingNight, COALESCE(telescope,'?') || ' + ' || COALESCE(camera,'?') as setup,
+                    COALESCE(canonicalTarget, target) as tgt, COUNT(*) as cnt,
+                    SUM(CASE WHEN wasDeleted=1 THEN 1 ELSE 0 END) as del
+                FROM frame_record WHERE observingNight IS NOT NULL
+                GROUP BY observingNight ORDER BY observingNight DESC LIMIT 5
+                """)
+            if !recentSessions.isEmpty {
+                lines.append("RECENT SESSIONS:")
+                for row in recentSessions {
+                    let night: String = row["observingNight"] ?? "?"
+                    let setup: String = row["setup"] ?? "?"
+                    let tgt: String = row["tgt"] ?? "?"
+                    let cnt: Int = row["cnt"] ?? 0
+                    let del: Int = row["del"] ?? 0
+                    let delStr = del > 0 ? " (\(del) deleted)" : ""
+                    lines.append("  \(night): \(tgt) — \(cnt) frames\(delStr) [\(setup)]")
+                }
+            }
+
+            // All targets with integration per filter
+            let targets = try Row.fetchAll(db, sql: """
+                SELECT COALESCE(canonicalTarget, target) as tgt, filter,
+                    COUNT(*) as cnt, SUM(COALESCE(exposure,0)) as totalExp,
+                    SUM(CASE WHEN wasDeleted=1 THEN 1 ELSE 0 END) as del
+                FROM frame_record WHERE target IS NOT NULL AND wasDeleted=0
+                GROUP BY tgt, filter ORDER BY totalExp DESC
+                """)
+            if !targets.isEmpty {
+                // Aggregate by target
+                var byTarget: [String: [(filter: String, hours: Double, frames: Int)]] = [:]
+                for row in targets {
+                    let tgt: String = row["tgt"] ?? "?"
+                    let filter: String = row["filter"] ?? "?"
+                    let exp: Double = row["totalExp"] ?? 0
+                    let cnt: Int = row["cnt"] ?? 0
+                    byTarget[tgt, default: []].append((filter, exp / 3600.0, cnt))
+                }
+                lines.append("")
+                lines.append("ALL TARGETS (usable frames, by filter):")
+                let sorted = byTarget.sorted { a, b in
+                    a.value.reduce(0) { $0 + $1.hours } > b.value.reduce(0) { $0 + $1.hours }
+                }
+                for (target, filters) in sorted.prefix(20) {
+                    let totalH = filters.reduce(0) { $0 + $1.hours }
+                    let details = filters.map { "\($0.filter) \(String(format: "%.1fh", $0.hours))" }.joined(separator: ", ")
+                    lines.append("  \(target): \(String(format: "%.1fh", totalH)) total — \(details)")
+                }
+            }
+
+            // All setups
+            let setups = try Row.fetchAll(db, sql: """
+                SELECT COALESCE(telescope,'?') || ' + ' || COALESCE(camera,'?') as setup,
+                    COUNT(*) as cnt, MIN(observingNight) as first, MAX(observingNight) as last
+                FROM frame_record WHERE setupHash IS NOT NULL
+                GROUP BY setupHash ORDER BY cnt DESC
+                """)
+            if !setups.isEmpty {
+                lines.append("")
+                lines.append("EQUIPMENT SETUPS:")
+                for row in setups {
+                    let setup: String = row["setup"] ?? "?"
+                    let cnt: Int = row["cnt"] ?? 0
+                    let first: String = row["first"] ?? "?"
+                    let last: String = row["last"] ?? "?"
+                    lines.append("  \(setup): \(cnt) frames (\(first) — \(last))")
+                }
+            }
+
+            return lines.joined(separator: "\n")
+        }
+    }
+
     /// Database statistics for UI display.
     func databaseStats() throws -> (frameCount: Int, sessionCount: Int, firstNight: String?, lastNight: String?) {
         try dbQueue.read { db in

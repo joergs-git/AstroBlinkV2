@@ -130,11 +130,18 @@ struct AIsaacContextBuilder {
             parts.append(buildPlanningContext(profile: profile))
         }
 
-        // Historical context from Frame History Database
+        // Historical context from Frame History Database (current setup)
         if let ctx = context, let setupHash = ctx.setupHash {
             if let histBlock = buildHistoricalBlock(setupHash: setupHash) {
                 parts.append(histBlock)
             }
+        }
+
+        // Global DB summary — always available, even without a session loaded.
+        // Enables "what targets have I imaged?", "which setup do I use most?", etc.
+        if let globalSummary = try? FrameHistoryDatabase.shared.globalSummaryForAIsaac(),
+           !globalSummary.isEmpty {
+            parts.append("FRAME HISTORY DATABASE (all sessions ever analyzed):\n" + globalSummary)
         }
 
         // Per-frame metrics — only for presets that need deep analysis
