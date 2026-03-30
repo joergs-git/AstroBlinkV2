@@ -34,6 +34,9 @@ class ReleaseNotesWindowController {
 // MARK: - Release notes data (shared between view and copy)
 
 private let allReleases: [(version: String, date: String, items: [(ReleaseNotesView.ChangeType, String, String)])] = [
+    ("5.8.3", "March 30, 2026", [
+        (.fixed, "iCloud Sync Reliability", "Frame History sync dialog now runs at startup to detect diverging databases across Macs. Database also exported to iCloud on app quit — no more stale backups."),
+    ]),
     ("5.8.2", "March 29, 2026", [
         (.added, "AIsaac Remote Knowledge", "AIsaac's knowledge can now be updated from the server without app releases. New features, tips, and corrections appear automatically within an hour."),
         (.added, "AIsaac Bortle Awareness", "AIsaac now understands fractional Bortle sky quality from VIIRS 2024 satellite data and can advise on filter choice based on your light pollution."),

@@ -4,6 +4,12 @@ All notable changes to AstroBlink & AIsaac will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [5.8.3] — 2026-03-30
+
+### Fixed
+- **iCloud freshness dialog wired up** — Startup now checks if local and iCloud Frame History databases differ and prompts which to keep. Was defined but never called since v5.1.3
+- **iCloud export on quit** — Frame History database exported to iCloud in `applicationWillTerminate`. Previously only exported after session save and archive scan — if user quit without saving, iCloud stayed stale
+
 ## [5.8.2] — 2026-03-29
 
 ### Added
