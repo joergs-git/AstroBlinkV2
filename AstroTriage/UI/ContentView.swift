@@ -868,28 +868,28 @@ struct ContentView: View {
     // AIsaac collapsed teaser bar — floating pill that opens the full chat window
     @State private var teaserGlow: Bool = false
     private var aisaacTeaserBar: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 8) {
             Image(systemName: "sparkles")
-                .font(.system(size: 12, weight: .medium))
+                .font(.system(size: 20, weight: .medium))
                 .foregroundColor(.purple)
                 .opacity(teaserGlow ? 0.9 : 0.5)
                 .scaleEffect(teaserGlow ? 1.15 : 1.0)
 
             Text("I am AIsaac — ask me about your stars")
-                .font(.system(size: 11, weight: .medium))
+                .font(.system(size: 18, weight: .medium))
                 .foregroundColor(.white.opacity(0.8))
 
             // Dismiss button
             Button(action: { withAnimation(.easeOut(duration: 0.3)) { aisaacTeaserDismissed = true } }) {
                 Image(systemName: "xmark")
-                    .font(.system(size: 8, weight: .bold))
+                    .font(.system(size: 12, weight: .bold))
                     .foregroundColor(.white.opacity(0.4))
             }
             .buttonStyle(.plain)
             .help("Dismiss — reopen via Ask AIsaac button")
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 7)
+        .padding(.horizontal, 20)
+        .padding(.vertical, 14)
         .background(
             Capsule()
                 .fill(
