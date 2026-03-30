@@ -2,6 +2,7 @@
 // Follows SessionOverviewController pattern: floating, app-level toggling
 import SwiftUI
 import AppKit
+import Combine
 
 class AIsaacWindowController: NSWindowController {
     static let shared = AIsaacWindowController()
@@ -35,22 +36,47 @@ class AIsaacWindowController: NSWindowController {
         let hostingView = NSHostingView(rootView: AIsaacView(model: model))
         window.contentView = hostingView
 
-        // Float above AstroBlinkV2 windows only — drop to normal when app loses focus
-        NotificationCenter.default.addObserver(
-            self, selector: #selector(appDidBecomeActive),
-            name: NSApplication.didBecomeActiveNotification, object: nil)
-        NotificationCenter.default.addObserver(
-            self, selector: #selector(appDidResignActive),
-            name: NSApplication.didResignActiveNotification, object: nil)
+        // Always float on top
+        window.level = .floating
+
+        // Resize window when model.isCollapsed changes
+        model.$isCollapsed
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] collapsed in
+                self?.resizeForCollapsedState(collapsed)
+            }
+            .store(in: &cancellables)
     }
 
-    @objc private func appDidBecomeActive() {
-        window?.level = .floating
+    private var cancellables = Set<AnyCancellable>()
+
+    private func resizeForCollapsedState(_ collapsed: Bool) {
+        guard let w = window else { return }
+        let screen = w.screen ?? NSScreen.main ?? NSScreen.screens.first
+        guard let screenFrame = screen?.visibleFrame else { return }
+
+        if collapsed {
+            // Collapse: shrink to just the chip strip height, keep position/width
+            let collapsedHeight: CGFloat = 60
+            var frame = w.frame
+            frame.origin.y += (frame.height - collapsedHeight)
+            frame.size.height = collapsedHeight
+            w.setFrame(frame, display: true, animate: true)
+        } else {
+            // Expand: 80% of screen height, anchored at current top edge
+            let expandedHeight = screenFrame.height * 0.8
+            var frame = w.frame
+            let currentTop = frame.origin.y + frame.height
+            frame.size.height = expandedHeight
+            frame.origin.y = currentTop - expandedHeight
+            // Clamp to screen bounds
+            if frame.origin.y < screenFrame.origin.y {
+                frame.origin.y = screenFrame.origin.y
+            }
+            w.setFrame(frame, display: true, animate: true)
+        }
     }
 
-    @objc private func appDidResignActive() {
-        window?.level = .normal
-    }
 
     required init?(coder: NSCoder) {
         fatalError("init(coder:) not implemented")
