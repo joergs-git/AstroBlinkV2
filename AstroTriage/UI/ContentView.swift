@@ -730,10 +730,20 @@ struct ContentView: View {
                 }
             }
             .overlay(alignment: .trailing) {
-                // AIsaac teaser — vertically centered, straddling image/session panel boundary
+                // AIsaac teaser — draggable, straddling image/session panel boundary
                 if !aisaacTeaserDismissed {
                     aisaacTeaserBar
-                        .padding(.trailing, viewModel.showSessionOverview ? 230 : 12)
+                        .offset(teaserOffset)
+                        .gesture(
+                            DragGesture()
+                                .onChanged { value in
+                                    teaserOffset = CGSize(
+                                        width: teaserDragStart.width + value.translation.width,
+                                        height: teaserDragStart.height + value.translation.height
+                                    )
+                                }
+                                .onEnded { _ in teaserDragStart = teaserOffset }
+                        )
                 }
             }
         }
@@ -864,32 +874,34 @@ struct ContentView: View {
 
     // AIsaac collapsed teaser bar
     @State private var aisaacTeaserDismissed: Bool = false
+    @State private var teaserOffset: CGSize = .zero
+    @State private var teaserDragStart: CGSize = .zero
 
     // AIsaac collapsed teaser bar — floating pill that opens the full chat window
     @State private var teaserGlow: Bool = false
     private var aisaacTeaserBar: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 6) {
             Image(systemName: "sparkles")
-                .font(.system(size: 20, weight: .medium))
+                .font(.system(size: 15, weight: .medium))
                 .foregroundColor(.purple)
                 .opacity(teaserGlow ? 0.9 : 0.5)
                 .scaleEffect(teaserGlow ? 1.15 : 1.0)
 
             Text("I am AIsaac — ask me about your stars")
-                .font(.system(size: 18, weight: .medium))
+                .font(.system(size: 14, weight: .medium))
                 .foregroundColor(.white.opacity(0.8))
 
             // Dismiss button
             Button(action: { withAnimation(.easeOut(duration: 0.3)) { aisaacTeaserDismissed = true } }) {
                 Image(systemName: "xmark")
-                    .font(.system(size: 12, weight: .bold))
+                    .font(.system(size: 10, weight: .bold))
                     .foregroundColor(.white.opacity(0.4))
             }
             .buttonStyle(.plain)
             .help("Dismiss — reopen via Ask AIsaac button")
         }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 14)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
         .background(
             Capsule()
                 .fill(
