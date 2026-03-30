@@ -47,8 +47,9 @@ class TriageViewModel: ObservableObject {
     @Published var sharpening: Float = 0.0    // Range -2 to +2 (negative = blur, positive = sharpen)
     @Published var contrast: Float = 0.0      // Range -1 to 1 (0 = off)
     @Published var darkLevel: Float = 0.0     // Range 0–0.5 (0 = off)
-    @Published var gradientRemovalEnabled: Bool = false  // Quick gradient removal preview
-    @Published var gbeProcessing: Bool = false           // Busy indicator for GBE
+    // GBE disabled for now — too slow for interactive use, needs GPU-native approach
+    // @Published var gradientRemovalEnabled: Bool = false
+    // @Published var gbeProcessing: Bool = false
     @Published var histogramBins: [Float] = []  // 64 bins for mini histogram display
 
     // True when the current session contains OSC images (detected via BAYERPAT header)
@@ -2642,52 +2643,14 @@ class TriageViewModel: ObservableObject {
         histogramBins = bins
     }
 
-    // Toggle gradient removal and re-generate current preview.
-    // Auto-disables on image change (see displayCurrentImage).
-    func toggleGradientRemoval() {
-        gradientRemovalEnabled.toggle()
-        guard let image = selectedImage, let device = device else { return }
-        if !gradientRemovalEnabled {
-            // Turning off — just re-display from cache
-            displayCurrentImage()
-            return
-        }
-        // Turning on — decode + gradient removal + STF (slow, show spinner)
-        gbeProcessing = true
-        let url = image.decodingURL
-        let sharp = sharpening, cont = contrast, dark = darkLevel
-        Task.detached(priority: .userInitiated) {
-            guard case .success(let decoded) = ImageDecoder.decode(url: url, device: device) else {
-                await MainActor.run { [weak self] in self?.gbeProcessing = false }
-                return
-            }
-            let stfParams = STFCalculator.calculate(from: decoded)
-            guard let generator = PreviewGenerator(device: device) else {
-                await MainActor.run { [weak self] in self?.gbeProcessing = false }
-                return
-            }
-            let preview = generator.generatePreview(
-                from: decoded, stfParams: stfParams,
-                postProcessParams: (sharp, cont, dark),
-                removeGradient: true
-            )
-            await MainActor.run { [weak self] in
-                guard let self = self else { return }
-                self.gbeProcessing = false
-                if let preview = preview, let mtkView = self.findMTKView(), let renderer = self.renderer {
-                    renderer.setPostProcessParams(sharpening: 0, contrast: 0, darkLevel: 0)
-                    renderer.setPreview(preview, in: mtkView)
-                }
-            }
-        }
-    }
+    // GBE disabled for now — needs GPU-native texture-level approach for interactive speed
+    // func toggleGradientRemoval() { ... }
 
     // Reset post-processing sliders to defaults
     func resetPostProcess() {
         sharpening = 0.0
         contrast = 0.0
         darkLevel = 0.0
-        gradientRemovalEnabled = false
         updatePostProcessParams()
     }
 
@@ -3720,8 +3683,8 @@ class TriageViewModel: ObservableObject {
 
         currentDecodeTask?.cancel()
 
-        // Auto-disable gradient removal on image change (user must click GBE again per image)
-        if gradientRemovalEnabled { gradientRemovalEnabled = false }
+        // GBE disabled for now
+        // if gradientRemovalEnabled { gradientRemovalEnabled = false }
 
         // Update header inspector model (panel updates reactively via SwiftUI)
         headerInspectorModel.update(for: image.decodingURL, filename: image.filename)

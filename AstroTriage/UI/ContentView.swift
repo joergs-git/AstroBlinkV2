@@ -321,17 +321,6 @@ struct ContentView: View {
                     ), range: 0.0...1.0, step: 0.01,
                         display: { String(format: "%.2f", $0) })
 
-                    // Gradient removal toggle
-                    Button(action: { viewModel.toggleGradientRemoval() }) {
-                        Text("GBE")
-                            .font(.system(size: 10, weight: .medium, design: .monospaced))
-                            .foregroundColor(viewModel.gbeProcessing ? .orange :
-                                viewModel.gradientRemovalEnabled ? .cyan : nightFg.opacity(0.5))
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(viewModel.gbeProcessing)
-                    .help("Gradient Background Extraction — quick preview (re-decodes current image)")
-
                     // Mini histogram
                     if !viewModel.histogramBins.isEmpty {
                         HStack(alignment: .bottom, spacing: 0) {
@@ -403,24 +392,6 @@ struct ContentView: View {
                                         RoundedRectangle(cornerRadius: 8)
                                             .fill(Color.black.opacity(0.6))
                                     )
-                            }
-
-                            // GBE processing overlay
-                            if viewModel.gbeProcessing {
-                                VStack(spacing: 12) {
-                                    Image(systemName: "wand.and.rays")
-                                        .font(.system(size: 36))
-                                        .foregroundColor(.cyan)
-                                        .symbolEffect(.pulse, isActive: true)
-                                    Text("Removing Gradient...")
-                                        .font(.system(size: 14, weight: .medium, design: .monospaced))
-                                        .foregroundColor(.white.opacity(0.9))
-                                }
-                                .padding(24)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 12)
-                                        .fill(Color.black.opacity(0.7))
-                                )
                             }
 
                             // Quick Stack progress overlay (anchored top-right)
