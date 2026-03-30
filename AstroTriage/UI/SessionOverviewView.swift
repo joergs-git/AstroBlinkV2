@@ -119,7 +119,9 @@ class SessionOverviewController: NSWindowController {
         let rows = grouped
             .sorted { a, b in
                 if a.key.object != b.key.object { return a.key.object < b.key.object }
-                if a.key.filter != b.key.filter { return a.key.filter < b.key.filter }
+                let fa = FrameHistoryModel.filterSortOrder(a.key.filter)
+                let fb = FrameHistoryModel.filterSortOrder(b.key.filter)
+                if fa != fb { return fa < fb }
                 if a.key.night != b.key.night { return (a.key.night ?? "") > (b.key.night ?? "") }
                 return a.key.exposure < b.key.exposure
             }
@@ -253,7 +255,9 @@ class SessionOverviewModel: ObservableObject {
         let newRows = grouped
             .sorted { a, b in
                 if a.key.object != b.key.object { return a.key.object < b.key.object }
-                if a.key.filter != b.key.filter { return a.key.filter < b.key.filter }
+                let fa = FrameHistoryModel.filterSortOrder(a.key.filter)
+                let fb = FrameHistoryModel.filterSortOrder(b.key.filter)
+                if fa != fb { return fa < fb }
                 if a.key.night != b.key.night { return (a.key.night ?? "") > (b.key.night ?? "") }
                 return a.key.exposure < b.key.exposure
             }
@@ -322,7 +326,9 @@ class SessionOverviewModel: ObservableObject {
 
         qualityRows = grouped
             .sorted { a, b in
-                if a.key.filter != b.key.filter { return a.key.filter < b.key.filter }
+                let fa = FrameHistoryModel.filterSortOrder(a.key.filter)
+                let fb = FrameHistoryModel.filterSortOrder(b.key.filter)
+                if fa != fb { return fa < fb }
                 return (a.key.date ?? "") > (b.key.date ?? "")
             }
             .map { (key, values) in
@@ -880,7 +886,7 @@ struct SessionOverviewContentView: View {
         return byFilter.map { filter, data in
             let pct = totalExposure > 0 ? (data.seconds / totalExposure) * 100 : 0
             return FilterTotal(filter: filter, shotCount: data.shots, totalSeconds: data.seconds, pctOfTotal: pct)
-        }.sorted { $0.totalSeconds > $1.totalSeconds }
+        }.sorted { FrameHistoryModel.filterSortOrder($0.filter) < FrameHistoryModel.filterSortOrder($1.filter) }
     }
 
     // Quality stats row: filter, date, count, noise avg, noise range, background, SNR + bar

@@ -700,7 +700,7 @@ struct FrameHistoryContentView: View {
 
                 // Filter legend
                 HStack(spacing: 10) {
-                    let allFilters = Array(Set(data.flatMap { $0.filterBreakdown.map(\.filter) })).sorted()
+                    let allFilters = FrameHistoryModel.sortedFilters(Array(Set(data.flatMap { $0.filterBreakdown.map(\.filter) })))
                     ForEach(allFilters, id: \.self) { filter in
                         HStack(spacing: 3) {
                             Circle().fill(Self.filterColor(for: filter)).frame(width: 7, height: 7)

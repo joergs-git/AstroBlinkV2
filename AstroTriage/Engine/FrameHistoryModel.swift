@@ -228,6 +228,23 @@ class FrameHistoryModel: ObservableObject {
         return raw
     }
 
+    /// Canonical filter sort order: L R G B Ha OIII SII HBeta NII, then others alphabetically.
+    /// Standard astrophotography convention: broadband first (LRGB), then narrowband (HOS).
+    static func filterSortOrder(_ filter: String) -> Int {
+        let order: [String: Int] = [
+            "L": 0, "R": 1, "G": 2, "B": 3,
+            "Ha": 4, "OIII": 5, "SII": 6,
+            "HBeta": 7, "HB": 7, "NII": 8,
+            "IR": 9, "Quad": 10, "NoFilter": 11, "?": 12
+        ]
+        return order[filter] ?? order[normalizeFilterForChart(filter)] ?? 50
+    }
+
+    /// Sort filter names by astrophotography convention: L R G B Ha OIII SII ...
+    static func sortedFilters(_ filters: [String]) -> [String] {
+        filters.sorted { filterSortOrder($0) < filterSortOrder($1) }
+    }
+
     func metricPoints(for metric: MetricType) -> [MetricPoint] {
         filteredSummaries.compactMap { s in
             let value: Double?
