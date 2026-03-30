@@ -82,10 +82,14 @@ class AIsaacWindowController: NSWindowController {
         fatalError("init(coder:) not implemented")
     }
 
-    // Ensure window is visible (show without toggle)
+    // Ensure window is visible (show without toggle). Starts collapsed on first show.
     func ensureVisible() {
         if window?.isVisible != true {
             showWindow(nil)
+            // Set collapsed size on first show
+            if model.isCollapsed {
+                resizeForCollapsedState(true)
+            }
         }
         window?.makeKeyAndOrderFront(nil)
     }

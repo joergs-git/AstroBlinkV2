@@ -175,6 +175,13 @@ class AstroBlinkV2AppDelegate: NSObject, NSApplicationDelegate {
             AppMessageService.recordAppStart()
         }
 
+        // Show AIsaac floating window collapsed (preset chips visible on startup)
+        if !isTestHost {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                AIsaacWindowController.shared.ensureVisible()
+            }
+        }
+
         // Check iCloud for newer Frame History DB (deferred — iCloud needs time to resolve)
         if !isTestHost {
             DispatchQueue.main.asyncAfter(deadline: .now() + 4.0) {
