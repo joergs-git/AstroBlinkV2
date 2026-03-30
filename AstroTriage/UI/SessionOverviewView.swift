@@ -471,6 +471,8 @@ struct SessionOverviewContentView: View {
         model.rows.contains(where: { $0.night != nil })
     }
 
+    @State private var showSessionDetail = false
+
     var body: some View {
         VStack(spacing: 0) {
             if model.rows.isEmpty {
@@ -486,23 +488,33 @@ struct SessionOverviewContentView: View {
                         // ── FILTER TOTALS (top — quick glance) ──
                         let filterTotals = filterSummary(from: model.rows, totalExposure: model.totalExposure, totalShots: model.totalShots)
                         if filterTotals.count > 1 {
+                            Text("Filter Totals")
+                                .font(.system(size: fs(11), weight: .bold, design: .monospaced))
+                                .foregroundColor(.secondary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.horizontal, 10)
+                                .padding(.top, 4)
+                                .padding(.bottom, 2)
+
                             ForEach(filterTotals, id: \.filter) { ft in
-                                HStack(spacing: 4) {
+                                HStack(spacing: 0) {
                                     Circle()
                                         .fill(FrameHistoryContentView.filterColor(for: ft.filter))
                                         .frame(width: 7, height: 7)
+                                        .padding(.trailing, 4)
                                     Text(ft.filter)
-                                        .frame(width: 28, alignment: .leading)
+                                        .frame(width: 30, alignment: .leading)
                                         .fontWeight(.medium)
                                     Text(formatHours(ft.totalSeconds))
-                                        .frame(width: 42, alignment: .trailing)
+                                        .frame(width: 45, alignment: .trailing)
                                         .fontWeight(.bold)
                                     Text(String(format: "%.0f%%", ft.pctOfTotal))
-                                        .frame(width: 28, alignment: .trailing)
-                                        .foregroundColor(.secondary)
-                                    Text("\(ft.shotCount)f")
                                         .frame(width: 32, alignment: .trailing)
                                         .foregroundColor(.secondary)
+                                    Text("\(ft.shotCount)f")
+                                        .frame(width: 35, alignment: .trailing)
+                                        .foregroundColor(.secondary)
+                                        .padding(.trailing, 6)
                                     GeometryReader { geo in
                                         Rectangle()
                                             .fill(FrameHistoryContentView.filterColor(for: ft.filter).opacity(0.4))
@@ -517,20 +529,20 @@ struct SessionOverviewContentView: View {
                             }
 
                             // Total line
-                            HStack(spacing: 4) {
+                            Rectangle().fill(Color.gray.opacity(0.2)).frame(height: 1)
+                                .padding(.horizontal, 10).padding(.top, 2)
+                            HStack(spacing: 0) {
                                 Text("")
-                                    .frame(width: 7)
+                                    .frame(width: 11)
                                 Text("Total")
-                                    .frame(width: 28, alignment: .leading)
+                                    .frame(width: 30, alignment: .leading)
                                     .fontWeight(.bold)
                                 Text(formatHours(model.totalExposure))
-                                    .frame(width: 42, alignment: .trailing)
+                                    .frame(width: 45, alignment: .trailing)
                                     .fontWeight(.bold)
-                                Text("100%")
-                                    .frame(width: 28, alignment: .trailing)
-                                Text("\(model.totalShots)f")
-                                    .frame(width: 32, alignment: .trailing)
                                 Spacer()
+                                Text("\(model.totalShots) frames")
+                                    .fontWeight(.bold)
                             }
                             .font(.system(size: fs(11), design: .monospaced))
                             .foregroundColor(.accentColor)
@@ -541,35 +553,57 @@ struct SessionOverviewContentView: View {
                                 .padding(.vertical, 2)
                         }
 
-                        // ── INTEGRATION TABLE (per night/filter/exposure detail) ──
-                        HStack(spacing: 0) {
-                            if hasMultipleObjects {
-                                Text("Object")
-                                    .frame(minWidth: 50, alignment: .leading)
-                                Spacer(minLength: 4)
+                        // ── SESSION DETAIL (collapsible, collapsed by default) ──
+                        Button(action: { withAnimation(.easeInOut(duration: 0.15)) { showSessionDetail.toggle() } }) {
+                            HStack(spacing: 4) {
+                                Image(systemName: showSessionDetail ? "chevron.down" : "chevron.right")
+                                    .font(.system(size: fs(9)))
+                                Text("Session Detail")
+                                    .font(.system(size: fs(11), weight: .bold, design: .monospaced))
+                                Spacer()
+                                Text("\(model.rows.count) rows")
+                                    .font(.system(size: fs(10), design: .monospaced))
                             }
-                            Text("Fi")
-                                .frame(width: 50, alignment: .leading)
-                            if hasMultipleNights {
-                                Text("Date")
-                                    .frame(width: 50, alignment: .leading)
-                            }
-                            Text("Shots")
-                                .frame(width: 45, alignment: .trailing)
-                            Text("Exp")
-                                .frame(width: 45, alignment: .trailing)
-                            Text("Total")
-                                .frame(width: 55, alignment: .trailing)
+                            .foregroundColor(.secondary)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 3)
+                            .contentShape(Rectangle())
                         }
-                        .font(.system(size: fs(11), weight: .bold, design: .monospaced))
-                        .foregroundColor(.secondary)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 2)
+                        .buttonStyle(.plain)
 
-                        Rectangle().fill(Color.gray.opacity(0.2)).frame(height: 1)
+                        if showSessionDetail {
+                            HStack(spacing: 0) {
+                                if hasMultipleObjects {
+                                    Text("Object")
+                                        .frame(minWidth: 50, alignment: .leading)
+                                    Spacer(minLength: 4)
+                                }
+                                Text("Filter")
+                                    .frame(width: 50, alignment: .leading)
+                                if hasMultipleNights {
+                                    Text("Date")
+                                        .frame(width: 50, alignment: .leading)
+                                }
+                                Text("Shots")
+                                    .frame(width: 45, alignment: .trailing)
+                                Text("Exp")
+                                    .frame(width: 45, alignment: .trailing)
+                                Text("Total")
+                                    .frame(maxWidth: .infinity, alignment: .trailing)
+                            }
+                            .font(.system(size: fs(11), weight: .bold, design: .monospaced))
+                            .foregroundColor(.secondary)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 2)
 
-                        ForEach(model.rows) { row in
-                            filterRow(row)
+                            Rectangle().fill(Color.gray.opacity(0.2)).frame(height: 1)
+
+                            ForEach(model.rows) { row in
+                                filterRow(row)
+                            }
+
+                            Rectangle().fill(Color.gray.opacity(0.3)).frame(height: 1)
+                                .padding(.vertical, 2)
                         }
 
                         // ── QUALITY OVERVIEW (noise/SNR per filter+date) ──
@@ -796,12 +830,12 @@ struct SessionOverviewContentView: View {
             Text(formatExposure(row.exposurePerShot))
                 .frame(width: 45, alignment: .trailing)
             Text(formatHours(row.totalSeconds))
-                .frame(width: 55, alignment: .trailing)
+                .frame(maxWidth: .infinity, alignment: .trailing)
                 .foregroundColor(.primary)
         }
-        .font(.system(size: fs(12), design: .monospaced))
+        .font(.system(size: fs(11), design: .monospaced))
         .padding(.horizontal, 10)
-        .padding(.vertical, 3)
+        .padding(.vertical, 2)
     }
 
     // MARK: - Filter Summary (per-filter totals across all nights/objects)
