@@ -433,18 +433,7 @@ struct ContentView: View {
                                 }
                             }
 
-                            // AIsaac collapsed teaser bar — always visible unless dismissed
-                            if !aisaacTeaserDismissed {
-                                VStack {
-                                    HStack {
-                                        Spacer()
-                                        aisaacTeaserBar
-                                            .padding(.top, 8)
-                                            .padding(.trailing, 12)
-                                    }
-                                    Spacer()
-                                }
-                            }
+                            // AIsaac teaser moved to outer overlay (straddles image + session panel)
                         }
                         .frame(minHeight: 200)
 
@@ -738,6 +727,13 @@ struct ContentView: View {
                         .environment(\.fontScale, viewModel.fontScale)
                         .frame(width: 480)
                         .background(nightBg)
+                }
+            }
+            .overlay(alignment: .trailing) {
+                // AIsaac teaser — vertically centered, straddling image/session panel boundary
+                if !aisaacTeaserDismissed {
+                    aisaacTeaserBar
+                        .padding(.trailing, viewModel.showSessionOverview ? 230 : 12)
                 }
             }
         }
