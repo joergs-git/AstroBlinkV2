@@ -20,7 +20,7 @@ struct ColumnDefinition {
     // date/time/filter/etc., so putting it first makes other columns redundant for sorting.
     static let allColumns: [ColumnDefinition] = [
         ColumnDefinition(identifier: "marked",      title: "",          defaultWidth: 28,  minWidth: 28,  isDefaultVisible: true,  isHideable: false),
-        ColumnDefinition(identifier: "frameNumber", title: "#",         defaultWidth: 45,  minWidth: 35,  isDefaultVisible: true,  isHideable: true),
+        ColumnDefinition(identifier: "frameNumber", title: "#",         defaultWidth: 62,  minWidth: 50,  isDefaultVisible: true,  isHideable: true),
         ColumnDefinition(identifier: "filter",      title: "Filter",    defaultWidth: 50,  minWidth: 40,  isDefaultVisible: true,  isHideable: true),
         ColumnDefinition(identifier: "quality",     title: "Q",         defaultWidth: 28,  minWidth: 28,  isDefaultVisible: true,  isHideable: true),
         ColumnDefinition(identifier: "snrContrib",  title: "Contrib",  defaultWidth: 55,  minWidth: 40,  isDefaultVisible: true,  isHideable: true),
