@@ -125,7 +125,8 @@ class PreviewGenerator {
     func generatePreview(
         from image: DecodedImage,
         stfParams: [STFParams],
-        postProcessParams: (sharpening: Float, contrast: Float, darkLevel: Float)? = nil
+        postProcessParams: (sharpening: Float, contrast: Float, darkLevel: Float)? = nil,
+        removeGradient: Bool = false
     ) -> CachedPreview? {
         let srcW = image.width
         let srcH = image.height
@@ -170,6 +171,26 @@ class PreviewGenerator {
         texDesc.storageMode = .private
 
         guard let outTexture = device.makeTexture(descriptor: texDesc) else { return nil }
+
+        // Optional: gradient removal on source data before bin2x + STF
+        // Modifies the shared MTLBuffer in-place (zero-copy). Restores after if needed.
+        var gradientBackup: [UInt16]?
+        if removeGradient {
+            let pixelCount = srcW * srcH * channels
+            let ptr = image.buffer.contents().bindMemory(to: UInt16.self, capacity: pixelCount)
+            // Backup original data (will restore after GPU dispatch)
+            gradientBackup = Array(UnsafeBufferPointer(start: ptr, count: pixelCount))
+            // Convert uint16 → float [0,1]
+            var floats = [Float](repeating: 0, count: pixelCount)
+            for i in 0..<pixelCount { floats[i] = Float(ptr[i]) / 65535.0 }
+            // Apply gradient removal
+            let corrected = GradientRemoval.removeGradient(
+                data: floats, width: srcW, height: srcH,
+                channelCount: channels, device: device
+            )
+            // Write back to buffer
+            for i in 0..<pixelCount { ptr[i] = UInt16(min(65535, max(0, corrected[i] * 65535.0))) }
+        }
 
         // Single command buffer for both GPU passes (bin2x → STF stretch)
         guard let commandBuffer = commandQueue.makeCommandBuffer() else { return nil }
@@ -278,6 +299,14 @@ class PreviewGenerator {
 
         commandBuffer.commit()
         commandBuffer.waitUntilCompleted()
+
+        // Restore original buffer data after GPU is done (gradient removal was in-place)
+        if let backup = gradientBackup {
+            let ptr = image.buffer.contents().bindMemory(to: UInt16.self, capacity: backup.count)
+            backup.withUnsafeBufferPointer { src in
+                ptr.update(from: src.baseAddress!, count: backup.count)
+            }
+        }
 
         return CachedPreview(
             texture: finalTexture,

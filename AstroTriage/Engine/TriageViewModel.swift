@@ -47,6 +47,7 @@ class TriageViewModel: ObservableObject {
     @Published var sharpening: Float = 0.0    // Range -2 to +2 (negative = blur, positive = sharpen)
     @Published var contrast: Float = 0.0      // Range -1 to 1 (0 = off)
     @Published var darkLevel: Float = 0.0     // Range 0–0.5 (0 = off)
+    @Published var gradientRemovalEnabled: Bool = false  // Quick gradient removal preview
 
     // True when the current session contains OSC images (detected via BAYERPAT header)
     @Published var hasOSCImages: Bool = false
@@ -2628,11 +2629,40 @@ class TriageViewModel: ObservableObject {
         }
     }
 
+    // Toggle gradient removal and re-generate current preview
+    func toggleGradientRemoval() {
+        gradientRemovalEnabled.toggle()
+        // Force re-display with gradient removal applied/removed
+        // This bypasses the cache and does a fresh decode+gradient+STF
+        guard let image = selectedImage, let device = device else { return }
+        let url = image.decodingURL
+        let sharp = sharpening, cont = contrast, dark = darkLevel
+        let gradientOn = gradientRemovalEnabled
+        Task.detached(priority: .userInitiated) {
+            guard case .success(let decoded) = ImageDecoder.decode(url: url, device: device) else { return }
+            let stfParams = STFCalculator.calculate(from: decoded)
+            guard let generator = PreviewGenerator(device: device) else { return }
+            let preview = generator.generatePreview(
+                from: decoded, stfParams: stfParams,
+                postProcessParams: (sharp, cont, dark),
+                removeGradient: gradientOn
+            )
+            await MainActor.run { [weak self] in
+                guard let self = self else { return }
+                if let preview = preview, let mtkView = self.findMTKView(), let renderer = self.renderer {
+                    renderer.setPostProcessParams(sharpening: 0, contrast: 0, darkLevel: 0)
+                    renderer.setPreview(preview, in: mtkView)
+                }
+            }
+        }
+    }
+
     // Reset post-processing sliders to defaults
     func resetPostProcess() {
         sharpening = 0.0
         contrast = 0.0
         darkLevel = 0.0
+        gradientRemovalEnabled = false
         updatePostProcessParams()
     }
 

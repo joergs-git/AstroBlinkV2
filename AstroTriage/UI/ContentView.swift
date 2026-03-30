@@ -321,6 +321,15 @@ struct ContentView: View {
                     ), range: 0.0...1.0, step: 0.01,
                         display: { String(format: "%.2f", $0) })
 
+                    // Gradient removal toggle
+                    Button(action: { viewModel.toggleGradientRemoval() }) {
+                        Text("GBE")
+                            .font(.system(size: 10, weight: .medium, design: .monospaced))
+                            .foregroundColor(viewModel.gradientRemovalEnabled ? .cyan : nightFg.opacity(0.5))
+                    }
+                    .buttonStyle(.plain)
+                    .help("Gradient Background Extraction — quick preview (re-decodes current image)")
+
                     Spacer()
                 }
                 .padding(.horizontal, 8)
