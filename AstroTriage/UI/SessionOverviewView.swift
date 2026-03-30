@@ -473,205 +473,168 @@ struct SessionOverviewContentView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // TOP: Integration table
-            VStack(spacing: 0) {
-
-                if model.rows.isEmpty {
-                    Text("No session loaded")
-                        .font(.system(size: fs(12)))
-                        .foregroundColor(.secondary)
-                        .padding(.vertical, 12)
-                } else {
-                    // Column headers
-                    HStack(spacing: 0) {
-                        if hasMultipleObjects {
-                            Text("Object")
-                                .frame(minWidth: 50, alignment: .leading)
-                            Spacer(minLength: 4)
-                        }
-                        Text("Fi")
-                            .frame(width: 50, alignment: .leading)
-                        if hasMultipleNights {
-                            Text("Date")
-                                .frame(width: 50, alignment: .leading)
-                        }
-                        Text("Shots")
-                            .frame(width: 45, alignment: .trailing)
-                        Text("Exp")
-                            .frame(width: 45, alignment: .trailing)
-                        Text("Total")
-                            .frame(width: 55, alignment: .trailing)
-                    }
-                    .font(.system(size: fs(12), weight: .bold, design: .monospaced))
+            if model.rows.isEmpty {
+                Text("No session loaded")
+                    .font(.system(size: fs(12)))
                     .foregroundColor(.secondary)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 3)
+                    .padding(.vertical, 12)
+            } else {
+                // Everything in one unified ScrollView
+                ScrollView {
+                    VStack(spacing: 0) {
 
-                    Divider()
-
-                    // Scrollable rows + totals (totals always directly after last row)
-                    ScrollView {
-                        VStack(spacing: 0) {
-                            ForEach(model.rows) { row in
-                                filterRow(row)
+                        // ── FILTER TOTALS (top — quick glance) ──
+                        let filterTotals = filterSummary(from: model.rows, totalExposure: model.totalExposure, totalShots: model.totalShots)
+                        if filterTotals.count > 1 {
+                            ForEach(filterTotals, id: \.filter) { ft in
+                                HStack(spacing: 4) {
+                                    Circle()
+                                        .fill(FrameHistoryContentView.filterColor(for: ft.filter))
+                                        .frame(width: 7, height: 7)
+                                    Text(ft.filter)
+                                        .frame(width: 28, alignment: .leading)
+                                        .fontWeight(.medium)
+                                    Text(formatHours(ft.totalSeconds))
+                                        .frame(width: 42, alignment: .trailing)
+                                        .fontWeight(.bold)
+                                    Text(String(format: "%.0f%%", ft.pctOfTotal))
+                                        .frame(width: 28, alignment: .trailing)
+                                        .foregroundColor(.secondary)
+                                    Text("\(ft.shotCount)f")
+                                        .frame(width: 32, alignment: .trailing)
+                                        .foregroundColor(.secondary)
+                                    GeometryReader { geo in
+                                        Rectangle()
+                                            .fill(FrameHistoryContentView.filterColor(for: ft.filter).opacity(0.4))
+                                            .frame(width: geo.size.width * CGFloat(ft.pctOfTotal / 100.0), height: 7)
+                                            .cornerRadius(2)
+                                    }
+                                    .frame(height: 7)
+                                }
+                                .font(.system(size: fs(11), design: .monospaced))
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 1)
                             }
 
-                            // Totals row — inside ScrollView so it sits right after last row
-                            Rectangle().fill(Color.gray.opacity(0.3)).frame(height: 1)
-                            HStack(spacing: 0) {
-                                if hasMultipleObjects {
-                                    Text("")
-                                        .frame(minWidth: 50, alignment: .leading)
-                                    Spacer(minLength: 4)
-                                }
-                                Text("TOTAL")
-                                    .frame(width: 50, alignment: .leading)
-                                    .fontWeight(.bold)
-                                if hasMultipleNights {
-                                    Text("")
-                                        .frame(width: 50, alignment: .leading)
-                                }
-                                Text("\(model.totalShots)")
-                                    .frame(width: 45, alignment: .trailing)
-                                    .fontWeight(.bold)
-                                Text("")
-                                    .frame(width: 45, alignment: .trailing)
-                                Text(formatHours(model.totalExposure))
-                                    .frame(width: 55, alignment: .trailing)
-                                    .fontWeight(.bold)
-                            }
-                            .font(.system(size: fs(12), design: .monospaced))
-                            .foregroundColor(.accentColor)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 4)
-                            .background(Color(NSColor.controlBackgroundColor))
-                        }
-                        .textSelection(.enabled)
-                    }
-                    .frame(maxHeight: 200)
-                }
-            }
-
-            // FILTER TOTALS: per-filter summary across all nights/objects
-            if model.rows.count > 1 {
-                let filterTotals = filterSummary(from: model.rows, totalExposure: model.totalExposure, totalShots: model.totalShots)
-                if filterTotals.count > 1 {
-                    Divider()
-                    VStack(spacing: 1) {
-                        HStack {
-                            Text("Filter Totals")
-                                .font(.system(size: fs(12), weight: .bold, design: .monospaced))
-                                .foregroundColor(.secondary)
-                            Spacer()
-                        }
-                        .padding(.horizontal, 10)
-                        .padding(.top, 3)
-
-                        ForEach(filterTotals, id: \.filter) { ft in
+                            // Total line
                             HStack(spacing: 4) {
-                                Circle()
-                                    .fill(FrameHistoryContentView.filterColor(for: ft.filter))
-                                    .frame(width: 7, height: 7)
-                                Text(ft.filter)
-                                    .frame(width: 30, alignment: .leading)
-                                    .fontWeight(.medium)
-                                Text(formatHours(ft.totalSeconds))
-                                    .frame(width: 45, alignment: .trailing)
+                                Text("")
+                                    .frame(width: 7)
+                                Text("Total")
+                                    .frame(width: 28, alignment: .leading)
                                     .fontWeight(.bold)
-                                Text(String(format: "%.0f%%", ft.pctOfTotal))
-                                    .frame(width: 30, alignment: .trailing)
-                                    .foregroundColor(.secondary)
-                                Text("\(ft.shotCount)f")
-                                    .frame(width: 35, alignment: .trailing)
-                                    .foregroundColor(.secondary)
-                                // Bar fills remaining width
-                                GeometryReader { geo in
-                                    Rectangle()
-                                        .fill(FrameHistoryContentView.filterColor(for: ft.filter).opacity(0.4))
-                                        .frame(width: geo.size.width * CGFloat(ft.pctOfTotal / 100.0), height: 8)
-                                        .cornerRadius(2)
-                                }
-                                .frame(height: 8)
+                                Text(formatHours(model.totalExposure))
+                                    .frame(width: 42, alignment: .trailing)
+                                    .fontWeight(.bold)
+                                Text("100%")
+                                    .frame(width: 28, alignment: .trailing)
+                                Text("\(model.totalShots)f")
+                                    .frame(width: 32, alignment: .trailing)
+                                Spacer()
                             }
                             .font(.system(size: fs(11), design: .monospaced))
+                            .foregroundColor(.accentColor)
                             .padding(.horizontal, 10)
-                            .padding(.vertical, 1)
+                            .padding(.vertical, 2)
+
+                            Rectangle().fill(Color.gray.opacity(0.3)).frame(height: 1)
+                                .padding(.vertical, 2)
                         }
-                    }
-                    .padding(.bottom, 3)
-                }
-            }
 
-            // QUALITY STATS: noise/SNR table grouped by filter (+ date for multi-night)
-            if !model.qualityRows.isEmpty {
-                Divider()
-
-                VStack(spacing: 0) {
-                    // Section header with help button
-                    HStack {
-                        Text("Quality Overview")
-                            .font(.system(size: fs(12), weight: .bold, design: .monospaced))
-                            .foregroundColor(.secondary)
-                        Button(action: showQualityHelp) {
-                            Image(systemName: "questionmark.circle")
-                                .font(.system(size: fs(13)))
-                                .foregroundColor(.secondary)
-                        }
-                        .buttonStyle(.plain)
-                        .help("What do these values mean?")
-                        Spacer()
-                    }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 3)
-
-                    // Column headers — full width, matching integration table font size
-                    // All columns right-aligned for clean numeric alignment
-                    let hasDate = model.qualityRows.contains(where: { $0.date != nil })
-                    HStack(spacing: 0) {
-                        Text("Fi")
-                            .frame(width: 28, alignment: .leading)
-                        if hasDate {
-                            Text("Date")
+                        // ── INTEGRATION TABLE (per night/filter/exposure detail) ──
+                        HStack(spacing: 0) {
+                            if hasMultipleObjects {
+                                Text("Object")
+                                    .frame(minWidth: 50, alignment: .leading)
+                                Spacer(minLength: 4)
+                            }
+                            Text("Fi")
                                 .frame(width: 50, alignment: .leading)
+                            if hasMultipleNights {
+                                Text("Date")
+                                    .frame(width: 50, alignment: .leading)
+                            }
+                            Text("Shots")
+                                .frame(width: 45, alignment: .trailing)
+                            Text("Exp")
+                                .frame(width: 45, alignment: .trailing)
+                            Text("Total")
+                                .frame(width: 55, alignment: .trailing)
                         }
-                        Text("#")
-                            .frame(width: 24, alignment: .trailing)
-                        Text("Noise")
-                            .frame(maxWidth: .infinity, alignment: .trailing)
-                        Text("Bkg")
-                            .frame(maxWidth: .infinity, alignment: .trailing)
-                        Text("SNR")
-                            .frame(width: 34, alignment: .trailing)
-                        Text("N")
-                            .frame(width: 36)
-                            .padding(.leading, 2)
-                        Text("B")
-                            .frame(width: 36)
-                        Text("S")
-                            .frame(width: 36)
-                    }
-                    .font(.system(size: fs(12), weight: .bold, design: .monospaced))
-                    .foregroundColor(.secondary)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 3)
+                        .font(.system(size: fs(11), weight: .bold, design: .monospaced))
+                        .foregroundColor(.secondary)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 2)
 
-                    Rectangle().fill(Color.gray.opacity(0.3)).frame(height: 1)
+                        Rectangle().fill(Color.gray.opacity(0.2)).frame(height: 1)
 
-                    ScrollView {
-                        VStack(spacing: 0) {
+                        ForEach(model.rows) { row in
+                            filterRow(row)
+                        }
+
+                        // ── QUALITY OVERVIEW (noise/SNR per filter+date) ──
+                        if !model.qualityRows.isEmpty {
+                            Rectangle().fill(Color.gray.opacity(0.3)).frame(height: 1)
+                                .padding(.vertical, 2)
+
+                            HStack {
+                                Text("Quality Overview")
+                                    .font(.system(size: fs(11), weight: .bold, design: .monospaced))
+                                    .foregroundColor(.secondary)
+                                Button(action: showQualityHelp) {
+                                    Image(systemName: "questionmark.circle")
+                                        .font(.system(size: fs(12)))
+                                        .foregroundColor(.secondary)
+                                }
+                                .buttonStyle(.plain)
+                                .help("What do these values mean?")
+                                Spacer()
+                            }
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 2)
+
+                            let hasDate = model.qualityRows.contains(where: { $0.date != nil })
+                            HStack(spacing: 0) {
+                                Text("Fi")
+                                    .frame(width: 28, alignment: .leading)
+                                if hasDate {
+                                    Text("Date")
+                                        .frame(width: 50, alignment: .leading)
+                                }
+                                Text("#")
+                                    .frame(width: 24, alignment: .trailing)
+                                Text("Noise")
+                                    .frame(maxWidth: .infinity, alignment: .trailing)
+                                Text("Bkg")
+                                    .frame(maxWidth: .infinity, alignment: .trailing)
+                                Text("SNR")
+                                    .frame(width: 34, alignment: .trailing)
+                                Text("N")
+                                    .frame(width: 36)
+                                    .padding(.leading, 2)
+                                Text("B")
+                                    .frame(width: 36)
+                                Text("S")
+                                    .frame(width: 36)
+                            }
+                            .font(.system(size: fs(11), weight: .bold, design: .monospaced))
+                            .foregroundColor(.secondary)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 2)
+
+                            Rectangle().fill(Color.gray.opacity(0.2)).frame(height: 1)
+
                             ForEach(Array(model.qualityRows.enumerated()), id: \.element.id) { index, row in
                                 qualityRow(row)
-                                // Horizontal separator between rows
                                 if index < model.qualityRows.count - 1 {
                                     Rectangle().fill(Color.gray.opacity(0.15)).frame(height: 1)
                                         .padding(.horizontal, 10)
                                 }
                             }
 
-                            // Summary row — inside ScrollView so it sits right after last row
+                            // Summary row
                             if model.qualityRows.count > 0 {
                                 Rectangle().fill(Color.gray.opacity(0.3)).frame(height: 1)
-
                                 let totalCount = model.qualityRows.reduce(0) { $0 + $1.count }
                                 let avgNoise = model.qualityRows.reduce(Float(0)) { $0 + $1.avgNoise } / Float(model.qualityRows.count)
                                 let avgBkg = model.qualityRows.reduce(Float(0)) { $0 + $1.avgBackground } / Float(model.qualityRows.count)
@@ -699,50 +662,45 @@ struct SessionOverviewContentView: View {
                                         .frame(width: 34, alignment: .trailing)
                                         .foregroundColor(snrColor(avgSNR))
                                         .fontWeight(.bold)
-                                    // Empty bar placeholders for alignment
-                                    Text("")
-                                        .frame(width: 36)
-                                        .padding(.leading, 2)
-                                    Text("")
-                                        .frame(width: 36)
-                                    Text("")
-                                        .frame(width: 36)
+                                    Text("").frame(width: 36).padding(.leading, 2)
+                                    Text("").frame(width: 36)
+                                    Text("").frame(width: 36)
                                 }
-                                .font(.system(size: fs(12), design: .monospaced))
+                                .font(.system(size: fs(11), design: .monospaced))
                                 .foregroundColor(.accentColor)
                                 .padding(.horizontal, 10)
-                                .padding(.vertical, 4)
+                                .padding(.vertical, 3)
                                 .background(Color(NSColor.controlBackgroundColor))
                             }
                         }
-                        .textSelection(.enabled)
                     }
-                    .frame(maxHeight: 250)
+                    .textSelection(.enabled)
                 }
-            }
 
-            Divider()
+                Divider()
 
-            // BOTTOM: Fact sheet + copy button (compact, scrollable)
-            HStack(alignment: .top, spacing: 6) {
-                ScrollView {
-                    Text(model.generateFactSheet())
-                        .font(.system(size: fs(11), design: .monospaced))
-                        .foregroundColor(.secondary)
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                Button(action: copyFactSheet) {
-                    Image(systemName: copied ? "checkmark.circle.fill" : "doc.on.doc")
-                        .font(.system(size: fs(14)))
-                        .foregroundColor(copied ? .green : .accentColor)
+                // ── FACT SHEET (compact, max 120pt) ──
+                HStack(alignment: .top, spacing: 6) {
+                    ScrollView {
+                        Text(model.generateFactSheet())
+                            .font(.system(size: fs(10), design: .monospaced))
+                            .foregroundColor(.secondary)
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .frame(maxHeight: 120)
+                    Button(action: copyFactSheet) {
+                        Image(systemName: copied ? "checkmark.circle.fill" : "doc.on.doc")
+                            .font(.system(size: fs(13)))
+                            .foregroundColor(copied ? .green : .accentColor)
                     }
                     .buttonStyle(.plain)
                     .help(copied ? "Copied!" : "Copy Fact Sheet")
                 }
                 .padding(.horizontal, 8)
-                .padding(.vertical, 4)
+                .padding(.vertical, 3)
                 .background(Color(NSColor.controlBackgroundColor))
+            }
         }
     }
 
