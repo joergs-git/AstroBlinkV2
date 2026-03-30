@@ -346,9 +346,6 @@ struct ContentView: View {
 
             Rectangle().fill(nightDivider).frame(height: 1)
 
-            // AIsaac preset strip — always visible, opens floating window on click
-            aisaacPresetStrip
-
             // In-app message banner (fetched from Supabase)
             if let message = viewModel.bannerMessage {
                 AppMessageBannerView(
@@ -857,66 +854,6 @@ struct ContentView: View {
         .contentShape(Rectangle())
     }
 
-    // AIsaac inline preset strip — always visible below slider bar.
-    // Clicking a preset opens the floating AIsaac window and fires that preset.
-    private var aisaacPresetStrip: some View {
-        let hasSession = !viewModel.images.isEmpty
-        let presets: [AIsaacPreset] = hasSession
-            ? [.qualitySummary, .smartMark, .filterAdvice, .objectTrivia, .planTonight]
-            : [.gettingStarted, .workflowTips, .whatsNew]
-
-        return HStack(spacing: 6) {
-            Image(systemName: "sparkles")
-                .font(.system(size: 11, weight: .medium))
-                .foregroundColor(.purple)
-
-            Text("AIsaac")
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundColor(nightFg.opacity(0.6))
-
-            ForEach(presets) { preset in
-                Button(action: {
-                    AIsaacWindowController.shared.updateContext(images: viewModel.images, viewModel: viewModel)
-                    AIsaacWindowController.shared.ensureVisible()
-                    AIsaacWindowController.shared.model.sendPreset(preset)
-                }) {
-                    HStack(spacing: 3) {
-                        Image(systemName: preset.icon)
-                            .font(.system(size: 9))
-                        Text(preset.shortLabel)
-                            .font(.system(size: 10, weight: .medium))
-                    }
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 3)
-                    .background(
-                        Capsule()
-                            .fill(Color.purple.opacity(viewModel.nightMode ? 0.15 : 0.08))
-                    )
-                    .foregroundColor(.purple.opacity(0.8))
-                }
-                .buttonStyle(.plain)
-            }
-
-            Spacer()
-
-            // Open full AIsaac chat
-            Button(action: {
-                AIsaacWindowController.shared.updateContext(images: viewModel.images, viewModel: viewModel)
-                AIsaacWindowController.shared.toggleWindow()
-            }) {
-                Image(systemName: "bubble.left.and.bubble.right")
-                    .font(.system(size: 11))
-                    .foregroundColor(nightFg.opacity(0.5))
-            }
-            .buttonStyle(.plain)
-            .help("Open AIsaac chat window")
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 4)
-        .background(viewModel.nightMode
-            ? Color(red: 0.08, green: 0.02, blue: 0.12)
-            : Color(NSColor.controlBackgroundColor).opacity(0.5))
-    }
 
     // AIsaac toolbar button with continuous sparkle animation
     // Auto-Mark toolbar button — opens the 3-level autopilot popover

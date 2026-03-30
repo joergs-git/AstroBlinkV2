@@ -37,8 +37,75 @@ struct AIsaacView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Header
-            headerBar
+            if model.isCollapsed {
+                // Collapsed: just preset chips
+                collapsedBar
+            } else {
+                // Expanded: full chat
+                expandedContent
+            }
+        }
+        .background(bgGradient)
+    }
+
+    // MARK: - Collapsed Bar (preset chips only)
+
+    private var collapsedBar: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "sparkles")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundColor(accentColor)
+
+            Text("AIsaac")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundColor(textColor.opacity(0.7))
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 5) {
+                    ForEach(model.availablePresets) { preset in
+                        Button(action: {
+                            withAnimation(.easeInOut(duration: 0.2)) { model.isCollapsed = false }
+                            model.sendPreset(preset)
+                        }) {
+                            HStack(spacing: 3) {
+                                Image(systemName: preset.icon)
+                                    .font(.system(size: 9))
+                                Text(preset.shortLabel)
+                                    .font(.system(size: 10, weight: .medium))
+                            }
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 3)
+                            .background(Capsule().fill(accentColor.opacity(0.15)))
+                            .foregroundColor(accentColor.opacity(0.9))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+
+            Spacer()
+
+            // Expand button
+            Button(action: { withAnimation(.easeInOut(duration: 0.2)) { model.isCollapsed = false } }) {
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundColor(dimTextColor)
+            }
+            .buttonStyle(.plain)
+            .help("Expand AIsaac chat")
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+    }
+
+    // MARK: - Expanded Content (full chat)
+
+    private var expandedContent: some View {
+        VStack(spacing: 0) {
+            // Header with collapse button
+            HStack {
+                headerBar
+            }
 
             Divider().background(accentColor.opacity(0.3))
 
@@ -215,7 +282,6 @@ struct AIsaacView: View {
             // Input field
             inputBar
         }
-        .background(bgGradient)
     }
 
     // MARK: - Header
@@ -265,6 +331,15 @@ struct AIsaacView: View {
                 .buttonStyle(.plain)
                 .help("Clear conversation")
             }
+
+            // Collapse button
+            Button(action: { withAnimation(.easeInOut(duration: 0.2)) { model.isCollapsed = true } }) {
+                Image(systemName: "chevron.up")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(dimTextColor)
+            }
+            .buttonStyle(.plain)
+            .help("Collapse to preset chips")
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)

@@ -162,6 +162,7 @@ class AIsaacModel: ObservableObject {
     }
 
     @Published var mode: AIsaacMode = AIsaacKeychain.hasAPIKey ? .pro : .free
+    @Published var isCollapsed: Bool = true  // Window starts collapsed showing only presets
     @Published var showAPIKeyEntry: Bool = false
     @Published var apiKeyInput: String = ""
 

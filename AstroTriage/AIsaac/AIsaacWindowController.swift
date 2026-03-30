@@ -18,7 +18,7 @@ class AIsaacWindowController: NSWindowController {
         window.title = "AIsaac's AstroBlink"
         window.isReleasedWhenClosed = false
         window.level = .floating
-        window.minSize = NSSize(width: 360, height: 400)
+        window.minSize = NSSize(width: 360, height: 44)
         window.titlebarAppearsTransparent = true
         window.backgroundColor = NSColor(red: 0.08, green: 0.02, blue: 0.14, alpha: 1.0)
 
