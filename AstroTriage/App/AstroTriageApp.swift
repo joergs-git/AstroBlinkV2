@@ -128,8 +128,10 @@ class AstroBlinkV2AppDelegate: NSObject, NSApplicationDelegate {
         return true
     }
 
-    // Clean up all caches when the app quits so nothing piles up on disk
+    // Clean up caches and ensure iCloud has latest data before quitting
     func applicationWillTerminate(_ notification: Notification) {
+        // Export Frame History to iCloud so other Macs get the latest data
+        FrameHistoryDatabase.shared.exportToICloud()
         SessionCache.cleanupAllCaches()
     }
 
@@ -171,6 +173,13 @@ class AstroBlinkV2AppDelegate: NSObject, NSApplicationDelegate {
         // Anonymous app start telemetry (fire-and-forget, never blocks)
         if !isTestHost {
             AppMessageService.recordAppStart()
+        }
+
+        // Check iCloud for newer Frame History DB (deferred — iCloud needs time to resolve)
+        if !isTestHost {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 4.0) {
+                self.checkFrameHistoryICloudSync()
+            }
         }
     }
 
