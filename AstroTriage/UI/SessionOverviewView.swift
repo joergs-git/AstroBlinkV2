@@ -557,44 +557,48 @@ struct SessionOverviewContentView: View {
                 let filterTotals = filterSummary(from: model.rows, totalExposure: model.totalExposure, totalShots: model.totalShots)
                 if filterTotals.count > 1 {
                     Divider()
-                    VStack(spacing: 2) {
-                        Text("Filter Totals")
-                            .font(.system(size: fs(12), weight: .bold, design: .monospaced))
-                            .foregroundColor(.secondary)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.horizontal, 10)
-                            .padding(.top, 4)
+                    VStack(spacing: 1) {
+                        HStack {
+                            Text("Filter Totals")
+                                .font(.system(size: fs(12), weight: .bold, design: .monospaced))
+                                .foregroundColor(.secondary)
+                            Spacer()
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.top, 3)
 
                         ForEach(filterTotals, id: \.filter) { ft in
-                            HStack(spacing: 6) {
+                            HStack(spacing: 4) {
                                 Circle()
                                     .fill(FrameHistoryContentView.filterColor(for: ft.filter))
                                     .frame(width: 7, height: 7)
                                 Text(ft.filter)
-                                    .frame(width: 35, alignment: .leading)
+                                    .frame(width: 30, alignment: .leading)
                                     .fontWeight(.medium)
                                 Text(formatHours(ft.totalSeconds))
-                                    .frame(width: 50, alignment: .trailing)
+                                    .frame(width: 45, alignment: .trailing)
                                     .fontWeight(.bold)
                                 Text(String(format: "%.0f%%", ft.pctOfTotal))
+                                    .frame(width: 30, alignment: .trailing)
+                                    .foregroundColor(.secondary)
+                                Text("\(ft.shotCount)f")
                                     .frame(width: 35, alignment: .trailing)
                                     .foregroundColor(.secondary)
-                                Text("\(ft.shotCount) files")
-                                    .frame(width: 60, alignment: .trailing)
-                                    .foregroundColor(.secondary)
-                                // Mini bar showing proportion
+                                // Bar fills remaining width
                                 GeometryReader { geo in
                                     Rectangle()
                                         .fill(FrameHistoryContentView.filterColor(for: ft.filter).opacity(0.4))
-                                        .frame(width: geo.size.width * CGFloat(ft.pctOfTotal / 100.0))
+                                        .frame(width: geo.size.width * CGFloat(ft.pctOfTotal / 100.0), height: 8)
+                                        .cornerRadius(2)
                                 }
                                 .frame(height: 8)
                             }
                             .font(.system(size: fs(11), design: .monospaced))
                             .padding(.horizontal, 10)
+                            .padding(.vertical, 1)
                         }
                     }
-                    .padding(.bottom, 4)
+                    .padding(.bottom, 3)
                 }
             }
 
