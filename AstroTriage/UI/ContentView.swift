@@ -476,7 +476,7 @@ struct ContentView: View {
                                         label: {
                                             if viewModel.isCaching {
                                                 let est = viewModel.cachingEstimatedSecondsRemaining.map { " — Est: \($0)s" } ?? ""
-                                                return "Pre-caching \(viewModel.cachingCount)/\(viewModel.cachingTotal)\(est)"
+                                                return "Analyzing \(viewModel.cachingCount)/\(viewModel.cachingTotal)\(est)"
                                             } else {
                                                 return "Caching paused — \(viewModel.prefetchCachedCount)/\(viewModel.images.count)"
                                             }

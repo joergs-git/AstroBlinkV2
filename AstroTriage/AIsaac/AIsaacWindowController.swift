@@ -156,7 +156,7 @@ class AIsaacWindowController: NSWindowController {
                 return "Loading file headers (\(viewModel.headerReadCount)/\(viewModel.headerReadTotal)\(est))"
             } else if viewModel.isCaching {
                 let est = viewModel.cachingEstimatedSecondsRemaining.map { ", ~\($0)s remaining" } ?? ""
-                return "Pre-caching images (\(viewModel.cachingCount)/\(viewModel.cachingTotal)\(est)). Quality scores may be incomplete."
+                return "Analyzing images (\(viewModel.cachingCount)/\(viewModel.cachingTotal)\(est)). Quality scores may be incomplete."
             }
             return nil
         }()

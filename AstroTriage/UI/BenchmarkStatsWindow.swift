@@ -66,7 +66,7 @@ struct BenchmarkStatsContentView: View {
             items.append(("Header Reading", d, .orange))
         }
         if let d = stats.cachingDuration {
-            items.append(("Pre-Caching (STF)", d, .purple))
+            items.append(("Analyzing (STF)", d, .purple))
         }
         if let d = stats.quickStackDuration {
             let frames = stats.quickStackFrameCount

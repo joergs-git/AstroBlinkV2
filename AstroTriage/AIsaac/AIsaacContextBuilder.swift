@@ -438,7 +438,7 @@ struct AIsaacContextBuilder {
 
         // Caching / scoring status
         if ctx.isCaching {
-            lines.append("- STATUS: Pre-caching still in progress. Quality scores are incomplete — do NOT draw conclusions about quality yet.")
+            lines.append("- STATUS: Analyzing images — still in progress. Quality scores are incomplete — do NOT draw conclusions about quality yet.")
         } else if ctx.scoredCount < ctx.totalFrames {
             let unscored = ctx.totalFrames - ctx.scoredCount
             lines.append("- STATUS: \(ctx.scoredCount) of \(ctx.totalFrames) frames scored. \(unscored) frames have no quality score because their filter group has fewer than 6 frames — too few for meaningful statistical comparison (z-scores need ≥6 samples). This is NOT a caching issue — these frames are fully loaded, just in groups too small to rank.")

@@ -237,7 +237,7 @@ class AIsaacModel: ObservableObject {
     ]
 
     private static let cachingStartedComments = [
-        "Pre-caching in progress — the CPU is sweating like hell counting pixels. Hang tight.",
+        "Analyzing in progress — the CPU is sweating like hell counting pixels. Hang tight.",
         "Crunching numbers... every star is being interrogated right now.",
         "GPU is warming up — give it a moment to stretch all those photons.",
         "Analyzing frames... this is where the magic happens behind the scenes.",

@@ -1050,7 +1050,7 @@ class TriageViewModel: ObservableObject {
                 }
 
                 if completed < total {
-                    self.statusMessage = "Pre-caching \(completed)/\(total)..."
+                    self.statusMessage = "Analyzing \(completed)/\(total)..."
                 } else {
                     self.isCaching = false
                     self.cachingEstimatedSecondsRemaining = nil
@@ -1330,7 +1330,7 @@ class TriageViewModel: ObservableObject {
                 }
 
                 if completed < total {
-                    self.statusMessage = "Pre-caching \(completed)/\(total)..."
+                    self.statusMessage = "Analyzing \(completed)/\(total)..."
                 } else {
                     self.isCaching = false
                     self.cachingEstimatedSecondsRemaining = nil
@@ -3688,7 +3688,7 @@ class TriageViewModel: ObservableObject {
             }
 
             statusMessage = isCaching
-                ? "Pre-caching \(cachingCount)/\(cachingTotal)..."
+                ? "Analyzing \(cachingCount)/\(cachingTotal)..."
                 : ""
             return
         }
