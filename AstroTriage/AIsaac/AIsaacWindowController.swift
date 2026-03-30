@@ -56,6 +56,14 @@ class AIsaacWindowController: NSWindowController {
         fatalError("init(coder:) not implemented")
     }
 
+    // Ensure window is visible (show without toggle)
+    func ensureVisible() {
+        if window?.isVisible != true {
+            showWindow(nil)
+        }
+        window?.makeKeyAndOrderFront(nil)
+    }
+
     // Toggle visibility — focus input field when opening
     func toggleWindow() {
         if let w = window, w.isVisible {

@@ -346,6 +346,9 @@ struct ContentView: View {
 
             Rectangle().fill(nightDivider).frame(height: 1)
 
+            // AIsaac preset strip — always visible, opens floating window on click
+            aisaacPresetStrip
+
             // In-app message banner (fetched from Supabase)
             if let message = viewModel.bannerMessage {
                 AppMessageBannerView(
@@ -433,7 +436,6 @@ struct ContentView: View {
                                 }
                             }
 
-                            // AIsaac teaser moved to outer overlay (straddles image + session panel)
                         }
                         .frame(minHeight: 200)
 
@@ -729,23 +731,6 @@ struct ContentView: View {
                         .background(nightBg)
                 }
             }
-            .overlay(alignment: .trailing) {
-                // AIsaac teaser — draggable, straddling image/session panel boundary
-                if !aisaacTeaserDismissed {
-                    aisaacTeaserBar
-                        .offset(teaserOffset)
-                        .gesture(
-                            DragGesture()
-                                .onChanged { value in
-                                    teaserOffset = CGSize(
-                                        width: teaserDragStart.width + value.translation.width,
-                                        height: teaserDragStart.height + value.translation.height
-                                    )
-                                }
-                                .onEnded { _ in teaserDragStart = teaserOffset }
-                        )
-                }
-            }
         }
         .background(nightBg)
         .preferredColorScheme(viewModel.nightMode ? .dark : nil)
@@ -872,59 +857,65 @@ struct ContentView: View {
         .contentShape(Rectangle())
     }
 
-    // AIsaac collapsed teaser bar
-    @State private var aisaacTeaserDismissed: Bool = false
-    @State private var teaserOffset: CGSize = .zero
-    @State private var teaserDragStart: CGSize = .zero
+    // AIsaac inline preset strip — always visible below slider bar.
+    // Clicking a preset opens the floating AIsaac window and fires that preset.
+    private var aisaacPresetStrip: some View {
+        let hasSession = !viewModel.images.isEmpty
+        let presets: [AIsaacPreset] = hasSession
+            ? [.qualitySummary, .smartMark, .filterAdvice, .objectTrivia, .planTonight]
+            : [.gettingStarted, .workflowTips, .whatsNew]
 
-    // AIsaac collapsed teaser bar — floating pill that opens the full chat window
-    @State private var teaserGlow: Bool = false
-    private var aisaacTeaserBar: some View {
-        HStack(spacing: 6) {
+        return HStack(spacing: 6) {
             Image(systemName: "sparkles")
-                .font(.system(size: 15, weight: .medium))
+                .font(.system(size: 11, weight: .medium))
                 .foregroundColor(.purple)
-                .opacity(teaserGlow ? 0.9 : 0.5)
-                .scaleEffect(teaserGlow ? 1.15 : 1.0)
 
-            Text("I am AIsaac — ask me about your stars")
-                .font(.system(size: 14, weight: .medium))
-                .foregroundColor(.white.opacity(0.8))
+            Text("AIsaac")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundColor(nightFg.opacity(0.6))
 
-            // Dismiss button
-            Button(action: { withAnimation(.easeOut(duration: 0.3)) { aisaacTeaserDismissed = true } }) {
-                Image(systemName: "xmark")
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundColor(.white.opacity(0.4))
+            ForEach(presets) { preset in
+                Button(action: {
+                    AIsaacWindowController.shared.updateContext(images: viewModel.images, viewModel: viewModel)
+                    AIsaacWindowController.shared.ensureVisible()
+                    AIsaacWindowController.shared.model.sendPreset(preset)
+                }) {
+                    HStack(spacing: 3) {
+                        Image(systemName: preset.icon)
+                            .font(.system(size: 9))
+                        Text(preset.shortLabel)
+                            .font(.system(size: 10, weight: .medium))
+                    }
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 3)
+                    .background(
+                        Capsule()
+                            .fill(Color.purple.opacity(viewModel.nightMode ? 0.15 : 0.08))
+                    )
+                    .foregroundColor(.purple.opacity(0.8))
+                }
+                .buttonStyle(.plain)
+            }
+
+            Spacer()
+
+            // Open full AIsaac chat
+            Button(action: {
+                AIsaacWindowController.shared.updateContext(images: viewModel.images, viewModel: viewModel)
+                AIsaacWindowController.shared.toggleWindow()
+            }) {
+                Image(systemName: "bubble.left.and.bubble.right")
+                    .font(.system(size: 11))
+                    .foregroundColor(nightFg.opacity(0.5))
             }
             .buttonStyle(.plain)
-            .help("Dismiss — reopen via Ask AIsaac button")
+            .help("Open AIsaac chat window")
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-        .background(
-            Capsule()
-                .fill(
-                    LinearGradient(
-                        colors: [
-                            Color(red: 0.20, green: 0.05, blue: 0.35).opacity(0.85),
-                            Color(red: 0.10, green: 0.02, blue: 0.20).opacity(0.85)
-                        ],
-                        startPoint: .leading, endPoint: .trailing
-                    )
-                )
-                .shadow(color: .purple.opacity(teaserGlow ? 0.5 : 0.2), radius: teaserGlow ? 8 : 4)
-        )
-        .onTapGesture {
-            AIsaacWindowController.shared.updateContext(images: viewModel.images, viewModel: viewModel)
-            AIsaacWindowController.shared.toggleWindow()
-        }
-        .onAppear {
-            withAnimation(.easeInOut(duration: 2.5).repeatForever(autoreverses: true)) {
-                teaserGlow = true
-            }
-        }
-        .transition(.opacity.combined(with: .move(edge: .trailing)))
+        .padding(.horizontal, 10)
+        .padding(.vertical, 4)
+        .background(viewModel.nightMode
+            ? Color(red: 0.08, green: 0.02, blue: 0.12)
+            : Color(NSColor.controlBackgroundColor).opacity(0.5))
     }
 
     // AIsaac toolbar button with continuous sparkle animation

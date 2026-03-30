@@ -47,9 +47,6 @@ class TriageViewModel: ObservableObject {
     @Published var sharpening: Float = 0.0    // Range -2 to +2 (negative = blur, positive = sharpen)
     @Published var contrast: Float = 0.0      // Range -1 to 1 (0 = off)
     @Published var darkLevel: Float = 0.0     // Range 0–0.5 (0 = off)
-    // GBE disabled for now — too slow for interactive use, needs GPU-native approach
-    // @Published var gradientRemovalEnabled: Bool = false
-    // @Published var gbeProcessing: Bool = false
     @Published var histogramBins: [Float] = []  // 64 bins for mini histogram display
 
     // True when the current session contains OSC images (detected via BAYERPAT header)
