@@ -120,15 +120,14 @@ struct AIsaacContextBuilder {
             parts.append(headerLines.joined(separator: "\n"))
         }
 
-        // Weather/seeing forecast (for planning presets)
+        // Weather/seeing forecast — always include when available (relevant for any advice)
         if let weather = weatherForecast {
             parts.append(weather)
         }
 
-        // Planning context — moon tonight, per-target integration totals, filter gaps
-        if preset == .planTonight || preset == .filterAdvice {
-            parts.append(buildPlanningContext(profile: profile))
-        }
+        // Planning context — moon, twilight, targets, filter gaps, performance trends.
+        // Always include: AIsaac should factor in conditions for any recommendation.
+        parts.append(buildPlanningContext(profile: profile))
 
         // Historical context from Frame History Database (current setup)
         if let ctx = context, let setupHash = ctx.setupHash {

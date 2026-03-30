@@ -477,8 +477,8 @@ class AIsaacModel: ObservableObject {
         isThinking = true
 
         Task {
-            // Fetch weather for planning presets (if coordinates available)
-            if preset == .planTonight || preset == .filterAdvice {
+            // Always fetch weather — AIsaac should factor in conditions for any advice
+            if weatherForecast == nil {
                 await fetchWeatherIfNeeded()
             }
 
@@ -532,6 +532,11 @@ class AIsaacModel: ObservableObject {
         }
 
         Task {
+            // Ensure weather is available for any advice
+            if weatherForecast == nil {
+                await fetchWeatherIfNeeded()
+            }
+
             let response = await AIsaacService.shared.ask(
                 userMessage: text,
                 preset: nil,
