@@ -2,7 +2,7 @@
 
 Status: [ ] offen | [~] in Arbeit | [x] fertig
 
-Current version: **v5.8.3** (build 47)
+Current version: **v5.9.0** (build 48)
 
 ---
 

@@ -34,6 +34,17 @@ class ReleaseNotesWindowController {
 // MARK: - Release notes data (shared between view and copy)
 
 private let allReleases: [(version: String, date: String, items: [(ReleaseNotesView.ChangeType, String, String)])] = [
+    ("5.9.0", "March 30, 2026", [
+        (.added, "AIsaac Collapsible Window", "AIsaac now starts as a compact floating strip with preset chips and input field. Click to expand full chat — 80% screen height. Always on top."),
+        (.added, "AIsaac Weather-Aware", "Every AIsaac response now considers local weather, seeing, moon phase, and conditions — not just Plan Tonight. Ask anything and get weather-informed advice."),
+        (.added, "AIsaac Knows Your History", "Ask 'What targets have I imaged?' or 'Where do I need more data?' — AIsaac queries your full Frame History database."),
+        (.added, "Mini Histogram", "64-bin luminance histogram in the viewer toolbar, computed from raw pre-stretch data."),
+        (.added, "Filter Totals", "Per-filter integration summary with hours, percentages, and color bars in Session Overview. Canonical sort order L R G B Ha OIII SII."),
+        (.added, "Deletion Tracking", "AIsaac planner shows how much data you've deleted per target to prevent over-culling."),
+        (.fixed, "Culling Spiral of Death", "Quality scores no longer recalculate after deletion — prevents iterative over-culling where good frames become 'relatively bad' in smaller groups."),
+        (.fixed, "Meridian Flip XOR Logic", "Per-target orientation correction handles same-pierside + rotator change across nights. Both changed = cancel out."),
+        (.fixed, "Quality 'Why' Text", "Full reason text visible — no longer truncated after 2 lines."),
+    ]),
     ("5.8.3", "March 30, 2026", [
         (.fixed, "iCloud Sync Reliability", "Frame History sync dialog now runs at startup to detect diverging databases across Macs. Database also exported to iCloud on app quit — no more stale backups."),
     ]),

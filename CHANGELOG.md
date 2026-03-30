@@ -4,6 +4,27 @@ All notable changes to AstroBlink & AIsaac will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [5.9.0] — 2026-03-30
+
+### Added
+- **AIsaac collapsible floating window** — Window starts collapsed showing preset chips + input field, always on top. Click title or type to expand to 80% screen height. Presets fire immediately on click
+- **AIsaac always-on weather context** — Weather, seeing, moon phase, and planning data now included in every AIsaac response, not just "Plan Tonight". Any question benefits from local conditions
+- **AIsaac Frame History DB access** — AIsaac can answer "What targets have I imaged?", "Which setup do I use most?", "Where do I need more data?" from full session history
+- **Mini histogram** — 64-bin luminance histogram in the viewer slider bar, computed from raw pre-stretch data during preview generation
+- **Filter Totals in Session Overview** — Per-filter integration hours, %, file count with proportional color bars. Canonical filter order (L R G B Ha OIII SII)
+- **Session Detail collapsible** — Integration table collapsed by default, expandable via chevron
+- **Clickable Quality Overview** — Filter name and date in Quality Overview jump to first matching image
+- **Deletion history tracking** — Frame History DB tracks deleted frames per target. AIsaac planner shows deletion rates
+- **Uncertain filter** — Added to quality filter preset dropdown in search bar
+- **Canonical filter sort order** — L R G B Ha OIII SII everywhere (Session Overview, Quality Overview, charts)
+
+### Fixed
+- **Culling spiral of death** — Removed `recomputeQualityScores()` after pre-delete. Z-scores no longer recalculate on smaller group, preventing iterative over-culling
+- **Meridian flip: rotator-aware XOR** — Per-target orientation correction using XOR logic: piersideFlipped XOR rotatorFlipped. Handles same-pierside + rotator change across nights
+- **Quality "Why" text** — No longer truncated after 2 lines in header inspector
+- **# column width** — Widened from 45→62px so frame IDs are fully visible
+- **"Pre-caching" → "Analyzing"** — Renamed in all user-visible strings
+
 ## [5.8.3] — 2026-03-30
 
 ### Fixed
