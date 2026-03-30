@@ -37,17 +37,25 @@ struct AIsaacView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Header always visible
+            // Header — always visible, click title to toggle
             headerBar
             Divider().background(accentColor.opacity(0.3))
 
-            if model.isCollapsed {
-                // Collapsed: just preset chips below header
-                collapsedChips
-            } else {
-                // Expanded: full chat below header
+            // Expanded: full chat area
+            if !model.isCollapsed {
                 expandedContent
             }
+
+            // Preset chips — always visible
+            collapsedChips
+
+            // Input bar — always visible, typing expands
+            inputBar
+                .onChange(of: model.inputText) { _, newValue in
+                    if !newValue.isEmpty && model.isCollapsed {
+                        withAnimation(.easeInOut(duration: 0.2)) { model.isCollapsed = false }
+                    }
+                }
         }
         .background(bgGradient)
     }
@@ -251,13 +259,6 @@ struct AIsaacView: View {
                 .padding(.vertical, 4)
             }
 
-            // Preset chips
-            if model.showPresets && !model.availablePresets.isEmpty {
-                presetChips
-            }
-
-            // Input field
-            inputBar
         }
     }
 
@@ -272,7 +273,7 @@ struct AIsaacView: View {
                 .shadow(color: accentColor.opacity(0.6), radius: 4)
 
             VStack(alignment: .leading, spacing: 1) {
-                Button(action: { withAnimation(.easeInOut(duration: 0.2)) { model.isCollapsed = true } }) {
+                Button(action: { withAnimation(.easeInOut(duration: 0.2)) { model.isCollapsed.toggle() } }) {
                     Text("AIsaac's AstroBlink")
                         .font(.system(size: 16, weight: .bold))
                         .foregroundColor(textColor)

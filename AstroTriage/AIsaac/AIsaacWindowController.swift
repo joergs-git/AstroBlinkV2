@@ -57,7 +57,7 @@ class AIsaacWindowController: NSWindowController {
 
         if collapsed {
             // Collapse: shrink to just the chip strip height, keep position/width
-            let collapsedHeight: CGFloat = 95
+            let collapsedHeight: CGFloat = 150
             var frame = w.frame
             frame.origin.y += (frame.height - collapsedHeight)
             frame.size.height = collapsedHeight
