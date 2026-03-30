@@ -3126,7 +3126,11 @@ class TriageViewModel: ObservableObject {
                 try? FrameHistoryDatabase.shared.markDeleted(fileHashes: deletedHashes)
             }
         }
-        recomputeQualityScores()
+
+        // Do NOT re-score after deletion — prevents "spiral of death" where z-scores
+        // recalculate on the smaller group, shifting the median upward, making previously-good
+        // frames now "relatively bad", leading to iterative over-culling.
+        // Scores from the original analysis are preserved. User can reload folder to re-score.
         updateConvergence()
     }
 
