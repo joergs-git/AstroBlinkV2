@@ -496,32 +496,49 @@ struct SessionOverviewContentView: View {
                                 .padding(.top, 4)
                                 .padding(.bottom, 2)
 
+                            // Header
+                            HStack {
+                                Text("")
+                                    .frame(width: 11)
+                                Text("Filter")
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                Text("Hours")
+                                    .frame(maxWidth: .infinity, alignment: .trailing)
+                                Text("%")
+                                    .frame(width: 40, alignment: .trailing)
+                                Text("Files")
+                                    .frame(width: 45, alignment: .trailing)
+                                Text("")
+                                    .frame(maxWidth: .infinity)
+                            }
+                            .font(.system(size: fs(10), weight: .bold, design: .monospaced))
+                            .foregroundColor(.secondary.opacity(0.6))
+                            .padding(.horizontal, 10)
+
                             ForEach(filterTotals, id: \.filter) { ft in
-                                HStack(spacing: 0) {
+                                HStack {
                                     Circle()
                                         .fill(FrameHistoryContentView.filterColor(for: ft.filter))
                                         .frame(width: 7, height: 7)
-                                        .padding(.trailing, 4)
                                     Text(ft.filter)
-                                        .frame(width: 30, alignment: .leading)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
                                         .fontWeight(.medium)
                                     Text(formatHours(ft.totalSeconds))
-                                        .frame(width: 45, alignment: .trailing)
+                                        .frame(maxWidth: .infinity, alignment: .trailing)
                                         .fontWeight(.bold)
                                     Text(String(format: "%.0f%%", ft.pctOfTotal))
-                                        .frame(width: 32, alignment: .trailing)
+                                        .frame(width: 40, alignment: .trailing)
                                         .foregroundColor(.secondary)
-                                    Text("\(ft.shotCount)f")
-                                        .frame(width: 35, alignment: .trailing)
+                                    Text("\(ft.shotCount)")
+                                        .frame(width: 45, alignment: .trailing)
                                         .foregroundColor(.secondary)
-                                        .padding(.trailing, 6)
                                     GeometryReader { geo in
                                         Rectangle()
                                             .fill(FrameHistoryContentView.filterColor(for: ft.filter).opacity(0.4))
                                             .frame(width: geo.size.width * CGFloat(ft.pctOfTotal / 100.0), height: 7)
                                             .cornerRadius(2)
                                     }
-                                    .frame(height: 7)
+                                    .frame(maxWidth: .infinity, maxHeight: 7)
                                 }
                                 .font(.system(size: fs(11), design: .monospaced))
                                 .padding(.horizontal, 10)
@@ -531,18 +548,22 @@ struct SessionOverviewContentView: View {
                             // Total line
                             Rectangle().fill(Color.gray.opacity(0.2)).frame(height: 1)
                                 .padding(.horizontal, 10).padding(.top, 2)
-                            HStack(spacing: 0) {
+                            HStack {
                                 Text("")
-                                    .frame(width: 11)
+                                    .frame(width: 7)
                                 Text("Total")
-                                    .frame(width: 30, alignment: .leading)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
                                     .fontWeight(.bold)
                                 Text(formatHours(model.totalExposure))
+                                    .frame(maxWidth: .infinity, alignment: .trailing)
+                                    .fontWeight(.bold)
+                                Text("")
+                                    .frame(width: 40)
+                                Text("\(model.totalShots)")
                                     .frame(width: 45, alignment: .trailing)
                                     .fontWeight(.bold)
-                                Spacer()
-                                Text("\(model.totalShots) frames")
-                                    .fontWeight(.bold)
+                                Text("")
+                                    .frame(maxWidth: .infinity)
                             }
                             .font(.system(size: fs(11), design: .monospaced))
                             .foregroundColor(.accentColor)
