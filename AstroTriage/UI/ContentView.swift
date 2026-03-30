@@ -219,6 +219,7 @@ struct ContentView: View {
                             Button("Excellent") { viewModel.filterText = "q:excellent" }
                             Button("Good") { viewModel.filterText = "q:good" }
                             Button("Borderline") { viewModel.filterText = "q:borderline" }
+                            Button("Uncertain") { viewModel.filterText = "q:uncertain" }
                             Button("Trash") { viewModel.filterText = "q:trash" }
                             Button("Unscored") { viewModel.filterText = "q:unscored" }
                         }
