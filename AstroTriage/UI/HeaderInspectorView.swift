@@ -475,7 +475,6 @@ struct HeaderInspectorContentView: View {
                             Text(metric.value)
                                 .font(.system(size: fs(11), design: .monospaced))
                                 .foregroundColor(Color(NSColor.labelColor))
-                                .lineLimit(2)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                     }
