@@ -250,21 +250,6 @@ struct ContentView: View {
 
                     Spacer()
 
-                    // Mini histogram for current image
-                    if !viewModel.histogramBins.isEmpty {
-                        HStack(alignment: .bottom, spacing: 0) {
-                            ForEach(Array(viewModel.histogramBins.enumerated()), id: \.offset) { _, value in
-                                Rectangle()
-                                    .fill(Color.white.opacity(0.6))
-                                    .frame(width: 1.5, height: CGFloat(value) * 24)
-                            }
-                        }
-                        .frame(width: 96, height: 24)
-                        .background(Color.black.opacity(0.3))
-                        .cornerRadius(3)
-                        .help("Luminance histogram (pre-stretch, raw data)")
-                    }
-
                     // ── Right side: Night, Benchmark, Help ──
                     // Night mode toggle
                     VStack(spacing: 2) {
@@ -336,14 +321,39 @@ struct ContentView: View {
                     ), range: 0.0...1.0, step: 0.01,
                         display: { String(format: "%.2f", $0) })
 
-                    // Gradient removal toggle
+                    // Gradient removal toggle + spinner
                     Button(action: { viewModel.toggleGradientRemoval() }) {
-                        Text("GBE")
-                            .font(.system(size: 10, weight: .medium, design: .monospaced))
-                            .foregroundColor(viewModel.gradientRemovalEnabled ? .cyan : nightFg.opacity(0.5))
+                        HStack(spacing: 3) {
+                            if viewModel.gbeProcessing {
+                                ProgressView()
+                                    .controlSize(.mini)
+                                    .scaleEffect(0.6)
+                                    .frame(width: 10, height: 10)
+                            }
+                            Text("GBE")
+                                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                                .foregroundColor(viewModel.gbeProcessing ? .orange :
+                                    viewModel.gradientRemovalEnabled ? .cyan : nightFg.opacity(0.5))
+                        }
                     }
                     .buttonStyle(.plain)
+                    .disabled(viewModel.gbeProcessing)
                     .help("Gradient Background Extraction — quick preview (re-decodes current image)")
+
+                    // Mini histogram
+                    if !viewModel.histogramBins.isEmpty {
+                        HStack(alignment: .bottom, spacing: 0) {
+                            ForEach(Array(viewModel.histogramBins.enumerated()), id: \.offset) { _, value in
+                                Rectangle()
+                                    .fill(Color.white.opacity(0.6))
+                                    .frame(width: 1.5, height: CGFloat(value) * 20)
+                            }
+                        }
+                        .frame(width: 96, height: 20)
+                        .background(Color.black.opacity(0.3))
+                        .cornerRadius(3)
+                        .help("Luminance histogram (pre-stretch, raw data)")
+                    }
 
                     Spacer()
                 }

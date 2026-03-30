@@ -48,6 +48,7 @@ class TriageViewModel: ObservableObject {
     @Published var contrast: Float = 0.0      // Range -1 to 1 (0 = off)
     @Published var darkLevel: Float = 0.0     // Range 0–0.5 (0 = off)
     @Published var gradientRemovalEnabled: Bool = false  // Quick gradient removal preview
+    @Published var gbeProcessing: Bool = false           // Busy indicator for GBE
     @Published var histogramBins: [Float] = []  // 64 bins for mini histogram display
 
     // True when the current session contains OSC images (detected via BAYERPAT header)
@@ -2645,23 +2646,34 @@ class TriageViewModel: ObservableObject {
     // Auto-disables on image change (see displayCurrentImage).
     func toggleGradientRemoval() {
         gradientRemovalEnabled.toggle()
-        // Force re-display with gradient removal applied/removed
-        // This bypasses the cache and does a fresh decode+gradient+STF
         guard let image = selectedImage, let device = device else { return }
+        if !gradientRemovalEnabled {
+            // Turning off — just re-display from cache
+            displayCurrentImage()
+            return
+        }
+        // Turning on — decode + gradient removal + STF (slow, show spinner)
+        gbeProcessing = true
         let url = image.decodingURL
         let sharp = sharpening, cont = contrast, dark = darkLevel
-        let gradientOn = gradientRemovalEnabled
         Task.detached(priority: .userInitiated) {
-            guard case .success(let decoded) = ImageDecoder.decode(url: url, device: device) else { return }
+            guard case .success(let decoded) = ImageDecoder.decode(url: url, device: device) else {
+                await MainActor.run { [weak self] in self?.gbeProcessing = false }
+                return
+            }
             let stfParams = STFCalculator.calculate(from: decoded)
-            guard let generator = PreviewGenerator(device: device) else { return }
+            guard let generator = PreviewGenerator(device: device) else {
+                await MainActor.run { [weak self] in self?.gbeProcessing = false }
+                return
+            }
             let preview = generator.generatePreview(
                 from: decoded, stfParams: stfParams,
                 postProcessParams: (sharp, cont, dark),
-                removeGradient: gradientOn
+                removeGradient: true
             )
             await MainActor.run { [weak self] in
                 guard let self = self else { return }
+                self.gbeProcessing = false
                 if let preview = preview, let mtkView = self.findMTKView(), let renderer = self.renderer {
                     renderer.setPostProcessParams(sharpening: 0, contrast: 0, darkLevel: 0)
                     renderer.setPreview(preview, in: mtkView)
