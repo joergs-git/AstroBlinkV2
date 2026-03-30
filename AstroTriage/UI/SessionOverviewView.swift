@@ -552,6 +552,52 @@ struct SessionOverviewContentView: View {
                 }
             }
 
+            // FILTER TOTALS: per-filter summary across all nights/objects
+            if model.rows.count > 1 {
+                let filterTotals = filterSummary(from: model.rows, totalExposure: model.totalExposure, totalShots: model.totalShots)
+                if filterTotals.count > 1 {
+                    Divider()
+                    VStack(spacing: 2) {
+                        Text("Filter Totals")
+                            .font(.system(size: fs(12), weight: .bold, design: .monospaced))
+                            .foregroundColor(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 10)
+                            .padding(.top, 4)
+
+                        ForEach(filterTotals, id: \.filter) { ft in
+                            HStack(spacing: 6) {
+                                Circle()
+                                    .fill(FrameHistoryContentView.filterColor(for: ft.filter))
+                                    .frame(width: 7, height: 7)
+                                Text(ft.filter)
+                                    .frame(width: 35, alignment: .leading)
+                                    .fontWeight(.medium)
+                                Text(formatHours(ft.totalSeconds))
+                                    .frame(width: 50, alignment: .trailing)
+                                    .fontWeight(.bold)
+                                Text(String(format: "%.0f%%", ft.pctOfTotal))
+                                    .frame(width: 35, alignment: .trailing)
+                                    .foregroundColor(.secondary)
+                                Text("\(ft.shotCount) files")
+                                    .frame(width: 60, alignment: .trailing)
+                                    .foregroundColor(.secondary)
+                                // Mini bar showing proportion
+                                GeometryReader { geo in
+                                    Rectangle()
+                                        .fill(FrameHistoryContentView.filterColor(for: ft.filter).opacity(0.4))
+                                        .frame(width: geo.size.width * CGFloat(ft.pctOfTotal / 100.0))
+                                }
+                                .frame(height: 8)
+                            }
+                            .font(.system(size: fs(11), design: .monospaced))
+                            .padding(.horizontal, 10)
+                        }
+                    }
+                    .padding(.bottom, 4)
+                }
+            }
+
             // QUALITY STATS: noise/SNR table grouped by filter (+ date for multi-night)
             if !model.qualityRows.isEmpty {
                 Divider()
@@ -794,6 +840,30 @@ struct SessionOverviewContentView: View {
         .font(.system(size: fs(12), design: .monospaced))
         .padding(.horizontal, 10)
         .padding(.vertical, 3)
+    }
+
+    // MARK: - Filter Summary (per-filter totals across all nights/objects)
+
+    struct FilterTotal {
+        let filter: String
+        let shotCount: Int
+        let totalSeconds: Double
+        let pctOfTotal: Double   // % of total integration time
+    }
+
+    private func filterSummary(from rows: [FilterRow], totalExposure: Double, totalShots: Int) -> [FilterTotal] {
+        var byFilter: [String: (shots: Int, seconds: Double)] = [:]
+        for row in rows {
+            let filter = FrameHistoryModel.normalizeFilterForChart(row.filter)
+            var v = byFilter[filter] ?? (0, 0)
+            v.shots += row.shotCount
+            v.seconds += row.totalSeconds
+            byFilter[filter] = v
+        }
+        return byFilter.map { filter, data in
+            let pct = totalExposure > 0 ? (data.seconds / totalExposure) * 100 : 0
+            return FilterTotal(filter: filter, shotCount: data.shots, totalSeconds: data.seconds, pctOfTotal: pct)
+        }.sorted { $0.totalSeconds > $1.totalSeconds }
     }
 
     // Quality stats row: filter, date, count, noise avg, noise range, background, SNR + bar
