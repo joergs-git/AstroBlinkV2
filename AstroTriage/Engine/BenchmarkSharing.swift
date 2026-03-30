@@ -232,12 +232,12 @@ class BenchmarkService: ObservableObject {
     @Published var uploadedSuccessfully = false
 
     // Stacking sort state
-    @Published var sortColumn: BenchmarkSortColumn = .timePerFrame
-    @Published var sortAscending: Bool = true
+    @Published var sortColumn: BenchmarkSortColumn = .date
+    @Published var sortAscending: Bool = false  // newest first
 
     // Session sort state
-    @Published var sessionSortColumn: SessionSortColumn = .throughput
-    @Published var sessionSortAscending: Bool = false  // highest throughput first
+    @Published var sessionSortColumn: SessionSortColumn = .date
+    @Published var sessionSortAscending: Bool = false  // newest first
 
     // MARK: - Stacking sorted
 

@@ -499,18 +499,44 @@ class PreviewGenerator {
             }
         }
 
-        // Async completion — frees the worker thread immediately
+        // Async completion — compute histogram from binned buffer then return preview
         let origWidth = image.width
         let origHeight = image.height
         let origChannels = image.channelCount
+        let histW = binnedW, histH = binnedH, histCh = channels
         commandBuffer.addCompletedHandler { _ in
+            // Compute histogram from binned uint16 data (shared buffer — CPU readable after GPU done)
+            let pixelCount = histW * histH
+            let ptr = binnedBuffer.contents().bindMemory(to: UInt16.self, capacity: pixelCount * histCh)
+            let binCount = 64
+            var bins = [Int](repeating: 0, count: binCount)
+            let step = 4
+            for y in stride(from: 0, to: histH, by: step) {
+                for x in stride(from: 0, to: histW, by: step) {
+                    let idx = y * histW + x
+                    let lum: Float
+                    if histCh == 1 {
+                        lum = Float(ptr[idx]) / 65535.0
+                    } else {
+                        let r = Float(ptr[idx]) / 65535.0
+                        let g = Float(ptr[pixelCount + idx]) / 65535.0
+                        let b = Float(ptr[2 * pixelCount + idx]) / 65535.0
+                        lum = 0.299 * r + 0.587 * g + 0.114 * b
+                    }
+                    let bin = min(binCount - 1, Int(lum * Float(binCount)))
+                    bins[bin] += 1
+                }
+            }
+            let maxBin = Float(bins.max() ?? 1)
+            let histBins = bins.map { maxBin > 0 ? log(1 + Float($0)) / log(1 + maxBin) : 0 }
+
             completion(CachedPreview(
                 texture: finalTexture,
                 stfParams: stfParams,
                 originalWidth: origWidth,
                 originalHeight: origHeight,
                 channelCount: origChannels,
-                histogramBins: nil
+                histogramBins: histBins
             ))
         }
         commandBuffer.commit()
