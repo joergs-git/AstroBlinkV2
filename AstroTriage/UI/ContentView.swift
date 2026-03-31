@@ -1243,6 +1243,9 @@ struct CullingStatusView: View {
 struct AutoMarkPopover: View {
     @ObservedObject var viewModel: TriageViewModel
     @Binding var isPresented: Bool
+    @State private var showConvergenceWarning = false
+    @State private var pendingOption: MarkOption?
+    @State private var showSpread = false
 
     private struct MarkOption {
         let title: String
@@ -1256,7 +1259,6 @@ struct AutoMarkPopover: View {
         let images = viewModel.images
         let totalExposure = images.reduce(0.0) { $0 + ($1.exposure ?? 0.0) }
 
-        // Count what each level WOULD mark (total target state, not delta)
         let conservativeTarget = images.filter { $0.qualityTier == .trash }
         let balancedTarget = images.filter {
             $0.qualityTier == .trash ||
@@ -1266,15 +1268,9 @@ struct AutoMarkPopover: View {
             $0.qualityTier == .trash || $0.qualityTier == .borderline || $0.qualityTier == .uncertain
         }
 
-        let currentlyMarked = images.filter { $0.isMarkedForDeletion }.count
         let trashExp = conservativeTarget.reduce(0.0) { $0 + ($1.exposure ?? 0.0) }
         let balancedExp = balancedTarget.reduce(0.0) { $0 + ($1.exposure ?? 0.0) }
         let aggressiveExp = aggressiveTarget.reduce(0.0) { $0 + ($1.exposure ?? 0.0) }
-
-        // Show target count — user sees what the result will be
-        let trashOnly = conservativeTarget
-        let balanced = balancedTarget
-        let aggressive = aggressiveTarget
 
         func lossStr(_ exp: Double) -> String {
             guard totalExposure > 0 else { return "" }
@@ -1285,11 +1281,11 @@ struct AutoMarkPopover: View {
 
         return [
             MarkOption(title: "Conservative", subtitle: "Nebula — maximize integration time.\nOnly removes definite garbage.",
-                       count: trashOnly.count, integrationLoss: lossStr(trashExp), color: .green),
+                       count: conservativeTarget.count, integrationLoss: lossStr(trashExp), color: .green),
             MarkOption(title: "Balanced", subtitle: "General use — removes garbage\n+ worst borderline frames.",
-                       count: balanced.count, integrationLoss: lossStr(balancedExp), color: .orange),
+                       count: balancedTarget.count, integrationLoss: lossStr(balancedExp), color: .orange),
             MarkOption(title: "Aggressive", subtitle: "Stars/Galaxy — prioritize sharpness.\nRemoves all questionable frames.",
-                       count: aggressive.count, integrationLoss: lossStr(aggressiveExp), color: .red),
+                       count: aggressiveTarget.count, integrationLoss: lossStr(aggressiveExp), color: .red),
         ]
     }
 
@@ -1299,42 +1295,182 @@ struct AutoMarkPopover: View {
                 .font(.system(size: 13, weight: .bold))
                 .padding(.bottom, 2)
 
+            // Convergence warning banner
+            if let cr = viewModel.convergenceResult, (cr.isConverged || cr.snrStopReached) {
+                convergenceWarningBanner(cr)
+            }
+
             ForEach(Array(options.enumerated()), id: \.offset) { _, option in
-                Button(action: {
-                    applyOption(option)
-                    isPresented = false
-                }) {
-                    HStack(spacing: 8) {
-                        Circle().fill(option.color).frame(width: 10, height: 10)
-                        VStack(alignment: .leading, spacing: 2) {
-                            HStack {
-                                Text(option.title).font(.system(size: 12, weight: .semibold))
-                                Spacer()
-                                if option.count > 0 {
-                                    Text("\(option.count) frames  \(option.integrationLoss)")
-                                        .font(.system(size: 10, weight: .medium, design: .monospaced))
-                                        .foregroundColor(.secondary)
-                                } else {
-                                    Text("nothing to mark")
-                                        .font(.system(size: 10))
-                                        .foregroundColor(.secondary)
-                                }
-                            }
-                            Text(option.subtitle)
-                                .font(.system(size: 10))
-                                .foregroundColor(.secondary)
-                                .lineLimit(2)
-                        }
-                    }
-                    .padding(.vertical, 6)
-                    .padding(.horizontal, 8)
-                    .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(0.05)))
+                Button(action: { handleOptionClick(option) }) {
+                    autoMarkOptionRow(option)
                 }
                 .buttonStyle(.plain)
                 .disabled(option.count == 0)
             }
+
+            // Session spread section
+            sessionSpreadSection
         }
         .padding(12)
+        .alert("Diminishing Returns", isPresented: $showConvergenceWarning) {
+            Button("Mark Anyway", role: .destructive) {
+                if let option = pendingOption {
+                    applyOption(option)
+                    isPresented = false
+                }
+            }
+            Button("Cancel", role: .cancel) { pendingOption = nil }
+        } message: {
+            if let cr = viewModel.convergenceResult {
+                let spreadStr = String(format: "%.2f", cr.qualitySpread)
+                let snrLoss = String(format: "%.1f", 100.0 - viewModel.snrRetention)
+                if cr.isConverged {
+                    Text("Remaining frames are already very uniform (spread: \(spreadStr)). Further culling loses integration time without meaningful quality improvement.\n\nSNR impact: -\(snrLoss)%")
+                } else {
+                    Text("You're losing more SNR (-\(snrLoss)%) than integration time. Consider keeping remaining frames to preserve signal depth.")
+                }
+            }
+        }
+    }
+
+    // Convergence/SNR warning banner at top of popover
+    private func convergenceWarningBanner(_ cr: ConvergenceResult) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: cr.isConverged ? "checkmark.seal.fill" : "exclamationmark.triangle.fill")
+                .foregroundColor(cr.isConverged ? .green : .yellow)
+                .font(.system(size: 12))
+            Text(cr.isConverged
+                ? "Session is uniform — further culling has diminishing returns"
+                : "SNR loss exceeds integration loss — consider stopping")
+                .font(.system(size: 10))
+                .foregroundColor(.secondary)
+        }
+        .padding(8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 6).fill(
+            cr.isConverged ? Color.green.opacity(0.1) : Color.yellow.opacity(0.1)
+        ))
+    }
+
+    // Single option row
+    private func autoMarkOptionRow(_ option: MarkOption) -> some View {
+        HStack(spacing: 8) {
+            Circle().fill(option.color).frame(width: 10, height: 10)
+            VStack(alignment: .leading, spacing: 2) {
+                HStack {
+                    Text(option.title).font(.system(size: 12, weight: .semibold))
+                    Spacer()
+                    if option.count > 0 {
+                        Text("\(option.count) frames  \(option.integrationLoss)")
+                            .font(.system(size: 10, weight: .medium, design: .monospaced))
+                            .foregroundColor(.secondary)
+                    } else {
+                        Text("nothing to mark")
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                    }
+                }
+                Text(option.subtitle)
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+                    .lineLimit(2)
+            }
+        }
+        .padding(.vertical, 6)
+        .padding(.horizontal, 8)
+        .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(0.05)))
+    }
+
+    // Session spread: per-metric distribution info
+    private var sessionSpreadSection: some View {
+        DisclosureGroup("Session Spread", isExpanded: $showSpread) {
+            VStack(alignment: .leading, spacing: 6) {
+                let stats = computeMetricStats()
+                ForEach(stats, id: \.name) { stat in
+                    metricSpreadRow(stat)
+                }
+
+                if let cr = viewModel.convergenceResult {
+                    Divider()
+                    HStack {
+                        Text("Overall spread:")
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundColor(.secondary)
+                        Text(String(format: "%.2f", cr.qualitySpread))
+                            .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        Text("— \(spreadLabel(cr.qualitySpread))")
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundColor(spreadColor(cr.qualitySpread))
+                    }
+                    // Readiness bar
+                    HStack(spacing: 4) {
+                        GeometryReader { geo in
+                            ZStack(alignment: .leading) {
+                                RoundedRectangle(cornerRadius: 2)
+                                    .fill(Color.gray.opacity(0.2))
+                                RoundedRectangle(cornerRadius: 2)
+                                    .fill(readinessColor(cr.readinessPercent))
+                                    .frame(width: geo.size.width * min(1, cr.readinessPercent / 100))
+                            }
+                        }
+                        .frame(height: 6)
+                        Text("\(Int(cr.readinessPercent))% \(cr.readinessLabel)")
+                            .font(.system(size: 9, design: .monospaced))
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+            .padding(.top, 4)
+        }
+        .font(.system(size: 11, weight: .medium))
+    }
+
+    // Single metric spread row with range bar
+    private func metricSpreadRow(_ stat: MetricStat) -> some View {
+        VStack(alignment: .leading, spacing: 1) {
+            HStack {
+                Text(stat.name)
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .frame(width: 45, alignment: .leading)
+                Text(stat.minStr)
+                    .font(.system(size: 9, design: .monospaced))
+                    .foregroundColor(.secondary)
+                    .frame(width: 50, alignment: .trailing)
+                GeometryReader { geo in
+                    ZStack(alignment: .leading) {
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(Color.gray.opacity(0.15))
+                        RoundedRectangle(cornerRadius: 2)
+                            .fill(spreadColor(stat.zSpread).opacity(0.6))
+                    }
+                }
+                .frame(height: 6)
+                Text(stat.maxStr)
+                    .font(.system(size: 9, design: .monospaced))
+                    .foregroundColor(.secondary)
+                    .frame(width: 50, alignment: .leading)
+            }
+            Text("spread: \(String(format: "%.2f", stat.zSpread)) (\(spreadLabel(stat.zSpread)))")
+                .font(.system(size: 9, design: .monospaced))
+                .foregroundColor(spreadColor(stat.zSpread))
+                .padding(.leading, 47)
+        }
+    }
+
+    // Handle option click — show warning if converged/SNR-stop
+    private func handleOptionClick(_ option: MarkOption) {
+        guard option.count > 0 else { return }
+
+        // Check if convergence guard should trigger (only for Balanced/Aggressive)
+        if option.title != "Conservative",
+           let cr = viewModel.convergenceResult,
+           (cr.isConverged || cr.snrStopReached) {
+            pendingOption = option
+            showConvergenceWarning = true
+        } else {
+            applyOption(option)
+            isPresented = false
+        }
     }
 
     private func applyOption(_ option: MarkOption) {
@@ -1342,7 +1478,6 @@ struct AutoMarkPopover: View {
         for i in viewModel.images.indices {
             let entry = viewModel.images[i]
 
-            // Determine if this frame SHOULD be marked at this autopilot level
             let shouldMark: Bool
             if title == "Conservative" {
                 shouldMark = entry.qualityTier == .trash
@@ -1350,12 +1485,9 @@ struct AutoMarkPopover: View {
                 shouldMark = entry.qualityTier == .trash ||
                     (entry.qualityTier == .borderline && (entry.qualityBreakdown?.borderlineSeverity ?? 0) >= 2)
             } else {
-                // Aggressive: trash + borderline + uncertain
                 shouldMark = entry.qualityTier == .trash || entry.qualityTier == .borderline || entry.qualityTier == .uncertain
             }
 
-            // Bidirectional: mark what should be marked, UNMARK what shouldn't
-            // (only unmark autopilot-eligible frames — don't touch manually marked excellent/good)
             let isAutopilotEligible = entry.qualityTier == .trash || entry.qualityTier == .borderline || entry.qualityTier == .uncertain
             if shouldMark && !entry.isMarkedForDeletion {
                 viewModel.images[i].isMarkedForDeletion = true
@@ -1367,6 +1499,101 @@ struct AutoMarkPopover: View {
         viewModel.recomputeSNRRetention()
         viewModel.updateConvergence()
         viewModel.statusMessage = "Auto-marked \(option.count) frames (\(option.title))"
+    }
+
+    // MARK: - Metric Stats Computation
+
+    private struct MetricStat: Identifiable {
+        let name: String
+        let minVal: Double
+        let maxVal: Double
+        let minStr: String
+        let maxStr: String
+        let zSpread: Double  // Std dev of z-scores for this metric
+        var id: String { name }
+    }
+
+    private func computeMetricStats() -> [MetricStat] {
+        let retained = viewModel.images.filter { !$0.isMarkedForDeletion && $0.qualityBreakdown != nil }
+        guard retained.count >= 2 else { return [] }
+
+        var stats: [MetricStat] = []
+
+        // FWHM (from ImageEntry: fwhm or computedFWHM)
+        let fwhms = retained.compactMap { $0.fwhm ?? $0.computedFWHM }
+        if fwhms.count >= 2 {
+            let zs = retained.compactMap { $0.qualityBreakdown?.fwhmZ }
+            stats.append(MetricStat(
+                name: "FWHM", minVal: fwhms.min()!, maxVal: fwhms.max()!,
+                minStr: String(format: "%.1f\"", fwhms.min()!),
+                maxStr: String(format: "%.1f\"", fwhms.max()!),
+                zSpread: stdDev(zs)
+            ))
+        }
+
+        // Stars (from ImageEntry: starCount or computedStarCount)
+        let stars = retained.compactMap { ($0.starCount ?? $0.computedStarCount).map { Double($0) } }
+        if stars.count >= 2 {
+            let zs = retained.compactMap { $0.qualityBreakdown?.starsZ }
+            stats.append(MetricStat(
+                name: "Stars", minVal: stars.min()!, maxVal: stars.max()!,
+                minStr: String(format: "%.0f", stars.min()!),
+                maxStr: String(format: "%.0f", stars.max()!),
+                zSpread: stdDev(zs)
+            ))
+        }
+
+        // Noise (from ImageEntry: noiseMAD)
+        let noises = retained.compactMap { $0.noiseMAD.map { Double($0) } }
+        if noises.count >= 2 {
+            let zs = retained.compactMap { $0.qualityBreakdown?.noiseZ }
+            stats.append(MetricStat(
+                name: "Noise", minVal: noises.min()!, maxVal: noises.max()!,
+                minStr: String(format: "%.4f", noises.min()!),
+                maxStr: String(format: "%.4f", noises.max()!),
+                zSpread: stdDev(zs)
+            ))
+        }
+
+        // Trailing (from ImageEntry: trailingScore)
+        let trails = retained.compactMap { $0.trailingScore }
+        if trails.count >= 2, trails.max()! > 0.01 {
+            let zs = retained.compactMap { $0.qualityBreakdown?.trailingZ }
+            stats.append(MetricStat(
+                name: "Trail", minVal: trails.min()!, maxVal: trails.max()!,
+                minStr: String(format: "%.2f", trails.min()!),
+                maxStr: String(format: "%.2f", trails.max()!),
+                zSpread: stdDev(zs)
+            ))
+        }
+
+        return stats
+    }
+
+    private func stdDev(_ values: [Double]) -> Double {
+        guard values.count >= 2 else { return 0 }
+        let mean = values.reduce(0, +) / Double(values.count)
+        let variance = values.map { ($0 - mean) * ($0 - mean) }.reduce(0, +) / Double(values.count)
+        return variance.squareRoot()
+    }
+
+    private func spreadLabel(_ spread: Double) -> String {
+        if spread < 0.3 { return "tight" }
+        if spread < 0.8 { return "normal" }
+        return "wide"
+    }
+
+    private func spreadColor(_ spread: Double) -> Color {
+        if spread < 0.3 { return .green }
+        if spread < 0.8 { return .orange }
+        return .red
+    }
+
+    private func readinessColor(_ pct: Double) -> Color {
+        if pct >= 95 { return .green }
+        if pct >= 80 { return .yellow }
+        if pct >= 60 { return .orange }
+        return .red
     }
 }
 

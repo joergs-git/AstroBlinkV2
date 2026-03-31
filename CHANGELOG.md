@@ -4,6 +4,21 @@ All notable changes to AstroBlink & AIsaac will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [5.10.0] — 2026-03-31
+
+### Added
+- **Blink Playback** — Play/stop button with delay picker (0.1–2s) in the slider bar. Blinks through all visible (unhidden/filtered) images endlessly. Multi-select blinks only selected frames. ESC or stop button to end. Status bar shows "Blink" pill during playback
+- **Convergence Guard** — Autopilot now warns before marking when quality spread is already tight (< 0.3) or SNR loss exceeds integration loss. Confirmation dialog explains diminishing returns. Conservative mode is never guarded (trash is always trash)
+- **Session Spread Stats** — Collapsible "Session Spread" section in the Auto-Mark popover shows per-metric distribution: FWHM, Stars, Noise, Trailing with min/max range, z-score spread, and tight/normal/wide labels. Overall quality spread + readiness percentage with color-coded bar
+- **ConvergenceDetector activated** — Full convergence analysis (quality spread, SNR stopping, stack readiness) now runs in production. Previously only used in unit tests. Status bar shows quality spread value when session is uniform
+
+### Fixed
+- **File > Open menu** — Menu item posted notification but nothing observed it. Cmd+O worked (keyboard handler), menu didn't. Added `.onReceive` for `.openFolderRequest`
+- **AIsaac max_tokens** — Increased from 2048 to 4096 for pro mode. Marking 800 files generated a `mark_frames` JSON that exceeded the token limit, truncating the response mid-JSON
+
+### Changed
+- **ContentView refactored** — Body extracted into computed properties (`toolbarArea`, `mainContentArea`, `statusBarArea`, etc.) and ViewModifier structs to resolve Swift type-checker timeout. Future UI additions no longer risk compiler limits
+
 ## [5.9.0] — 2026-03-30
 
 ### Added

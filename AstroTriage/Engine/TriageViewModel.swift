@@ -145,6 +145,8 @@ class TriageViewModel: ObservableObject {
     // Culling status — actionable text for status bar (v4.3.0)
     @Published var cullingStatus: CullingStatus?
     @Published var isConverged: Bool = false
+    // Full convergence analysis result (from ConvergenceDetector)
+    @Published var convergenceResult: ConvergenceResult?
 
     // Culling status model: simple actionable state
     struct CullingStatus {
@@ -2051,37 +2053,51 @@ class TriageViewModel: ObservableObject {
     /// Update culling status after mark/unmark or quality recomputation.
     /// Simple actionable state: how many trash remain, SNR warning, convergence.
     func updateConvergence() {
-        let unmarkedTrash = images.filter { !$0.isMarkedForDeletion && $0.qualityTier == .trash }.count
-        let unmarkedBorderline = images.filter { !$0.isMarkedForDeletion && $0.qualityTier == .borderline }.count
         let hasScores = images.contains { $0.qualityBreakdown != nil }
 
         guard hasScores else {
             cullingStatus = nil
             isConverged = false
+            convergenceResult = nil
             return
         }
 
-        // SNR stopping check
-        let totalExposure = images.reduce(0.0) { $0 + ($1.exposure ?? 0.0) }
-        let markedExposure = images.filter { $0.isMarkedForDeletion }.reduce(0.0) { $0 + ($1.exposure ?? 0.0) }
-        let integrationLossPct = totalExposure > 0 ? markedExposure / totalExposure * 100 : 0
-        let snrLossPct = 100.0 - snrRetention
+        // Run full convergence analysis
+        let result = ConvergenceDetector.analyze(
+            entries: images,
+            snrRetention: snrRetention,
+            calibrationDB: CalibrationDatabase.shared,
+            fingerprint: currentSetupFingerprint
+        )
+        convergenceResult = result
+        isConverged = result.isConverged
+
+        // Map convergence result to status bar display
+        let unmarkedTrash = images.filter { !$0.isMarkedForDeletion && $0.qualityTier == .trash }.count
+        let unmarkedBorderline = images.filter { !$0.isMarkedForDeletion && $0.qualityTier == .borderline }.count
 
         if unmarkedTrash > 0 {
             cullingStatus = CullingStatus(level: .trash, text: "\(unmarkedTrash)\u{00D7} trash remaining")
-            isConverged = false
-        } else if snrLossPct > integrationLossPct && snrLossPct > 5 {
+        } else if result.snrStopReached {
+            let snrLossPct = 100.0 - snrRetention
+            let totalExposure = images.reduce(0.0) { $0 + ($1.exposure ?? 0.0) }
+            let markedExposure = images.filter { $0.isMarkedForDeletion }.reduce(0.0) { $0 + ($1.exposure ?? 0.0) }
+            let integrationLossPct = totalExposure > 0 ? markedExposure / totalExposure * 100 : 0
             cullingStatus = CullingStatus(
                 level: .warning,
                 text: "SNR: -\(String(format: "%.0f", snrLossPct))% vs integration -\(String(format: "%.0f", integrationLossPct))%"
             )
-            isConverged = false
+        } else if result.isConverged {
+            let spreadStr = String(format: "%.2f", result.qualitySpread)
+            if unmarkedBorderline > 0 {
+                cullingStatus = CullingStatus(level: .done, text: "Uniform (spread \(spreadStr)) — \(unmarkedBorderline) borderline remain")
+            } else {
+                cullingStatus = CullingStatus(level: .done, text: "Culling complete (spread \(spreadStr))")
+            }
         } else if unmarkedBorderline > 0 {
             cullingStatus = CullingStatus(level: .done, text: "Culling done (\(unmarkedBorderline) borderline remain)")
-            isConverged = true
         } else {
             cullingStatus = CullingStatus(level: .done, text: "Culling complete")
-            isConverged = true
         }
     }
 

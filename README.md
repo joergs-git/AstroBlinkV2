@@ -46,7 +46,8 @@ AIsaac knows your equipment, remembers your imaging history, understands light p
 - **GPU Post-Processing** — real-time stretch, sharpening, contrast, dark level, color saturation, bilateral denoise, Richardson-Lucy deconvolution, gradient removal, Wiener deconvolution, structure enhancement.
 - **Metal GPU Rendering** — PixInsight-compatible STF auto-stretch, zero-copy Apple Silicon buffers, <32ms navigation on cache hit.
 - **Compare with Best (C key)** — side-by-side synchronized zoom/pan with star eccentricity overlay and PA direction arrows.
-- **Culling Autopilot** — one-click auto-marking (Conservative/Balanced/Aggressive) with integration impact preview.
+- **Culling Autopilot** — one-click auto-marking (Conservative/Balanced/Aggressive) with integration impact preview. Convergence guard warns when quality spread is too tight for further culling. Session Spread stats show per-metric distribution.
+- **Blink Playback** — play/stop button with adjustable delay (0.1–2s) cycles through visible images endlessly. Respects filters and hide-marked. ESC to stop.
 - **SSWEIGHT Export** — writes PixInsight-compatible weight keywords into FITS/XISF headers for WBPP.
 - **Native FITS/XISF QuickLook** — Finder thumbnails and spacebar previews with debayer support for color cameras.
 - **Bortle Sky Quality (VIIRS 2024)** — real satellite-measured light pollution for every frame. Fractional Bortle (e.g. B4.8) from NOAA VIIRS 2024 annual composite via Supabase lookup. Computed from SITELAT/SITELONG FITS headers. Offline fallback via embedded Falchi 2015 atlas.

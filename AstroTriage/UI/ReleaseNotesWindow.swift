@@ -34,6 +34,13 @@ class ReleaseNotesWindowController {
 // MARK: - Release notes data (shared between view and copy)
 
 private let allReleases: [(version: String, date: String, items: [(ReleaseNotesView.ChangeType, String, String)])] = [
+    ("5.10.0", "March 31, 2026", [
+        (.added, "Blink Playback", "Play/stop button with delay picker (0.1-2s) blinks through visible images endlessly. Multi-select blinks only selected frames. ESC to stop."),
+        (.added, "Convergence Guard", "Autopilot warns before marking when quality spread is tight or SNR loss exceeds integration loss. Prevents over-culling with diminishing returns."),
+        (.added, "Session Spread Stats", "Auto-Mark popover shows per-metric distribution with min/max, z-score spread, and stack readiness bar."),
+        (.fixed, "File > Open Menu", "Menu item now works — was posting notification without observer."),
+        (.fixed, "AIsaac 800-Frame Marking", "Increased max_tokens to 4096 — large batch mark commands no longer truncate."),
+    ]),
     ("5.9.0", "March 30, 2026", [
         (.added, "AIsaac Collapsible Window", "AIsaac now starts as a compact floating strip with preset chips and input field. Click to expand full chat — 80% screen height. Always on top."),
         (.added, "AIsaac Weather-Aware", "Every AIsaac response now considers local weather, seeing, moon phase, and conditions — not just Plan Tonight. Ask anything and get weather-informed advice."),
