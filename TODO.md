@@ -2,7 +2,7 @@
 
 Status: [ ] offen | [~] in Arbeit | [x] fertig
 
-Current version: **v5.9.0** (build 48)
+Current version: **v5.10.0** (build 49)
 
 ---
 
@@ -127,6 +127,18 @@ All original implementation phases are complete:
   - [ ] `AIsaacService` — community context in system prompt (deferred)
 - [ ] **Phase 2: Agreement Learning** — future (adjust thresholds from community override rates)
 - [ ] **Phase 3: Contextual Priors** — future (empirical Bayesian metric weights)
+
+### Onboarding / Welcome Screen
+- [ ] First-launch onboarding flow — guided walkthrough of key features (SmartCull, AIsaac, shortcuts)
+- [ ] Interactive tutorial: "Open a folder → review quality → mark bad frames → pre-delete"
+- [ ] Equipment profile setup (telescope, camera, focal length) during onboarding for immediate calibration
+- [ ] Option to show on first launch only, with "Show again" in Help menu
+
+### PixInsight Integration Plugin
+- [x] **PJSR Bridge Script** — imports triage results (separate repo, shipped)
+- [ ] Deeper integration: launch PixInsight WBPP directly from AstroBlink with pre-configured file list
+- [ ] Two-way sync: read PixInsight SubframeSelector weights, write AstroBlink SSWEIGHT back
+- [ ] PixInsight process icon export for batch processing pipelines
 
 ---
 
