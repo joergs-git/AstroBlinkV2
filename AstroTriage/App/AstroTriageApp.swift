@@ -182,10 +182,10 @@ class AstroBlinkV2AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
-        // Check iCloud for newer Frame History DB (deferred — iCloud needs time to resolve)
+        // Check iCloud for newer Frame History DB (waits for iCloud resolution, no fixed timer)
         if !isTestHost {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 4.0) {
-                self.checkFrameHistoryICloudSync()
+            FrameHistoryDatabase.shared.onICloudResolved { [weak self] _ in
+                self?.checkFrameHistoryICloudSync()
             }
         }
     }
@@ -198,10 +198,13 @@ class AstroBlinkV2AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Check iCloud for a newer/different Frame History database and prompt user.
     private func checkFrameHistoryICloudSync() {
-        guard let (localMeta, iCloudMeta) = FrameHistoryDatabase.shared.checkICloudForNewerDB() else {
-            return  // No iCloud data or same as local
+        FrameHistoryDatabase.shared.checkICloudForNewerDBAsync { [weak self] result in
+            guard let (localMeta, iCloudMeta) = result else { return }
+            self?.showICloudSyncAlert(localMeta: localMeta, iCloudMeta: iCloudMeta)
         }
+    }
 
+    private func showICloudSyncAlert(localMeta: FrameHistoryMeta, iCloudMeta: FrameHistoryMeta) {
         // Format file sizes
         let localMB = String(format: "%.1f MB", Double(localMeta.dbSizeBytes) / (1024 * 1024))
         let iCloudMB = String(format: "%.1f MB", Double(iCloudMeta.dbSizeBytes) / (1024 * 1024))
@@ -241,15 +244,17 @@ class AstroBlinkV2AppDelegate: NSObject, NSApplicationDelegate {
             : (response == .alertFirstButtonReturn)
 
         if useICloud {
-            do {
-                try FrameHistoryDatabase.shared.importFromICloud()
-                print("FrameHistory: imported from iCloud (\(iCloudMeta.frameCount) frames)")
-            } catch {
-                let errorAlert = NSAlert()
-                errorAlert.alertStyle = .warning
-                errorAlert.messageText = "iCloud Import Failed"
-                errorAlert.informativeText = error.localizedDescription
-                errorAlert.runModal()
+            FrameHistoryDatabase.shared.importFromICloudAsync { result in
+                switch result {
+                case .success(let count):
+                    print("FrameHistory: imported \(count) frames from iCloud")
+                case .failure(let error):
+                    let errorAlert = NSAlert()
+                    errorAlert.alertStyle = .warning
+                    errorAlert.messageText = "iCloud Import Failed"
+                    errorAlert.informativeText = error.localizedDescription
+                    errorAlert.runModal()
+                }
             }
         }
     }

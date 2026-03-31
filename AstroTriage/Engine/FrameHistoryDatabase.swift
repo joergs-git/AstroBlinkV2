@@ -16,18 +16,46 @@ final class FrameHistoryDatabase {
 
     // iCloud directory resolved once on a background thread.
     // FileManager.url(forUbiquityContainerIdentifier:) can block 10-30s,
-    // so we resolve it asynchronously and only use it when ready.
+    // so we resolve it asynchronously and notify via callback when ready.
     private var _iCloudDirectory: URL?
-    private var _iCloudReady = false
+    private var _iCloudResolutionStarted = false
+    private var _iCloudResolved = false
+    private var _iCloudReadyCallbacks: [(URL?) -> Void] = []
+
+    /// Register a callback for when iCloud directory resolution completes.
+    /// If already resolved, callback fires immediately. Must be called from main thread.
+    func onICloudResolved(_ callback: @escaping (URL?) -> Void) {
+        if _iCloudResolved {
+            callback(_iCloudDirectory)
+            return
+        }
+        _iCloudReadyCallbacks.append(callback)
+    }
 
     private func resolveICloudIfNeeded() {
-        guard !_iCloudReady else { return }
-        _iCloudReady = true
+        guard !_iCloudResolutionStarted else { return }
+        _iCloudResolutionStarted = true
         DispatchQueue.global(qos: .utility).async { [weak self] in
-            if let container = FileManager.default.url(forUbiquityContainerIdentifier: "iCloud.com.joergsflow.AstroBlinkV2") {
-                let dir = container.appendingPathComponent(Self.iCloudSubdir, isDirectory: true)
-                try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-                self?._iCloudDirectory = dir
+            guard let self else { return }
+            let container = FileManager.default.url(forUbiquityContainerIdentifier: "iCloud.com.joergsflow.AstroBlinkV2")
+            let dir: URL?
+            if let container {
+                let d = container.appendingPathComponent(Self.iCloudSubdir, isDirectory: true)
+                try? FileManager.default.createDirectory(at: d, withIntermediateDirectories: true)
+                dir = d
+                print("FrameHistoryDatabase: iCloud resolved → \(d.path)")
+            } else {
+                dir = nil
+                print("FrameHistoryDatabase: iCloud not available (not signed in or Drive not enabled)")
+            }
+            DispatchQueue.main.async {
+                self._iCloudDirectory = dir
+                self._iCloudResolved = true
+                let callbacks = self._iCloudReadyCallbacks
+                self._iCloudReadyCallbacks.removeAll()
+                for cb in callbacks {
+                    cb(dir)
+                }
             }
         }
     }
@@ -614,7 +642,19 @@ final class FrameHistoryDatabase {
 
     /// Export database to iCloud container with rotating backup.
     func exportToICloud() {
-        guard let iDir = _iCloudDirectory else { return }
+        // If iCloud hasn't resolved yet (e.g. quick quit), try synchronous resolution as fallback
+        if _iCloudDirectory == nil && !_iCloudResolved {
+            if let container = FileManager.default.url(forUbiquityContainerIdentifier: "iCloud.com.joergsflow.AstroBlinkV2") {
+                let dir = container.appendingPathComponent(Self.iCloudSubdir, isDirectory: true)
+                try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+                _iCloudDirectory = dir
+                print("FrameHistoryDatabase: iCloud resolved synchronously during export")
+            }
+        }
+        guard let iDir = _iCloudDirectory else {
+            print("FrameHistoryDatabase: skipping iCloud export — iCloud not available")
+            return
+        }
 
         let latestURL = iDir.appendingPathComponent(Self.dbFilename)
         let backupURL = iDir.appendingPathComponent("FrameHistory_backup1.sqlite")
@@ -643,54 +683,111 @@ final class FrameHistoryDatabase {
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
             let data = try encoder.encode(meta)
             try data.write(to: metaURL, options: .atomic)
+            print("FrameHistoryDatabase: exported to iCloud — \(stats.frameCount) frames (\(String(format: "%.1f MB", Double(fileSize) / (1024*1024))))")
         } catch {
             print("FrameHistoryDatabase: iCloud export failed: \(error)")
         }
     }
 
-    /// Check if iCloud has a newer/larger database than local.
-    /// Returns (localMeta, iCloudMeta) if iCloud has data, nil otherwise.
-    func checkICloudForNewerDB() -> (local: FrameHistoryMeta, iCloud: FrameHistoryMeta)? {
-        guard let iDir = _iCloudDirectory else { return nil }
+    /// Async check if iCloud has a newer/larger database than local.
+    /// Handles evicted (cloud-only) files by triggering download via NSFileCoordinator.
+    /// Completion is called on main thread.
+    func checkICloudForNewerDBAsync(completion: @escaping ((local: FrameHistoryMeta, iCloud: FrameHistoryMeta)?) -> Void) {
+        guard let iDir = _iCloudDirectory else {
+            print("FrameHistoryDatabase: sync check skipped — iCloud directory not available")
+            completion(nil)
+            return
+        }
         let metaURL = iDir.appendingPathComponent("FrameHistory_meta.json")
 
-        guard let data = try? Data(contentsOf: metaURL),
-              let iCloudMeta = try? JSONDecoder().decode(FrameHistoryMeta.self, from: data) else {
-            return nil
-        }
+        // Trigger download if file is evicted (cloud-only placeholder on new Mac)
+        try? FileManager.default.startDownloadingUbiquitousItem(at: metaURL)
 
-        // Build local metadata
-        guard let localStats = try? databaseStats() else { return nil }
-        let localSize = (try? FileManager.default.attributesOfItem(atPath: storageURL.path)[.size] as? Int64) ?? 0
-        let localMeta = FrameHistoryMeta(
-            lastModified: ISO8601DateFormatter().string(from: Date()),
-            frameCount: localStats.frameCount,
-            sessionCount: localStats.sessionCount,
-            dbSizeBytes: localSize
-        )
+        // Read on background thread — NSFileCoordinator waits for download if needed
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            guard let self else {
+                DispatchQueue.main.async { completion(nil) }
+                return
+            }
 
-        // Only return if iCloud has different data
-        if iCloudMeta.frameCount != localMeta.frameCount {
-            return (local: localMeta, iCloud: iCloudMeta)
+            var coordinatorError: NSError?
+            var result: (local: FrameHistoryMeta, iCloud: FrameHistoryMeta)?
+
+            let coordinator = NSFileCoordinator()
+            coordinator.coordinate(readingItemAt: metaURL, options: [], error: &coordinatorError) { readURL in
+                guard let data = try? Data(contentsOf: readURL),
+                      let iCloudMeta = try? JSONDecoder().decode(FrameHistoryMeta.self, from: data) else {
+                    print("FrameHistoryDatabase: failed to read iCloud meta.json at \(readURL.path)")
+                    return
+                }
+
+                guard let localStats = try? self.databaseStats() else { return }
+                let localSize = (try? FileManager.default.attributesOfItem(atPath: self.storageURL.path)[.size] as? Int64) ?? 0
+                let localMeta = FrameHistoryMeta(
+                    lastModified: ISO8601DateFormatter().string(from: Date()),
+                    frameCount: localStats.frameCount,
+                    sessionCount: localStats.sessionCount,
+                    dbSizeBytes: localSize
+                )
+
+                if iCloudMeta.frameCount != localMeta.frameCount {
+                    result = (local: localMeta, iCloud: iCloudMeta)
+                    print("FrameHistoryDatabase: iCloud differs — local \(localMeta.frameCount), iCloud \(iCloudMeta.frameCount) frames")
+                } else {
+                    print("FrameHistoryDatabase: iCloud in sync (\(localMeta.frameCount) frames)")
+                }
+            }
+
+            if let error = coordinatorError {
+                print("FrameHistoryDatabase: NSFileCoordinator error reading meta: \(error)")
+            }
+
+            DispatchQueue.main.async { completion(result) }
         }
-        return nil
     }
 
     /// Import database from iCloud (replaces local DB). Call after user confirmation.
-    func importFromICloud() throws {
+    /// Handles evicted files via download trigger + NSFileCoordinator.
+    /// Completion is called on main thread with imported frame count or error.
+    func importFromICloudAsync(completion: @escaping (Result<Int, Error>) -> Void) {
         guard let iDir = _iCloudDirectory else {
-            throw NSError(domain: "FrameHistoryDatabase", code: 1,
-                          userInfo: [NSLocalizedDescriptionKey: "iCloud not available"])
+            completion(.failure(NSError(domain: "FrameHistoryDatabase", code: 1,
+                                        userInfo: [NSLocalizedDescriptionKey: "iCloud not available"])))
+            return
         }
         let iCloudDB = iDir.appendingPathComponent(Self.dbFilename)
-        guard FileManager.default.fileExists(atPath: iCloudDB.path) else {
-            throw NSError(domain: "FrameHistoryDatabase", code: 2,
-                          userInfo: [NSLocalizedDescriptionKey: "No database found in iCloud"])
-        }
 
-        // Replace local with iCloud copy
-        try? FileManager.default.removeItem(at: storageURL)
-        try FileManager.default.copyItem(at: iCloudDB, to: storageURL)
+        // Trigger download if evicted
+        try? FileManager.default.startDownloadingUbiquitousItem(at: iCloudDB)
+
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            guard let self else { return }
+
+            var coordinatorError: NSError?
+            var importResult: Result<Int, Error> = .failure(NSError(domain: "FrameHistoryDatabase", code: 3,
+                                                                     userInfo: [NSLocalizedDescriptionKey: "Import did not complete"]))
+
+            let coordinator = NSFileCoordinator()
+            coordinator.coordinate(readingItemAt: iCloudDB, options: [], error: &coordinatorError) { readURL in
+                do {
+                    try? FileManager.default.removeItem(at: self.storageURL)
+                    try FileManager.default.copyItem(at: readURL, to: self.storageURL)
+                    let count = (try? self.databaseStats())?.frameCount ?? 0
+                    print("FrameHistoryDatabase: imported \(count) frames from iCloud")
+                    importResult = .success(count)
+                } catch {
+                    print("FrameHistoryDatabase: import failed: \(error)")
+                    importResult = .failure(error)
+                }
+            }
+
+            if let error = coordinatorError {
+                print("FrameHistoryDatabase: NSFileCoordinator error on import: \(error)")
+                importResult = .failure(error)
+            }
+
+            DispatchQueue.main.async { completion(importResult) }
+        }
     }
 
     // MARK: - Setup Nicknames
