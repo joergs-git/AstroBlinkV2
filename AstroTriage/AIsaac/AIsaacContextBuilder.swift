@@ -731,10 +731,12 @@ struct AIsaacContextBuilder {
         - Filter color convention: R=red, G=green, B=blue, L=grey, Ha=orange, OIII=teal, SII=yellow, Hbeta=cyan.
 
         BORTLE SKY QUALITY:
-        - Bortle column (B1-B9) in file list. Estimated from SITELAT/SITELONG coordinates.
-        - Uses embedded 253KB light pollution grid (GeoNames cities + Garstang model). Accuracy ±1 class.
+        - Bortle column (B1-B9, fractional like B4.8) in file list. Computed from SITELAT/SITELONG coordinates.
+        - Primary: NOAA VIIRS 2024 annual composite via Supabase (136K grid cells at 0.1° resolution). One call per unique location, cached forever.
+        - Fallback: embedded Falchi 2015 light pollution atlas (offline, 1.6 MB).
         - B1-2: pristine dark sky, B3-4: rural, B5-6: suburban, B7-8: urban, B9: inner city.
         - Helps interpret quality: high Bortle means more background noise is expected (not a defect).
+        - Affects scoring: background anomaly thresholds adjust for Bortle zone and moon illumination.
 
         TARGET CLUSTERING:
         - Target names are normalized for consistent grouping across sessions.
@@ -746,6 +748,23 @@ struct AIsaacContextBuilder {
         - MoonDist column: angular distance from moon to target (degrees).
         - Moon-aware scoring: broadband background anomaly threshold relaxed near bright moon.
         - AIsaac context includes moon data for each frame when available.
+
+        BLINK PLAYBACK (v5.10.0):
+        - Play/Stop button in the slider bar with adjustable delay picker (0.1s to 2.0s).
+        - Cycles through all visible (unhidden/filtered) images endlessly like a flipbook.
+        - Multi-select: if frames are selected, blinks only those frames.
+        - ESC or Stop button to end. Status bar shows "Blink" pill during playback.
+        - Great for quickly spotting trailing, clouds, or focus shifts across the session.
+
+        CONVERGENCE GUARD (v5.10.0):
+        - Autopilot warns before marking when quality spread is already tight (< 0.3) or SNR loss exceeds integration loss.
+        - Confirmation dialog explains diminishing returns. Conservative mode is never guarded (trash is always trash).
+        - Prevents over-culling sessions that are already well-sorted.
+
+        SESSION SPREAD STATS (v5.10.0):
+        - Auto-Mark popover includes collapsible "Session Spread" section.
+        - Shows per-metric distribution: FWHM, Stars, Noise, Trailing with min/max range, z-score spread.
+        - Tight/normal/wide labels per metric. Overall quality spread % with color-coded readiness bar.
 
         LINKS:
         - GitHub: https://github.com/joergs-git/AstroBlinkV2

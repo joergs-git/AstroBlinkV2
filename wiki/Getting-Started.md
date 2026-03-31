@@ -8,19 +8,19 @@
 
 ## Recommended Workflow
 
-1. **Blink through frames** — use arrow keys with key repeat to scan like a flip-book
+1. **Blink through frames** — use arrow keys with key repeat to scan like a flip-book, or hit Play for auto-blink with adjustable delay (0.1–2s)
 2. **Check the worst first** — click the Q column header to sort by quality. Trash frames at the top.
 3. **Compare borderlines** — press C on any orange frame to see it side-by-side with the group's best
 4. **Mark the bad ones** — Space to mark, H to hide marked from the list
-5. **Try the Autopilot** — click the quality status pill (bottom bar) for one-click Conservative/Balanced/Aggressive auto-marking
+5. **Try the Autopilot** — click the auto-mark button (wand icon) in the toolbar for one-click Conservative/Balanced/Aggressive auto-marking. Session Spread stats and convergence guard help you decide when to stop culling.
 6. **Pre-delete** — Cmd+Backspace moves all marked files to _predel/ staging folder. Nothing is permanently deleted. Full undo with Cmd+Z.
-7. **Ask AIsaac** — click the sparkles button for AI-powered session analysis, filter advice, and planning
+7. **Ask AIsaac** — the collapsible AIsaac window floats on top with preset chips for instant analysis, filter advice, and session planning
 
 ## AIsaac Quick Start
 
-The glowing purple teaser bar at the top-right says "I am AIsaac — ask me about your stars." Click it to open AIsaac. Load a session first for the best experience.
+AIsaac starts as a compact floating window with preset chips and an input field — always on top. Click the title "AIsaac's AstroBlink" or start typing to expand to the full chat view. Load a session first for the best experience.
 
-**Best first question:** Click "Quality Summary" — AIsaac will analyze your entire session and tell you exactly what's good, what's bad, and what to do next.
+**Best first question:** Click "Quality Summary" — AIsaac will analyze your entire session and tell you exactly what's good, what's bad, and what to do next. AIsaac always includes local weather, seeing, and moon data in every response.
 
 ## Tips
 
@@ -39,7 +39,7 @@ The glowing purple teaser bar at the top-right says "I am AIsaac — ask me abou
 
 ## System Requirements
 
-- macOS 13 Ventura or later
+- macOS 14 Sonoma or later
 - Apple Silicon recommended (M1/M2/M3/M4)
 - Works on Intel Macs (slower GPU compute)
 - ~5 MB app size, ~200 MB RAM for typical sessions

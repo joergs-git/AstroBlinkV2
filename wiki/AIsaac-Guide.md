@@ -10,9 +10,13 @@ AIsaac is powered by [Claude](https://anthropic.com) (Anthropic's AI) and has de
 
 ## How It Works
 
-AIsaac appears as a purple floating chat window. You can open it via:
-- The **Ask AIsaac** sparkles button in the toolbar (always gently glowing)
-- The **floating teaser bar** in the top-right of the image viewer ("I am AIsaac — ask me about your stars")
+AIsaac starts as a compact floating window showing preset chips and an input field — always on top. You can interact with it via:
+- **Preset chips** — click any chip for instant answers without typing
+- **Type or speak** — start typing in the input field to expand the window to full chat view
+- **Title bar toggle** — click "AIsaac's AstroBlink" to collapse/expand the window
+- The **Ask AIsaac** sparkles button in the toolbar opens the window if closed
+
+AIsaac always includes your local weather conditions, seeing forecast, and moon phase in every response — not just for "Plan Tonight".
 
 ## Preset Questions
 
@@ -59,7 +63,7 @@ After each response, context-aware buttons appear:
 
 ### Free Sonnet Buddy (included)
 - Powered by Claude Sonnet
-- 20 queries per day
+- 20 queries per day (50/day with email signup via in-app messaging)
 - No signup required
 - All features available
 
@@ -84,6 +88,17 @@ AIsaac learns from every session you load:
 - Your imaging locations (for Bortle zone)
 
 This data persists across app launches in `~/Library/Application Support/AstroBlinkV2/aisaac_profile.json`. It enables features like "Plan Tonight" even before opening a folder.
+
+## Frame History Access
+
+AIsaac has full access to your Frame History Database — a persistent SQLite store tracking all per-frame quality metrics across sessions. Ask things like:
+- "What targets have I imaged?"
+- "Which setup do I use most?"
+- "Where do I need more integration time?"
+- "How has my FWHM improved over time?"
+- "What's my trash rate per setup?"
+
+AIsaac combines this with live weather, moon phase, and Bortle sky quality to give context-aware advice.
 
 ## Privacy
 

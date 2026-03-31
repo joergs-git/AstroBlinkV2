@@ -13,7 +13,7 @@ AIsaac is your built-in AI astrophotography assistant, named after **Isaac Newto
 ## Pages
 
 - **[AIsaac Guide](AIsaac-Guide)** — How to use the AI assistant, all presets, voice, Opus upgrade
-- **[SmartCull Algorithm](SmartCull-Algorithm)** — The 4-stage quality scoring pipeline explained
+- **[SmartCull Algorithm](SmartCull-Algorithm)** — The 5-stage quality scoring pipeline explained
 - **[Keyboard Shortcuts](Keyboard-Shortcuts)** — Complete keyboard reference
 - **[Getting Started](Getting-Started)** — First-time setup and workflow
 - **[FAQ](FAQ)** — Frequently asked questions

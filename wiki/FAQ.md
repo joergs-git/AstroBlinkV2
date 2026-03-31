@@ -39,6 +39,7 @@ Yes — just type in any language and AIsaac will respond in the same language. 
 **Q: What's the difference between the quality tiers?**
 - **Excellent (green):** Clearly above average — best frames
 - **Good (green half):** Near average — solid, definitely keep
+- **Uncertain (blue ?):** Small group (<8 frames) with ambiguous quality — inspect manually
 - **Borderline (orange):** Below average — worth visual inspection. 4 sub-levels from nearly-good to nearly-trash
 - **Trash (red):** Catastrophically bad (Stage 1) or statistically worst (Stage 2)
 
@@ -50,6 +51,15 @@ When a mount has tracking errors, all stars trail in the same direction. SmartCu
 
 **Q: Why are narrowband frames less penalized for trailing?**
 Narrowband filters (Ha, OIII, SII) capture diffuse nebula emission. The science target doesn't depend on point-source star sharpness, and narrowband PSFs are already naturally bloated from chromatic effects. Long narrowband exposures (300-600s) are expensive — clear narrowband nights are rare. Slight tracking drift within the seeing disk barely affects the final stack quality. SmartCull applies a 0.3× trailing weight multiplier for narrowband, 0.6× for RGB, and full 1.0× for luminance (the sharpness channel). This prevents wasting precious integration time on frames with barely visible elongation.
+
+**Q: What is the Convergence Guard?**
+When you've already culled most of the bad frames, further culling gives diminishing returns — you lose more integration time (SNR) than you gain in quality. The Convergence Guard warns you before the Autopilot marks frames in this situation. If the quality spread is already tight (< 0.3) or SNR loss would exceed integration loss, a dialog explains why you might want to stop. Conservative mode is never guarded — trash is always trash.
+
+**Q: What is Blink Playback?**
+Click the Play button in the slider bar to auto-cycle through all visible images at an adjustable speed (0.1–2s delay). If you have frames selected, it blinks only those. Press ESC or the Stop button to end. It respects your current filters and hide-marked setting. Great for quickly spotting patterns like trailing, clouds, or focus drift.
+
+**Q: What is the Frame History Database?**
+A persistent SQLite database that tracks all per-frame quality metrics across every session you open. Frames are identified by SHA256 hash (first 64KB), so renamed or moved files are still recognized. This enables cross-session scoring, historical baselines, and the History window with 6 KPI charts. Backed up to iCloud automatically.
 
 ## Stacking
 

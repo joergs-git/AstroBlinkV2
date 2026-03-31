@@ -22,7 +22,7 @@ Fast visual culling for astrophotography sessions. Blink through hundreds of FIT
 - Non-destructive: files are moved to a PRE-DELETE folder, never permanently deleted
 - Full undo stack for all operations
 
-**Requirements:** macOS 13 Ventura or later, Apple Silicon recommended
+**Requirements:** macOS 14 Sonoma or later, Apple Silicon recommended
 
 **Formats:** FITS (plain, fpack), XISF (uncompressed, LZ4, LZ4HC, zlib, zstd, ByteShuffle)
 

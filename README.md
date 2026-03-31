@@ -10,7 +10,7 @@ Super lightweight (~5 MB app size), yet high performance — Metal GPU compute f
 
 Nice side effect: Finally you have a native XISF and FITS Quicklook for macOS. (press Spacebar shows a quick preview of the image). Was missing that for long! :-)
 
-![macOS](https://img.shields.io/badge/macOS-13%2B-blue) ![Apple Silicon](https://img.shields.io/badge/Apple%20Silicon-optimized-green) ![License](https://img.shields.io/badge/license-MIT-green)
+![macOS](https://img.shields.io/badge/macOS-14%2B-blue) ![Apple Silicon](https://img.shields.io/badge/Apple%20Silicon-optimized-green) ![License](https://img.shields.io/badge/license-GPLv3-blue)
 
 ---
 
@@ -168,7 +168,7 @@ After a night of imaging you might have 200-600 sub-exposures. Some have clouds,
 - **Per-group source consistency** — when mixing images with and without capture-software HFR, quality scoring uses a single consistent measurement method per group to ensure fair comparison
 
 ### SmartCull Quality Engine
-- **4-stage quality pipeline** — garbage detection, z-score ranking, pattern-based rescue rules, and sanity checks. Handles ~99% of quality decisions automatically
+- **5-stage quality pipeline** — garbage detection, session-wide sanity check, z-score ranking, pattern-based rescue rules, and FWHM sanity check. Handles ~99% of quality decisions automatically. Uncertain tier (blue ?) for small groups with ambiguous scores
 - **Orientation consensus trailing detection** — industry first: detects tracking errors by analyzing whether star elongation directions agree (tracking error) or are random (optical aberration)
 - **Filter-aware trailing penalties** — narrowband (Ha/OIII/SII) gets 0.3× trailing weight (slight trailing barely affects emission nebulae), RGB 0.6×, luminance 1.0× (full strictness for the sharpness channel)
 - **Focal-length-adaptive thresholds** — automatically adjusts eccentricity tolerance based on FOCALLEN from headers (short FL = more tolerance)
@@ -274,7 +274,10 @@ After a night of imaging you might have 200-600 sub-exposures. Some have clouds,
 | `N` | Toggle night mode (red-on-black) |
 | `C` | Compare with best frame |
 | `U` | Unmark all |
+| `Cmd+` `Cmd-` | Increase / decrease font size |
+| `Cmd+0` | Reset font size |
 | `Cmd+O` | Open folder or select files |
+| `ESC` | Stop blink playback |
 | `Double-click` | Reset zoom to fit-to-view |
 
 ---
@@ -317,7 +320,7 @@ The iOS app source code is included in this repository under [`AstroFileViewer-i
 ## Requirements
 
 ### macOS (AstroBlinkV2)
-- **macOS 13 Ventura** or later
+- **macOS 14 Sonoma** or later
 - **Apple Silicon** required (M1/M2/M3/M4) — engineered for unified memory architecture
 - Metal-capable GPU
 

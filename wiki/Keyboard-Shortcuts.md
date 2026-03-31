@@ -12,7 +12,9 @@
 |-----|--------|
 | Space | Toggle pre-delete mark (single or multi-selection) |
 | Cmd+Backspace | Move marked files to _predel/ staging folder |
-| Cmd+Z | Undo last pre-delete operation |
+| Cmd+M | Move marked files to a chosen folder |
+| Cmd+Z | Undo last pre-delete or move operation |
+| U | Unmark all |
 | K | Toggle skip marked images during navigation |
 | H | Cycle: all files → hide marked → show only marked → all |
 
@@ -27,6 +29,19 @@
 | + / - | Zoom in / out |
 | 0 | Reset zoom to fit |
 | Double-click | Reset zoom to fit / Open image preview |
+
+## Blink Playback
+| Key | Action |
+|-----|--------|
+| Play button | Start auto-blink through visible images (adjustable delay 0.1–2s) |
+| ESC | Stop blink playback |
+
+## Font Scaling
+| Key | Action |
+|-----|--------|
+| Cmd+ | Increase font size |
+| Cmd- | Decrease font size |
+| Cmd+0 | Reset font size to default |
 
 ## Session
 | Key | Action |

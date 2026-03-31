@@ -1,22 +1,31 @@
 # SmartCull — Multi-Stage Quality Engine
 
-SmartCull is a 4-stage pipeline that automatically scores every sub-exposure relative to its group (same target + filter + exposure + observing night). Validated on 1,457 frames across 6 setups, 3 telescopes, mono+OSC, narrowband+broadband.
+SmartCull is a 5-stage pipeline that automatically scores every sub-exposure relative to its group (same target + filter + exposure + observing night). Validated on 1,638 frames across 7 setups, 4 telescopes, mono+OSC, narrowband+broadband.
 
-**"1,457 frames. 14 decisions."** — SmartCull handles 99% of quality decisions automatically.
+**"1,638 frames. 14 decisions."** — SmartCull handles 99% of quality decisions automatically.
 
 ## How It Works
 
-### Stage 1 — Garbage Detection
+### Stage 1 — Garbage Detection (11 Rules)
 
-Absolute thresholds catch catastrophic failures immediately. Any single metric failing = immediate trash (red icon).
+Absolute thresholds catch catastrophic failures immediately. Any single metric failing = immediate trash (red icon). Multiple reasons are shown when more than one rule triggers.
 
-- **No signal** — zero stars AND no noise data detected
-- **Zero/near-zero stars** — star count < 15-25% of group median
-- **SNR catastrophically low** — SNR < 50% of group median
-- **Severe defocus/tracking** — FWHM or HFR > 2x group median
-- **Star trailing** — trailing score > 0.7 (cross-checked with FWHM degradation)
-- **Star count anomaly** — stars > 1.8x median + elevated FWHM (doubled stars from tracking jump)
-- **Background anomaly** — background > 5-6.5 MAD from group median (clouds, fog, gradient)
+- **R0: No signal** — zero stars AND no noise data detected
+- **R1: Zero/near-zero stars** — star count < 15-25% of group median
+- **R1b: Decentered target** — plate-solved position offset > 30% of FOV (requires CRVAL1/CRVAL2)
+- **R2: SNR catastrophically low** — SNR < 50% of group median
+- **R3: Severe defocus** — FWHM > 2x group median
+- **R4: Severe HFR** — HFR > 2x group median
+- **R5: Extreme eccentricity** — eccentricity > 2x focal-length-adaptive baseline
+- **R6: Star trailing** — trailing score > 0.7 (cross-checked with FWHM degradation)
+- **R7: Star count anomaly** — stars > 1.8x median + elevated FWHM (doubled stars from tracking jump)
+- **R8: Background anomaly** — background > 5-6.5 MAD from group median (clouds, fog, gradient). Bortle-aware, moon-aware for broadband.
+- **R9: Tracking hops** — star chain fraction > 25% (tracking jump during exposure)
+- **R10: Twilight/daylight** — sun altitude > -12° for broadband; narrowband tolerates down to -6° (civil twilight)
+
+### Stage 1.5 — Session-Wide Sanity Check
+
+Cross-group comparison using P10/P90 benchmarks. Pools frames by object+exposure (ignoring filter/night) and compares each frame against the session's best decile. If 2+ metrics are dramatically worse than the best 10%, the frame is demoted to trash. A severe single-metric outlier (e.g. FWHM >1.4x P10) plus one more flag also triggers demotion. Requires at least 2 filter/night combinations in the pool to activate.
 
 ### Stage 2 — Relative Z-Score Ranking
 
@@ -35,6 +44,7 @@ Frames that pass Stage 1 are ranked within their group using robust statistics:
 **Tier thresholds:**
 - Excellent: z > 0.5 (green full circle)
 - Good: z > -0.5 (green half circle)
+- Uncertain: small group (<8 frames) with ambiguous z-score (-1.0 to 0.5) — blue question mark
 - Borderline: z > -2.0 (orange — 4 sub-levels from light to deep)
 - Trash: z ≤ -2.0 (red X)
 
@@ -84,9 +94,21 @@ Hover any quality icon to see:
 
 ## Culling Autopilot
 
-Click the quality status pill in the status bar for one-click auto-marking:
+Click the auto-mark button (wand icon) in the toolbar for one-click auto-marking:
 - **Conservative:** Only Stage 1 garbage
 - **Balanced:** + severe borderline (severity ≥ 2)
 - **Aggressive:** + all borderline frames
 
 Each mode shows the frame count and integration impact before applying.
+
+### Convergence Guard (v5.10.0)
+The autopilot warns before marking when further culling has diminishing returns:
+- Quality spread already tight (< 0.3) — remaining frames are very similar in quality
+- SNR loss would exceed integration loss — you'd lose more signal than you gain in quality
+- A confirmation dialog explains the trade-off. Conservative mode is never guarded (trash is always trash).
+
+### Session Spread Stats
+The Auto-Mark popover includes a collapsible "Session Spread" section showing:
+- Per-metric distribution (FWHM, Stars, Noise, Trailing) with min/max range and z-score spread
+- Tight/normal/wide labels per metric
+- Overall quality spread percentage with color-coded readiness bar
