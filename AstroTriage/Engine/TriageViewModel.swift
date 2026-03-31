@@ -105,6 +105,13 @@ class TriageViewModel: ObservableObject {
     // Programmatic multi-row selection (AIsaac highlight command)
     @Published var pendingHighlightRows: IndexSet?
 
+    // Blink playback
+    @Published var isPlaying: Bool = false
+    @Published var playbackDelay: Double = 0.5
+    private var playbackTimer: Timer?
+    private var playbackIndices: [Int] = []
+    private var playbackPosition: Int = 0
+
     func selectMultipleRows(_ rows: IndexSet) {
         pendingHighlightRows = rows
         needsTableRefresh = true
@@ -2782,6 +2789,68 @@ class TriageViewModel: ObservableObject {
         } else {
             selectImage(at: images.count - 1)
         }
+    }
+
+    // MARK: - Blink Playback
+
+    /// Start blinking through images. Uses highlighted rows if multi-selected,
+    /// otherwise all currently visible (unhidden/filtered) images.
+    func startPlayback(highlightedRows: IndexSet?) {
+        guard !images.isEmpty else { return }
+
+        // Build list of indices to cycle through — always respect visibility
+        if let rows = highlightedRows, rows.count > 1 {
+            // Multi-selected rows are table rows (visible list indices) — map to real indices
+            let visible = visibleImages
+            playbackIndices = rows.compactMap { row -> Int? in
+                guard row < visible.count else { return nil }
+                return images.firstIndex(where: { $0.url == visible[row].url })
+            }
+        } else {
+            // All visible images — map to their real indices in the images array
+            let visible = visibleImages
+            playbackIndices = visible.compactMap { entry in
+                images.firstIndex(where: { $0.url == entry.url })
+            }
+        }
+        guard !playbackIndices.isEmpty else { return }
+
+        // Start at current image if it's in the list, otherwise start from beginning
+        if let pos = playbackIndices.firstIndex(of: selectedIndex) {
+            playbackPosition = pos
+        } else {
+            playbackPosition = 0
+        }
+
+        isPlaying = true
+        schedulePlaybackTimer()
+    }
+
+    func stopPlayback() {
+        isPlaying = false
+        playbackTimer?.invalidate()
+        playbackTimer = nil
+        playbackIndices = []
+        playbackPosition = 0
+    }
+
+    private func schedulePlaybackTimer() {
+        playbackTimer?.invalidate()
+        playbackTimer = Timer.scheduledTimer(withTimeInterval: playbackDelay, repeats: false) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.advancePlayback()
+            }
+        }
+    }
+
+    private func advancePlayback() {
+        guard isPlaying, !playbackIndices.isEmpty else { return }
+        playbackPosition = (playbackPosition + 1) % playbackIndices.count
+        let idx = playbackIndices[playbackPosition]
+        if idx >= 0, idx < images.count {
+            selectImage(at: idx)
+        }
+        schedulePlaybackTimer()
     }
 
     // MARK: - Search Filter

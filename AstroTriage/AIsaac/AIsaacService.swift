@@ -199,7 +199,7 @@ class AIsaacService: ObservableObject {
 
         let body: [String: Any] = [
             "model": "claude-opus-4-20250514",
-            "max_tokens": 2048,
+            "max_tokens": 4096,
             "system": system,
             "messages": messages,
             "stream": true

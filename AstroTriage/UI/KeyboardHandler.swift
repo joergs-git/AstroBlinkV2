@@ -46,6 +46,12 @@ struct KeyboardHandler {
         let noModifiers = modifiers.isEmpty || modifiers == .function
 
         switch event.keyCode {
+        case 53: // Escape — stop blink playback
+            Task { @MainActor in
+                if viewModel.isPlaying { viewModel.stopPlayback() }
+            }
+            // Don't consume ESC if not playing — let other handlers process it
+
         case 123: // Left arrow
             if noModifiers {
                 Task { @MainActor in viewModel.navigatePrevious() }

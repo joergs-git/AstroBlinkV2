@@ -27,802 +27,743 @@ struct ContentView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            // Path bar: shows current session directory with Open button
-            if let rootURL = viewModel.sessionRootURL {
-                HStack(spacing: 6) {
-                    Image(systemName: "folder.fill")
-                        .font(.system(size: 11))
-                        .foregroundColor(nightFgDim.opacity(0.6))
-                    Text(rootURL.path)
-                        .font(.system(size: 11, design: .monospaced))
-                        .foregroundColor(nightFg.opacity(0.8))
-                        .lineLimit(1)
-                        .truncationMode(.head)
-                        .textSelection(.enabled)
-                    Spacer()
-                    Button(action: { viewModel.openFolder() }) {
-                        Image(systemName: "folder.badge.plus")
-                            .font(.system(size: 11))
-                    }
-                    .buttonStyle(.plain)
-                    .foregroundColor(nightFg)
-                    .help("Open another folder (⌘O)")
-                }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 3)
-                .background(nightToolbarBg)
-                Rectangle().fill(nightDivider).frame(height: 1)
-            }
-
-            // Toolbar row — two lines: buttons on top, sliders below
-            VStack(spacing: 2) {
-                // Row 1: Icon buttons + toggles + stats
-                HStack(spacing: 4) {
-                    // ── Group 1: File operations ──
-                    sfToolbarButton("folder", "Open", "Open Folder (⌘O)") { viewModel.openFolder() }
-                    sfToolbarButton("list.bullet.rectangle", "Inspector", "Show FITS/XISF header keywords for selected image (I)") { viewModel.toggleHeaderInspector() }
-                    sfToolbarButton("chart.bar", "Session", "Session overview — group stats by filter, night, and target") {
-                        viewModel.showSessionOverview.toggle()
-                    }
-                    sfToolbarButton("clock.arrow.circlepath", "History", "Frame history — quality trends across all sessions") {
-                        FrameHistoryController.shared.toggleWindow()
-                    }
-
-                    toolbarDivider
-
-                    // ── Group 2: Actions ──
-                    autoMarkToolbarButton
-                    aisaacToolbarButton
-                    sfToolbarButton("square.and.arrow.up", "SSWEIGHT\nExport", "Export quality weights to FITS/XISF headers for WBPP.\nAlso creates CSV backup.") {
-                        viewModel.exportSSWEIGHT()
-                    }
-                    sfToolbarButton("trash", "Delete", "Move spacebar-marked files to _predel/ staging folder (⌘⌫)\nFiles are NOT permanently deleted") { viewModel.moveMarkedToPreDelete() }
-                    if viewModel.canUndoPreDelete {
-                        sfToolbarButton("arrow.uturn.backward", "Undo", "Undo last Pre-Delete (⌘Z)") { viewModel.undoPreDelete() }
-                    }
-
-                    toolbarDivider
-
-                    // ── Group 3: Stacking ──
-                    sfToolbarButton("bolt.fill", "Lightspeed\nStacker", "GPU-accelerated stacking with outlier rejection.\nSelect 3+ images first.") {
-                        viewModel.startQuickStackV2()
-                    }
-                    sfToolbarButton("paintpalette.fill", "Color\nCombine", "Combine mono filter stacks into RGB color image.\nNeeds 2+ filters with 3+ frames each.") {
-                        viewModel.startColorCombine()
-                    }
-
-                    toolbarDivider
-
-                    // ── Group 4: Display settings ──
-                    // Apply All toggle: bakes current settings into all cached previews
-                    VStack(spacing: 2) {
-                        Toggle("Apply\nAll", isOn: Binding(
-                            get: { viewModel.applyAllEnabled },
-                            set: { _ in viewModel.toggleApplyAll() }
-                        ))
-                        .toggleStyle(.switch)
-                        .controlSize(.mini)
-                        .tint(.blue)
-                        .help("Apply current settings to all cached previews")
-                    }
-                    .frame(width: 90)
-
-                    // Debayer toggle
-                    if viewModel.hasOSCImages {
-                        VStack(spacing: 2) {
-                            Toggle("Debayer", isOn: Binding(
-                                get: { viewModel.debayerEnabled },
-                                set: { _ in viewModel.toggleDebayer() }
-                            ))
-                            .toggleStyle(.switch)
-                            .controlSize(.mini)
-                            .tint(.green)
-                            .help("Toggle OSC debayer (D)")
-                        }
-                        .frame(width: 90)
-                    }
-
-                    // Lock STF toggle: freezes exact c0/mb from current image for all
-                    VStack(spacing: 2) {
-                        Toggle("Lock STF", isOn: Binding(
-                            get: { viewModel.isSTFLocked },
-                            set: { _ in viewModel.toggleLockSTF() }
-                        ))
-                        .toggleStyle(.switch)
-                        .controlSize(.mini)
-                        .tint(.orange)
-                        .help("Lock STF — same stretch for all images (S)")
-                    }
-                    .frame(width: 90)
-
-                    // Auto Meridian toggle — rotates images across meridian flip
-                    VStack(spacing: 2) {
-                        Toggle("Meridian\nFlip", isOn: Binding(
-                            get: { viewModel.autoMeridianEnabled },
-                            set: { _ in viewModel.toggleAutoMeridian() }
-                        ))
-                        .toggleStyle(.switch)
-                        .controlSize(.mini)
-                        .tint(.purple)
-                        .help("Auto-rotate images across meridian flip for consistent orientation")
-                    }
-                    .frame(width: 95)
-
-                    toolbarDivider
-
-                    // ── Group 5: Search ──
-                    // Spotlight-style search: filters file list in real time
-                    // Supports plain text or "column:value" (e.g. "filter:Ha", "fwhm:>4")
-                    HStack(spacing: 4) {
-                        Image(systemName: "magnifyingglass")
-                            .font(.system(size: 11))
-                            .foregroundColor(nightFgDim)
-
-                        TextField("Search... (e.g. Ha, filter:L, fwhm:>4)", text: $viewModel.filterText)
-                            .textFieldStyle(.plain)
-                            .font(.system(size: 11, design: .monospaced))
-                            .foregroundColor(nightFg)
-                            .onChange(of: viewModel.filterText) { _ in
-                                viewModel.needsTableRefresh = true
-                            }
-
-                        if !viewModel.filterText.isEmpty {
-                            // Match count
-                            Text("\(viewModel.visibleImages.count)/\(viewModel.images.count)")
-                                .font(.system(size: 10, design: .monospaced))
-                                .foregroundColor(nightFgDim)
-
-                            // Mark all filtered
-                            Button(action: { viewModel.markFilteredImages() }) {
-                                Image(systemName: "checkmark.circle")
-                                    .font(.system(size: 11))
-                            }
-                            .buttonStyle(.plain)
-                            .foregroundColor(viewModel.nightMode ? .red : .accentColor)
-                            .help("Mark all filtered images")
-
-                            // Unmark all filtered
-                            Button(action: { viewModel.unmarkFilteredImages() }) {
-                                Image(systemName: "circle")
-                                    .font(.system(size: 11))
-                            }
-                            .buttonStyle(.plain)
-                            .foregroundColor(viewModel.nightMode ? .red : .secondary)
-                            .help("Unmark all filtered images")
-
-                            // Clear search
-                            Button(action: {
-                                viewModel.filterText = ""
-                                viewModel.needsTableRefresh = true
-                            }) {
-                                Image(systemName: "xmark.circle.fill")
-                                    .font(.system(size: 11))
-                            }
-                            .buttonStyle(.plain)
-                            .foregroundColor(nightFgDim)
-                        }
-                    }
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 3)
-                    .background(
-                        RoundedRectangle(cornerRadius: 4)
-                            .fill(viewModel.nightMode
-                                  ? Color(red: 0.05, green: 0, blue: 0)
-                                  : Color(NSColor.textBackgroundColor))
-                    )
-                    .frame(minWidth: 150, maxWidth: 300)
-
-                    // Filter presets dropdown
-                    Menu {
-                        Section("Quality") {
-                            Button("Excellent") { viewModel.filterText = "q:excellent" }
-                            Button("Good") { viewModel.filterText = "q:good" }
-                            Button("Borderline") { viewModel.filterText = "q:borderline" }
-                            Button("Uncertain") { viewModel.filterText = "q:uncertain" }
-                            Button("Trash") { viewModel.filterText = "q:trash" }
-                            Button("Unscored") { viewModel.filterText = "q:unscored" }
-                        }
-                        Section("Common Filters") {
-                            Button("Luminance") { viewModel.filterText = "filter:L" }
-                            Button("Red") { viewModel.filterText = "filter:R" }
-                            Button("Green") { viewModel.filterText = "filter:G" }
-                            Button("Blue") { viewModel.filterText = "filter:B" }
-                            Button("Ha") { viewModel.filterText = "filter:Ha" }
-                            Button("OIII") { viewModel.filterText = "filter:OIII" }
-                            Button("SII") { viewModel.filterText = "filter:SII" }
-                        }
-                        Section("Metrics") {
-                            Button("FWHM > 5") { viewModel.filterText = "fwhm:>5" }
-                            Button("Stars < 100") { viewModel.filterText = "stars:<100" }
-                            Button("Trailing > 0.5") { viewModel.filterText = "trail:>0.5" }
-                        }
-                        Divider()
-                        Button("Clear Filter") { viewModel.filterText = "" }
-                    } label: {
-                        Image(systemName: "line.3.horizontal.decrease.circle")
-                            .font(.system(size: 13))
-                            .foregroundColor(nightFg.opacity(0.7))
-                    }
-                    .menuStyle(.borderlessButton)
-                    .frame(width: 20)
-                    .help("Filter presets — click to apply a predefined filter")
-
-                    Spacer()
-
-                    // ── Right side: Night, Benchmark, Help ──
-                    // Night mode toggle
-                    VStack(spacing: 2) {
-                        Toggle("Night", isOn: Binding(
-                            get: { viewModel.nightMode },
-                            set: { _ in viewModel.toggleNightMode() }
-                        ))
-                        .toggleStyle(.switch)
-                        .controlSize(.mini)
-                        .tint(.red)
-                        .help("Toggle Night Mode (N)")
-                    }
-                    .frame(width: 80)
-
-                    sfToolbarButton("gauge.with.dots.needle.67percent", "Benchmark", "Session load & stacking performance stats.\nCompare with community leaderboard.", iconColor: Color(red: 0.25, green: 0.45, blue: 0.85)) {
-                        NotificationCenter.default.post(name: .showBenchmarkStats, object: nil)
-                    }
-
-                    toolbarDivider
-
-                    sfToolbarButton("questionmark.circle", "Help", "Help (⌘?)") { HelpWindowController.shared.showWindow(nil) }
-                    sfToolbarButton("info.circle", "About", "About") { AstroBlinkV2AppDelegate.showAboutPanel() }
-                }
-                .padding(.bottom, 2)
-
-                // Thin separator between toolbar icons and image settings
-                Rectangle().fill(nightDivider).frame(height: 1)
-
-                // Row 2: Image settings — centered with the image frame below
-                HStack(spacing: 12) {
-                    Spacer()
-
-                    // Reset all sliders to defaults
-                    Button(action: {
-                        viewModel.resetSlidersToDefaults()
-                        sliderValue = Double(viewModel.stretchStrength)
-                    }) {
-                        HStack(spacing: 3) {
-                            Image(systemName: "arrow.counterclockwise")
-                                .font(.system(size: 12, weight: .medium))
-                            Text("Reset")
-                                .font(.system(size: 10, weight: .medium, design: .monospaced))
-                        }
-                        .foregroundColor(nightFg)
-                    }
-                    .buttonStyle(.plain)
-                    .help("Reset all sliders to defaults")
-                    .contentShape(Rectangle())
-
-                    compactSlider("Stretch", value: $sliderValue, range: 0.0...1.0, step: 0.01,
-                        display: { "\(Int($0 / 1.0 * 100))%" },
-                        onRelease: { viewModel.updateStretchStrength(Float(sliderValue)) })
-
-                    compactSlider("Sharp", value: Binding(
-                        get: { Double(viewModel.sharpening) },
-                        set: { viewModel.sharpening = Float($0); viewModel.updatePostProcessParams() }
-                    ), range: -4.0...4.0, step: 0.1,
-                        display: { String(format: "%+.1f", $0) })
-
-                    compactSlider("Contrast", value: Binding(
-                        get: { Double(viewModel.contrast) },
-                        set: { viewModel.contrast = Float($0); viewModel.updatePostProcessParams() }
-                    ), range: -2.0...2.0, step: 0.05,
-                        display: { String(format: "%+.1f", $0) })
-
-                    compactSlider("Dark", value: Binding(
-                        get: { Double(viewModel.darkLevel) },
-                        set: { viewModel.darkLevel = Float($0); viewModel.updatePostProcessParams() }
-                    ), range: 0.0...1.0, step: 0.01,
-                        display: { String(format: "%.2f", $0) })
-
-                    // Mini histogram
-                    if !viewModel.histogramBins.isEmpty {
-                        HStack(alignment: .bottom, spacing: 0) {
-                            ForEach(Array(viewModel.histogramBins.enumerated()), id: \.offset) { _, value in
-                                Rectangle()
-                                    .fill(Color.white.opacity(0.6))
-                                    .frame(width: 1.5, height: CGFloat(value) * 20)
-                            }
-                        }
-                        .frame(width: 96, height: 20)
-                        .background(Color.black.opacity(0.3))
-                        .cornerRadius(3)
-                        .help("Luminance histogram (pre-stretch, raw data)")
-                    }
-
-                    Spacer()
-                }
-                .padding(.horizontal, 8)
-                .padding(.top, 2)
-            }
-            .padding(.vertical, 4)
-            .background(nightToolbarBg)
-
-            Rectangle().fill(nightDivider).frame(height: 1)
-
-            // In-app message banner (fetched from Supabase)
-            if let message = viewModel.bannerMessage {
-                AppMessageBannerView(
-                    message: message,
-                    nightMode: viewModel.nightMode,
-                    onDismiss: { viewModel.dismissBannerMessage() },
-                    onSnooze: { viewModel.snoozeBannerMessage() },
-                    onRespond: { actionType, value in
-                        viewModel.respondToBannerMessage(actionType: actionType, value: value)
-                    }
-                )
-            }
-
-            // Main content area with optional side panels
-            HStack(spacing: 0) {
-                // LEFT: Header Inspector panel
-                if viewModel.showInspector {
-                    HeaderInspectorContentView(model: viewModel.headerInspectorModel)
-                        .environment(\.fontScale, viewModel.fontScale)
-                        .frame(width: 420)
-                        .background(nightBg)
-
-                    Rectangle().fill(nightDivider).frame(width: 1)
-                }
-
-                // CENTER: Image viewer + file list + status bars
-                VStack(spacing: 0) {
-                    VSplitView {
-                        // Top: Image viewer with optional caching overlay
-                        ZStack(alignment: .center) {
-                            ImageViewerView(viewModel: viewModel, renderer: $renderer)
-
-                            // Show "still caching" text when current image has no cached preview
-                            if viewModel.isCaching,
-                               let image = viewModel.selectedImage,
-                               !viewModel.isImageCached(image.url),
-                               viewModel.currentDecodedImage == nil {
-                                Text("Caching this image...")
-                                    .font(.system(size: 16, weight: .medium, design: .monospaced))
-                                    .foregroundColor(viewModel.nightMode ? .red.opacity(0.8) : .white.opacity(0.8))
-                                    .padding(.horizontal, 20)
-                                    .padding(.vertical, 10)
-                                    .background(
-                                        RoundedRectangle(cornerRadius: 8)
-                                            .fill(Color.black.opacity(0.6))
-                                    )
-                            }
-
-                            // Quick Stack progress overlay (anchored top-right)
-                            if viewModel.showQuickStackV2, let engine = viewModel.quickStackEngineV2 {
-                                VStack {
-                                    HStack {
-                                        Spacer()
-                                        QuickStackV2ProgressView(
-                                            engine: engine,
-                                            nightMode: viewModel.nightMode,
-                                            onDismiss: {
-                                                viewModel.showQuickStackV2 = false
-                                                viewModel.quickStackEngineV2?.cancel()
-                                            }
-                                        )
-                                        .padding(12)
-                                    }
-                                    Spacer()
-                                }
-                            }
-
-                            // Color Combine setup overlay (anchored top-right)
-                            if viewModel.showColorCombine, let engine = viewModel.colorCombineEngine {
-                                VStack {
-                                    HStack {
-                                        Spacer()
-                                        ColorCombineSetupView(
-                                            engine: engine,
-                                            nightMode: viewModel.nightMode,
-                                            onDismiss: {
-                                                viewModel.showColorCombine = false
-                                                viewModel.colorCombineEngine?.cancel()
-                                            },
-                                            debayerEnabled: viewModel.debayerEnabled
-                                        )
-                                        .padding(12)
-                                    }
-                                    Spacer()
-                                }
-                            }
-
-                        }
-                        .frame(minHeight: 200)
-
-                        // Bottom: File list with loading overlay
-                        ZStack {
-                            FileListView(viewModel: viewModel)
-
-                            // Centered progress overlay during header reading
-                            if viewModel.loadingPhase != .none {
-                                VStack(spacing: 12) {
-                                    ProgressView(value: viewModel.headerProgress)
-                                        .progressViewStyle(.linear)
-                                        .tint(viewModel.nightMode ? .red : .accentColor)
-                                        .frame(width: 300)
-
-                                    Text(viewModel.loadingPhase.rawValue)
-                                        .font(.system(size: 13, weight: .semibold, design: .monospaced))
-                                        .foregroundColor(viewModel.nightMode ? .red : .primary)
-
-                                    Text("\(viewModel.headerReadCount) / \(viewModel.headerReadTotal)")
-                                        .font(.system(size: 11, design: .monospaced))
-                                        .foregroundColor(viewModel.nightMode ? .red.opacity(0.7) : .secondary)
-                                }
-                                .padding(24)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 12)
-                                        .fill(viewModel.nightMode
-                                              ? Color.black.opacity(0.9)
-                                              : Color(NSColor.windowBackgroundColor).opacity(0.95))
-                                        .shadow(radius: 8)
-                                )
-                            }
-                        }
-                        .frame(minHeight: 150, idealHeight: 250)
-                    }
-
-                    // Red fuel bar: shows during loading phases, NAS download, or caching
-                    if viewModel.loadingPhase != .none || viewModel.isDownloading || viewModel.isCaching || viewModel.cachingStopped {
-                        HStack(spacing: 6) {
-                            VStack(spacing: 1) {
-                                // Top bar: pre-caching (only when both download + cache are active, or cache-only)
-                                if viewModel.isCaching || viewModel.cachingStopped {
-                                    fuelBar(
-                                        progress: viewModel.cacheProgress,
-                                        label: {
-                                            if viewModel.isCaching {
-                                                let est = viewModel.cachingEstimatedSecondsRemaining.map { " — Est: \($0)s" } ?? ""
-                                                return "Analyzing \(viewModel.cachingCount)/\(viewModel.cachingTotal)\(est)"
-                                            } else {
-                                                return "Caching paused — \(viewModel.prefetchCachedCount)/\(viewModel.images.count)"
-                                            }
-                                        }(),
-                                        color: Color(red: 0.25, green: 0.5, blue: 0.9),
-                                        height: (viewModel.isDownloading) ? 11 : 22,
-                                        isNight: viewModel.nightMode
-                                    )
-                                }
-
-                                // Bottom bar: download or loading phase
-                                if viewModel.isDownloading {
-                                    fuelBar(
-                                        progress: viewModel.downloadProgress,
-                                        label: {
-                                            let est = viewModel.downloadEstimatedSecondsRemaining.map { " — Est: \($0)s" } ?? ""
-                                            return "Downloading \(viewModel.downloadCount)/\(viewModel.downloadTotal)\(est)"
-                                        }(),
-                                        color: Color(red: 0.15, green: 0.35, blue: 0.7),
-                                        height: viewModel.isCaching ? 11 : 22,
-                                        isNight: viewModel.nightMode
-                                    )
-                                } else if viewModel.loadingPhase == .scanning {
-                                    fuelBar(progress: 0, label: "Scanning folder...", color: Color(red: 0.15, green: 0.35, blue: 0.7), height: 22, isNight: viewModel.nightMode)
-                                } else if viewModel.loadingPhase == .readingHeaders {
-                                    fuelBar(
-                                        progress: viewModel.headerProgress,
-                                        label: {
-                                            let est = viewModel.headerEstimatedSecondsRemaining.map { " — Est: \($0)s" } ?? ""
-                                            return "Loading headers \(viewModel.headerReadCount)/\(viewModel.headerReadTotal)\(est)"
-                                        }(),
-                                        color: Color(red: 0.15, green: 0.35, blue: 0.7),
-                                        height: 22,
-                                        isNight: viewModel.nightMode
-                                    )
-                                }
-                            }
-                            .cornerRadius(3)
-
-                            // Stop / Continue buttons
-                            if viewModel.isCaching {
-                                Button(action: { viewModel.stopCaching() }) {
-                                    Image(systemName: "stop.fill")
-                                        .font(.system(size: 12))
-                                        .foregroundColor(viewModel.nightMode ? .red : nil)
-                                }
-                                .buttonStyle(.bordered)
-                                .controlSize(.small)
-                                .help("Stop caching")
-                            }
-                            if viewModel.cachingStopped {
-                                Button(action: { viewModel.continueCaching() }) {
-                                    Image(systemName: "play.fill")
-                                        .font(.system(size: 12))
-                                        .foregroundColor(viewModel.nightMode ? .red : nil)
-                                }
-                                .buttonStyle(.bordered)
-                                .controlSize(.small)
-                                .help("Continue caching")
-                            }
-                        }
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 3)
-                        .background(nightBg)
-                    }
-
-                    // Status bar: LEFT = styled pills, RIGHT = dimensions + status
-                    HStack(spacing: 6) {
-                        // Marked count — always visible, includes total
-                        if !viewModel.images.isEmpty {
-                            statusPill(
-                                "\(viewModel.markedCount) of \(viewModel.images.count) marked",
-                                bg: viewModel.markedCount > 0
-                                    ? (viewModel.nightMode ? Color(red: 0.4, green: 0, blue: 0) : Color(red: 0.8, green: 0.25, blue: 0.25))
-                                    : (viewModel.nightMode ? Color(red: 0.15, green: 0, blue: 0) : Color(white: 0.35))
-                            )
-                            .help("Frames marked for deletion (Space to toggle, Cmd+Backspace to move to PRE-DELETE)")
-                        }
-
-                        // Hiding pill
-                        if viewModel.hideMarked {
-                            statusPill("Hiding", bg: viewModel.nightMode
-                                ? Color(red: 0.3, green: 0, blue: 0)
-                                : Color(red: 0.15, green: 0.55, blue: 0.55))
-                            .help("Marked frames are hidden from the file list (H to toggle)")
-                        }
-
-                        // Show only marked pill (inverted view)
-                        if viewModel.showOnlyMarked {
-                            statusPill("Only Marked", bg: viewModel.nightMode
-                                ? Color(red: 0.35, green: 0, blue: 0)
-                                : Color(red: 0.7, green: 0.4, blue: 0.1))
-                            .help("Showing only marked frames — review before deleting (Shift+H to toggle)")
-                        }
-
-                        // Lock STF pill
-                        if viewModel.isSTFLocked {
-                            statusPill("Locked STF", bg: viewModel.nightMode
-                                ? Color(red: 0.35, green: 0.15, blue: 0)
-                                : Color.orange.opacity(0.85))
-                            .help("Stretch is locked to current image's parameters — all images use the same brightness mapping for direct comparison (S to toggle)")
-                        }
-
-                        // Apply All pill
-                        if viewModel.applyAllEnabled {
-                            statusPill(
-                                viewModel.cacheMatchesCurrentSettings ? "Applied" : "Applying...",
-                                bg: viewModel.nightMode
-                                    ? Color(red: 0, green: 0, blue: 0.3)
-                                    : (viewModel.cacheMatchesCurrentSettings
-                                        ? Color.blue.opacity(0.7)
-                                        : Color.blue.opacity(0.5))
-                            )
-                            .help("Current stretch/sharp/contrast/dark settings are baked into all cached previews for consistent comparison")
-                        }
-
-                        // Skip pill
-                        if viewModel.skipMarked {
-                            statusPill("Skip", bg: viewModel.nightMode
-                                ? Color(red: 0.3, green: 0, blue: 0)
-                                : Color(red: 0.75, green: 0.55, blue: 0.15))
-                            .help("Arrow keys skip over marked frames — navigate only unmarked images (K to toggle)")
-                        }
-
-                        // Night pill
-                        if viewModel.nightMode {
-                            statusPill("Night", bg: Color(red: 0.35, green: 0, blue: 0))
-                            .help("Night mode — red-only UI to preserve dark-adapted vision at the telescope (N to toggle)")
-                        }
-
-                        // Debayer pill — only shown when session has OSC images
-                        if viewModel.debayerEnabled && viewModel.hasOSCImages {
-                            statusPill("Debayer", bg: viewModel.nightMode
-                                ? Color(red: 0.3, green: 0, blue: 0)
-                                : Color(red: 0.15, green: 0.5, blue: 0.25))
-                            .help("Color debayering active — one-shot-color (OSC) images shown in RGB instead of mono (D to toggle)")
-                        }
-
-                        // Auto Meridian pill — shows when active and session has meridian flip
-                        if viewModel.autoMeridianEnabled && viewModel.hasMeridianFlip {
-                            statusPill("MeridianFlip", bg: viewModel.nightMode
-                                ? Color(red: 0.25, green: 0, blue: 0.15)
-                                : Color.purple.opacity(0.7))
-                            .help("Meridian flip detected — images from the opposite pier side are rotated 180\u{00B0} for consistent orientation")
-                        }
-
-                        Spacer()
-
-                        // RIGHT SIDE: cache/file stats, SNR retention, status
-
-                        // Cache and file size info
-                        if !viewModel.images.isEmpty {
-                            statusDivider
-                            Text("\(viewModel.prefetchCachedCount) cached (\(formatBytes(viewModel.cacheMemoryBytes))) — Raw: \(formatBytes(viewModel.totalRawFileSize))")
-                                .font(.system(size: 11, design: .monospaced))
-                                .foregroundColor(nightFgDim)
-                        }
-
-                        // Selection count (only when >1 highlighted)
-                        if viewModel.selectedTableIndices.count > 1 {
-                            statusDivider
-                            Text("\(viewModel.selectedTableIndices.count) selected")
-                                .font(.system(size: 11, design: .monospaced))
-                                .foregroundColor(nightFgDim)
-                        }
-
-                        // Live SNR retention bar — shows when frames are marked
-                        if viewModel.snrRetention < 99.95 && !viewModel.images.isEmpty {
-                            statusDivider
-                            SNRRetentionBarView(retention: viewModel.snrRetention, isNightMode: viewModel.nightMode)
-                                .help(viewModel.snrRetentionDetail)
-                        }
-
-                        // Culling status — actionable text + autopilot button
-                        if viewModel.cullingStatus != nil && !viewModel.images.isEmpty {
-                            statusDivider
-                            CullingStatusView(viewModel: viewModel, isNightMode: viewModel.nightMode)
-                        }
-
-                        statusDivider
-
-                        Text(viewModel.statusMessage)
-                            .font(.system(size: 11, design: .monospaced))
-                            .foregroundColor(nightFgDim)
-                            .lineLimit(1)
-                            .textSelection(.enabled)
-
-                        // Community learning toggle (clickable icon)
-                        statusDivider
-                        let communityEnabled = AppSettings.defaults.bool(forKey: AppSettings.Key.communityLearning.rawValue)
-                        HStack(spacing: 2) {
-                            Image(systemName: "person.3.fill")
-                                .font(.system(size: 10))
-                                .foregroundColor(communityEnabled
-                                    ? (viewModel.nightMode ? .red : .green)
-                                    : nightFgDim.opacity(0.4))
-                            Text("Community")
-                                .font(.system(size: 9, design: .monospaced))
-                                .foregroundColor(communityEnabled ? nightFgDim.opacity(0.6) : nightFgDim.opacity(0.4))
-                        }
-                        .onTapGesture {
-                            let newValue = !AppSettings.defaults.bool(forKey: AppSettings.Key.communityLearning.rawValue)
-                            AppSettings.save(newValue, for: .communityLearning)
-                            viewModel.objectWillChange.send()
-                        }
-                        .help(communityEnabled
-                            ? "Community Learning is ON — You're helping improve quality detection for all AstroBlink users! Only anonymous metric averages (FWHM, SNR, trailing) are shared. No filenames, no images, no coordinates, no personal data — ever. New equipment? You'll get instant calibration from the community. Click to disable."
-                            : "Community Learning is OFF — Click to join! Share anonymous quality metrics to help improve detection accuracy for everyone. In return, you get instant calibration baselines when trying new equipment — no 30-frame warmup needed. No personal data is ever shared: no filenames, no images, no location, no equipment names.")
-
-                        // iCloud sync indicator (rightmost, always visible)
-                        statusDivider
-                        HStack(spacing: 2) {
-                            if FileManager.default.ubiquityIdentityToken != nil {
-                                Image(systemName: "checkmark.icloud")
-                                    .font(.system(size: 10))
-                                    .foregroundColor(viewModel.nightMode ? .red : .green)
-                                Text("iCloud")
-                                    .font(.system(size: 9, design: .monospaced))
-                                    .foregroundColor(nightFgDim.opacity(0.6))
-                            } else {
-                                Image(systemName: "xmark.icloud")
-                                    .font(.system(size: 10))
-                                    .foregroundColor(.red.opacity(0.7))
-                                Text("iCloud")
-                                    .font(.system(size: 9, design: .monospaced))
-                                    .foregroundColor(nightFgDim.opacity(0.4))
-                            }
-                        }
-                        .help(FileManager.default.ubiquityIdentityToken != nil
-                            ? "iCloud is ON — Your settings, calibration profiles, and equipment memory sync privately across your Macs. All data stays in your personal iCloud account — nothing is shared publicly or with other users."
-                            : "iCloud is OFF — Settings and calibration data are stored locally only. Sign in to iCloud in System Settings to sync across your Macs. iCloud data is always private — never shared with anyone.")
-                    }
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 4)
-                    .background(nightBg)
-                }
-
-                // RIGHT: Session Overview panel
-                if viewModel.showSessionOverview {
-                    Rectangle().fill(nightDivider).frame(width: 1)
-
-                    SessionOverviewContentView(model: viewModel.sessionOverviewModel)
-                        .environment(\.fontScale, viewModel.fontScale)
-                        .frame(width: 480)
-                        .background(nightBg)
-                }
-            }
-        }
-        .background(nightBg)
-        .preferredColorScheme(viewModel.nightMode ? .dark : nil)
-        .onChange(of: viewModel.nightMode) { isNight in
-            // Force NSWindow appearance update for AppKit views (NSTableView, scrollbars, etc.)
-            if let window = NSApp.keyWindow {
-                window.appearance = isNight
-                    ? NSAppearance(named: .darkAqua)
-                    : nil  // nil = follow system
-                window.invalidateShadow()
-                window.contentView?.needsDisplay = true
-            }
-        }
-        .onAppear {
-            keyboardMonitor = KeyboardHandler.install(viewModel: viewModel)
-            wireAIsaacCallbacks(viewModel: viewModel)
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .showBatchRename)) { _ in
-            BatchRenameWindowController.shared.show(viewModel: viewModel)
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .showBenchmarkStats)) { _ in
-            BenchmarkStatsWindowController.shared.show(stats: viewModel.benchmarkStats, sessionRootURL: viewModel.sessionRootURL)
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .showAIsaac)) { _ in
-            AIsaacWindowController.shared.updateContext(images: viewModel.images, viewModel: viewModel)
-            AIsaacWindowController.shared.toggleWindow()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .resetFrameHistory)) { _ in
-            let alert = NSAlert()
-            alert.alertStyle = .critical
-            alert.messageText = "Reset Frame History Database?"
-            if let stats = try? FrameHistoryDatabase.shared.databaseStats() {
-                alert.informativeText = "This will permanently delete \(stats.frameCount) frame records from \(stats.sessionCount) sessions.\n\nThis cannot be undone."
-            } else {
-                alert.informativeText = "This will permanently delete all frame history data.\n\nThis cannot be undone."
-            }
-            alert.addButton(withTitle: "Reset")
-            alert.addButton(withTitle: "Cancel")
-            if alert.runModal() == .alertFirstButtonReturn {
-                try? FrameHistoryDatabase.shared.resetDatabase()
-                viewModel.statusMessage = "Frame History Database reset"
-            }
-        }
-        // AIsaac state observers extracted to reduce type-check pressure
-        .modifier(AIsaacStateObserver(viewModel: viewModel))
-        .onReceive(NotificationCenter.default.publisher(for: .fontScaleIncrease)) { _ in
-            viewModel.fontScale = min(1.5, viewModel.fontScale + 0.1)
-            AppSettings.saveFloat(Float(viewModel.fontScale), for: .fontScale)
-            viewModel.needsTableRefresh = true
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .fontScaleDecrease)) { _ in
-            viewModel.fontScale = max(0.7, viewModel.fontScale - 0.1)
-            AppSettings.saveFloat(Float(viewModel.fontScale), for: .fontScale)
-            viewModel.needsTableRefresh = true
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .fontScaleReset)) { _ in
-            viewModel.fontScale = 1.0
-            AppSettings.saveFloat(1.0, for: .fontScale)
-            viewModel.needsTableRefresh = true
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .checkAppMessages)) { _ in
-            viewModel.checkForMessages()
-            viewModel.startMessageCheckTimer()
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .resetSettingsRequest)) { _ in
-            let alert = NSAlert()
-            alert.messageText = "Reset all settings to defaults?"
-            alert.informativeText = "This will reset column order, slider values, and all toggle states."
-            alert.alertStyle = .warning
-            alert.addButton(withTitle: "Reset")
-            alert.addButton(withTitle: "Cancel")
-            if alert.runModal() == .alertFirstButtonReturn {
-                viewModel.resetAllSettings()
-                sliderValue = Double(viewModel.stretchStrength)
-            }
-        }
-        .onChange(of: viewModel.quickStackEngineV2?.phase) { newPhase in
-            if newPhase == .done || newPhase == .failed {
-                viewModel.benchmarkStats.markQuickStackEnd()
-            }
-        }
-        .onDisappear {
-            KeyboardHandler.remove(monitor: keyboardMonitor)
-        }
-        .onChange(of: renderer) { newRenderer in
-            viewModel.renderer = newRenderer
-        }
-        .onChange(of: viewModel.stretchStrength) { newValue in
-            sliderValue = Double(newValue)
-        }
-        .navigationTitle("AstroBlink & AIsaac v\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?") — Fast Visual Culling for Astrophotography")
-        .frame(minWidth: 800, minHeight: 500)
+        bodyContent
+            .modifier(ContentViewModifiers(viewModel: viewModel, sliderValue: $sliderValue, renderer: $renderer, keyboardMonitor: $keyboardMonitor))
     }
 
     // MARK: - Toolbar Helpers
+
+    // Top-level VStack: path bar + toolbar + banner + main content
+    private var bodyContent: some View {
+        VStack(spacing: 0) {
+            pathBar
+            toolbarArea
+            Rectangle().fill(nightDivider).frame(height: 1)
+            bannerArea
+            mainContentArea
+        }
+    }
+
+    // Path bar: shows current session directory
+    @ViewBuilder
+    private var pathBar: some View {
+        if let rootURL = viewModel.sessionRootURL {
+            HStack(spacing: 6) {
+                Image(systemName: "folder.fill")
+                    .font(.system(size: 11))
+                    .foregroundColor(nightFgDim.opacity(0.6))
+                Text(rootURL.path)
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundColor(nightFg.opacity(0.8))
+                    .lineLimit(1)
+                    .truncationMode(.head)
+                    .textSelection(.enabled)
+                Spacer()
+                Button(action: { viewModel.openFolder() }) {
+                    Image(systemName: "folder.badge.plus")
+                        .font(.system(size: 11))
+                }
+                .buttonStyle(.plain)
+                .foregroundColor(nightFg)
+                .help("Open another folder (⌘O)")
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(nightToolbarBg)
+            Rectangle().fill(nightDivider).frame(height: 1)
+        }
+    }
+
+    // In-app message banner (fetched from Supabase)
+    @ViewBuilder
+    private var bannerArea: some View {
+        if let message = viewModel.bannerMessage {
+            AppMessageBannerView(
+                message: message,
+                nightMode: viewModel.nightMode,
+                onDismiss: { viewModel.dismissBannerMessage() },
+                onSnooze: { viewModel.snoozeBannerMessage() },
+                onRespond: { actionType, value in
+                    viewModel.respondToBannerMessage(actionType: actionType, value: value)
+                }
+            )
+        }
+    }
+
+    // Main content: inspector panel + center (viewer + file list + status) + session overview
+    private var mainContentArea: some View {
+        HStack(spacing: 0) {
+            if viewModel.showInspector {
+                HeaderInspectorContentView(model: viewModel.headerInspectorModel)
+                    .environment(\.fontScale, viewModel.fontScale)
+                    .frame(width: 420)
+                    .background(nightBg)
+                Rectangle().fill(nightDivider).frame(width: 1)
+            }
+
+            centerColumn
+
+            if viewModel.showSessionOverview {
+                Rectangle().fill(nightDivider).frame(width: 1)
+                SessionOverviewContentView(model: viewModel.sessionOverviewModel)
+                    .environment(\.fontScale, viewModel.fontScale)
+                    .frame(width: 480)
+                    .background(nightBg)
+            }
+        }
+    }
+
+    // Center column: image viewer + file list + progress bars + status bar
+    private var centerColumn: some View {
+        VStack(spacing: 0) {
+            VSplitView {
+                imageViewerArea
+                    .frame(minHeight: 200)
+
+                fileListArea
+                    .frame(minHeight: 150, idealHeight: 250)
+            }
+
+            progressBarsArea
+            statusBarArea
+        }
+    }
+
+    // Image viewer with overlays
+    private var imageViewerArea: some View {
+        ZStack(alignment: .center) {
+            ImageViewerView(viewModel: viewModel, renderer: $renderer)
+
+            if viewModel.isCaching,
+               let image = viewModel.selectedImage,
+               !viewModel.isImageCached(image.url),
+               viewModel.currentDecodedImage == nil {
+                Text("Caching this image...")
+                    .font(.system(size: 16, weight: .medium, design: .monospaced))
+                    .foregroundColor(viewModel.nightMode ? .red.opacity(0.8) : .white.opacity(0.8))
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 10)
+                    .background(RoundedRectangle(cornerRadius: 8).fill(Color.black.opacity(0.6)))
+            }
+
+            if viewModel.showQuickStackV2, let engine = viewModel.quickStackEngineV2 {
+                VStack {
+                    HStack {
+                        Spacer()
+                        QuickStackV2ProgressView(engine: engine, nightMode: viewModel.nightMode, onDismiss: {
+                            viewModel.showQuickStackV2 = false
+                            viewModel.quickStackEngineV2?.cancel()
+                        })
+                        .padding(12)
+                    }
+                    Spacer()
+                }
+            }
+
+            if viewModel.showColorCombine, let engine = viewModel.colorCombineEngine {
+                VStack {
+                    HStack {
+                        Spacer()
+                        ColorCombineSetupView(engine: engine, nightMode: viewModel.nightMode, onDismiss: {
+                            viewModel.showColorCombine = false
+                            viewModel.colorCombineEngine?.cancel()
+                        }, debayerEnabled: viewModel.debayerEnabled)
+                        .padding(12)
+                    }
+                    Spacer()
+                }
+            }
+        }
+    }
+
+    // File list with loading overlay
+    private var fileListArea: some View {
+        ZStack {
+            FileListView(viewModel: viewModel)
+
+            if viewModel.loadingPhase != .none {
+                VStack(spacing: 12) {
+                    ProgressView(value: viewModel.headerProgress)
+                        .progressViewStyle(.linear)
+                        .tint(viewModel.nightMode ? .red : .accentColor)
+                        .frame(width: 300)
+                    Text(viewModel.loadingPhase.rawValue)
+                        .font(.system(size: 13, weight: .semibold, design: .monospaced))
+                        .foregroundColor(viewModel.nightMode ? .red : .primary)
+                    Text("\(viewModel.headerReadCount) / \(viewModel.headerReadTotal)")
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundColor(viewModel.nightMode ? .red.opacity(0.7) : .secondary)
+                }
+                .padding(24)
+                .background(
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(viewModel.nightMode ? Color.black.opacity(0.9) : Color(NSColor.windowBackgroundColor).opacity(0.95))
+                        .shadow(radius: 8)
+                )
+            }
+        }
+    }
+
+    // Progress bars for loading/caching/downloading
+    @ViewBuilder
+    private var progressBarsArea: some View {
+        if viewModel.loadingPhase != .none || viewModel.isDownloading || viewModel.isCaching || viewModel.cachingStopped {
+            HStack(spacing: 6) {
+                VStack(spacing: 1) {
+                    if viewModel.isCaching || viewModel.cachingStopped {
+                        fuelBar(
+                            progress: viewModel.cacheProgress,
+                            label: viewModel.isCaching
+                                ? "Analyzing \(viewModel.cachingCount)/\(viewModel.cachingTotal)\(viewModel.cachingEstimatedSecondsRemaining.map { " — Est: \($0)s" } ?? "")"
+                                : "Caching paused — \(viewModel.prefetchCachedCount)/\(viewModel.images.count)",
+                            color: Color(red: 0.25, green: 0.5, blue: 0.9),
+                            height: viewModel.isDownloading ? 11 : 22,
+                            isNight: viewModel.nightMode
+                        )
+                    }
+                    if viewModel.isDownloading {
+                        fuelBar(
+                            progress: viewModel.downloadProgress,
+                            label: "Downloading \(viewModel.downloadCount)/\(viewModel.downloadTotal)\(viewModel.downloadEstimatedSecondsRemaining.map { " — Est: \($0)s" } ?? "")",
+                            color: Color(red: 0.15, green: 0.35, blue: 0.7),
+                            height: viewModel.isCaching ? 11 : 22,
+                            isNight: viewModel.nightMode
+                        )
+                    } else if viewModel.loadingPhase == .scanning {
+                        fuelBar(progress: 0, label: "Scanning folder...", color: Color(red: 0.15, green: 0.35, blue: 0.7), height: 22, isNight: viewModel.nightMode)
+                    } else if viewModel.loadingPhase == .readingHeaders {
+                        fuelBar(
+                            progress: viewModel.headerProgress,
+                            label: "Loading headers \(viewModel.headerReadCount)/\(viewModel.headerReadTotal)\(viewModel.headerEstimatedSecondsRemaining.map { " — Est: \($0)s" } ?? "")",
+                            color: Color(red: 0.15, green: 0.35, blue: 0.7),
+                            height: 22,
+                            isNight: viewModel.nightMode
+                        )
+                    }
+                }
+                .cornerRadius(3)
+
+                if viewModel.isCaching {
+                    Button(action: { viewModel.stopCaching() }) {
+                        Image(systemName: "stop.fill").font(.system(size: 12))
+                            .foregroundColor(viewModel.nightMode ? .red : nil)
+                    }
+                    .buttonStyle(.bordered).controlSize(.small).help("Stop caching")
+                }
+                if viewModel.cachingStopped {
+                    Button(action: { viewModel.continueCaching() }) {
+                        Image(systemName: "play.fill").font(.system(size: 12))
+                            .foregroundColor(viewModel.nightMode ? .red : nil)
+                    }
+                    .buttonStyle(.bordered).controlSize(.small).help("Continue caching")
+                }
+            }
+            .padding(.horizontal, 8).padding(.vertical, 3).background(nightBg)
+        }
+    }
+
+    // Status bar with pills and stats
+    private var statusBarArea: some View {
+        HStack(spacing: 6) {
+            statusBarLeftPills
+            Spacer()
+            statusBarRightStats
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(nightBg)
+    }
+
+    // Status bar left: mode pills
+    private var statusBarLeftPills: some View {
+        HStack(spacing: 6) {
+            if !viewModel.images.isEmpty {
+                statusPill(
+                    "\(viewModel.markedCount) of \(viewModel.images.count) marked",
+                    bg: viewModel.markedCount > 0
+                        ? (viewModel.nightMode ? Color(red: 0.4, green: 0, blue: 0) : Color(red: 0.8, green: 0.25, blue: 0.25))
+                        : (viewModel.nightMode ? Color(red: 0.15, green: 0, blue: 0) : Color(white: 0.35))
+                )
+                .help("Frames marked for deletion (Space to toggle, Cmd+Backspace to move to PRE-DELETE)")
+            }
+            if viewModel.hideMarked {
+                statusPill("Hiding", bg: viewModel.nightMode ? Color(red: 0.3, green: 0, blue: 0) : Color(red: 0.15, green: 0.55, blue: 0.55))
+                    .help("Marked frames are hidden from the file list (H to toggle)")
+            }
+            if viewModel.showOnlyMarked {
+                statusPill("Only Marked", bg: viewModel.nightMode ? Color(red: 0.35, green: 0, blue: 0) : Color(red: 0.7, green: 0.4, blue: 0.1))
+                    .help("Showing only marked frames — review before deleting (Shift+H to toggle)")
+            }
+            if viewModel.isSTFLocked {
+                statusPill("Locked STF", bg: viewModel.nightMode ? Color(red: 0.35, green: 0.15, blue: 0) : Color.orange.opacity(0.85))
+                    .help("Stretch is locked to current image's parameters — all images use the same brightness mapping for direct comparison (S to toggle)")
+            }
+            if viewModel.applyAllEnabled {
+                statusPill(
+                    viewModel.cacheMatchesCurrentSettings ? "Applied" : "Applying...",
+                    bg: viewModel.nightMode ? Color(red: 0, green: 0, blue: 0.3)
+                        : (viewModel.cacheMatchesCurrentSettings ? Color.blue.opacity(0.7) : Color.blue.opacity(0.5))
+                )
+                .help("Current stretch/sharp/contrast/dark settings are baked into all cached previews for consistent comparison")
+            }
+            if viewModel.skipMarked {
+                statusPill("Skip", bg: viewModel.nightMode ? Color(red: 0.3, green: 0, blue: 0) : Color(red: 0.75, green: 0.55, blue: 0.15))
+                    .help("Arrow keys skip over marked frames — navigate only unmarked images (K to toggle)")
+            }
+            if viewModel.nightMode {
+                statusPill("Night", bg: Color(red: 0.35, green: 0, blue: 0))
+                    .help("Night mode — red-only UI to preserve dark-adapted vision at the telescope (N to toggle)")
+            }
+            if viewModel.debayerEnabled && viewModel.hasOSCImages {
+                statusPill("Debayer", bg: viewModel.nightMode ? Color(red: 0.3, green: 0, blue: 0) : Color(red: 0.15, green: 0.5, blue: 0.25))
+                    .help("Color debayering active — one-shot-color (OSC) images shown in RGB instead of mono (D to toggle)")
+            }
+            if viewModel.autoMeridianEnabled && viewModel.hasMeridianFlip {
+                statusPill("MeridianFlip", bg: viewModel.nightMode ? Color(red: 0.25, green: 0, blue: 0.15) : Color.purple.opacity(0.7))
+                    .help("Meridian flip detected — images from the opposite pier side are rotated 180\u{00B0} for consistent orientation")
+            }
+            if viewModel.isPlaying {
+                statusPill("Blink", bg: viewModel.nightMode ? Color(red: 0.4, green: 0, blue: 0) : Color.green.opacity(0.7))
+                    .help("Blink playback active — ESC to stop")
+            }
+        }
+    }
+
+    // Status bar right: cache stats, SNR retention, status message, community, iCloud
+    private var statusBarRightStats: some View {
+        HStack(spacing: 6) {
+            if !viewModel.images.isEmpty {
+                statusDivider
+                Text("\(viewModel.prefetchCachedCount) cached (\(formatBytes(viewModel.cacheMemoryBytes))) — Raw: \(formatBytes(viewModel.totalRawFileSize))")
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundColor(nightFgDim)
+            }
+            if viewModel.selectedTableIndices.count > 1 {
+                statusDivider
+                Text("\(viewModel.selectedTableIndices.count) selected")
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundColor(nightFgDim)
+            }
+            if viewModel.snrRetention < 99.95 && !viewModel.images.isEmpty {
+                statusDivider
+                SNRRetentionBarView(retention: viewModel.snrRetention, isNightMode: viewModel.nightMode)
+                    .help(viewModel.snrRetentionDetail)
+            }
+            if viewModel.cullingStatus != nil && !viewModel.images.isEmpty {
+                statusDivider
+                CullingStatusView(viewModel: viewModel, isNightMode: viewModel.nightMode)
+            }
+            statusDivider
+            Text(viewModel.statusMessage)
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundColor(nightFgDim)
+                .lineLimit(1)
+                .textSelection(.enabled)
+            statusBarCommunityAndCloud
+        }
+    }
+
+    // Community learning + iCloud indicators
+    private var statusBarCommunityAndCloud: some View {
+        HStack(spacing: 6) {
+            statusDivider
+            let communityEnabled = AppSettings.defaults.bool(forKey: AppSettings.Key.communityLearning.rawValue)
+            HStack(spacing: 2) {
+                Image(systemName: "person.3.fill")
+                    .font(.system(size: 10))
+                    .foregroundColor(communityEnabled ? (viewModel.nightMode ? .red : .green) : nightFgDim.opacity(0.4))
+                Text("Community")
+                    .font(.system(size: 9, design: .monospaced))
+                    .foregroundColor(communityEnabled ? nightFgDim.opacity(0.6) : nightFgDim.opacity(0.4))
+            }
+            .onTapGesture {
+                let newValue = !AppSettings.defaults.bool(forKey: AppSettings.Key.communityLearning.rawValue)
+                AppSettings.save(newValue, for: .communityLearning)
+                viewModel.objectWillChange.send()
+            }
+            .help(communityEnabled
+                ? "Community Learning is ON — You're helping improve quality detection for all AstroBlink users! Only anonymous metric averages (FWHM, SNR, trailing) are shared. No filenames, no images, no coordinates, no personal data — ever. New equipment? You'll get instant calibration from the community. Click to disable."
+                : "Community Learning is OFF — Click to join! Share anonymous quality metrics to help improve detection accuracy for everyone. In return, you get instant calibration baselines when trying new equipment — no 30-frame warmup needed. No personal data is ever shared: no filenames, no images, no location, no equipment names.")
+
+            statusDivider
+            HStack(spacing: 2) {
+                if FileManager.default.ubiquityIdentityToken != nil {
+                    Image(systemName: "checkmark.icloud").font(.system(size: 10))
+                        .foregroundColor(viewModel.nightMode ? .red : .green)
+                    Text("iCloud").font(.system(size: 9, design: .monospaced))
+                        .foregroundColor(nightFgDim.opacity(0.6))
+                } else {
+                    Image(systemName: "xmark.icloud").font(.system(size: 10))
+                        .foregroundColor(.red.opacity(0.7))
+                    Text("iCloud").font(.system(size: 9, design: .monospaced))
+                        .foregroundColor(nightFgDim.opacity(0.4))
+                }
+            }
+            .help(FileManager.default.ubiquityIdentityToken != nil
+                ? "iCloud is ON — Your settings, calibration profiles, and equipment memory sync privately across your Macs. All data stays in your personal iCloud account — nothing is shared publicly or with other users."
+                : "iCloud is OFF — Settings and calibration data are stored locally only. Sign in to iCloud in System Settings to sync across your Macs. iCloud data is always private — never shared with anyone.")
+        }
+    }
+
+    // Full toolbar: buttons row + separator + sliders row
+    private var toolbarArea: some View {
+        VStack(spacing: 2) {
+            toolbarButtonsRow
+                .padding(.bottom, 2)
+            Rectangle().fill(nightDivider).frame(height: 1)
+            imageSettingsRow
+                .padding(.horizontal, 8)
+                .padding(.top, 2)
+        }
+        .padding(.vertical, 4)
+        .background(nightToolbarBg)
+    }
+
+    // Row 1: Icon buttons + toggles + search + stats
+    private var toolbarButtonsRow: some View {
+        HStack(spacing: 4) {
+            // ── Group 1: File operations ──
+            sfToolbarButton("folder", "Open", "Open Folder (⌘O)") { viewModel.openFolder() }
+            sfToolbarButton("list.bullet.rectangle", "Inspector", "Show FITS/XISF header keywords for selected image (I)") { viewModel.toggleHeaderInspector() }
+            sfToolbarButton("chart.bar", "Session", "Session overview — group stats by filter, night, and target") {
+                viewModel.showSessionOverview.toggle()
+            }
+            sfToolbarButton("clock.arrow.circlepath", "History", "Frame history — quality trends across all sessions") {
+                FrameHistoryController.shared.toggleWindow()
+            }
+
+            toolbarDivider
+
+            // ── Group 2: Actions ──
+            autoMarkToolbarButton
+            aisaacToolbarButton
+            sfToolbarButton("square.and.arrow.up", "SSWEIGHT\nExport", "Export quality weights to FITS/XISF headers for WBPP.\nAlso creates CSV backup.") {
+                viewModel.exportSSWEIGHT()
+            }
+            sfToolbarButton("trash", "Delete", "Move spacebar-marked files to _predel/ staging folder (⌘⌫)\nFiles are NOT permanently deleted") { viewModel.moveMarkedToPreDelete() }
+            if viewModel.canUndoPreDelete {
+                sfToolbarButton("arrow.uturn.backward", "Undo", "Undo last Pre-Delete (⌘Z)") { viewModel.undoPreDelete() }
+            }
+
+            toolbarDivider
+
+            // ── Group 3: Stacking ──
+            sfToolbarButton("bolt.fill", "Lightspeed\nStacker", "GPU-accelerated stacking with outlier rejection.\nSelect 3+ images first.") {
+                viewModel.startQuickStackV2()
+            }
+            sfToolbarButton("paintpalette.fill", "Color\nCombine", "Combine mono filter stacks into RGB color image.\nNeeds 2+ filters with 3+ frames each.") {
+                viewModel.startColorCombine()
+            }
+
+            toolbarDivider
+
+            toolbarDisplayToggles
+            toolbarDivider
+            toolbarSearchBar
+            toolbarFilterPresets
+
+            Spacer()
+
+            toolbarRightSide
+        }
+    }
+
+    // Display toggles: Apply All, Debayer, Lock STF, Meridian Flip
+    private var toolbarDisplayToggles: some View {
+        HStack(spacing: 4) {
+            VStack(spacing: 2) {
+                Toggle("Apply\nAll", isOn: Binding(
+                    get: { viewModel.applyAllEnabled },
+                    set: { _ in viewModel.toggleApplyAll() }
+                ))
+                .toggleStyle(.switch)
+                .controlSize(.mini)
+                .tint(.blue)
+                .help("Apply current settings to all cached previews")
+            }
+            .frame(width: 90)
+
+            if viewModel.hasOSCImages {
+                VStack(spacing: 2) {
+                    Toggle("Debayer", isOn: Binding(
+                        get: { viewModel.debayerEnabled },
+                        set: { _ in viewModel.toggleDebayer() }
+                    ))
+                    .toggleStyle(.switch)
+                    .controlSize(.mini)
+                    .tint(.green)
+                    .help("Toggle OSC debayer (D)")
+                }
+                .frame(width: 90)
+            }
+
+            VStack(spacing: 2) {
+                Toggle("Lock STF", isOn: Binding(
+                    get: { viewModel.isSTFLocked },
+                    set: { _ in viewModel.toggleLockSTF() }
+                ))
+                .toggleStyle(.switch)
+                .controlSize(.mini)
+                .tint(.orange)
+                .help("Lock STF — same stretch for all images (S)")
+            }
+            .frame(width: 90)
+
+            VStack(spacing: 2) {
+                Toggle("Meridian\nFlip", isOn: Binding(
+                    get: { viewModel.autoMeridianEnabled },
+                    set: { _ in viewModel.toggleAutoMeridian() }
+                ))
+                .toggleStyle(.switch)
+                .controlSize(.mini)
+                .tint(.purple)
+                .help("Auto-rotate images across meridian flip for consistent orientation")
+            }
+            .frame(width: 95)
+        }
+    }
+
+    // Search bar with match count and mark/unmark/clear buttons
+    private var toolbarSearchBar: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 11))
+                .foregroundColor(nightFgDim)
+
+            TextField("Search... (e.g. Ha, filter:L, fwhm:>4)", text: $viewModel.filterText)
+                .textFieldStyle(.plain)
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundColor(nightFg)
+                .onChange(of: viewModel.filterText) { _ in
+                    viewModel.needsTableRefresh = true
+                }
+
+            if !viewModel.filterText.isEmpty {
+                Text("\(viewModel.visibleImages.count)/\(viewModel.images.count)")
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundColor(nightFgDim)
+
+                Button(action: { viewModel.markFilteredImages() }) {
+                    Image(systemName: "checkmark.circle")
+                        .font(.system(size: 11))
+                }
+                .buttonStyle(.plain)
+                .foregroundColor(viewModel.nightMode ? .red : .accentColor)
+                .help("Mark all filtered images")
+
+                Button(action: { viewModel.unmarkFilteredImages() }) {
+                    Image(systemName: "circle")
+                        .font(.system(size: 11))
+                }
+                .buttonStyle(.plain)
+                .foregroundColor(viewModel.nightMode ? .red : .secondary)
+                .help("Unmark all filtered images")
+
+                Button(action: {
+                    viewModel.filterText = ""
+                    viewModel.needsTableRefresh = true
+                }) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 11))
+                }
+                .buttonStyle(.plain)
+                .foregroundColor(nightFgDim)
+            }
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 3)
+        .background(
+            RoundedRectangle(cornerRadius: 4)
+                .fill(viewModel.nightMode
+                      ? Color(red: 0.05, green: 0, blue: 0)
+                      : Color(NSColor.textBackgroundColor))
+        )
+        .frame(minWidth: 150, maxWidth: 300)
+    }
+
+    // Filter presets dropdown menu
+    private var toolbarFilterPresets: some View {
+        Menu {
+            Section("Quality") {
+                Button("Excellent") { viewModel.filterText = "q:excellent" }
+                Button("Good") { viewModel.filterText = "q:good" }
+                Button("Borderline") { viewModel.filterText = "q:borderline" }
+                Button("Uncertain") { viewModel.filterText = "q:uncertain" }
+                Button("Trash") { viewModel.filterText = "q:trash" }
+                Button("Unscored") { viewModel.filterText = "q:unscored" }
+            }
+            Section("Common Filters") {
+                Button("Luminance") { viewModel.filterText = "filter:L" }
+                Button("Red") { viewModel.filterText = "filter:R" }
+                Button("Green") { viewModel.filterText = "filter:G" }
+                Button("Blue") { viewModel.filterText = "filter:B" }
+                Button("Ha") { viewModel.filterText = "filter:Ha" }
+                Button("OIII") { viewModel.filterText = "filter:OIII" }
+                Button("SII") { viewModel.filterText = "filter:SII" }
+            }
+            Section("Metrics") {
+                Button("FWHM > 5") { viewModel.filterText = "fwhm:>5" }
+                Button("Stars < 100") { viewModel.filterText = "stars:<100" }
+                Button("Trailing > 0.5") { viewModel.filterText = "trail:>0.5" }
+            }
+            Divider()
+            Button("Clear Filter") { viewModel.filterText = "" }
+        } label: {
+            Image(systemName: "line.3.horizontal.decrease.circle")
+                .font(.system(size: 13))
+                .foregroundColor(nightFg.opacity(0.7))
+        }
+        .menuStyle(.borderlessButton)
+        .frame(width: 20)
+        .help("Filter presets — click to apply a predefined filter")
+    }
+
+    // Night mode, Benchmark, Help, About
+    private var toolbarRightSide: some View {
+        HStack(spacing: 4) {
+            VStack(spacing: 2) {
+                Toggle("Night", isOn: Binding(
+                    get: { viewModel.nightMode },
+                    set: { _ in viewModel.toggleNightMode() }
+                ))
+                .toggleStyle(.switch)
+                .controlSize(.mini)
+                .tint(.red)
+                .help("Toggle Night Mode (N)")
+            }
+            .frame(width: 80)
+
+            sfToolbarButton("gauge.with.dots.needle.67percent", "Benchmark", "Session load & stacking performance stats.\nCompare with community leaderboard.", iconColor: Color(red: 0.25, green: 0.45, blue: 0.85)) {
+                NotificationCenter.default.post(name: .showBenchmarkStats, object: nil)
+            }
+
+            toolbarDivider
+
+            sfToolbarButton("questionmark.circle", "Help", "Help (⌘?)") { HelpWindowController.shared.showWindow(nil) }
+            sfToolbarButton("info.circle", "About", "About") { AstroBlinkV2AppDelegate.showAboutPanel() }
+        }
+    }
+
+    // Row 2: Sliders + blink controls + histogram
+    private var imageSettingsRow: some View {
+        HStack(spacing: 12) {
+            Spacer()
+
+            Button(action: {
+                viewModel.resetSlidersToDefaults()
+                sliderValue = Double(viewModel.stretchStrength)
+            }) {
+                HStack(spacing: 3) {
+                    Image(systemName: "arrow.counterclockwise")
+                        .font(.system(size: 12, weight: .medium))
+                    Text("Reset")
+                        .font(.system(size: 10, weight: .medium, design: .monospaced))
+                }
+                .foregroundColor(nightFg)
+            }
+            .buttonStyle(.plain)
+            .help("Reset all sliders to defaults")
+            .contentShape(Rectangle())
+
+            compactSlider("Stretch", value: $sliderValue, range: 0.0...1.0, step: 0.01,
+                display: { "\(Int($0 / 1.0 * 100))%" },
+                onRelease: { viewModel.updateStretchStrength(Float(sliderValue)) })
+
+            compactSlider("Sharp", value: Binding(
+                get: { Double(viewModel.sharpening) },
+                set: { viewModel.sharpening = Float($0); viewModel.updatePostProcessParams() }
+            ), range: -4.0...4.0, step: 0.1,
+                display: { String(format: "%+.1f", $0) })
+
+            compactSlider("Contrast", value: Binding(
+                get: { Double(viewModel.contrast) },
+                set: { viewModel.contrast = Float($0); viewModel.updatePostProcessParams() }
+            ), range: -2.0...2.0, step: 0.05,
+                display: { String(format: "%+.1f", $0) })
+
+            compactSlider("Dark", value: Binding(
+                get: { Double(viewModel.darkLevel) },
+                set: { viewModel.darkLevel = Float($0); viewModel.updatePostProcessParams() }
+            ), range: 0.0...1.0, step: 0.01,
+                display: { String(format: "%.2f", $0) })
+
+            blinkPlaybackControls
+
+            if !viewModel.histogramBins.isEmpty {
+                HStack(alignment: .bottom, spacing: 0) {
+                    ForEach(Array(viewModel.histogramBins.enumerated()), id: \.offset) { _, value in
+                        Rectangle()
+                            .fill(Color.white.opacity(0.6))
+                            .frame(width: 1.5, height: CGFloat(value) * 20)
+                    }
+                }
+                .frame(width: 96, height: 20)
+                .background(Color.black.opacity(0.3))
+                .cornerRadius(3)
+                .help("Luminance histogram (pre-stretch, raw data)")
+            }
+
+            Spacer()
+        }
+    }
+
+    // Blink playback play/stop + delay picker
+    private var blinkPlaybackControls: some View {
+        HStack(spacing: 4) {
+            Button(action: { togglePlayback() }) {
+                Image(systemName: viewModel.isPlaying ? "stop.fill" : "play.fill")
+                    .font(.system(size: 14))
+                    .foregroundColor(viewModel.isPlaying ? .red : nightFg)
+            }
+            .buttonStyle(.plain)
+            .help(viewModel.isPlaying ? "Stop blink (ESC)" : "Blink through images (selected or all)")
+
+            Picker("", selection: $viewModel.playbackDelay) {
+                Text("0.1s").tag(0.1)
+                Text("0.2s").tag(0.2)
+                Text("0.5s").tag(0.5)
+                Text("1s").tag(1.0)
+                Text("2s").tag(2.0)
+            }
+            .pickerStyle(.menu)
+            .frame(width: 60)
+            .help("Blink delay between images")
+            .onChange(of: viewModel.playbackDelay) { _ in
+                if viewModel.isPlaying {
+                    viewModel.stopPlayback()
+                    togglePlayback()
+                }
+            }
+        }
+    }
+
+    private func togglePlayback() {
+        if viewModel.isPlaying {
+            viewModel.stopPlayback()
+        } else {
+            let highlighted = getHighlightedRows()
+            viewModel.startPlayback(highlightedRows: highlighted)
+        }
+    }
+
+    private func getHighlightedRows() -> IndexSet? {
+        guard let window = NSApp.keyWindow,
+              let tableView = findFileListTable(in: window.contentView) else { return nil }
+        let rows = tableView.selectedRowIndexes
+        return rows.count > 1 ? rows : nil
+    }
+
+    // Find the file list NSTableView by identifier in the view hierarchy
+    private func findFileListTable(in view: NSView?) -> NSTableView? {
+        guard let view = view else { return nil }
+        if let table = view as? NSTableView, table.identifier?.rawValue == "fileListTable" {
+            return table
+        }
+        for sub in view.subviews {
+            if let found = findFileListTable(in: sub) { return found }
+        }
+        return nil
+    }
 
     // Thin vertical divider between toolbar sections
     private var toolbarDivider: some View {
@@ -929,8 +870,8 @@ struct ContentView: View {
         }
     }
 
-    // Wire AIsaac app control callbacks (extracted to reduce body complexity)
-    private func wireAIsaacCallbacks(viewModel: TriageViewModel) {
+    // Wire AIsaac app control callbacks (static so ViewModifiers can call it)
+    static func wireAIsaacCallbacksStatic(viewModel: TriageViewModel) {
         let aisaac = AIsaacWindowController.shared.model
         // Resolve session # (1-based) to array index (handles sort order)
         aisaac.resolveSessionIndex = { [weak viewModel] sessionNum in
@@ -1097,6 +1038,121 @@ struct ContentView: View {
                 .foregroundColor(nightFg)
                 .frame(width: 34, alignment: .leading)
         }
+    }
+}
+
+// MARK: - Content View Modifiers (extracted to reduce type-check complexity)
+
+struct ContentViewModifiers: ViewModifier {
+    @ObservedObject var viewModel: TriageViewModel
+    @Binding var sliderValue: Double
+    @Binding var renderer: MetalRenderer?
+    @Binding var keyboardMonitor: Any?
+
+    func body(content: Content) -> some View {
+        content
+            .background(viewModel.nightMode ? Color.black : Color(NSColor.windowBackgroundColor))
+            .preferredColorScheme(viewModel.nightMode ? .dark : nil)
+            .onChange(of: viewModel.nightMode) { isNight in
+                if let window = NSApp.keyWindow {
+                    window.appearance = isNight ? NSAppearance(named: .darkAqua) : nil
+                    window.invalidateShadow()
+                    window.contentView?.needsDisplay = true
+                }
+            }
+            .onAppear {
+                keyboardMonitor = KeyboardHandler.install(viewModel: viewModel)
+                ContentView.wireAIsaacCallbacksStatic(viewModel: viewModel)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .openFolderRequest)) { _ in
+                viewModel.openFolder()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .showBatchRename)) { _ in
+                BatchRenameWindowController.shared.show(viewModel: viewModel)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .showBenchmarkStats)) { _ in
+                BenchmarkStatsWindowController.shared.show(stats: viewModel.benchmarkStats, sessionRootURL: viewModel.sessionRootURL)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .showAIsaac)) { _ in
+                AIsaacWindowController.shared.updateContext(images: viewModel.images, viewModel: viewModel)
+                AIsaacWindowController.shared.toggleWindow()
+            }
+            .modifier(ContentViewModifiers2(viewModel: viewModel, sliderValue: $sliderValue, renderer: $renderer, keyboardMonitor: $keyboardMonitor))
+    }
+}
+
+struct ContentViewModifiers2: ViewModifier {
+    @ObservedObject var viewModel: TriageViewModel
+    @Binding var sliderValue: Double
+    @Binding var renderer: MetalRenderer?
+    @Binding var keyboardMonitor: Any?
+
+    func body(content: Content) -> some View {
+        content
+            .onReceive(NotificationCenter.default.publisher(for: .resetFrameHistory)) { _ in
+                let alert = NSAlert()
+                alert.alertStyle = .critical
+                alert.messageText = "Reset Frame History Database?"
+                if let stats = try? FrameHistoryDatabase.shared.databaseStats() {
+                    alert.informativeText = "This will permanently delete \(stats.frameCount) frame records from \(stats.sessionCount) sessions.\n\nThis cannot be undone."
+                } else {
+                    alert.informativeText = "This will permanently delete all frame history data.\n\nThis cannot be undone."
+                }
+                alert.addButton(withTitle: "Reset")
+                alert.addButton(withTitle: "Cancel")
+                if alert.runModal() == .alertFirstButtonReturn {
+                    try? FrameHistoryDatabase.shared.resetDatabase()
+                    viewModel.statusMessage = "Frame History Database reset"
+                }
+            }
+            .modifier(AIsaacStateObserver(viewModel: viewModel))
+            .onReceive(NotificationCenter.default.publisher(for: .fontScaleIncrease)) { _ in
+                viewModel.fontScale = min(1.5, viewModel.fontScale + 0.1)
+                AppSettings.saveFloat(Float(viewModel.fontScale), for: .fontScale)
+                viewModel.needsTableRefresh = true
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .fontScaleDecrease)) { _ in
+                viewModel.fontScale = max(0.7, viewModel.fontScale - 0.1)
+                AppSettings.saveFloat(Float(viewModel.fontScale), for: .fontScale)
+                viewModel.needsTableRefresh = true
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .fontScaleReset)) { _ in
+                viewModel.fontScale = 1.0
+                AppSettings.saveFloat(1.0, for: .fontScale)
+                viewModel.needsTableRefresh = true
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .checkAppMessages)) { _ in
+                viewModel.checkForMessages()
+                viewModel.startMessageCheckTimer()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .resetSettingsRequest)) { _ in
+                let alert = NSAlert()
+                alert.messageText = "Reset all settings to defaults?"
+                alert.informativeText = "This will reset column order, slider values, and all toggle states."
+                alert.alertStyle = .warning
+                alert.addButton(withTitle: "Reset")
+                alert.addButton(withTitle: "Cancel")
+                if alert.runModal() == .alertFirstButtonReturn {
+                    viewModel.resetAllSettings()
+                    sliderValue = Double(viewModel.stretchStrength)
+                }
+            }
+            .onChange(of: viewModel.quickStackEngineV2?.phase) { newPhase in
+                if newPhase == .done || newPhase == .failed {
+                    viewModel.benchmarkStats.markQuickStackEnd()
+                }
+            }
+            .onDisappear {
+                KeyboardHandler.remove(monitor: keyboardMonitor)
+            }
+            .onChange(of: renderer) { newRenderer in
+                viewModel.renderer = newRenderer
+            }
+            .onChange(of: viewModel.stretchStrength) { newValue in
+                sliderValue = Double(newValue)
+            }
+            .navigationTitle("AstroBlink & AIsaac v\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?") — Fast Visual Culling for Astrophotography")
+            .frame(minWidth: 800, minHeight: 500)
     }
 }
 
