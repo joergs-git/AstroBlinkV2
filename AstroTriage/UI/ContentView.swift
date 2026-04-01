@@ -1290,7 +1290,10 @@ struct AutoMarkPopover: View {
             ($0.qualityTier == .borderline && ($0.qualityBreakdown?.borderlineSeverity ?? 0) >= 2)
         }
         let aggressiveTarget = images.filter {
-            $0.qualityTier == .trash || $0.qualityTier == .borderline || $0.qualityTier == .uncertain
+            $0.qualityTier == .trash || $0.qualityTier == .borderline || $0.qualityTier == .uncertain ||
+            // Weak-good: tier is .good but SNR contribution is < 30% of best frame.
+            // These frames add negligible signal (<55% SNR of best) and degrade the stack.
+            ($0.qualityTier == .good && ($0.qualityBreakdown?.snrContribution ?? 100) < 30)
         }
 
         let trashExp = conservativeTarget.reduce(0.0) { $0 + ($1.exposure ?? 0.0) }
@@ -1309,7 +1312,7 @@ struct AutoMarkPopover: View {
                        count: conservativeTarget.count, integrationLoss: lossStr(trashExp), color: .green),
             MarkOption(title: "Balanced", subtitle: "General use — removes garbage\n+ worst borderline frames.",
                        count: balancedTarget.count, integrationLoss: lossStr(balancedExp), color: .orange),
-            MarkOption(title: "Aggressive", subtitle: "Stars/Galaxy — prioritize sharpness.\nRemoves all questionable frames.",
+            MarkOption(title: "Aggressive", subtitle: "Stars/Galaxy — prioritize sharpness.\nRemoves questionable + weak frames (<30% SNR).",
                        count: aggressiveTarget.count, integrationLoss: lossStr(aggressiveExp), color: .red),
         ]
     }
@@ -1510,10 +1513,13 @@ struct AutoMarkPopover: View {
                 shouldMark = entry.qualityTier == .trash ||
                     (entry.qualityTier == .borderline && (entry.qualityBreakdown?.borderlineSeverity ?? 0) >= 2)
             } else {
-                shouldMark = entry.qualityTier == .trash || entry.qualityTier == .borderline || entry.qualityTier == .uncertain
+                // Aggressive: trash + borderline + uncertain + weak-good (<30% SNR contribution)
+                shouldMark = entry.qualityTier == .trash || entry.qualityTier == .borderline || entry.qualityTier == .uncertain ||
+                    (entry.qualityTier == .good && (entry.qualityBreakdown?.snrContribution ?? 100) < 30)
             }
 
-            let isAutopilotEligible = entry.qualityTier == .trash || entry.qualityTier == .borderline || entry.qualityTier == .uncertain
+            let isAutopilotEligible = entry.qualityTier == .trash || entry.qualityTier == .borderline || entry.qualityTier == .uncertain ||
+                (entry.qualityTier == .good && (entry.qualityBreakdown?.snrContribution ?? 100) < 30)
             if shouldMark && !entry.isMarkedForDeletion {
                 viewModel.images[i].isMarkedForDeletion = true
             } else if !shouldMark && entry.isMarkedForDeletion && isAutopilotEligible {
