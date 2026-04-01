@@ -34,6 +34,12 @@ class ReleaseNotesWindowController {
 // MARK: - Release notes data (shared between view and copy)
 
 private let allReleases: [(version: String, date: String, items: [(ReleaseNotesView.ChangeType, String, String)])] = [
+    ("5.10.1", "April 1, 2026", [
+        (.added, "Zoom Overlay", "True pixel zoom percentage bottom-right of image canvas. Updates live during drag, pinch, and keyboard zoom."),
+        (.added, "Zoom Shortcuts", "Cmd+0: fit to view. Cmd+1: 100% actual pixels. Cmd+2: 200%. Cmd+/Cmd-: 25% step zoom. Font size moved to View menu."),
+        (.added, "Option+Drag Pan", "Hold Option and drag to pan the image — faster and more precise than scroll wheel."),
+        (.fixed, "iCloud Multi-Mac Sync", "Fixed race condition, evicted file downloads, and stale DB after import. Multi-Mac sync now works reliably."),
+    ]),
     ("5.10.0", "March 31, 2026", [
         (.added, "Blink Playback", "Play/stop button with delay picker (0.1-2s) blinks through visible images endlessly. Multi-select blinks only selected frames. ESC to stop."),
         (.added, "Convergence Guard", "Autopilot warns before marking when quality spread is tight or SNR loss exceeds integration loss. Prevents over-culling with diminishing returns."),

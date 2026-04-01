@@ -4,6 +4,20 @@ All notable changes to AstroBlink & AIsaac will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [5.10.1] — 2026-04-01
+
+### Added
+- **Zoom Overlay** — True pixel zoom percentage displayed bottom-right of image canvas (e.g. "Fit (42%)", "100%", "200%"). Updates live during mouse drag, pinch, and keyboard zoom
+- **Zoom Keyboard Shortcuts** — Cmd+0: fit to view, Cmd+1: 100% actual pixels, Cmd+2: 200%. Cmd+/Cmd-: 25% step zoom in/out (replaces font size shortcuts). Font size controls remain in View menu
+- **Option+Drag Pan** — Hold Option key and drag to pan image (hand tool). Faster and more precise than scroll wheel panning
+- **iCloud Sync Logging** — Diagnostic messages throughout the iCloud sync pipeline visible in Console.app
+
+### Fixed
+- **iCloud Sync Race Condition** — Replaced fixed 4-second timer with callback-based iCloud resolution. Sync check now waits until iCloud container is actually resolved (can take 10–30s on new Macs)
+- **iCloud Evicted Files** — New Macs with cloud-only file placeholders now trigger `startDownloadingUbiquitousItem` + `NSFileCoordinator` to download before reading. Previously failed silently
+- **iCloud Import DB Stale** — Frame History window now reloads immediately after iCloud import (GRDB DatabaseQueue reopened, notification posted). Previously required app restart
+- **iCloud Export on Quick Quit** — Synchronous iCloud fallback during `applicationWillTerminate` prevents silent export failure when async resolution hasn't completed
+
 ## [5.10.0] — 2026-03-31
 
 ### Added

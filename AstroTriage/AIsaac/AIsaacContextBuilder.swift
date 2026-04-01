@@ -592,9 +592,10 @@ struct AIsaacContextBuilder {
         "stars:<500", "snr:<20", "trail:>0.5", "file:NGC". Combine with spaces.
 
         IMAGE VIEWER:
-        - Scroll to zoom (trackpad or mouse wheel). +/- keys also zoom. 0 resets zoom to 100%.
-        - Double-click: reset to fit-to-view. If already fit: opens floating preview window with sliders.
-        - Drag to pan when zoomed in. Zoom follows cursor position.
+        - Scroll to zoom (trackpad or mouse wheel). +/- keys also zoom. Cmd+/Cmd-: 25% step zoom.
+        - Cmd+0: fit to view. Cmd+1: 100% actual pixels. Cmd+2: 200%. Double-click: fit to view.
+        - Option+drag: pan image (hand tool). Scroll wheel also pans when zoomed in.
+        - Zoom overlay bottom-right shows true pixel zoom percentage (e.g. "Fit (42%)", "100%", "200%").
         - Info overlay (top-left): shows current frame metadata (FWHM, HFR, stars, ecc, trailing, SNR, filter, exposure).
 
         HEADER INSPECTOR (I key):
@@ -677,9 +678,9 @@ struct AIsaacContextBuilder {
         - S: cycle stretch mode (auto → locked). D: toggle debayer. N: toggle night mode.
         - I: toggle header inspector panel. C: compare current frame with best in group.
         - K: toggle skip-marked during navigation. H: cycle hide marked / show only marked / show all.
-        - +/-: zoom in/out. 0: reset zoom to 100%. Double-click: fit to view.
+        - +/-: zoom in/out. 0: reset zoom. Double-click: fit to view. Option+drag: pan.
         - Cmd+O: open folder (Cmd-click for multi-folder). Cmd+W: close window.
-        - Cmd+/Cmd-/Cmd+0: increase/decrease/reset file list font size.
+        - Cmd+/Cmd-: 25% step zoom. Cmd+0: fit to view. Cmd+1: 100%. Cmd+2: 200%.
 
         BORTLE SKY QUALITY:
         - Fractional Bortle values (e.g. B4.8, not just B5) from NOAA VIIRS 2024 annual composite \

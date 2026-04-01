@@ -53,7 +53,8 @@ AIsaac knows your equipment, remembers your imaging history, understands light p
 - **Bortle Sky Quality (VIIRS 2024)** — real satellite-measured light pollution for every frame. Fractional Bortle (e.g. B4.8) from NOAA VIIRS 2024 annual composite via Supabase lookup. Computed from SITELAT/SITELONG FITS headers. Offline fallback via embedded Falchi 2015 atlas.
 - **Frame History Database** — persistent SQLite tracking all per-frame quality metrics across sessions. Cross-session scoring, global frame IDs, iCloud backup, archive NAS scanning.
 - **In-App Messaging** — server-driven announcements, feedback collection, email signup without app updates. Rich actions, user targeting, feature unlocking.
-- **iCloud Settings Sync** — all preferences and calibration data sync across Macs.
+- **iCloud Settings Sync** — all preferences and calibration data sync across Macs. Frame History DB with automatic sync and conflict detection.
+- **Zoom Controls** — Cmd+0 fit to view, Cmd+1 actual pixels (100%), Cmd+2 double (200%), Cmd+/- 25% step zoom. Option+drag to pan. True pixel zoom % overlay.
 
 For the full version-by-version changelog, see [CHANGELOG.md](CHANGELOG.md).
 

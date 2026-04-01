@@ -679,8 +679,10 @@ struct HelpContentView: View {
                 shortcutRow("C", "Compare with Best — side-by-side with best frame in group")
                 shortcutRow("Double-click row", "Open image in floating preview with stretch/denoise/deconv")
                 shortcutRow("Cmd + O", "Open folder containing FITS/XISF images")
-                shortcutRow("Cmd + / Cmd -", "Increase / decrease file list font size")
-                shortcutRow("Cmd + 0", "Reset file list font size to default")
+                shortcutRow("Cmd + / Cmd -", "Zoom in / out by 25% steps")
+                shortcutRow("Cmd + 0", "Fit image to view (reset zoom)")
+                shortcutRow("Cmd + 1", "Zoom to 100% (actual pixels)")
+                shortcutRow("Cmd + 2", "Zoom to 200%")
 
                 Divider()
 
@@ -690,8 +692,10 @@ struct HelpContentView: View {
                 featureRow("Click + drag right", "Zoom in (Photoshop-style)")
                 featureRow("Click + drag left", "Zoom out")
                 featureRow("Double-click image", "Reset to fit-to-view")
+                featureRow("Option + drag", "Pan image (hand tool — fast and precise)")
                 featureRow("Trackpad pinch", "Zoom in/out")
                 featureRow("Scroll wheel", "Pan when zoomed in")
+                featureRow("Zoom overlay", "Bottom-right corner shows true pixel zoom %")
 
                 Divider()
 
