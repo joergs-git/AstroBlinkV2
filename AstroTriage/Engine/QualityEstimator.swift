@@ -459,17 +459,24 @@ struct QualityEstimator {
                     return fwhm <= median * 1.15
                 }()
 
+                // Trailing outlier guard: trailing garbage rules (5, 6, 6a) require the frame
+                // to be a trailing OUTLIER within its group (trailingZ > 1.0σ). If the frame's
+                // trailing is at the group average (z ≈ 0), it's the telescope's optical
+                // characteristic, not a tracking defect. This prevents mass false positives on
+                // long FL telescopes (RC12 at 1964mm, baseline 0.25) where even normal frames
+                // have high absolute eccentricity. If trailing z is nil (not computed), default
+                // to permissive (allow the rule to fire) since we have no group context.
+                let isTrailingOutlier = (trailingZscores[localIdx] ?? 99) > 1.0
+
                 // Rule 6a: Absolute trailing ceiling — severe trailing is garbage regardless
-                // of filter. The flat narrowband multiplier (0.3) made Rules 5/6 thresholds
-                // mathematically unreachable (score capped at 1.0, threshold = 0.7/0.3 = 2.33).
-                // This ceiling catches severe cases with both high score AND consensus.
+                // of filter. Catches cases where the flat narrowband multiplier made Rules 5/6
+                // thresholds unreachable.
                 //
                 // NOTE: fwhmRulesOutTrailing is intentionally NOT checked here.
                 // Tracking error produces normal FWHM (good seeing) + high eccentricity
                 // (mount drift). The consensus requirement already guards against optical
-                // aberrations (which produce random PA, not consensus). Blocking Rule 6a
-                // on FWHM would miss the most common trailing scenario.
-                if !garbageReasons.contains(.elongated),
+                // aberrations (which produce random PA, not consensus).
+                if isTrailingOutlier, !garbageReasons.contains(.elongated),
                    let ts = entry.trailingScore, ts > absoluteTrailingCeilingScore,
                    let consensus = entry.trailingConsensus, consensus > absoluteTrailingCeilingConsensus {
                     garbageReasons.append(.elongated)
@@ -477,9 +484,9 @@ struct QualityEstimator {
 
                 // Rule 5: Extreme eccentricity — raw ecc far above FL baseline.
                 // Fully FL-adaptive via baseline = 0.8 / sqrt(FL / 200).
-                // Severity-dependent: effectiveTrailMult escalates for worse trailing,
-                // so narrowband with severe trailing gets stricter thresholds.
-                if let ecc = entry.computedEccentricity {
+                // Severity-dependent: effectiveTrailMult escalates for worse trailing.
+                // Outlier guard: only fires on trailing outliers within the group.
+                if isTrailingOutlier, let ecc = entry.computedEccentricity {
                     let fl = entry.focalLength ?? 0
                     let baseline = fl > 0
                         ? min(0.70, max(0.15, 0.8 / (fl / 200.0).squareRoot()))
@@ -492,9 +499,8 @@ struct QualityEstimator {
 
                 // Rule 6: Star trailing — consensus-weighted, FL-adaptive score.
                 // Cross-check: fwhmRulesOutTrailing prevents false positives on sharp frames.
-                // Severity-dependent: effectiveTrailMult makes thresholds reachable for
-                // narrowband with severe trailing (was mathematically impossible with flat 0.3).
-                if !fwhmRulesOutTrailing, !garbageReasons.contains(.elongated) {
+                // Outlier guard: only fires on trailing outliers within the group.
+                if isTrailingOutlier, !fwhmRulesOutTrailing, !garbageReasons.contains(.elongated) {
                     if let ts = entry.trailingScore, ts > (0.7 / effectiveTrailMult) {
                         garbageReasons.append(.elongated)
                     } else if let ts = entry.trailingScore, ts > (0.5 / effectiveTrailMult),
