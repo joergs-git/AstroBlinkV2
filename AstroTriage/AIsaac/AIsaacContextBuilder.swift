@@ -504,9 +504,13 @@ struct AIsaacContextBuilder {
           * R2 Low SNR: SNR < 50% of group median → "SNR catastrophically low"
           * R3 High FWHM: FWHM > 2× median → "severe defocus/tracking"
           * R4 High HFR: HFR > 2× median → "severe defocus"
-          * R5 Extreme eccentricity: ecc > 2× FL baseline (no cross-check needed) → "star trailing/elongation"
-          * R6 Trailing (consensus): score > 0.7 (cross-checked with FWHM) → "star trailing/elongation"
+          * R5 Extreme eccentricity: ecc > 2× FL baseline → "star trailing/elongation" (severity-dependent threshold)
+          * R6a Absolute trailing ceiling: score > 0.50 + consensus > 0.50 → "star trailing/elongation" \
+          (filter-independent, bypasses FWHM cross-check — tracking error = normal FWHM + high ecc)
+          * R6 Trailing (consensus): score > 0.7/effectiveMult (FWHM cross-checked) → "star trailing/elongation"
           * R7 Star count anomaly: stars > 1.8× median + elevated FWHM/HFR → "doubled stars"
+          * R7b Star count drop: stars < 65% median + SNR < 65% median + FWHM OK → "atmospheric attenuation" \
+          (thin cloud, dew, fog — signal loss without defocus)
           * R8 Background anomaly: background > 5-6.5 MAD from median → "abnormal background"
           * R9 Tracking hops: star chain fraction > 25% → "tracking hops (star chains)"
           * R10 Twilight: sun altitude above -12° for broadband/luminance → "captured during twilight/daylight". \
@@ -526,8 +530,9 @@ struct AIsaacContextBuilder {
         instead of a definitive rating, indicating the sample is too small for confident ranking.
         - Stage 2 — Relative Z-Score Ranking (within each group):
           * Median/MAD robust statistics. Metrics weighted: Stars 1.2× (broadband) / 0.5× (narrowband), \
-          FWHM 1.0×, Noise 1.0×, Trailing filter-aware (0.3× narrowband, 0.6× RGB, 1.0× luminance, \
-          0.7× unknown). Z-scores capped at ±3.0.
+          FWHM 1.0×, Noise 1.0×, Trailing severity-dependent (base: 0.3× NB, 0.6× RGB, 1.0× L, 0.7× unknown; \
+          escalates toward 1.0× as trailing worsens via baseMult + (1-baseMult) × trailingScore²). \
+          Z-scores capped at ±3.0.
           * Tiers: Excellent (z > 0.5), Good (z > -0.5), Borderline (z > -2.0), Trash (z ≤ -2.0)
         - Stage 3 — Rescue Rules (only promote, never demote):
           * A: FWHM + noise OK → Good. B: Star dip + sharp → Good. C: FWHM-only → Borderline.
@@ -550,10 +555,10 @@ struct AIsaacContextBuilder {
         - Eccentricity: FL-adaptive baseline = 0.8 / sqrt(FL / 200). \
         468mm → 0.52, 620mm → 0.45, 904mm → 0.30, 2455mm → 0.23. \
         R5 fires when ecc > 2× baseline (excessRatio > 1.0). R6 uses consensus-weighted score. \
-        Both thresholds are filter-aware: divided by trailing multiplier.
-        - Trailing penalty: filter-aware. Narrowband (Ha/OIII/SII) × 0.3 — slight trailing barely \
-        affects diffuse emission, don't waste precious narrowband integration time. RGB × 0.6 — \
-        star color matters moderately. Luminance × 1.0 — full strictness, this is the sharpness \
+        R5/R6 thresholds use severity-dependent multiplier. R6a is filter-independent (absolute ceiling).
+        - Trailing penalty: severity-dependent. Base: Narrowband × 0.3, RGB × 0.6, L × 1.0. \
+        Escalates via baseMult + (1-baseMult) × trailingScore² — mild narrowband trailing stays \
+        reduced, severe trailing approaches full luminance penalty. Luminance × 1.0 — full strictness, this is the sharpness \
         channel. Unknown filters × 0.7. SSWEIGHT penalty also scales with this multiplier.
         - Background: scales with group size (10 frames → 6.5 MAD, 20+ → 5.0 MAD).
         - Narrowband: star weight 0.5× (fewer stars normal for Ha/OIII/SII).

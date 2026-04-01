@@ -41,7 +41,7 @@ AIsaac knows your equipment, remembers your imaging history, understands light p
 ## Highlights
 
 - **AIsaac AI Assistant** — built-in astrophotography AI powered by Claude. Quality summaries, smart culling suggestions, filter advice, imaging plans, voice input, equipment memory. Free Sonnet tier included; bring your own API key for Opus.
-- **SmartCull Quality Engine** — 5-stage pipeline (garbage detection → session sanity → z-score ranking → rescue rules → FWHM sanity) auto-classifies ~99% of frames. Cross-group P10/P90 comparison catches uniformly bad nights. Filter-aware twilight detection. Orientation consensus trailing detection (industry first). Self-calibrating per-setup quality baseline.
+- **SmartCull Quality Engine** — 5-stage pipeline (garbage detection → session sanity → z-score ranking → rescue rules → FWHM sanity) auto-classifies ~99% of frames. Severity-dependent trailing detection with orientation consensus (industry first). Atmospheric attenuation detection (cloud/dew/fog). Cross-group session sanity. Self-calibrating per-setup baseline.
 - **LightspeedStacker** — GPU warp+accumulate stacking, 10-20x faster than CPU. Hash-based triangle matching, Lanczos-3 interpolation, min/max pixel rejection. Color Combine for mono filter palettes (SHO, HOO, LRGB).
 - **GPU Post-Processing** — real-time stretch, sharpening, contrast, dark level, color saturation, bilateral denoise, Richardson-Lucy deconvolution, gradient removal, Wiener deconvolution, structure enhancement.
 - **Metal GPU Rendering** — PixInsight-compatible STF auto-stretch, zero-copy Apple Silicon buffers, <32ms navigation on cache hit.
@@ -171,7 +171,8 @@ After a night of imaging you might have 200-600 sub-exposures. Some have clouds,
 ### SmartCull Quality Engine
 - **5-stage quality pipeline** — garbage detection, session-wide sanity check, z-score ranking, pattern-based rescue rules, and FWHM sanity check. Handles ~99% of quality decisions automatically. Uncertain tier (blue ?) for small groups with ambiguous scores
 - **Orientation consensus trailing detection** — industry first: detects tracking errors by analyzing whether star elongation directions agree (tracking error) or are random (optical aberration)
-- **Filter-aware trailing penalties** — narrowband (Ha/OIII/SII) gets 0.3× trailing weight (slight trailing barely affects emission nebulae), RGB 0.6×, luminance 1.0× (full strictness for the sharpness channel)
+- **Severity-dependent trailing penalties** — mild narrowband trailing stays reduced (~0.3×), severe trailing escalates toward full luminance penalty (1.0×). Absolute ceiling catches severe trailing regardless of filter when consensus confirms tracking error
+- **Atmospheric attenuation detection** — star count drop + SNR drop with normal FWHM = cloud, dew, or fog. Catches signal loss that z-scores alone can't detect
 - **Focal-length-adaptive thresholds** — automatically adjusts eccentricity tolerance based on FOCALLEN from headers (short FL = more tolerance)
 - **Stage 3 rescue rules** — frames with good FWHM + acceptable noise rescued from trash; star count dips recognized as transient events
 - **Quality reasoning ("Why?")** — hover any quality icon for a human-readable explanation of the scoring decision

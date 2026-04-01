@@ -34,6 +34,13 @@ class ReleaseNotesWindowController {
 // MARK: - Release notes data (shared between view and copy)
 
 private let allReleases: [(version: String, date: String, items: [(ReleaseNotesView.ChangeType, String, String)])] = [
+    ("5.10.2", "April 1, 2026", [
+        (.added, "Severity-Dependent Trailing", "Narrowband trailing penalty now escalates with severity. Mild trailing stays reduced, severe trailing gets full penalty. Fixes missed trailing on Ha/OIII/SII."),
+        (.added, "Star Count Drop Detection", "New Rule 7b: frames with <65% stars + <65% SNR flagged as atmospheric attenuation (cloud/dew/fog)."),
+        (.added, "Aggressive Auto-Mark Upgrade", "Now also catches weak-good frames with <30% SNR contribution — negligible signal that degrades the stack."),
+        (.fixed, "Narrowband Trailing Detection", "Severe trailing on narrowband was mathematically impossible to detect (threshold 2.33, score max 1.0). Now uses absolute ceiling + severity escalation."),
+        (.fixed, "Missing Quality Scores", "Fixed race condition where cached preview frames skipped metric analysis. All frames now reliably scored."),
+    ]),
     ("5.10.1", "April 1, 2026", [
         (.added, "Zoom Overlay", "True pixel zoom percentage bottom-right of image canvas. Updates live during drag, pinch, and keyboard zoom."),
         (.added, "Zoom Shortcuts", "Cmd+0: fit to view. Cmd+1: 100% actual pixels. Cmd+2: 200%. Cmd+/Cmd-: 25% step zoom. Font size moved to View menu."),

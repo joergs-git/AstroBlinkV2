@@ -4,6 +4,22 @@ All notable changes to AstroBlink & AIsaac will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [5.10.2] — 2026-04-01
+
+### Added
+- **Severity-Dependent Trailing Multiplier** — Narrowband trailing penalty now escalates with severity: mild trailing (score <0.3) stays reduced at ~0.3×, severe trailing escalates toward full luminance penalty (1.0×). Formula: `baseMult + (1-baseMult) × trailingScore²`. Fixes false-Good ratings on clearly trailed Ha/OIII/SII frames
+- **Rule 6a: Absolute Trailing Ceiling** — New filter-independent safety net: trailingScore >0.50 + consensus >0.5 → garbage. Intentionally bypasses FWHM cross-check because tracking error produces normal FWHM + high eccentricity — consensus is the definitive guard
+- **Rule 7b: Star Count Drop Detection** — Frames with <65% of group median star count AND <65% median SNR flagged as atmospheric attenuation (cloud/dew/fog). FWHM cross-check confirms it's not defocus. Catches thin-cloud degradation that z-scores can't detect
+- **Aggressive Auto-Mark: Weak-Good Frames** — Aggressive culling mode now also marks "Good" frames with <30% SNR contribution (SNR <55% of best). These add negligible signal and degrade the final stack
+
+### Fixed
+- **PrefetchCache Race Condition** — Frames with cached preview textures but missing star metrics are now re-analyzed via `needsAnalysis` parameter (both loop-level and operation-level skip checks)
+- **MainActor Callback Delivery Race** — Quality scoring now retries up to 3× at 0.5s intervals when frames have metrics but no quality score. Catches out-of-order MainActor Task delivery where `onProgress(total)` fires before all metric callbacks complete
+- **Narrowband Trailing Was Mathematically Impossible to Detect** — Previous flat 0.3× narrowband multiplier made garbage threshold 0.7/0.3=2.33, but trailing score capped at 1.0. Severe trailing on Ha/OIII/SII could never be flagged regardless of severity
+
+### Changed
+- Algorithm version bumped to 11 (from 10). Frame History DB records carry this version for re-analysis tracking
+
 ## [5.10.1] — 2026-04-01
 
 ### Added

@@ -939,9 +939,10 @@ struct HelpBackgroundView: View {
                 faqItem("Stage 1 — Garbage Detection",
                     """
                     Before any statistics, obvious failures are flagged red immediately: star count < 50% \
-                    of group median, SNR < 50%, FWHM > 2x median, star eccentricity > 0.6 (trailing), \
-                    or twilight (filter-aware: narrowband tolerates nautical twilight, broadband does not). \
-                    Any single catastrophic metric = immediate red, regardless of other metrics.
+                    of group median, SNR < 50%, FWHM > 2x median, star trailing (severity-dependent — \
+                    escalates from mild to severe regardless of filter), atmospheric attenuation (star count \
+                    drop + SNR drop = cloud/dew/fog), or twilight (filter-aware: narrowband tolerates \
+                    nautical twilight, broadband does not). Any single catastrophic metric = immediate red.
                     """)
 
                 faqItem("Stage 2 — Relative Ranking",

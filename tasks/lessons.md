@@ -287,3 +287,21 @@
 - **Root cause:** `Slider` has multiple initializers. The trailing closure maps to `label:` not `onEditingChanged:`.
 - **Rule:** Always use the explicit named parameter: `Slider(value:in:step:onEditingChanged: { editing in ... })`. Never rely on trailing closure disambiguation for Slider.
 - **Applies to:** SwiftUI Slider with onEditingChanged callback
+
+## [2026-04-01] — Flat narrowband trailing multiplier makes garbage thresholds unreachable
+- **Mistake:** Used flat 0.3× multiplier for narrowband trailing penalties. Garbage threshold became 0.7/0.3=2.33, but trailing score is capped at 1.0. Severe trailing on Ha/OIII/SII could NEVER be detected.
+- **Root cause:** The code even acknowledged it: "effectively disabling trailing garbage for Ha/OIII/SII since score is capped at 1.0". The original rationale (mild trailing OK for narrowband) was valid but the flat multiplier was too aggressive.
+- **Rule:** When dividing thresholds by a multiplier, always verify the resulting threshold is REACHABLE by the input value range. Use severity-dependent escalation instead of flat scaling when the metric has bounded range.
+- **Applies to:** QualityEstimator trailing rules, any threshold logic with divisors
+
+## [2026-04-01] — FWHM cross-check blocks legitimate tracking error detection
+- **Mistake:** Rule 6a (absolute trailing ceiling) was blocked by `fwhmRulesOutTrailing` — frames with normal FWHM but severe trailing were not flagged.
+- **Root cause:** Tracking error produces normal FWHM (good seeing) + high eccentricity (mount drift). The FWHM cross-check was designed for optical aberrations but blocks the most common trailing scenario.
+- **Rule:** For trailing rules with consensus check, don't block on FWHM. Consensus (stars elongated in same direction) is the definitive guard against false positives — optical aberrations produce random PA, not consensus.
+- **Applies to:** QualityEstimator Rule 6a, any future trailing detection rules
+
+## [2026-04-01] — PrefetchCache skips metric callbacks for cached frames
+- **Mistake:** PrefetchCache.prefetchAll() had TWO skip checks (line 271 snapshot + line 289 thread-safe) that skipped entire pipeline including metric callbacks for already-cached frames. Quality scoring ran without metrics for those frames.
+- **Root cause:** The "cached" check only considers preview textures, not whether star metrics and noise stats were delivered. Separate MainActor Tasks for different frames can execute out of order.
+- **Rule:** When skipping cached items in a pipeline, check if ALL required outputs were delivered, not just the primary output (texture). Use a `needsAnalysis` set for frames that need re-processing. Also add delayed rescore retry to catch MainActor Task delivery races.
+- **Applies to:** PrefetchCache.swift, TriageViewModel scoring triggers
