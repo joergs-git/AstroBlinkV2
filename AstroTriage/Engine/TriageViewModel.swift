@@ -2508,22 +2508,14 @@ class TriageViewModel: ObservableObject {
         statusMessage = "Zoom: Fit to view"
     }
 
-    // Cmd+1: cycle through small zoom presets (12%, 25%, 50%)
-    private static let smallPresets: [CGFloat] = [12, 25, 50]
-
+    // Cmd+1: zoom to 100% (1:1 actual pixels — Photoshop standard)
     func zoomPresetSmall() {
-        guard let current = trueZoomPct() else { return }
-        let next = Self.smallPresets.first(where: { $0 > current + 0.5 }) ?? Self.smallPresets[0]
-        setTrueZoom(next)
+        setTrueZoom(100)
     }
 
-    // Cmd+2: cycle through large zoom presets (200%, 300%, 400%)
-    private static let largePresets: [CGFloat] = [200, 300, 400]
-
+    // Cmd+2: zoom to 200%
     func zoomPresetLarge() {
-        guard let current = trueZoomPct() else { return }
-        let next = Self.largePresets.first(where: { $0 > current + 0.5 }) ?? Self.largePresets[0]
-        setTrueZoom(next)
+        setTrueZoom(200)
     }
 
     // MARK: - Quick Stack

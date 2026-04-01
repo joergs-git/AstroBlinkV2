@@ -107,6 +107,11 @@ class ZoomableMTKView: MTKView {
     private var zoomStartScale: CGFloat = 1.0
     private var zoomStartPan: CGPoint = .zero
 
+    // Option+drag pan mode (like Photoshop hand tool)
+    private var isPanDragging = false
+    private var panDragStart: NSPoint = .zero
+    private var panStartOffset: CGPoint = .zero
+
     /// Update the zoom percentage overlay. Shows true pixel zoom (fitScale × zoomScale).
     func updateZoomLabel() {
         guard let renderer = metalRenderer, let label = zoomLabel else { return }
@@ -149,6 +154,15 @@ class ZoomableMTKView: MTKView {
             return
         }
 
+        // Option+click: start pan drag (hand tool)
+        if event.modifierFlags.contains(.option) {
+            isPanDragging = true
+            panDragStart = convert(event.locationInWindow, from: nil)
+            panStartOffset = renderer.panOffset
+            NSCursor.closedHand.set()
+            return
+        }
+
         // Start zoom drag: record anchor and current state
         isZoomDragging = true
         zoomAnchorView = convert(event.locationInWindow, from: nil)
@@ -157,7 +171,18 @@ class ZoomableMTKView: MTKView {
     }
 
     override func mouseDragged(with event: NSEvent) {
-        guard isZoomDragging, let renderer = metalRenderer else { return }
+        guard let renderer = metalRenderer else { return }
+
+        // Spacebar+drag: pan the image
+        if isPanDragging {
+            let current = convert(event.locationInWindow, from: nil)
+            renderer.panOffset.x = panStartOffset.x + (current.x - panDragStart.x)
+            renderer.panOffset.y = panStartOffset.y + (current.y - panDragStart.y)
+            needsDisplay = true
+            return
+        }
+
+        guard isZoomDragging else { return }
 
         let current = convert(event.locationInWindow, from: nil)
         let dx = current.x - zoomAnchorView.x
@@ -193,6 +218,11 @@ class ZoomableMTKView: MTKView {
     }
 
     override func mouseUp(with event: NSEvent) {
+        if isPanDragging {
+            isPanDragging = false
+            NSCursor.arrow.set()
+            return
+        }
         isZoomDragging = false
     }
 

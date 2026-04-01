@@ -70,12 +70,12 @@ struct AstroBlinkV2App: App {
                 }
                 .keyboardShortcut("0", modifiers: .command)
 
-                Button("Zoom 12% / 25% / 50%") {
+                Button("Actual Pixels (100%)") {
                     NotificationCenter.default.post(name: .zoomPresetSmall, object: nil)
                 }
                 .keyboardShortcut("1", modifiers: .command)
 
-                Button("Zoom 200% / 300% / 400%") {
+                Button("Double Size (200%)") {
                     NotificationCenter.default.post(name: .zoomPresetLarge, object: nil)
                 }
                 .keyboardShortcut("2", modifiers: .command)
