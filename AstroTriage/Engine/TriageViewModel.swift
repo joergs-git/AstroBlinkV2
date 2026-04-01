@@ -1035,12 +1035,19 @@ class TriageViewModel: ObservableObject {
             ppParams = nil
         }
 
+        // Identify frames that have cached previews but missing analysis data.
+        // These frames were skipped in a prior prefetch because their preview was cached,
+        // but the metric callbacks (onNoiseStats, onStarMetrics) never fired.
+        let needsAnalysis = Set(images.filter { $0.noiseMAD == nil && $0.computedStarCount == nil }
+                                       .map { $0.url })
+
         prefetchCache.prefetchAll(
             images: images,
             debayerEnabled: debayerEnabled,
             targetBackground: lockedParams != nil ? nil : targetBg,  // locked params override target
             lockedSTFParams: lockedParams,
             postProcessParams: ppParams,
+            needsAnalysis: needsAnalysis,
             onProgress: { [weak self] completed, total in
                 guard let self = self else { return }
                 self.cachingCount = completed
@@ -1074,6 +1081,11 @@ class TriageViewModel: ObservableObject {
                     self.sessionOverviewModel.updateStats(from: self.images)
                     // Recompute quality scores now that noiseMAD is populated for all images
                     self.recomputeQualityScores()
+                    // Fix for MainActor Task delivery race: metric callbacks for individual
+                    // frames are dispatched as separate MainActor Tasks which may not have
+                    // executed yet when onProgress(total,total) fires. Re-check after a
+                    // short delay to catch any frames whose metrics arrived late.
+                    self.scheduleQualityRescore()
                     // Jump to first image after precaching + quality scoring complete
                     if !self.images.isEmpty {
                         self.selectImage(at: 0)
@@ -1316,6 +1328,10 @@ class TriageViewModel: ObservableObject {
             return resolved
         }
 
+        // Identify frames that need re-analysis (cached preview but missing metrics)
+        let needsAnalysisNAS = Set(images.filter { $0.noiseMAD == nil && $0.computedStarCount == nil }
+                                          .map { $0.url })
+
         prefetchCache.prefetchAll(
             images: images,
             debayerEnabled: debayerEnabled,
@@ -1323,6 +1339,7 @@ class TriageViewModel: ObservableObject {
             lockedSTFParams: lockedParams,
             postProcessParams: ppParams,
             resolveDecodingURL: resolveURL,
+            needsAnalysis: needsAnalysisNAS,
             onProgress: { [weak self] completed, total in
                 guard let self = self else { return }
                 self.cachingCount = completed
@@ -1653,6 +1670,8 @@ class TriageViewModel: ObservableObject {
                 self.refineBortleOnline()
                 // Compute relative quality scores now that all header metadata is available
                 self.recomputeQualityScores()
+                // Fix for MainActor Task delivery race (same as local path)
+                self.scheduleQualityRescore()
                 self.detectMeridianFlip()
 
                 // Fetch community baseline for cold-start calibration (async, non-blocking)
@@ -1701,6 +1720,33 @@ class TriageViewModel: ObservableObject {
     }
 
     // MARK: - Quality Estimation
+
+    /// Delayed quality rescore: catches frames whose MainActor metric callbacks
+    /// haven't delivered yet when the initial scoring ran. Retries up to 3 times
+    /// at 0.5s intervals until all analyzable frames have quality scores.
+    private var rescoreRetryCount = 0
+    private func scheduleQualityRescore() {
+        rescoreRetryCount = 0
+        scheduleQualityRescoreStep()
+    }
+    private func scheduleQualityRescoreStep() {
+        guard rescoreRetryCount < 3 else { return }
+        rescoreRetryCount += 1
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            guard let self = self else { return }
+            // Check if any frames have metrics but no quality score
+            let unscoredWithMetrics = self.images.filter {
+                $0.qualityBreakdown == nil && ($0.noiseMAD != nil || $0.computedStarCount != nil)
+            }
+            if !unscoredWithMetrics.isEmpty {
+                self.recomputeQualityScores()
+                self.needsTableRefresh = true
+                self.sessionOverviewModel.updateStats(from: self.images)
+                // Retry in case more metrics are still arriving
+                self.scheduleQualityRescoreStep()
+            }
+        }
+    }
 
     // Compute or recompute quality tiers for all images using QualityEstimator.
     // Called after header enrichment completes (FWHM, HFR, StarCount are now populated).

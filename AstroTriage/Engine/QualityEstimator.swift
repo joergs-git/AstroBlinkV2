@@ -25,6 +25,7 @@ enum GarbageReason: String, Hashable {
     case starCountAnomaly  = "doubled stars (tracking jump)"
     case backgroundAnomaly = "abnormal background (clouds/gradient)"
     case trackingHop       = "tracking hops (star chains)"
+    case starCountDrop     = "atmospheric attenuation (cloud/dew/fog)"
     case twilightExposure  = "captured during twilight/daylight"
 }
 
@@ -210,13 +211,31 @@ struct QualityEstimator {
     private static let narrowbandCanonical: Set<String> = ["Ha", "OIII", "SII", "Hbeta", "NII"]
     private static let rgbCanonical: Set<String> = ["R", "G", "B"]
 
-    /// Filter-aware trailing penalty multiplier.
+    /// Filter-aware trailing penalty multiplier (base value).
     /// Returns 0.3 for narrowband, 0.6 for RGB, 1.0 for luminance, 0.7 for unknown/exotic.
     static func filterTrailingMultiplier(for canonical: String) -> Double {
         if narrowbandCanonical.contains(canonical) { return 0.3 }
         if rgbCanonical.contains(canonical)        { return 0.6 }
         if canonical == "L"                         { return 1.0 }
         return 0.7  // Unknown or exotic filters — conservative default
+    }
+
+    // Severity-dependent trailing multiplier thresholds (named constants for tuning)
+    private static let severityExponent: Double = 2.0
+    private static let absoluteTrailingCeilingScore: Double = 0.50
+    private static let absoluteTrailingCeilingConsensus: Double = 0.5
+
+    /// Severity-dependent trailing multiplier: escalates from baseMult toward 1.0
+    /// as trailing severity increases. Preserves narrowband benefit for mild trailing
+    /// while ensuring severe trailing is properly penalized regardless of filter.
+    ///
+    /// Formula: baseMult + (1.0 - baseMult) * trailingScore^severityExponent
+    ///
+    /// For narrowband (baseMult = 0.3):
+    ///   trailingScore 0.0 → 0.30, 0.3 → 0.36, 0.5 → 0.48, 0.7 → 0.64, 1.0 → 1.00
+    static func effectiveTrailingMultiplier(baseMult: Double, trailingScore: Double) -> Double {
+        let severity = min(1.0, max(0.0, trailingScore))
+        return baseMult + (1.0 - baseMult) * pow(severity, severityExponent)
     }
 
     // MARK: - Public API
@@ -363,6 +382,12 @@ struct QualityEstimator {
                     continue
                 }
 
+                // Per-frame severity-dependent trailing multiplier: escalates from baseMult
+                // toward 1.0 as trailing worsens. Mild narrowband trailing stays ~0.3,
+                // severe trailing approaches luminance penalty (1.0).
+                let frameTrailingScore = entry.trailingScore ?? 0.0
+                let effectiveTrailMult = Self.effectiveTrailingMultiplier(baseMult: trailMult, trailingScore: frameTrailingScore)
+
                 // Compute SNR² for this frame (cached for live retention bar)
                 let snr = snrValues[localIdx]
                 let snrSq = snr.map { $0 * $0 }
@@ -427,34 +452,52 @@ struct QualityEstimator {
                     }
                 }
 
+                // FWHM cross-check: sharp frames (FWHM ≤ median×1.15) rule out trailing.
+                // Moved before Rules 5/6/6a so all trailing rules can use it.
+                let fwhmRulesOutTrailing: Bool = {
+                    guard let fwhm = fwhmValues[localIdx], let median = fwhmMedian else { return false }
+                    return fwhm <= median * 1.15
+                }()
+
+                // Rule 6a: Absolute trailing ceiling — severe trailing is garbage regardless
+                // of filter. The flat narrowband multiplier (0.3) made Rules 5/6 thresholds
+                // mathematically unreachable (score capped at 1.0, threshold = 0.7/0.3 = 2.33).
+                // This ceiling catches severe cases with both high score AND consensus.
+                //
+                // NOTE: fwhmRulesOutTrailing is intentionally NOT checked here.
+                // Tracking error produces normal FWHM (good seeing) + high eccentricity
+                // (mount drift). The consensus requirement already guards against optical
+                // aberrations (which produce random PA, not consensus). Blocking Rule 6a
+                // on FWHM would miss the most common trailing scenario.
+                if !garbageReasons.contains(.elongated),
+                   let ts = entry.trailingScore, ts > absoluteTrailingCeilingScore,
+                   let consensus = entry.trailingConsensus, consensus > absoluteTrailingCeilingConsensus {
+                    garbageReasons.append(.elongated)
+                }
+
                 // Rule 5: Extreme eccentricity — raw ecc far above FL baseline.
                 // Fully FL-adaptive via baseline = 0.8 / sqrt(FL / 200).
-                // Filter-aware: narrowband threshold raised (÷ trailMult), so slight
-                // elongation in Ha/OIII/SII doesn't waste precious integration time.
+                // Severity-dependent: effectiveTrailMult escalates for worse trailing,
+                // so narrowband with severe trailing gets stricter thresholds.
                 if let ecc = entry.computedEccentricity {
                     let fl = entry.focalLength ?? 0
                     let baseline = fl > 0
                         ? min(0.70, max(0.15, 0.8 / (fl / 200.0).squareRoot()))
                         : 0.40
                     let excessRatio = (ecc - baseline) / max(baseline, 0.01)
-                    if excessRatio > (1.0 / trailMult) && !garbageReasons.contains(.elongated) {
+                    if excessRatio > (1.0 / effectiveTrailMult) && !garbageReasons.contains(.elongated) {
                         garbageReasons.append(.elongated)
                     }
                 }
 
                 // Rule 6: Star trailing — consensus-weighted, FL-adaptive score.
                 // Cross-check: fwhmRulesOutTrailing prevents false positives on sharp frames.
-                // Filter-aware: thresholds raised for narrowband (÷ trailMult), effectively
-                // disabling trailing garbage for Ha/OIII/SII since score is capped at 1.0.
-                let fwhmRulesOutTrailing: Bool = {
-                    guard let fwhm = fwhmValues[localIdx], let median = fwhmMedian else { return false }
-                    return fwhm <= median * 1.15
-                }()
-
+                // Severity-dependent: effectiveTrailMult makes thresholds reachable for
+                // narrowband with severe trailing (was mathematically impossible with flat 0.3).
                 if !fwhmRulesOutTrailing, !garbageReasons.contains(.elongated) {
-                    if let ts = entry.trailingScore, ts > (0.7 / trailMult) {
+                    if let ts = entry.trailingScore, ts > (0.7 / effectiveTrailMult) {
                         garbageReasons.append(.elongated)
-                    } else if let ts = entry.trailingScore, ts > (0.5 / trailMult),
+                    } else if let ts = entry.trailingScore, ts > (0.5 / effectiveTrailMult),
                               let consensus = entry.trailingConsensus, consensus > 0.8 {
                         garbageReasons.append(.elongated)
                     }
@@ -469,6 +512,28 @@ struct QualityEstimator {
                             hfrValues[localIdx]! > hfrMedian! * 1.3
                         if fwhmElevated || hfrElevated {
                             garbageReasons.append(.starCountAnomaly)
+                        }
+                    }
+                }
+
+                // Rule 7b: Star count drop — atmospheric attenuation (thin cloud, dew, fog).
+                // If star count drops >35% below median AND SNR also drops >35%,
+                // the frame has atmospheric issues regardless of FWHM.
+                // Cross-check: FWHM must be normal (< median×1.3) to confirm it's NOT defocus.
+                // Requires ≥8 frames for reliable median.
+                if starWeight > 0, let stars = starsValues[localIdx], let median = starsMedian,
+                   indices.count >= 8, median > 20 {
+                    let starRatio = stars / median
+                    if starRatio < 0.65 {
+                        let fwhmOK = fwhmValues[localIdx] == nil || fwhmMedian == nil
+                            || fwhmValues[localIdx]! < fwhmMedian! * 1.3
+                        // SNR cross-check: confirms signal attenuation (not just different star detection).
+                        // Requires actual SNR value (nil = no data, don't assume low).
+                        let snr = snrValues[localIdx]
+                        let snrMed = snrMedian ?? 0
+                        let snrLow = snr != nil && snrMed > 0 && snr! < snrMed * 0.65
+                        if fwhmOK && snrLow {
+                            garbageReasons.append(.starCountDrop)
                         }
                     }
                 }
@@ -541,7 +606,7 @@ struct QualityEstimator {
                         garbageReasons: garbageReasons,
                         isLockedKeep: false,
                         reasoningText: nil,  // Garbage reasons already shown via garbageReasons
-                        filterTrailingMultiplier: trailMult
+                        filterTrailingMultiplier: effectiveTrailMult
                     )
                     continue
                 }
@@ -582,8 +647,8 @@ struct QualityEstimator {
                     wSum += 1.0
                 }
                 if let z = trailingZscores[localIdx] {
-                    zSum += -min(cap, max(-cap, z)) * trailMult  // lower trailing = better → negate
-                    wSum += trailMult    // Filter-aware: 0.3 NB, 0.6 RGB, 1.0 L, 0.7 unknown
+                    zSum += -min(cap, max(-cap, z)) * effectiveTrailMult  // lower trailing = better → negate
+                    wSum += effectiveTrailMult    // Severity-dependent: escalates from baseMult toward 1.0
                 }
 
                 guard wSum > 0 else { continue }
@@ -620,7 +685,7 @@ struct QualityEstimator {
                         && noiseMadZscores[localIdx]! <= 0.5
                     let starsLow = starsValues[localIdx] != nil && starsMedian != nil
                         && starsValues[localIdx]! < starsMedian! * 0.75
-                    let trailingOK = (entry.trailingScore ?? 0) < (0.3 / trailMult)
+                    let trailingOK = (entry.trailingScore ?? 0) < (0.3 / effectiveTrailMult)
 
                     // Rule A: Good FWHM + acceptable noise → frame is fundamentally sound
                     if fwhmOK && noiseOK && trailingOK {
@@ -653,7 +718,8 @@ struct QualityEstimator {
                     tier: tier,
                     isLockedKeep: lockedKeep,
                     rescueReason: rescueReason,
-                    filterTrailingMultiplier: trailMult
+                    filterTrailingMultiplier: effectiveTrailMult,
+                    baseFilterMultiplier: trailMult
                 )
 
                 // Hide SNR contribution for trash tier — misleading to show high % on garbage frames
@@ -697,7 +763,7 @@ struct QualityEstimator {
                     garbageReasons: [],
                     isLockedKeep: lockedKeep,
                     reasoningText: reasoning,
-                    filterTrailingMultiplier: trailMult
+                    filterTrailingMultiplier: effectiveTrailMult
                 )
                 breakdown.isCommunityFloorLocked = communityLocked
                 result[entry.url] = breakdown
@@ -1049,12 +1115,15 @@ struct QualityEstimator {
 
     /// Generate human-readable reasoning for why a frame got its tier.
     /// Called during scoring with full group context available.
+    /// - filterTrailingMultiplier: severity-adjusted effective multiplier (for threshold logic)
+    /// - baseFilterMultiplier: raw filter multiplier (for label text — Ha always shows "narrowband")
     private static func generateReasoning(
         fwhmZ: Double?, starsZ: Double?, noiseZ: Double?, trailingZ: Double?,
         tier: QualityTier,
         isLockedKeep: Bool,
         rescueReason: String?,
-        filterTrailingMultiplier: Double = 1.0
+        filterTrailingMultiplier: Double = 1.0,
+        baseFilterMultiplier: Double = 1.0
     ) -> String {
         if isLockedKeep {
             return "Within calibrated baseline — all metrics match learned profile"
@@ -1079,8 +1148,10 @@ struct QualityEstimator {
         if noisePenalty > 0.5    { penalties.append(("Noise", noisePenalty)) }
         if starsPenalty > 0.5    { penalties.append(("Stars", starsPenalty)) }
         if trailingPenalty > 0.5 {
-            let label = filterTrailingMultiplier < 0.5 ? "Trailing (reduced — narrowband)" :
-                        filterTrailingMultiplier < 0.8 ? "Trailing (moderate — RGB)" : "Trailing"
+            // Use base filter multiplier for label (Ha always shows "narrowband")
+            // even when effective multiplier is escalated due to severity
+            let label = baseFilterMultiplier < 0.5 ? "Trailing (reduced — narrowband)" :
+                        baseFilterMultiplier < 0.8 ? "Trailing (moderate — RGB)" : "Trailing"
             penalties.append((label, trailingPenalty))
         }
 

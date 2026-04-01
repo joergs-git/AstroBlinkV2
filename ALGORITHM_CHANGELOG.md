@@ -12,6 +12,41 @@ Records with `algorithmVersion < kAlgorithmVersion` are candidates for re-analys
 
 ---
 
+## Version 11 — v5.10.2 (2026-04-01)
+
+**Severity-dependent trailing multiplier for narrowband filters.**
+
+### Problem
+The flat narrowband trailing multiplier (0.3×) made garbage detection thresholds
+mathematically unreachable: trailingScore capped at 1.0, but threshold = 0.7/0.3 = 2.33.
+Severe trailing on narrowband (Ha, OIII, SII) was never flagged as garbage, regardless
+of how elongated stars were or how strong the consensus.
+
+### Changes
+1. **Severity-dependent multiplier**: `baseMult + (1 - baseMult) × trailingScore²`
+   - Mild trailing (score < 0.3): mult stays near baseMult (0.30 → 0.36)
+   - Moderate trailing (score 0.5): mult escalates to 0.48
+   - Severe trailing (score > 0.7): mult approaches 1.0 (full Luminance penalty)
+   - Preserves narrowband benefit for mild trailing, escalates for severe cases
+2. **Absolute trailing ceiling (Rule 6a)**: trailingScore > 0.50 AND consensus > 0.5 → garbage
+   - Filter-independent safety net, does NOT check fwhmRulesOutTrailing
+   - Tracking error produces normal FWHM + high eccentricity — consensus is the guard
+3. Applied to: Rules 5, 6, Stage 2 z-score weighting, rescue rule trailingOK, SSWEIGHT
+
+### Files modified
+- `QualityEstimator.swift` — New `effectiveTrailingMultiplier()`, Rule 6a, updated all
+  trailing multiplier usage (Rules 5/6, Stage 2, rescue rules, reasoning labels)
+- `FrameRecord.swift` — kAlgorithmVersion 10 → 11
+- `ALGORITHM_CHANGELOG.md` — This entry
+
+### Expected impact
+- **Narrowband with mild trailing (score < 0.3)**: No meaningful change
+- **Narrowband with moderate trailing (score 0.3-0.5)**: Slightly stricter scoring
+- **Narrowband with severe trailing (score > 0.65 + consensus)**: Now correctly flagged as garbage
+- **RGB/Luminance**: Minimal to no change
+
+---
+
 ## Version 10 — v5.6.0 (2026-03-29)
 
 **Baseline version.** All records in the Frame History DB as of v5.6.0 are set to

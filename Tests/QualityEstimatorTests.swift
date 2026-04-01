@@ -636,26 +636,29 @@ final class QualityEstimatorTests: XCTestCase {
 
     // MARK: - Rule 6: Consensus-Based Trailing with fwhmRulesOutTrailing
 
-    /// Rule 6 (old Rule 5): fwhmRulesOutTrailing should block consensus-based trailing
-    /// when FWHM is within 15% of median AND eccentricity is not extreme.
+    /// Rules 5/6: fwhmRulesOutTrailing should block trailing when FWHM is within
+    /// 15% of median. Note: Rule 6a (absolute ceiling) does NOT check FWHM
+    /// because tracking error = normal FWHM + high ecc. This test uses ts < 0.50
+    /// (below Rule 6a ceiling) to verify Rules 5/6 FWHM cross-check still works.
     func testFWHMRulesOutTrailing_BlocksModerateTrailing() {
         var entries = makeGroup(count: 24, fwhm: 3.5, hfr: 2.0, starCount: 2500, noiseMAD: 0.01)
         for i in 0..<entries.count {
             entries[i].focalLength = 2455.0
             entries[i].computedEccentricity = 0.25
         }
-        // Frame with normal FWHM, moderate trailing score, but NOT extreme ecc
+        // Frame with normal FWHM, moderate trailing score below Rule 6a ceiling (0.50)
         var frame = makeEntry(index: 99, fwhm: 3.5, hfr: 2.0, starCount: 2500, noiseMAD: 0.01,
                               computedEccentricity: 0.35, focalLength: 2455.0,
-                              trailingScore: 0.75, trailingConsensus: 0.9)
+                              trailingScore: 0.45, trailingConsensus: 0.4)
         frame.noiseMedian = 0.05
         entries.append(frame)
 
         let scores = QualityEstimator.computeScores(for: entries)
+        // ts=0.45 < 0.50 → Rule 6a doesn't fire
         // ecc=0.35 at 2455mm → excessRatio = (0.35-0.228)/0.228 = 0.535 (< 1.0) → Rule 5 doesn't fire
         // FWHM=3.5 = median → fwhmRulesOutTrailing = true → Rule 6 doesn't fire either
         XCTAssertNotEqual(scores[frame.url]?.garbageReason, .elongated,
-                          "Moderate ecc with normal FWHM: fwhmRulesOutTrailing should protect against false positive")
+                          "Moderate trailing below ceiling + normal FWHM: Rules 5/6 should be blocked by fwhmRulesOutTrailing")
     }
 
     // MARK: - Rule 1: Decentered Target Detection
@@ -772,9 +775,8 @@ final class QualityEstimatorTests: XCTestCase {
         XCTAssertEqual(QualityEstimator.filterTrailingMultiplier(for: "L-eXtreme"), 0.7)
     }
 
-    /// Narrowband frame with moderate trailing (0.65) should NOT be garbage.
-    /// At L filter (mult=1.0), trailing 0.65 is below 0.7 threshold so also not garbage.
-    /// But at L, trailing 0.75 would be garbage. At Ha (mult=0.3), threshold becomes 2.33 → never garbage.
+    /// Narrowband frame with mild trailing (0.35) should NOT be garbage.
+    /// Below the absolute ceiling (0.50) and not enough for z-score garbage.
     func testNarrowbandTrailingNotGarbage() {
         var entries = makeGroup(count: 24, fwhm: 4.0, hfr: 2.5, starCount: 200, noiseMAD: 0.01, filter: "Ha")
         for i in 0..<entries.count {
@@ -782,11 +784,11 @@ final class QualityEstimatorTests: XCTestCase {
             entries[i].computedEccentricity = 0.40
             entries[i].noiseMedian = 0.05
         }
-        // Moderate trailing — would be near garbage for L, but fine for narrowband
+        // Mild trailing — below absolute ceiling, preserved for narrowband
         var trailed = makeEntry(index: 99, filter: "Ha", fwhm: 4.2, hfr: 2.6, starCount: 200,
                                 noiseMAD: 0.01, noiseMedian: 0.05,
-                                computedEccentricity: 0.65, focalLength: 620.0,
-                                trailingScore: 0.65, trailingConsensus: 0.7)
+                                computedEccentricity: 0.55, focalLength: 620.0,
+                                trailingScore: 0.35, trailingConsensus: 0.7)
         entries.append(trailed)
 
         let scores = QualityEstimator.computeScores(for: entries)
@@ -796,9 +798,141 @@ final class QualityEstimatorTests: XCTestCase {
         }
 
         XCTAssertNotEqual(bd.garbageReason, .elongated,
-                          "Ha frame with trailingScore=0.65 must NOT be garbage (narrowband mult=0.3, effective threshold=2.33)")
-        XCTAssertEqual(bd.filterTrailingMultiplier, 0.3, accuracy: 0.001,
-                       "Ha should have trailing multiplier 0.3")
+                          "Ha frame with trailingScore=0.35 must NOT be garbage (mild trailing preserved for narrowband)")
+        // Effective mult at ts=0.35: 0.3 + 0.7 * 0.1225 = 0.386
+        XCTAssertEqual(bd.filterTrailingMultiplier, 0.386, accuracy: 0.01,
+                       "Ha with ts=0.35 should have severity-adjusted trailing multiplier ~0.39")
+    }
+
+    /// Narrowband frame with significant trailing (0.55 + consensus 0.6) MUST be garbage.
+    /// The absolute trailing ceiling (Rule 6a) catches this regardless of filter.
+    /// Rule 6a does NOT check fwhmRulesOutTrailing because tracking error produces
+    /// normal FWHM + high eccentricity — consensus is the sufficient guard.
+    func testSevereNarrowbandTrailingIsGarbage() {
+        var entries = makeGroup(count: 24, fwhm: 4.0, hfr: 2.5, starCount: 200, noiseMAD: 0.01, filter: "Ha")
+        for i in 0..<entries.count {
+            entries[i].focalLength = 620.0
+            entries[i].computedEccentricity = 0.40
+            entries[i].noiseMedian = 0.05
+        }
+        // Trailing with consensus — must be caught even with normal FWHM
+        var trailed = makeEntry(index: 99, filter: "Ha", fwhm: 4.0, hfr: 2.5, starCount: 200,
+                                noiseMAD: 0.01, noiseMedian: 0.05,
+                                computedEccentricity: 0.65, focalLength: 620.0,
+                                trailingScore: 0.55, trailingConsensus: 0.6)
+        entries.append(trailed)
+
+        let scores = QualityEstimator.computeScores(for: entries)
+        guard let bd = scores[trailed.url] else {
+            XCTFail("Trailed Ha frame should have a score")
+            return
+        }
+
+        XCTAssertEqual(bd.tier, .trash,
+                       "Ha frame with trailingScore=0.55 and consensus=0.6 must be garbage (absolute ceiling at 0.50)")
+        XCTAssertEqual(bd.garbageReason, .elongated)
+    }
+
+    /// Mild narrowband trailing (0.20) must be fully preserved — no change from base multiplier.
+    func testMildNarrowbandTrailingPreserved() {
+        var entries = makeGroup(count: 24, fwhm: 4.0, hfr: 2.5, starCount: 200, noiseMAD: 0.01, filter: "Ha")
+        for i in 0..<entries.count {
+            entries[i].focalLength = 620.0
+            entries[i].computedEccentricity = 0.40
+            entries[i].noiseMedian = 0.05
+            entries[i].trailingScore = 0.10
+        }
+        var mild = makeEntry(index: 99, filter: "Ha", fwhm: 4.0, hfr: 2.5, starCount: 200,
+                             noiseMAD: 0.01, noiseMedian: 0.05,
+                             computedEccentricity: 0.45, focalLength: 620.0,
+                             trailingScore: 0.20, trailingConsensus: 0.3)
+        entries.append(mild)
+
+        let scores = QualityEstimator.computeScores(for: entries)
+        guard let bd = scores[mild.url] else {
+            XCTFail("Mild trailed Ha frame should have a score")
+            return
+        }
+
+        XCTAssertNotEqual(bd.tier, .trash,
+                          "Ha frame with trailingScore=0.20 must NOT be garbage")
+        // Effective mult at ts=0.20: 0.3 + 0.7 * 0.04 = 0.328
+        XCTAssertEqual(bd.filterTrailingMultiplier, 0.328, accuracy: 0.01,
+                       "Ha with ts=0.20 should have near-base trailing multiplier ~0.33")
+    }
+
+    /// Absolute trailing ceiling requires consensus — high score alone is not enough.
+    /// This prevents false positives from optical aberrations (random PA distribution).
+    func testAbsoluteTrailingCeilingRequiresConsensus() {
+        var entries = makeGroup(count: 24, fwhm: 4.0, hfr: 2.5, starCount: 200, noiseMAD: 0.01, filter: "Ha")
+        for i in 0..<entries.count {
+            entries[i].focalLength = 620.0
+            entries[i].computedEccentricity = 0.40
+            entries[i].noiseMedian = 0.05
+        }
+        // High trailing score BUT low consensus — optical aberration, not tracking error
+        var trailed = makeEntry(index: 99, filter: "Ha", fwhm: 5.0, hfr: 3.0, starCount: 200,
+                                noiseMAD: 0.01, noiseMedian: 0.05,
+                                computedEccentricity: 0.65, focalLength: 620.0,
+                                trailingScore: 0.70, trailingConsensus: 0.4)
+        entries.append(trailed)
+
+        let scores = QualityEstimator.computeScores(for: entries)
+        guard let bd = scores[trailed.url] else {
+            XCTFail("Ha frame should have a score")
+            return
+        }
+
+        XCTAssertNotEqual(bd.garbageReason, .elongated,
+                          "Ha frame with trailingScore=0.70 but consensus=0.4 must NOT trigger ceiling (no consensus)")
+    }
+
+    /// Rule 6a does NOT check fwhmRulesOutTrailing — tracking error produces normal FWHM
+    /// plus high eccentricity. Consensus guards against optical aberrations instead.
+    func testAbsoluteTrailingCeilingIgnoresFWHMCrossCheck() {
+        var entries = makeGroup(count: 24, fwhm: 4.0, hfr: 2.5, starCount: 200, noiseMAD: 0.01, filter: "Ha")
+        for i in 0..<entries.count {
+            entries[i].focalLength = 620.0
+            entries[i].computedEccentricity = 0.40
+            entries[i].noiseMedian = 0.05
+        }
+        // Normal FWHM + high trailing score + strong consensus = tracking error
+        // Rule 6a must fire despite FWHM being within normal range
+        var trailed = makeEntry(index: 99, filter: "Ha", fwhm: 4.0, hfr: 2.5, starCount: 200,
+                                noiseMAD: 0.01, noiseMedian: 0.05,
+                                computedEccentricity: 0.65, focalLength: 620.0,
+                                trailingScore: 0.55, trailingConsensus: 0.7)
+        entries.append(trailed)
+
+        let scores = QualityEstimator.computeScores(for: entries)
+        guard let bd = scores[trailed.url] else {
+            XCTFail("Ha frame should have a score")
+            return
+        }
+
+        XCTAssertEqual(bd.garbageReason, .elongated,
+                       "Rule 6a must fire even with normal FWHM — tracking error = normal FWHM + high ecc with consensus")
+        XCTAssertEqual(bd.tier, .trash)
+    }
+
+    /// Unit test for the effectiveTrailingMultiplier formula.
+    func testEffectiveTrailingMultiplierValues() {
+        // Narrowband base = 0.3
+        XCTAssertEqual(QualityEstimator.effectiveTrailingMultiplier(baseMult: 0.3, trailingScore: 0.0), 0.3, accuracy: 0.001)
+        XCTAssertEqual(QualityEstimator.effectiveTrailingMultiplier(baseMult: 0.3, trailingScore: 0.5), 0.475, accuracy: 0.001)
+        XCTAssertEqual(QualityEstimator.effectiveTrailingMultiplier(baseMult: 0.3, trailingScore: 1.0), 1.0, accuracy: 0.001)
+
+        // RGB base = 0.6
+        XCTAssertEqual(QualityEstimator.effectiveTrailingMultiplier(baseMult: 0.6, trailingScore: 0.0), 0.6, accuracy: 0.001)
+        XCTAssertEqual(QualityEstimator.effectiveTrailingMultiplier(baseMult: 0.6, trailingScore: 0.5), 0.7, accuracy: 0.001)
+        XCTAssertEqual(QualityEstimator.effectiveTrailingMultiplier(baseMult: 0.6, trailingScore: 1.0), 1.0, accuracy: 0.001)
+
+        // Luminance base = 1.0 — always 1.0 regardless of severity
+        XCTAssertEqual(QualityEstimator.effectiveTrailingMultiplier(baseMult: 1.0, trailingScore: 0.0), 1.0, accuracy: 0.001)
+        XCTAssertEqual(QualityEstimator.effectiveTrailingMultiplier(baseMult: 1.0, trailingScore: 1.0), 1.0, accuracy: 0.001)
+
+        // Clamping: negative trailing score treated as 0
+        XCTAssertEqual(QualityEstimator.effectiveTrailingMultiplier(baseMult: 0.3, trailingScore: -0.5), 0.3, accuracy: 0.001)
     }
 
     /// Luminance frame with trailing score 0.75 (high) should be garbage.
@@ -864,10 +998,10 @@ final class QualityEstimatorTests: XCTestCase {
             return
         }
 
-        // Ha trailing weight is 0.3, L is 1.0
+        // Ha trailing weight: effectiveMult(0.3, 0.6) = 0.552, L = 1.0
         // So Ha frame should have HIGHER combinedZ (less penalized) than L frame
         XCTAssertGreaterThan(haBD.combinedZScore, lBD.combinedZScore,
-                             "Ha trailing penalty (0.3×) should produce higher combinedZ than L (1.0×)")
+                             "Ha trailing penalty (severity-adjusted ~0.55×) should produce higher combinedZ than L (1.0×)")
     }
 
     /// Verify filterTrailingMultiplier is correctly stored on QualityBreakdown for each filter type.

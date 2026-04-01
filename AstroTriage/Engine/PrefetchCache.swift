@@ -222,6 +222,7 @@ class PrefetchCache {
         lockedSTFParams: [STFParams]? = nil,
         postProcessParams: (sharpening: Float, contrast: Float, darkLevel: Float)? = nil,
         resolveDecodingURL: ((URL) -> URL)? = nil,  // Late-resolve URL at execution time (for NAS pipeline)
+        needsAnalysis: Set<URL> = [],  // URLs that need metrics even if preview is cached
         onProgress: @escaping (Int, Int) -> Void,
         onNoiseStats: ((URL, STFCalculator.NoiseStats) -> Void)? = nil,
         onStarMetrics: ((URL, StarMetrics) -> Void)? = nil,
@@ -267,8 +268,11 @@ class PrefetchCache {
             for entry in images {
                 guard !Task.isCancelled else { return }
 
-                // Skip if already cached (using snapshot, no main actor hop)
-                if cachedURLs.contains(entry.url) {
+                // Skip if already cached AND not flagged for re-analysis.
+                // Frames in needsAnalysis must go through the full pipeline even if
+                // the preview texture is cached, because their metric callbacks
+                // (onNoiseStats, onStarMetrics) were never fired.
+                if cachedURLs.contains(entry.url) && !needsAnalysis.contains(entry.url) {
                     let completed = completedCount.increment()
                     Task { @MainActor in onProgress(completed, total) }
                     continue
@@ -280,13 +284,15 @@ class PrefetchCache {
 
                 let urlsLock = self?.cachedURLsLock
                 let urlsSetRef = self
+                let forceAnalyze = needsAnalysis.contains(url)
 
                 queue.addOperation {
                     guard !queue.isSuspended else { return }
 
                     // Skip if priority queue already cached this image (thread-safe set check
-                    // instead of DispatchQueue.main.sync to avoid stalling on main thread)
-                    if let lock = urlsLock {
+                    // instead of DispatchQueue.main.sync to avoid stalling on main thread).
+                    // Don't skip if the frame needs re-analysis (cached preview but missing metrics).
+                    if !forceAnalyze, let lock = urlsLock {
                         lock.lock()
                         let alreadyCached = urlsSetRef?.cachedURLsSet.contains(url) ?? false
                         lock.unlock()
