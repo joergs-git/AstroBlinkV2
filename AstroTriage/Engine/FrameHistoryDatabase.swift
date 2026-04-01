@@ -11,7 +11,7 @@ import GRDB
 final class FrameHistoryDatabase {
     static let shared = FrameHistoryDatabase()
 
-    private let dbQueue: DatabaseQueue
+    private var dbQueue: DatabaseQueue
     private let storageURL: URL
 
     // iCloud directory resolved once on a background thread.
@@ -772,8 +772,11 @@ final class FrameHistoryDatabase {
                 do {
                     try? FileManager.default.removeItem(at: self.storageURL)
                     try FileManager.default.copyItem(at: readURL, to: self.storageURL)
+                    // Reopen database connection (old DatabaseQueue still points to deleted inode)
+                    self.dbQueue = try DatabaseQueue(path: self.storageURL.path)
+                    try Self.migrate(self.dbQueue)
                     let count = (try? self.databaseStats())?.frameCount ?? 0
-                    print("FrameHistoryDatabase: imported \(count) frames from iCloud")
+                    print("FrameHistoryDatabase: imported \(count) frames from iCloud, DB reopened")
                     importResult = .success(count)
                 } catch {
                     print("FrameHistoryDatabase: import failed: \(error)")
@@ -786,7 +789,11 @@ final class FrameHistoryDatabase {
                 importResult = .failure(error)
             }
 
-            DispatchQueue.main.async { completion(importResult) }
+            DispatchQueue.main.async {
+                // Notify UI to reload Frame History data
+                NotificationCenter.default.post(name: .frameHistoryDidImport, object: nil)
+                completion(importResult)
+            }
         }
     }
 

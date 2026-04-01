@@ -22,6 +22,11 @@ class FrameHistoryController {
             return
         }
 
+        // Reload data when iCloud import replaces the database
+        NotificationCenter.default.addObserver(forName: .frameHistoryDidImport, object: nil, queue: .main) { [weak self] _ in
+            self?.model.loadData()
+        }
+
         model.loadData()
 
         let savedScale = AppSettings.loadFloat(for: .fontScale).map { CGFloat($0) } ?? 1.0

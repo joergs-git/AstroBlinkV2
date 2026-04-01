@@ -36,6 +36,24 @@ struct ImageViewerView: NSViewRepresentable {
             }
         }
 
+        // Zoom percentage overlay (bottom-right corner)
+        let label = NSTextField(labelWithString: "")
+        label.font = NSFont.monospacedSystemFont(ofSize: 11, weight: .medium)
+        label.textColor = NSColor.white.withAlphaComponent(0.85)
+        label.backgroundColor = NSColor.black.withAlphaComponent(0.5)
+        label.isBezeled = false
+        label.isEditable = false
+        label.drawsBackground = true
+        label.wantsLayer = true
+        label.layer?.cornerRadius = 4
+        label.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(label)
+        NSLayoutConstraint.activate([
+            label.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -8),
+            label.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -8),
+        ])
+        mtkView.zoomLabel = label
+
         // Tag the container so we can find the MTKView in updateNSView
         context.coordinator.mtkView = mtkView
 
@@ -45,6 +63,9 @@ struct ImageViewerView: NSViewRepresentable {
     func updateNSView(_ container: NSView, context: Context) {
         guard let mtkView = context.coordinator.mtkView,
               let renderer = mtkView.metalRenderer else { return }
+
+        // Keep zoom overlay current (image changes affect fitScale)
+        mtkView.updateZoomLabel()
 
         if let decoded = viewModel.currentDecodedImage {
             // Full-res path: set raw image for compute + display
@@ -77,11 +98,26 @@ class ZoomableMTKView: MTKView {
     // Strong reference — this view owns the renderer
     var metalRenderer: MetalRenderer?
 
+    // Zoom label overlay (bottom-right corner, shows true pixel zoom %)
+    weak var zoomLabel: NSTextField?
+
     // Zoom interaction state
     private var isZoomDragging = false
     private var zoomAnchorView: NSPoint = .zero
     private var zoomStartScale: CGFloat = 1.0
     private var zoomStartPan: CGPoint = .zero
+
+    /// Update the zoom percentage overlay. Shows true pixel zoom (fitScale × zoomScale).
+    func updateZoomLabel() {
+        guard let renderer = metalRenderer, let label = zoomLabel else { return }
+        let fitScale = renderer.fitScale(viewBounds: bounds.size)
+        let trueZoom = fitScale * renderer.zoomScale * 100
+        if abs(renderer.zoomScale - 1.0) < 0.005 {
+            label.stringValue = String(format: "Fit (%.0f%%)", trueZoom)
+        } else {
+            label.stringValue = String(format: "%.0f%%", trueZoom)
+        }
+    }
 
     // Don't steal first responder from the table — keyboard handler uses
     // a local event monitor that works regardless of focus
@@ -109,6 +145,7 @@ class ZoomableMTKView: MTKView {
         if event.clickCount == 2 {
             renderer.resetZoom()
             needsDisplay = true
+            updateZoomLabel()
             return
         }
 
@@ -152,6 +189,7 @@ class ZoomableMTKView: MTKView {
         renderer.zoomScale = newScale
 
         needsDisplay = true
+        updateZoomLabel()
     }
 
     override func mouseUp(with event: NSEvent) {
@@ -197,5 +235,6 @@ class ZoomableMTKView: MTKView {
         renderer.zoomScale = newScale
 
         needsDisplay = true
+        updateZoomLabel()
     }
 }

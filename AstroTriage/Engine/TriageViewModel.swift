@@ -2467,20 +2467,36 @@ class TriageViewModel: ObservableObject {
 
     // MARK: - Zoom
 
-    // Zoom in by 20% (multiplicative so each step feels equal)
-    func zoomIn() {
-        guard let renderer = renderer, let mtkView = findMTKView() else { return }
-        renderer.zoomScale *= 1.2
-        mtkView.needsDisplay = true
-        statusMessage = String(format: "Zoom: %.0f%%", renderer.zoomScale * 100)
+    // True pixel zoom percentage: fitScale × zoomScale × 100
+    private func trueZoomPct() -> CGFloat? {
+        guard let renderer = renderer, let mtkView = findMTKView() else { return nil }
+        let fitScale = renderer.fitScale(viewBounds: mtkView.bounds.size)
+        return fitScale * renderer.zoomScale * 100
     }
 
-    // Zoom out by 20%
-    func zoomOut() {
+    private func setTrueZoom(_ pct: CGFloat) {
         guard let renderer = renderer, let mtkView = findMTKView() else { return }
-        renderer.zoomScale = max(0.1, renderer.zoomScale / 1.2)
+        let fitScale = renderer.fitScale(viewBounds: mtkView.bounds.size)
+        guard fitScale > 0 else { return }
+        renderer.zoomScale = (pct / 100.0) / fitScale
+        renderer.panOffset = .zero
         mtkView.needsDisplay = true
-        statusMessage = String(format: "Zoom: %.0f%%", renderer.zoomScale * 100)
+        (mtkView as? ZoomableMTKView)?.updateZoomLabel()
+        statusMessage = String(format: "Zoom: %.0f%%", pct)
+    }
+
+    // Zoom in by 25% true-pixel step (Cmd+)
+    func zoomIn() {
+        guard let current = trueZoomPct() else { return }
+        let nextPct = (floor(current / 25.0) + 1) * 25
+        setTrueZoom(min(nextPct, 800))
+    }
+
+    // Zoom out by 25% true-pixel step (Cmd-)
+    func zoomOut() {
+        guard let current = trueZoomPct() else { return }
+        let nextPct = (ceil(current / 25.0) - 1) * 25
+        setTrueZoom(max(nextPct, 25))
     }
 
     // Reset zoom to fit-to-view
@@ -2488,7 +2504,26 @@ class TriageViewModel: ObservableObject {
         guard let renderer = renderer, let mtkView = findMTKView() else { return }
         renderer.resetZoom()
         mtkView.needsDisplay = true
+        (mtkView as? ZoomableMTKView)?.updateZoomLabel()
         statusMessage = "Zoom: Fit to view"
+    }
+
+    // Cmd+1: cycle through small zoom presets (12%, 25%, 50%)
+    private static let smallPresets: [CGFloat] = [12, 25, 50]
+
+    func zoomPresetSmall() {
+        guard let current = trueZoomPct() else { return }
+        let next = Self.smallPresets.first(where: { $0 > current + 0.5 }) ?? Self.smallPresets[0]
+        setTrueZoom(next)
+    }
+
+    // Cmd+2: cycle through large zoom presets (200%, 300%, 400%)
+    private static let largePresets: [CGFloat] = [200, 300, 400]
+
+    func zoomPresetLarge() {
+        guard let current = trueZoomPct() else { return }
+        let next = Self.largePresets.first(where: { $0 > current + 0.5 }) ?? Self.largePresets[0]
+        setTrueZoom(next)
     }
 
     // MARK: - Quick Stack

@@ -1153,6 +1153,31 @@ struct ContentViewModifiers2: ViewModifier {
             }
             .navigationTitle("AstroBlink & AIsaac v\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?") — Fast Visual Culling for Astrophotography")
             .frame(minWidth: 800, minHeight: 500)
+            .modifier(ZoomNotificationModifier(viewModel: viewModel))
+    }
+}
+
+// Separate modifier to keep type-checker happy (zoom notification receivers)
+struct ZoomNotificationModifier: ViewModifier {
+    @ObservedObject var viewModel: TriageViewModel
+
+    func body(content: Content) -> some View {
+        content
+            .onReceive(NotificationCenter.default.publisher(for: .zoomInStep)) { _ in
+                viewModel.zoomIn()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .zoomOutStep)) { _ in
+                viewModel.zoomOut()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .zoomReset)) { _ in
+                viewModel.resetZoom()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .zoomPresetSmall)) { _ in
+                viewModel.zoomPresetSmall()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .zoomPresetLarge)) { _ in
+                viewModel.zoomPresetLarge()
+            }
     }
 }
 

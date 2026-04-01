@@ -53,22 +53,46 @@ struct AstroBlinkV2App: App {
                 }
             }
 
-            // View menu: Font size + Columns visibility + Reset Settings
+            // View menu: Zoom + Font size + Columns visibility + Reset Settings
             CommandGroup(after: .toolbar) {
+                Button("Zoom In (25%)") {
+                    NotificationCenter.default.post(name: .zoomInStep, object: nil)
+                }
+                .keyboardShortcut("+", modifiers: .command)
+
+                Button("Zoom Out (25%)") {
+                    NotificationCenter.default.post(name: .zoomOutStep, object: nil)
+                }
+                .keyboardShortcut("-", modifiers: .command)
+
+                Button("Fit to View") {
+                    NotificationCenter.default.post(name: .zoomReset, object: nil)
+                }
+                .keyboardShortcut("0", modifiers: .command)
+
+                Button("Zoom 12% / 25% / 50%") {
+                    NotificationCenter.default.post(name: .zoomPresetSmall, object: nil)
+                }
+                .keyboardShortcut("1", modifiers: .command)
+
+                Button("Zoom 200% / 300% / 400%") {
+                    NotificationCenter.default.post(name: .zoomPresetLarge, object: nil)
+                }
+                .keyboardShortcut("2", modifiers: .command)
+
+                Divider()
+
                 Button("Increase Font Size") {
                     NotificationCenter.default.post(name: .fontScaleIncrease, object: nil)
                 }
-                .keyboardShortcut("+", modifiers: .command)
 
                 Button("Decrease Font Size") {
                     NotificationCenter.default.post(name: .fontScaleDecrease, object: nil)
                 }
-                .keyboardShortcut("-", modifiers: .command)
 
                 Button("Reset Font Size") {
                     NotificationCenter.default.post(name: .fontScaleReset, object: nil)
                 }
-                .keyboardShortcut("0", modifiers: .command)
 
                 Divider()
 
@@ -525,6 +549,12 @@ extension Notification.Name {
     static let fontScaleReset = Notification.Name("fontScaleReset")
     static let resetFrameHistory = Notification.Name("resetFrameHistory")
     static let checkAppMessages = Notification.Name("checkAppMessages")
+    static let frameHistoryDidImport = Notification.Name("frameHistoryDidImport")
+    static let zoomInStep = Notification.Name("zoomInStep")
+    static let zoomOutStep = Notification.Name("zoomOutStep")
+    static let zoomReset = Notification.Name("zoomReset")
+    static let zoomPresetSmall = Notification.Name("zoomPresetSmall")
+    static let zoomPresetLarge = Notification.Name("zoomPresetLarge")
 }
 
 // AppDelegate extension for help window
