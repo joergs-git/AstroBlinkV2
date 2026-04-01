@@ -12,6 +12,30 @@ Records with `algorithmVersion < kAlgorithmVersion` are candidates for re-analys
 
 ---
 
+## Version 11 — v5.10.3 (2026-04-02)
+
+**Trailing outlier guard for long focal length telescopes.**
+
+### Problem
+Rules 5, 6, 6a fired on frames whose trailing was at the group average (trailingZ ≈ 0).
+On RC12 at 1964mm (baseline 0.255), normal optical eccentricity 0.50–0.70 produced high
+trailing scores that triggered Rule 6a despite being the group norm. 112/140 frames trashed.
+
+### Change
+All trailing garbage rules (5, 6, 6a) now require `trailingZ > 1.0` — the frame must be
+a trailing OUTLIER within its group. If trailing z is nil (insufficient data for z-score),
+defaults to permissive (allows rules to fire, since we have no group context).
+
+### Files modified
+- `QualityEstimator.swift` — `isTrailingOutlier` guard on Rules 5, 6, 6a
+
+### Expected impact
+- **Long FL (RC12, 1964mm)**: normal frames no longer mass-trashed
+- **Short/mid FL (RASA 620mm)**: genuinely trailed outliers still caught (z > 1.0)
+- **Groups with ALL frames trailing**: no individual frame flagged (session sanity catches these)
+
+---
+
 ## Version 11 — v5.10.2 (2026-04-01)
 
 **Severity-dependent trailing multiplier for narrowband filters.**

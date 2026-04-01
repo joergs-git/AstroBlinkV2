@@ -4,6 +4,11 @@ All notable changes to AstroBlink & AIsaac will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [5.10.3] — 2026-04-02
+
+### Fixed
+- **Trailing Outlier Guard** — All trailing garbage rules (5, 6, 6a) now require the frame to be a trailing outlier (z > 1.0σ) within its group. On long focal length telescopes (RC12 at 1964mm, baseline 0.255), normal optical eccentricity (0.50–0.70) triggered false positives — 112 of 140 frames trashed despite looking identical to the best frame. If a frame's trailing matches the group average, it's the telescope's characteristic, not a tracking defect
+
 ## [5.10.2] — 2026-04-01
 
 ### Added

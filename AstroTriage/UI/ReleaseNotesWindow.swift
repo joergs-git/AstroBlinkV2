@@ -34,6 +34,9 @@ class ReleaseNotesWindowController {
 // MARK: - Release notes data (shared between view and copy)
 
 private let allReleases: [(version: String, date: String, items: [(ReleaseNotesView.ChangeType, String, String)])] = [
+    ("5.10.3", "April 2, 2026", [
+        (.fixed, "Trailing False Positives on Long FL", "Trailing garbage rules now require the frame to be a trailing outlier (z > 1σ) within its group. Fixes mass false positives on RC12/long FL where normal optical eccentricity triggered trailing detection."),
+    ]),
     ("5.10.2", "April 1, 2026", [
         (.added, "Severity-Dependent Trailing", "Narrowband trailing penalty now escalates with severity. Mild trailing stays reduced, severe trailing gets full penalty. Fixes missed trailing on Ha/OIII/SII."),
         (.added, "Star Count Drop Detection", "New Rule 7b: frames with <65% stars + <65% SNR flagged as atmospheric attenuation (cloud/dew/fog)."),

@@ -505,8 +505,8 @@ struct AIsaacContextBuilder {
           * R3 High FWHM: FWHM > 2× median → "severe defocus/tracking"
           * R4 High HFR: HFR > 2× median → "severe defocus"
           * R5 Extreme eccentricity: ecc > 2× FL baseline → "star trailing/elongation" (severity-dependent threshold)
-          * R6a Absolute trailing ceiling: score > 0.50 + consensus > 0.50 → "star trailing/elongation" \
-          (filter-independent, bypasses FWHM cross-check — tracking error = normal FWHM + high ecc)
+          * R6a Absolute trailing ceiling: score > 0.50 + consensus > 0.50 + trailing outlier (z > 1.0σ) \
+          → "star trailing/elongation" (filter-independent, bypasses FWHM cross-check)
           * R6 Trailing (consensus): score > 0.7/effectiveMult (FWHM cross-checked) → "star trailing/elongation"
           * R7 Star count anomaly: stars > 1.8× median + elevated FWHM/HFR → "doubled stars"
           * R7b Star count drop: stars < 65% median + SNR < 65% median + FWHM OK → "atmospheric attenuation" \
