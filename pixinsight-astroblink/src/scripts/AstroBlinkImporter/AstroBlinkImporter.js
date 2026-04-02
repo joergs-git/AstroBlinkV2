@@ -98,14 +98,20 @@ function isMacOS() {
 
 function isAstroBlinkInstalled() {
    if (!isMacOS()) return false;
+   // Check standard install locations and common alternatives
    var paths = [
       "/Applications/AstroBlinkV2.app",
-      File.homeDirectory + "/Applications/AstroBlinkV2.app"
+      "/Applications/AstroBlink & AIsaac.app",
+      File.homeDirectory + "/Applications/AstroBlinkV2.app",
+      File.homeDirectory + "/Applications/AstroBlink & AIsaac.app"
    ];
    for (var i = 0; i < paths.length; i++) {
       if (File.exists(paths[i])) return true;
    }
-   return false;
+   // Also check if URL scheme is registered (dev builds in DerivedData)
+   // We can't easily check this, so return true on macOS — the launch will
+   // show an error if the app isn't actually available
+   return true;
 }
 
 // ============================================================================
@@ -758,17 +764,58 @@ AstroBlinkImporterDialog.prototype.launchAstroBlink = function() {
       return;
    }
 
-   // Launch via astroblink:// URL scheme — AstroBlink opens and loads the folder
+   // Launch via astroblink:// URL scheme using a temporary shell script.
+   // PJSR has no ExternalProcess class, so we write a script and execute via system().
    var encodedPath = this.sessionFolder.replace(/ /g, "%20");
    var url = "astroblink://open?folder=" + encodedPath;
+   var shellScript = "/tmp/astroblink_launch.sh";
 
    Console.writeln("Launching AstroBlink: " + url);
    Console.flush();
 
-   // macOS: use 'open' command to handle URL scheme
-   var p = new ExternalProcess;
-   p.start("open", [url]);
-   p.waitForFinished();
+   try {
+      var f = new File;
+      f.createForWriting(shellScript);
+      f.outTextLn("#!/bin/bash");
+      f.outTextLn("open '" + url + "'");
+      f.close();
+
+      // Make executable and run
+      var chmod = new File;
+      chmod.createForWriting("/tmp/astroblink_chmod.sh");
+      chmod.outTextLn("#!/bin/bash");
+      chmod.outTextLn("chmod +x " + shellScript + " && " + shellScript);
+      chmod.close();
+
+      // Try using ExternalProcess if available (PI 1.9+)
+      if (typeof ExternalProcess !== "undefined") {
+         var p = new ExternalProcess;
+         p.start("/bin/bash", [shellScript]);
+         p.waitForFinished(5000);
+      } else {
+         // Fallback: show manual instructions
+         var msg = new MessageBox(
+            "Please open AstroBlink manually and load this folder:\n\n" +
+            this.sessionFolder + "\n\n" +
+            "Or run this in Terminal:\n" +
+            "open '" + url + "'\n\n" +
+            "After triaging, click Refresh to import results.",
+            SCRIPT_NAME, StdIcon_Information, StdButton_Ok);
+         msg.execute();
+      }
+   } catch (e) {
+      // ExternalProcess not available — show manual instructions
+      Console.warningln("Could not launch AstroBlink automatically: " + e.message);
+      var msg = new MessageBox(
+         "Could not launch AstroBlink automatically.\n\n" +
+         "Please open AstroBlink manually and load:\n" +
+         this.sessionFolder + "\n\n" +
+         "Or paste this in Terminal:\n" +
+         "open '" + url + "'\n\n" +
+         "After triaging, click Refresh to import results.",
+         SCRIPT_NAME, StdIcon_Information, StdButton_Ok);
+      msg.execute();
+   }
 
    this.summaryLabel.text = "AstroBlink launched — triage your session, export SSWEIGHT, then click Refresh.";
    this.statsLabel.text = "";

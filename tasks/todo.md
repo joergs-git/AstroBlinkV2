@@ -481,7 +481,9 @@ Valuable for ML/community learning, especially borderline cases.
 - [x] Frame History re-analysis — "Re-Analyze" button re-scores stale records with current algorithm
 - [x] Elliptical GPU PSF fitting — 5-param kernel (A, σx, σy, θ, B) via Gauss-Newton
 - [x] PSF-derived eccentricity + PA (preferred over image moments when fit quality is good)
-- [x] PSFSignalWeight as additive 6th metric in combinedZ (stars AND psfFlux, split weight)
+- [x] ~~PSFSignalWeight as additive 6th metric~~ — reverted, dilutes scoring. PSF flux stays OR/replacement
+- [x] PSF Flux Z-score in Quality Metrics panel + tooltip
+- [x] FWHM CPU fallback when GPU fit chi² fails (fixes nil FWHM on poor seeing)
 - [x] psfFlux column in FrameRecord DB (migration v6)
 - [x] Monthly chart aggregation — auto-aggregates when date range >6 months
 - [x] kAlgorithmVersion bumped to 13
