@@ -12,16 +12,6 @@ struct AstroBlinkV2App: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
-                .onOpenURL { url in
-                    // Handle astroblink://open?folder=/path/to/session
-                    guard url.scheme == "astroblink" else { return }
-                    if let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
-                       components.host == "open",
-                       let folderPath = components.queryItems?.first(where: { $0.name == "folder" })?.value {
-                        let folderURL = URL(fileURLWithPath: folderPath)
-                        NotificationCenter.default.post(name: .openFolderAtPath, object: folderURL)
-                    }
-                }
         }
         .windowStyle(.titleBar)
         .defaultSize(width: 1400, height: 900)
@@ -167,6 +157,22 @@ class AstroBlinkV2AppDelegate: NSObject, NSApplicationDelegate {
         // Export Frame History to iCloud so other Macs get the latest data
         FrameHistoryDatabase.shared.exportToICloud()
         SessionCache.cleanupAllCaches()
+    }
+
+    // Handle astroblink:// URL scheme (works both on cold launch and when already running)
+    func application(_ application: NSApplication, open urls: [URL]) {
+        for url in urls {
+            guard url.scheme == "astroblink" else { continue }
+            if let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+               components.host == "open",
+               let folderPath = components.queryItems?.first(where: { $0.name == "folder" })?.value {
+                let folderURL = URL(fileURLWithPath: folderPath)
+                // Delay slightly to ensure window is ready on cold launch
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    NotificationCenter.default.post(name: .openFolderAtPath, object: folderURL)
+                }
+            }
+        }
     }
 
     // Show splash screen on launch (unless user opted out)
