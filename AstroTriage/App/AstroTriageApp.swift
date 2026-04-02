@@ -152,6 +152,23 @@ class AstroBlinkV2AppDelegate: NSObject, NSApplicationDelegate {
         return true
     }
 
+    // Handle astroblink:// URL scheme via Apple Events (most reliable on macOS)
+    @objc func handleGetURLEvent(_ event: NSAppleEventDescriptor, withReply reply: NSAppleEventDescriptor) {
+        guard let urlString = event.paramDescriptor(forKeyword: AEKeyword(keyDirectObject))?.stringValue,
+              let url = URL(string: urlString),
+              url.scheme == "astroblink" else { return }
+
+        if let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+           components.host == "open",
+           let folderPath = components.queryItems?.first(where: { $0.name == "folder" })?.value {
+            let folderURL = URL(fileURLWithPath: folderPath)
+            // Delay to ensure SwiftUI window is ready (especially on cold launch)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                NotificationCenter.default.post(name: .openFolderAtPath, object: folderURL)
+            }
+        }
+    }
+
     // Clean up caches and ensure iCloud has latest data before quitting
     func applicationWillTerminate(_ notification: Notification) {
         // Export Frame History to iCloud so other Macs get the latest data
@@ -159,24 +176,16 @@ class AstroBlinkV2AppDelegate: NSObject, NSApplicationDelegate {
         SessionCache.cleanupAllCaches()
     }
 
-    // Handle astroblink:// URL scheme (works both on cold launch and when already running)
-    func application(_ application: NSApplication, open urls: [URL]) {
-        for url in urls {
-            guard url.scheme == "astroblink" else { continue }
-            if let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
-               components.host == "open",
-               let folderPath = components.queryItems?.first(where: { $0.name == "folder" })?.value {
-                let folderURL = URL(fileURLWithPath: folderPath)
-                // Delay slightly to ensure window is ready on cold launch
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                    NotificationCenter.default.post(name: .openFolderAtPath, object: folderURL)
-                }
-            }
-        }
-    }
-
     // Show splash screen on launch (unless user opted out)
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Register Apple Event handler for astroblink:// URL scheme
+        // This is the most reliable way on macOS — works on cold launch and reactivation
+        NSAppleEventManager.shared().setEventHandler(
+            self,
+            andSelector: #selector(handleGetURLEvent(_:withReply:)),
+            forEventClass: AEEventClass(kInternetEventClass),
+            andEventID: AEEventID(kAEGetURL)
+        )
         // Skip heavy init when running as test host
         let isTestHost = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
 
