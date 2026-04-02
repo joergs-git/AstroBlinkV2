@@ -353,7 +353,8 @@ class PrefetchCache {
                         if !stars.isEmpty {
                             let metrics = StarMetricsCalculator.measure(
                                 stars: stars, fullResImage: imageForSTF, channel: channel,
-                                totalStarCount: totalStarCount
+                                totalStarCount: totalStarCount,
+                                generator: generator
                             )
                             // Always report star count even if HFR/FWHM measurement failed
                             // (not enough stars in center crop for measurement)
