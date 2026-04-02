@@ -300,6 +300,24 @@
 - **Rule:** For trailing rules with consensus check, don't block on FWHM. Consensus (stars elongated in same direction) is the definitive guard against false positives — optical aberrations produce random PA, not consensus.
 - **Applies to:** QualityEstimator Rule 6a, any future trailing detection rules
 
+## [2026-04-02] — Dark frame detection must not contaminate group statistics
+- **Mistake:** Rule 0b detected dome frames as garbage, but their extreme metrics (17000 stars, FWHM 3, SNR 113) stayed in the group median/z-score computation. Real frames scored as trash because the median was the dome value.
+- **Root cause:** Group statistics (medians, z-scores) were computed from ALL frames including detected garbage. When dome frames outnumber real frames, the median IS the dome value.
+- **Rule:** Detect dark frames in a PRE-PASS before computing group statistics. Null out their metrics in cleaned arrays. Also exclude Stage 1 garbage from session sanity P10/P90 benchmarks.
+- **Applies to:** QualityEstimator pre-pass, session sanity benchmark collection, any group-relative scoring
+
+## [2026-04-02] — Session sanity must require multi-night for cross-filter comparison
+- **Mistake:** Session sanity compared NGC7000 Ha (FWHM 8) against OIII (FWHM 4) and flagged all Ha as "FWHM far above session norm." Single-night, multi-filter.
+- **Root cause:** Different filters can have legitimately different FWHM. Session sanity was designed for multi-NIGHT comparison (catching bad nights), not cross-filter within one night.
+- **Rule:** Require ≥2 distinct observing nights before session sanity fires. Single-night filter differences are optics, not bad data.
+- **Applies to:** QualityEstimator sessionSanityCheck, any cross-group comparison
+
+## [2026-04-02] — replace_all edits may miss code paths with different formatting
+- **Mistake:** `replace_all` for `StarMetricsCalculator.measure(` with `generator: generator` parameter only caught 2 of 3 call sites in PrefetchCache. The third had slightly different indentation/context.
+- **Root cause:** `replace_all` matches exact strings. If code paths have slightly different formatting, some are missed.
+- **Rule:** After replace_all on function calls, grep for ALL call sites and verify each one manually.
+- **Applies to:** Any replace_all edit on function signatures, especially in files with multiple code paths
+
 ## [2026-04-01] — PrefetchCache skips metric callbacks for cached frames
 - **Mistake:** PrefetchCache.prefetchAll() had TWO skip checks (line 271 snapshot + line 289 thread-safe) that skipped entire pipeline including metric callbacks for already-cached frames. Quality scoring ran without metrics for those frames.
 - **Root cause:** The "cached" check only considers preview textures, not whether star metrics and noise stats were delivered. Separate MainActor Tasks for different frames can execute out of order.

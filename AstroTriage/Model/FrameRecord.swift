@@ -11,7 +11,7 @@ import GRDB
 /// with a detailed entry describing what changed and why.
 ///
 /// See: ALGORITHM_CHANGELOG.md for full version history.
-let kAlgorithmVersion = 12
+let kAlgorithmVersion = 13
 
 // MARK: - FrameRecord
 
@@ -56,6 +56,7 @@ struct FrameRecord: Codable, FetchableRecord, PersistableRecord {
     var computedEccentricity: Double?
     var noiseMedian: Double?        // Float → Double for DB storage
     var noiseMAD: Double?
+    var psfFlux: Double?            // Total PSF flux (Σ 2π·A·σ² per star, scaled to full image)
 
     // Trailing analysis
     var trailingScore: Double?
@@ -162,6 +163,7 @@ extension FrameRecord {
             computedEccentricity: entry.computedEccentricity,
             noiseMedian: entry.noiseMedian.map(Double.init),
             noiseMAD: entry.noiseMAD.map(Double.init),
+            psfFlux: entry.psfFluxSum,
             trailingScore: entry.trailingScore,
             trailingPA: entry.trailingPA,
             trailingConsensus: entry.trailingConsensus,

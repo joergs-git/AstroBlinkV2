@@ -12,6 +12,35 @@ Records with `algorithmVersion < kAlgorithmVersion` are candidates for re-analys
 
 ---
 
+## Version 13 — v5.12.0 (2026-04-02)
+
+**PSFSignalWeight as additive 6th metric + elliptical PSF fitting.**
+
+### Changes
+
+1. **PSF flux remains OR/replacement with star count** (additive approach tested but
+   reverted — diluted scoring when psfFlux and stars diverge, causing missed garbage).
+   PSF flux z-score used when available, falls back to star count when not computed.
+
+2. **Elliptical GPU PSF fitting** — new `psf_fit_elliptical` Metal kernel fits
+   5-parameter elliptical Gaussian (A, σx, σy, θ, B) via Gauss-Newton with
+   Levenberg-Marquardt damping. Derives eccentricity analytically from σx/σy
+   and PA from θ (preferred over image moments when fit quality is good).
+
+3. **psfFlux persisted in Frame History DB** — new `psfFlux` column (migration v6).
+   Enables historical PSF flux comparison across sessions.
+
+4. **Frame History re-analysis** — "Re-Analyze" button in History window banner
+   re-scores all stale records with current algorithm. Updates algorithmVersion
+   after re-scoring.
+
+### Impact
+- More discriminating quality scores when PSF data is available
+- More accurate eccentricity/PA from PSF fit vs image moments
+- Slight changes to borderline frame classification (additive metrics shift combinedZ)
+
+---
+
 ## Version 12 — v5.10.4 (2026-04-02)
 
 **Dark frame / dome closed detection fix.**

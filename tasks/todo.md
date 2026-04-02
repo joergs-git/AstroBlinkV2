@@ -477,6 +477,16 @@ Valuable for ML/community learning, especially borderline cases.
 - [x] Deployment target bumped to macOS 14.0 (chartScrollableAxes, onChange new syntax)
 - [x] 24 new tests (16 FrameHistoryDB + 8 MoonCalculator), all passing
 
+## v5.12.0 — Elliptical PSF, Re-Analysis, Monthly Charts (COMPLETE 2026-04-02)
+- [x] Frame History re-analysis — "Re-Analyze" button re-scores stale records with current algorithm
+- [x] Elliptical GPU PSF fitting — 5-param kernel (A, σx, σy, θ, B) via Gauss-Newton
+- [x] PSF-derived eccentricity + PA (preferred over image moments when fit quality is good)
+- [x] PSFSignalWeight as additive 6th metric in combinedZ (stars AND psfFlux, split weight)
+- [x] psfFlux column in FrameRecord DB (migration v6)
+- [x] Monthly chart aggregation — auto-aggregates when date range >6 months
+- [x] kAlgorithmVersion bumped to 13
+- [x] PixInsight Bridge repo skeleton (pixinsight-astroblink)
+
 ## Open TODOs — Frame History & Charts
 - [ ] Chart zoom: pinch/scroll zoom on time axis (chartXScale modifier)
 - [ ] Chart tooltip/hover: show exact values on hover (SwiftUI Charts annotation)

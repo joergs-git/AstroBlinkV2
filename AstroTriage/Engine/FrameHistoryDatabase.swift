@@ -232,6 +232,11 @@ final class FrameHistoryDatabase {
                 """)
         }
 
+        // v6: Add psfFlux column for PSFSignalWeight persistence
+        migrator.registerMigration("v6_psf_flux") { db in
+            try db.execute(sql: "ALTER TABLE frame_record ADD COLUMN psfFlux DOUBLE")
+        }
+
         try migrator.migrate(db)
     }
 
@@ -849,6 +854,46 @@ final class FrameHistoryDatabase {
                 try db.execute(
                     sql: "UPDATE frame_record SET qualityTier = ?, combinedZScore = ? WHERE fileHash = ?",
                     arguments: [update.tier, update.zScore, update.hash]
+                )
+            }
+        }
+    }
+
+    /// Fetch all records with older algorithm version (candidates for re-analysis).
+    /// Groups are needed for QualityEstimator — returns records that can be grouped by setup+target+filter.
+    func fetchStaleRecords() throws -> [FrameRecord] {
+        try dbQueue.read { db in
+            try FrameRecord
+                .filter(Column("algorithmVersion") < kAlgorithmVersion)
+                .order(Column("observingNight").asc, Column("captureTime").asc)
+                .fetchAll(db)
+        }
+    }
+
+    /// Batch update quality tiers AND bump algorithmVersion after re-analysis.
+    func updateQualityTiersAndVersion(_ updates: [(hash: String, tier: Int, zScore: Double)]) throws {
+        try dbQueue.write { db in
+            for update in updates {
+                try db.execute(
+                    sql: """
+                    UPDATE frame_record
+                    SET qualityTier = ?, combinedZScore = ?, algorithmVersion = ?
+                    WHERE fileHash = ?
+                    """,
+                    arguments: [update.tier, update.zScore, kAlgorithmVersion, update.hash]
+                )
+            }
+        }
+    }
+
+    /// Bump algorithmVersion only (no tier change) for frames that couldn't be re-scored
+    /// (e.g. group too small for QualityEstimator). Keeps existing quality tier intact.
+    func bumpAlgorithmVersion(fileHashes: [String]) throws {
+        try dbQueue.write { db in
+            for hash in fileHashes {
+                try db.execute(
+                    sql: "UPDATE frame_record SET algorithmVersion = ? WHERE fileHash = ?",
+                    arguments: [kAlgorithmVersion, hash]
                 )
             }
         }

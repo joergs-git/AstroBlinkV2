@@ -33,11 +33,12 @@ Frames that pass Stage 1 are ranked within their group using robust statistics:
 
 - **Statistics:** Median/MAD (outlier-resistant, not mean/stdev)
 - **Metrics weighted:**
-  - Stars: 1.2x (broadband) / 0.5x (narrowband — fewer stars is normal)
-  - FWHM: 1.0x
-  - HFR: 1.0x
+  - PSF Flux / Stars: 1.2x broadband / 0.5x narrowband — PSF flux replaces star count when available (captures both count AND brightness, immune to hot pixel inflation). Falls back to star count when GPU PSF fitting unavailable
+  - FWHM: 1.0x (GPU-fitted via circular Gaussian, CPU fallback when GPU chi² too high)
+  - HFR: 1.0x (fallback only when FWHM unavailable)
   - Noise: 1.0x
   - Trailing: filter-aware (0.3× narrowband, 0.6× RGB, 1.0× luminance, 0.7× unknown)
+- **Eccentricity:** Derived from elliptical PSF fit (σx/σy) when available, image moments as fallback
 - **Z-scores capped at ±3.0** to prevent one extreme value from dominating
 - **Minimum group size: 6 frames** (median/MAD needs ≥6 samples)
 

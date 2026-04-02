@@ -61,6 +61,15 @@ Click the Play button in the slider bar to auto-cycle through all visible images
 **Q: What is the Frame History Database?**
 A persistent SQLite database that tracks all per-frame quality metrics across every session you open. Frames are identified by SHA256 hash (first 64KB), so renamed or moved files are still recognized. This enables cross-session scoring, historical baselines, and the History window with 6 KPI charts. Backed up to iCloud automatically.
 
+**Q: What does the "Re-Analyze" button do?**
+When the scoring algorithm is updated, previously scored frames may use an older version. The orange Re-Analyze button in the History window re-scores all stale records with the current algorithm. No image re-decode needed — it uses the stored metrics. Frames in groups too small for statistical scoring get their version bumped to clear the stale indicator.
+
+**Q: What is PSF Flux?**
+PSF Flux measures the total stellar signal in a frame by summing the fitted Gaussian flux (2π·A·σ²) across all measured stars, scaled to the full image. It captures both star count AND brightness — more robust than star count alone because it's immune to hot pixel inflation. PSF Flux z-score replaces star count in quality scoring when GPU PSF fitting is available.
+
+**Q: Why do the History charts look different at long time ranges?**
+When the selected time range exceeds 6 months, charts automatically switch to monthly aggregation for cleaner trends. A calendar icon indicates this mode. This avoids cluttered daily bars over many months.
+
 ## Stacking
 
 **Q: Is LightspeedStacker a replacement for PixInsight/APP?**

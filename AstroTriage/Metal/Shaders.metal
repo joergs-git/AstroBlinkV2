@@ -1381,3 +1381,213 @@ kernel void psf_fit_gaussian(
 
     results[tid] = PSFFitOutput{A, sigma, B, chi2 / float(stampN - 3)};
 }
+
+// ============================================================================
+// Elliptical Gaussian PSF Fitting — 5 free parameters
+// Model: I(x,y) = A * exp(-(u²/(2σx²) + v²/(2σy²))) + B
+// where u = cosθ·dx + sinθ·dy, v = -sinθ·dx + cosθ·dy (rotated frame)
+// Free params: A (amplitude), σx (major sigma), σy (minor sigma), θ (rotation), B (background)
+// Position fixed from star detection. Derives eccentricity = √(1 - min²/max²) and PA from θ.
+// ============================================================================
+
+struct PSFEllipticalOutput {
+    float amplitude;    // fitted peak A above background
+    float sigmaX;       // sigma along rotated X axis
+    float sigmaY;       // sigma along rotated Y axis
+    float theta;        // rotation angle in radians [0, π)
+    float chi2;         // reduced chi²
+};
+
+kernel void psf_fit_elliptical(
+    device const uint16_t* image         [[buffer(0)]],
+    device const PSFFitInput* stars       [[buffer(1)]],
+    device PSFEllipticalOutput* results   [[buffer(2)]],
+    constant int& width                   [[buffer(3)]],
+    constant int& height                  [[buffer(4)]],
+    constant int& channel                 [[buffer(5)]],
+    constant int& channelCount            [[buffer(6)]],
+    constant int& starCount               [[buffer(7)]],
+    uint tid [[thread_position_in_grid]])
+{
+    if (tid >= uint(starCount)) return;
+
+    PSFFitInput star = stars[tid];
+    int cx = int(star.x + 0.5);
+    int cy = int(star.y + 0.5);
+
+    const int R = 5;
+    const int stampW = 2 * R + 1;
+    const int stampN = stampW * stampW; // 121
+
+    if (cx - R < 0 || cx + R >= width || cy - R < 0 || cy + R >= height) {
+        results[tid] = PSFEllipticalOutput{0, 0, 0, 0, 1e10};
+        return;
+    }
+
+    // Read stamp
+    int planeSize = width * height;
+    int chOff = min(channel, channelCount - 1) * planeSize;
+    float stamp[121];
+    for (int dy = -R; dy <= R; dy++) {
+        for (int dx = -R; dx <= R; dx++) {
+            stamp[(dy + R) * stampW + (dx + R)] = float(image[chOff + (cy + dy) * width + (cx + dx)]);
+        }
+    }
+
+    // Initial parameter guesses
+    float A = max(star.peakVal, 1.0f);
+    float sx = 2.0;   // σx
+    float sy = 2.0;   // σy
+    float th = 0.0;    // θ
+    float B = star.bg;
+
+    // Gauss-Newton iterations (5 params)
+    for (int iter = 0; iter < 12; iter++) {
+        float cosT = cos(th);
+        float sinT = sin(th);
+
+        // Accumulate 5×5 normal matrix (upper triangle) and 5×1 gradient
+        float H[15] = {}; // Upper triangle of 5×5 symmetric: 15 elements
+        float g[5] = {};
+
+        float inv2sx2 = 0.5 / max(sx * sx, 0.01f);
+        float inv2sy2 = 0.5 / max(sy * sy, 0.01f);
+        float sx3 = sx * sx * sx;
+        float sy3 = sy * sy * sy;
+
+        for (int dy = -R; dy <= R; dy++) {
+            for (int dx = -R; dx <= R; dx++) {
+                float fdx = float(dx);
+                float fdy = float(dy);
+
+                // Rotated coordinates
+                float u = cosT * fdx + sinT * fdy;
+                float v = -sinT * fdx + cosT * fdy;
+
+                float Q = u * u * inv2sx2 + v * v * inv2sy2;
+                float E = exp(-Q);
+                float model = A * E + B;
+                float residual = stamp[(dy + R) * stampW + (dx + R)] - model;
+
+                // Jacobians: ∂model/∂p
+                float jA = E;                                      // ∂/∂A
+                float jSx = A * E * u * u / sx3;                   // ∂/∂σx
+                float jSy = A * E * v * v / sy3;                   // ∂/∂σy
+                float jTh = -A * E * u * v * (1.0/(sx*sx) - 1.0/(sy*sy)); // ∂/∂θ
+                float jB = 1.0;                                    // ∂/∂B
+
+                float j[5] = {jA, jSx, jSy, jTh, jB};
+
+                // Upper triangle of JᵀJ (index = row*(9-row)/2 + col for 5×5)
+                int idx = 0;
+                for (int r = 0; r < 5; r++) {
+                    for (int c = r; c < 5; c++) {
+                        H[idx] += j[r] * j[c];
+                        idx++;
+                    }
+                }
+
+                // Jᵀr
+                for (int r = 0; r < 5; r++) {
+                    g[r] += j[r] * residual;
+                }
+            }
+        }
+
+        // Build augmented matrix [H | g] for Gaussian elimination
+        // Expand upper triangle to full 5×5 symmetric + augmented column
+        float M[5][6];
+        int idx = 0;
+        for (int r = 0; r < 5; r++) {
+            for (int c = r; c < 5; c++) {
+                // Add LM damping on diagonal
+                float val = H[idx];
+                if (r == c) val *= 1.01; // λ=0.01 relative damping
+                M[r][c] = val;
+                M[c][r] = val;
+                idx++;
+            }
+            M[r][5] = g[r];
+        }
+
+        // Gaussian elimination with partial pivoting (5×5)
+        for (int col = 0; col < 5; col++) {
+            int maxRow = col;
+            float maxVal = abs(M[col][col]);
+            for (int row = col + 1; row < 5; row++) {
+                if (abs(M[row][col]) > maxVal) {
+                    maxVal = abs(M[row][col]);
+                    maxRow = row;
+                }
+            }
+            if (maxRow != col) {
+                for (int j = 0; j < 6; j++) {
+                    float tmp = M[col][j];
+                    M[col][j] = M[maxRow][j];
+                    M[maxRow][j] = tmp;
+                }
+            }
+            float pivot = M[col][col];
+            if (abs(pivot) < 1e-20) continue;
+            for (int row = col + 1; row < 5; row++) {
+                float factor = M[row][col] / pivot;
+                for (int j = col; j < 6; j++) {
+                    M[row][j] -= factor * M[col][j];
+                }
+            }
+        }
+
+        // Back-substitution
+        float dp[5];
+        for (int i = 4; i >= 0; i--) {
+            dp[i] = M[i][5];
+            for (int j = i + 1; j < 5; j++) {
+                dp[i] -= M[i][j] * dp[j];
+            }
+            float diag = M[i][i];
+            dp[i] = (abs(diag) > 1e-20) ? dp[i] / diag : 0.0;
+        }
+
+        A += dp[0];
+        sx += dp[1];
+        sy += dp[2];
+        th += dp[3];
+        B += dp[4];
+
+        // Clamp to physical range
+        sx = clamp(sx, 0.3f, 15.0f);
+        sy = clamp(sy, 0.3f, 15.0f);
+        A = max(A, 0.0f);
+        // Normalize θ to [0, π) — ellipse symmetry
+        th = th - floor(th / M_PI_F) * M_PI_F;
+
+        // Early exit on convergence
+        if (abs(dp[0]) < 0.1 && abs(dp[1]) < 0.001 && abs(dp[2]) < 0.001
+            && abs(dp[3]) < 0.01 && abs(dp[4]) < 0.1) break;
+    }
+
+    // Ensure σx >= σy (convention: x = major axis)
+    if (sy > sx) {
+        float tmp = sx; sx = sy; sy = tmp;
+        th += M_PI_F / 2.0;
+        th = th - floor(th / M_PI_F) * M_PI_F;
+    }
+
+    // Compute reduced chi²
+    float cosF = cos(th);
+    float sinF = sin(th);
+    float inv2sx2f = 0.5 / max(sx * sx, 0.01f);
+    float inv2sy2f = 0.5 / max(sy * sy, 0.01f);
+    float chi2 = 0;
+    for (int dy = -R; dy <= R; dy++) {
+        for (int dx = -R; dx <= R; dx++) {
+            float u = cosF * float(dx) + sinF * float(dy);
+            float v = -sinF * float(dx) + cosF * float(dy);
+            float model = A * exp(-(u * u * inv2sx2f + v * v * inv2sy2f)) + B;
+            float r = stamp[(dy + R) * stampW + (dx + R)] - model;
+            chi2 += r * r;
+        }
+    }
+
+    results[tid] = PSFEllipticalOutput{A, sx, sy, th, chi2 / float(stampN - 5)};
+}

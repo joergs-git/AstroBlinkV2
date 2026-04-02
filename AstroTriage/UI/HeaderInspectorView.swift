@@ -164,6 +164,7 @@ class HeaderInspectorModel: ObservableObject {
             return String(format: "%+.2fσ", z)
         }
         metrics.append(("Stars Z", zStr(bd.starsZ)))
+        metrics.append(("PSF Flux Z", zStr(bd.psfFluxZ)))
         metrics.append(("FWHM Z", zStr(bd.fwhmZ)))
         metrics.append(("HFR Z", zStr(bd.hfrZ)))
         metrics.append(("Noise Z", zStr(bd.noiseZ)))

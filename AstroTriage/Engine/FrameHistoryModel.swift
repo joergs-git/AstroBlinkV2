@@ -78,6 +78,120 @@ class FrameHistoryModel: ObservableObject {
     // Stale records indicator (older algorithm version)
     @Published var staleRecordCount: Int = 0
 
+    // Re-analysis state
+    @Published var isReAnalyzing: Bool = false
+    @Published var reAnalysisProgress: Int = 0
+    @Published var reAnalysisTotal: Int = 0
+
+    // MARK: - Re-Analysis
+
+    /// Re-score all stale records using current QualityEstimator algorithm.
+    /// No image re-decode needed — uses stored metrics from FrameRecord.
+    func reAnalyzeStaleRecords() {
+        guard !isReAnalyzing else { return }
+        isReAnalyzing = true
+        reAnalysisProgress = 0
+
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self else { return }
+
+            guard let records = try? FrameHistoryDatabase.shared.fetchStaleRecords(),
+                  !records.isEmpty else {
+                DispatchQueue.main.async {
+                    self.isReAnalyzing = false
+                    self.staleRecordCount = 0
+                }
+                return
+            }
+
+            let total = records.count
+            DispatchQueue.main.async {
+                self.reAnalysisTotal = total
+            }
+
+            // Convert ALL stale FrameRecords to ImageEntries in one pass.
+            // QualityEstimator groups internally by filter+target+exposure+night.
+            let entries: [ImageEntry] = records.map { record in
+                var entry = ImageEntry(url: URL(fileURLWithPath: record.filePath))
+                entry.fileHash = record.fileHash
+                entry.filter = record.filter
+                entry.exposure = record.exposure
+                entry.target = record.target
+                entry.computedFWHM = record.computedFWHM
+                entry.computedHFR = record.computedHFR
+                entry.computedStarCount = record.computedStarCount
+                entry.computedEccentricity = record.computedEccentricity
+                entry.noiseMedian = record.noiseMedian.map { Float($0) }
+                entry.noiseMAD = record.noiseMAD.map { Float($0) }
+                entry.psfFluxSum = record.psfFlux
+                entry.trailingScore = record.trailingScore
+                entry.trailingPA = record.trailingPA
+                entry.trailingAxisRatio = record.trailingAxisRatio
+                entry.trailingConsensus = record.trailingConsensus
+                entry.starChainFraction = record.starChainFraction
+                entry.focalLength = record.focalLength
+                entry.pixelSizeMicrons = record.pixelSizeMicrons
+                entry.date = record.captureDate
+                entry.time = record.captureTime
+                entry.telescope = record.telescope
+                entry.camera = record.camera
+                return entry
+            }
+
+            DispatchQueue.main.async {
+                self.reAnalysisProgress = total / 3  // ~33% — conversion done
+            }
+
+            // Run quality scoring — QualityEstimator groups internally
+            let scores = QualityEstimator.computeScores(for: entries)
+
+            DispatchQueue.main.async {
+                self.reAnalysisProgress = total * 2 / 3  // ~66% — scoring done
+            }
+
+            // Build update list — re-scored frames get new tier + version bump
+            var allUpdates: [(hash: String, tier: Int, zScore: Double)] = []
+            var scoredHashes: Set<String> = []
+            for (i, entry) in entries.enumerated() {
+                if let bd = scores[entry.url] {
+                    allUpdates.append((
+                        hash: records[i].fileHash,
+                        tier: bd.tier.rawValue,
+                        zScore: bd.combinedZScore
+                    ))
+                    scoredHashes.insert(records[i].fileHash)
+                }
+            }
+
+            // Frames that couldn't be re-scored (group too small) — bump version
+            // with their existing tier so they're no longer flagged as stale
+            var versionOnlyHashes: [String] = []
+            for record in records {
+                if !scoredHashes.contains(record.fileHash) {
+                    versionOnlyHashes.append(record.fileHash)
+                }
+            }
+
+            // Batch write re-scored results
+            if !allUpdates.isEmpty {
+                try? FrameHistoryDatabase.shared.updateQualityTiersAndVersion(allUpdates)
+            }
+            // Bump version for un-scorable frames (keeps existing tier)
+            if !versionOnlyHashes.isEmpty {
+                try? FrameHistoryDatabase.shared.bumpAlgorithmVersion(fileHashes: versionOnlyHashes)
+            }
+
+            // Refresh UI
+            DispatchQueue.main.async {
+                self.isReAnalyzing = false
+                self.staleRecordCount = 0
+                self.reAnalysisProgress = 0
+                self.reAnalysisTotal = 0
+                self.loadData()
+            }
+        }
+    }
+
     // MARK: - Load Data
 
     func loadData() {
@@ -153,9 +267,37 @@ class FrameHistoryModel: ObservableObject {
         }
     }
 
+    // MARK: - Monthly Aggregation
+
+    /// True when the filtered date range spans >6 months — charts switch to monthly buckets.
+    var useMonthlyAggregation: Bool {
+        let summaries = filteredSummaries
+        guard summaries.count > 1 else { return false }
+        let dates = summaries.compactMap { Self.nightDateFormatter.date(from: $0.night) }
+        guard let first = dates.min(), let last = dates.max() else { return false }
+        let months = Calendar.current.dateComponents([.month], from: first, to: last).month ?? 0
+        return months > 6
+    }
+
+    /// Format a date as "YYYY-MM" for monthly grouping key.
+    private static func monthKey(from date: Date) -> String {
+        let cal = Calendar.current
+        let y = cal.component(.year, from: date)
+        let m = cal.component(.month, from: date)
+        return String(format: "%04d-%02d", y, m)
+    }
+
+    /// Parse "YYYY-MM" month key to a Date (1st of month) for chart x-axis.
+    private static func dateFromMonthKey(_ key: String) -> Date? {
+        let df = DateFormatter()
+        df.dateFormat = "yyyy-MM"
+        df.locale = Locale(identifier: "en_US_POSIX")
+        return df.date(from: key)
+    }
+
     // MARK: - Aggregated Chart Data
 
-    /// Per-night quality tier breakdown (for stacked bar chart).
+    /// Per-night (or per-month) quality tier breakdown (for stacked bar chart).
     struct NightQuality: Identifiable {
         var id: String { night }  // Stable ID — night string is unique per entry
         let night: String
@@ -168,20 +310,43 @@ class FrameHistoryModel: ObservableObject {
     }
 
     var nightlyQuality: [NightQuality] {
-        var byNight: [String: (exc: Int, good: Int, bord: Int, trash: Int)] = [:]
-        for s in filteredSummaries {
-            var val = byNight[s.night] ?? (0, 0, 0, 0)
-            val.exc += s.excellentCount
-            val.good += s.goodCount
-            val.bord += s.borderlineCount
-            val.trash += s.trashCount
-            byNight[s.night] = val
+        let monthly = useMonthlyAggregation
+
+        if monthly {
+            // Aggregate by month
+            var byMonth: [String: (exc: Int, good: Int, bord: Int, trash: Int)] = [:]
+            for s in filteredSummaries {
+                guard let date = Self.nightDateFormatter.date(from: s.night) else { continue }
+                let key = Self.monthKey(from: date)
+                var val = byMonth[key] ?? (0, 0, 0, 0)
+                val.exc += s.excellentCount
+                val.good += s.goodCount
+                val.bord += s.borderlineCount
+                val.trash += s.trashCount
+                byMonth[key] = val
+            }
+            return byMonth.compactMap { (month, val) in
+                guard let date = Self.dateFromMonthKey(month) else { return nil }
+                return NightQuality(night: month, date: date, excellent: val.exc, good: val.good,
+                            borderline: val.bord, trash: val.trash)
+            }.sorted { $0.date < $1.date }
+        } else {
+            // Per-night (original)
+            var byNight: [String: (exc: Int, good: Int, bord: Int, trash: Int)] = [:]
+            for s in filteredSummaries {
+                var val = byNight[s.night] ?? (0, 0, 0, 0)
+                val.exc += s.excellentCount
+                val.good += s.goodCount
+                val.bord += s.borderlineCount
+                val.trash += s.trashCount
+                byNight[s.night] = val
+            }
+            return byNight.compactMap { (night, val) in
+                guard let date = Self.nightDateFormatter.date(from: night) else { return nil }
+                return NightQuality(night: night, date: date, excellent: val.exc, good: val.good,
+                            borderline: val.bord, trash: val.trash)
+            }.sorted { $0.date < $1.date }
         }
-        return byNight.compactMap { (night, val) in
-            guard let date = Self.nightDateFormatter.date(from: night) else { return nil }
-            return NightQuality(night: night, date: date, excellent: val.exc, good: val.good,
-                        borderline: val.bord, trash: val.trash)
-        }.sorted { $0.date < $1.date }
     }
 
     /// Per-night metric values by filter (for multi-line chart).
@@ -340,28 +505,41 @@ class FrameHistoryModel: ObservableObject {
         let moonPct: Double?
     }
 
-    /// Compute per-night Session Score. Combines retention rate (40%), FWHM quality (30%),
-    /// trailing absence (20%), and background stability (10%).
+    /// Compute per-night (or per-month) Session Score. Combines retention rate (40%),
+    /// FWHM quality (30%), trailing absence (20%), and background stability (10%).
     var sessionScores: [SessionScorePoint] {
+        let monthly = useMonthlyAggregation
         // Get setup baseline FWHM for normalization
         let allFWHMs = filteredSummaries.compactMap(\.medianFWHM)
         let baselineFWHM = allFWHMs.isEmpty ? 5.0 : allFWHMs.sorted()[allFWHMs.count / 2]
 
-        // Aggregate by night (across filters)
-        var byNight: [String: (frames: Int, kept: Int, fwhm: Double?, trailing: Double?, noise: Double?)] = [:]
+        // Aggregate by night or month (across filters)
+        var byKey: [String: (frames: Int, kept: Int, fwhm: Double?, trailing: Double?, noise: Double?)] = [:]
         for s in filteredSummaries {
-            var v = byNight[s.night] ?? (0, 0, nil, nil, nil)
+            let key: String
+            if monthly, let date = Self.nightDateFormatter.date(from: s.night) {
+                key = Self.monthKey(from: date)
+            } else {
+                key = s.night
+            }
+            var v = byKey[key] ?? (0, 0, nil, nil, nil)
             v.frames += s.frameCount
             v.kept += s.goodCount + s.excellentCount + s.borderlineCount
-            // Use the worst (highest) FWHM across filters for this night
+            // Use the worst (highest) FWHM across filters for this period
             if let f = s.medianFWHM { v.fwhm = max(v.fwhm ?? 0, f) }
             if let t = s.medianTrailing { v.trailing = max(v.trailing ?? 0, t) }
             if let n = s.medianNoise { v.noise = v.noise.map { ($0 + n) / 2 } ?? n }
-            byNight[s.night] = v
+            byKey[key] = v
         }
 
-        return byNight.compactMap { night, v in
-            guard let date = Self.nightDateFormatter.date(from: night), v.frames > 0 else { return nil }
+        return byKey.compactMap { key, v in
+            let date: Date?
+            if monthly {
+                date = Self.dateFromMonthKey(key)
+            } else {
+                date = Self.nightDateFormatter.date(from: key)
+            }
+            guard let date, v.frames > 0 else { return nil }
             let retention = Double(v.kept) / Double(v.frames)
 
             // FWHM score: 1.0 when at baseline, 0.0 when 3x worse
@@ -377,15 +555,23 @@ class FrameHistoryModel: ObservableObject {
             // Composite: retention 40%, FWHM 30%, trailing 20%, background 10%
             let composite = retention * 40 + fwhmScore * 30 + trailingScore * 20 + noiseScore * 10
 
-            // Context from summaries for this night
-            let nightSummaries = filteredSummaries.filter { $0.night == night }
-            let targets = Array(Set(nightSummaries.compactMap { $0.target.map { TargetCatalog.canonicalName($0) } })).sorted()
-            let filters = Array(Set(nightSummaries.compactMap { $0.filter.map { FrameHistoryModel.normalizeFilterForChart($0) } })).sorted()
-            let moons = nightSummaries.compactMap(\.medianMoonIllumination)
+            // Context from summaries for this period
+            let periodSummaries: [NightSummary]
+            if monthly {
+                periodSummaries = filteredSummaries.filter { s in
+                    guard let d = Self.nightDateFormatter.date(from: s.night) else { return false }
+                    return Self.monthKey(from: d) == key
+                }
+            } else {
+                periodSummaries = filteredSummaries.filter { $0.night == key }
+            }
+            let targets = Array(Set(periodSummaries.compactMap { $0.target.map { TargetCatalog.canonicalName($0) } })).sorted()
+            let filters = Array(Set(periodSummaries.compactMap { $0.filter.map { FrameHistoryModel.normalizeFilterForChart($0) } })).sorted()
+            let moons = periodSummaries.compactMap(\.medianMoonIllumination)
             let moonPct = moons.isEmpty ? nil : (moons.reduce(0, +) / Double(moons.count)) * 100
 
             return SessionScorePoint(
-                date: date, night: night, score: min(100, composite),
+                date: date, night: key, score: min(100, composite),
                 retentionRate: retention, fwhmNormalized: fwhmRatio, frameCount: v.frames,
                 targets: targets, filters: filters, avgFWHM: v.fwhm, moonPct: moonPct
             )
@@ -413,9 +599,19 @@ class FrameHistoryModel: ObservableObject {
 
     var efficiencyData: [EfficiencyPoint] {
         let quality = nightlyQuality
+        let monthly = useMonthlyAggregation
         return quality.compactMap { nq in
-            // Gather context from filtered summaries for this night
-            let nightSummaries = filteredSummaries.filter { $0.night == nq.night }
+            // Gather context from filtered summaries for this period (night or month)
+            let periodSummaries: [NightSummary]
+            if monthly {
+                periodSummaries = filteredSummaries.filter { s in
+                    guard let d = Self.nightDateFormatter.date(from: s.night) else { return false }
+                    return Self.monthKey(from: d) == nq.night
+                }
+            } else {
+                periodSummaries = filteredSummaries.filter { $0.night == nq.night }
+            }
+            let nightSummaries = periodSummaries
             let targets = Array(Set(nightSummaries.compactMap { $0.target.map { TargetCatalog.canonicalName($0) } })).sorted()
             let filters = Array(Set(nightSummaries.compactMap { $0.filter.map { FrameHistoryModel.normalizeFilterForChart($0) } })).sorted()
             let fwhms = nightSummaries.compactMap(\.medianFWHM)

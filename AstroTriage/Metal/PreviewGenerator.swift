@@ -24,6 +24,7 @@ class PreviewGenerator {
     let postProcessPipeline: MTLComputePipelineState?
     let starDetectPipeline: MTLComputePipelineState?
     let psfFitPipeline: MTLComputePipelineState?
+    let psfFitEllipticalPipeline: MTLComputePipelineState?
 
     // Bayer pattern string to shader index mapping
     private static let bayerPatternMap: [String: Int] = [
@@ -75,12 +76,18 @@ class PreviewGenerator {
             self.starDetectPipeline = nil
         }
 
-        // Load GPU PSF fitting kernel
+        // Load GPU PSF fitting kernels (circular + elliptical)
         if let psfFunc = library.makeFunction(name: "psf_fit_gaussian"),
            let psfPipe = try? device.makeComputePipelineState(function: psfFunc) {
             self.psfFitPipeline = psfPipe
         } else {
             self.psfFitPipeline = nil
+        }
+        if let psfEllipFunc = library.makeFunction(name: "psf_fit_elliptical"),
+           let psfEllipPipe = try? device.makeComputePipelineState(function: psfEllipFunc) {
+            self.psfFitEllipticalPipeline = psfEllipPipe
+        } else {
+            self.psfFitEllipticalPipeline = nil
         }
     }
 
@@ -830,6 +837,112 @@ class PreviewGenerator {
                 sigma: outPtr.load(fromByteOffset: offset + 4, as: Float.self),
                 background: outPtr.load(fromByteOffset: offset + 8, as: Float.self),
                 chi2: outPtr.load(fromByteOffset: offset + 12, as: Float.self)
+            ))
+        }
+        return results
+    }
+
+    // MARK: - Elliptical PSF Fitting
+
+    /// Elliptical Gaussian PSF fit result: derives eccentricity + PA analytically from σx/σy/θ
+    struct PSFEllipticalResult {
+        let amplitude: Float    // Fitted peak A above background
+        let sigmaX: Float       // Major axis sigma (σx >= σy by convention)
+        let sigmaY: Float       // Minor axis sigma
+        let theta: Float        // Rotation angle in radians [0, π)
+        let chi2: Float         // Reduced chi²
+
+        /// Eccentricity derived from axis ratio: √(1 - σy²/σx²)
+        var eccentricity: Double {
+            let ratio = Double(min(sigmaX, sigmaY)) / Double(max(sigmaX, sigmaY))
+            return sqrt(max(0, 1.0 - ratio * ratio))
+        }
+
+        /// Position angle in degrees [0, 180), matching image moments convention
+        var positionAngleDeg: Double {
+            Double(theta) * 180.0 / Double.pi
+        }
+
+        /// Geometric mean FWHM: √(σx·σy) × 2.355
+        var fwhm: Double {
+            Double(sqrt(sigmaX * sigmaY)) * 2.3548
+        }
+
+        /// Axis ratio: σy/σx (minor/major), 1.0 = round
+        var axisRatio: Double {
+            Double(min(sigmaX, sigmaY)) / Double(max(sigmaX, sigmaY))
+        }
+
+        /// Elliptical PSF flux: 2π × A × σx × σy
+        var psfFlux: Double {
+            2.0 * Double.pi * Double(amplitude) * Double(sigmaX) * Double(sigmaY)
+        }
+    }
+
+    /// GPU-accelerated elliptical Gaussian PSF fitting.
+    /// Fits 5 params (A, σx, σy, θ, B) on 11×11 stamps via Gauss-Newton.
+    /// Position fixed from detection. Derives eccentricity and PA analytically.
+    func fitPSFElliptical(
+        image: DecodedImage,
+        stars: [(x: Float, y: Float, background: Float, peakBrightness: Float)],
+        channel: Int = 0
+    ) -> [PSFEllipticalResult] {
+        guard let pipeline = psfFitEllipticalPipeline, !stars.isEmpty else { return [] }
+
+        let count = stars.count
+        // Input: same as circular (x, y, bg, peak) = 16 bytes each
+        let inputSize = count * 16
+        // Output: (amplitude, sigmaX, sigmaY, theta, chi2) = 20 bytes each
+        let outputSize = count * 20
+        guard let inputBuffer = device.makeBuffer(length: inputSize, options: .storageModeShared),
+              let outputBuffer = device.makeBuffer(length: outputSize, options: .storageModeShared),
+              let commandBuffer = commandQueue.makeCommandBuffer(),
+              let encoder = commandBuffer.makeComputeCommandEncoder() else { return [] }
+
+        // Fill input buffer (same layout as circular fit)
+        let inputPtr = inputBuffer.contents()
+        for (i, s) in stars.enumerated() {
+            let offset = i * 16
+            inputPtr.storeBytes(of: s.x, toByteOffset: offset, as: Float.self)
+            inputPtr.storeBytes(of: s.y, toByteOffset: offset + 4, as: Float.self)
+            inputPtr.storeBytes(of: s.background, toByteOffset: offset + 8, as: Float.self)
+            inputPtr.storeBytes(of: s.peakBrightness, toByteOffset: offset + 12, as: Float.self)
+        }
+
+        encoder.setComputePipelineState(pipeline)
+        encoder.setBuffer(image.buffer, offset: 0, index: 0)
+        encoder.setBuffer(inputBuffer, offset: 0, index: 1)
+        encoder.setBuffer(outputBuffer, offset: 0, index: 2)
+        var w = Int32(image.width)
+        var h = Int32(image.height)
+        var ch = Int32(min(channel, image.channelCount - 1))
+        var cc = Int32(image.channelCount)
+        var sc = Int32(count)
+        encoder.setBytes(&w, length: 4, index: 3)
+        encoder.setBytes(&h, length: 4, index: 4)
+        encoder.setBytes(&ch, length: 4, index: 5)
+        encoder.setBytes(&cc, length: 4, index: 6)
+        encoder.setBytes(&sc, length: 4, index: 7)
+
+        let tg = MTLSize(width: min(64, count), height: 1, depth: 1)
+        let grid = MTLSize(width: (count + 63) / 64, height: 1, depth: 1)
+        encoder.dispatchThreadgroups(grid, threadsPerThreadgroup: tg)
+        encoder.endEncoding()
+        commandBuffer.commit()
+        commandBuffer.waitUntilCompleted()
+
+        // Read results (5 floats = 20 bytes per star)
+        let outPtr = outputBuffer.contents()
+        var results: [PSFEllipticalResult] = []
+        results.reserveCapacity(count)
+        for i in 0..<count {
+            let offset = i * 20
+            results.append(PSFEllipticalResult(
+                amplitude: outPtr.load(fromByteOffset: offset, as: Float.self),
+                sigmaX: outPtr.load(fromByteOffset: offset + 4, as: Float.self),
+                sigmaY: outPtr.load(fromByteOffset: offset + 8, as: Float.self),
+                theta: outPtr.load(fromByteOffset: offset + 12, as: Float.self),
+                chi2: outPtr.load(fromByteOffset: offset + 16, as: Float.self)
             ))
         }
         return results

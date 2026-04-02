@@ -660,6 +660,7 @@ struct FileListView: NSViewRepresentable {
                 }
 
                 if let l = metricLine("Stars", bd.starsZ, lowerIsBetter: false) { lines.append(l) }
+                if let l = metricLine("PSFFlux", bd.psfFluxZ, lowerIsBetter: false) { lines.append(l) }
                 if let l = metricLine("FWHM", bd.fwhmZ, lowerIsBetter: true) { lines.append(l) }
                 if let l = metricLine("HFR", bd.hfrZ, lowerIsBetter: true) { lines.append(l) }
                 if let l = metricLine("Noise", bd.noiseZ, lowerIsBetter: true) { lines.append(l) }

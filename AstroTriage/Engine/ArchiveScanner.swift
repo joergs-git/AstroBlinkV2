@@ -435,6 +435,7 @@ class ArchiveScanner: ObservableObject {
                 entry.computedStarCount = metrics.totalStarCount
                 entry.computedEccentricity = metrics.medianEccentricity
                 entry.starChainFraction = metrics.starChainFraction
+                entry.psfFluxSum = metrics.psfFluxSum > 0 ? metrics.psfFluxSum : nil
 
                 // Trailing analysis
                 if !metrics.starDetails.isEmpty {
@@ -564,6 +565,7 @@ class ArchiveScanner: ObservableObject {
             entry.computedEccentricity = record.computedEccentricity
             entry.noiseMedian = record.noiseMedian.map { Float($0) }
             entry.noiseMAD = record.noiseMAD.map { Float($0) }
+            entry.psfFluxSum = record.psfFlux
             entry.trailingScore = record.trailingScore
             entry.trailingPA = record.trailingPA
             entry.trailingAxisRatio = record.trailingAxisRatio

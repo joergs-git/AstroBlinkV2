@@ -793,6 +793,7 @@ struct QualityEstimator {
                 let reasoning = generateReasoning(
                     fwhmZ: cappedZ(fwhmZscores[localIdx]),
                     starsZ: cappedZ(starsZscores[localIdx]),
+                    psfFluxZ: cappedZ(psfFluxZscores[localIdx]),
                     noiseZ: cappedZ(noiseMadZscores[localIdx]),
                     trailingZ: cappedZ(trailingZscores[localIdx]),
                     tier: tier,
@@ -1203,7 +1204,7 @@ struct QualityEstimator {
     /// - filterTrailingMultiplier: severity-adjusted effective multiplier (for threshold logic)
     /// - baseFilterMultiplier: raw filter multiplier (for label text — Ha always shows "narrowband")
     private static func generateReasoning(
-        fwhmZ: Double?, starsZ: Double?, noiseZ: Double?, trailingZ: Double?,
+        fwhmZ: Double?, starsZ: Double?, psfFluxZ: Double?, noiseZ: Double?, trailingZ: Double?,
         tier: QualityTier,
         isLockedKeep: Bool,
         rescueReason: String?,
@@ -1222,16 +1223,18 @@ struct QualityEstimator {
         }
 
         // For FWHM/noise/trailing: raw z > 0 means WORSE (higher value = worse)
-        // For stars: raw z < 0 means WORSE (fewer stars = worse)
+        // For stars/psfFlux: raw z < 0 means WORSE (fewer/weaker = worse)
         let fwhmPenalty: Double = fwhmZ ?? 0
         let noisePenalty: Double = noiseZ ?? 0
         let starsPenalty: Double = -(starsZ ?? 0)
+        let psfFluxPenalty: Double = -(psfFluxZ ?? 0)
         let trailingPenalty: Double = trailingZ ?? 0
 
         var penalties: [(String, Double)] = []
         if fwhmPenalty > 0.5     { penalties.append(("FWHM", fwhmPenalty)) }
         if noisePenalty > 0.5    { penalties.append(("Noise", noisePenalty)) }
         if starsPenalty > 0.5    { penalties.append(("Stars", starsPenalty)) }
+        if psfFluxPenalty > 0.5  { penalties.append(("PSF Flux", psfFluxPenalty)) }
         if trailingPenalty > 0.5 {
             // Use base filter multiplier for label (Ha always shows "narrowband")
             // even when effective multiplier is escalated due to severity
@@ -1274,6 +1277,8 @@ struct QualityEstimator {
                     }
                 case "Trailing":
                     parts.append("Star elongation detected")
+                case "PSF Flux":
+                    parts.append("Low total stellar signal (PSF flux)")
                 default: break
                 }
 
@@ -1282,6 +1287,8 @@ struct QualityEstimator {
                     switch penalty.0 {
                     case "Stars":
                         parts.append("star count also below average")
+                    case "PSF Flux":
+                        parts.append("PSF flux also below average")
                     case "Noise":
                         parts.append("noise also elevated")
                     case "FWHM":

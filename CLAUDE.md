@@ -317,12 +317,17 @@ PrefetchCache:
 - CSV backup: `AstroBlinkV2_SSWEIGHT.csv` in session root (includes both SSWEIGHT and PSFSWGHT)
 - Export operates on highlighted files (or all scored if none selected)
 
-### GPU PSF Fitting (v5.11.0)
+### GPU PSF Fitting (v5.11.0 circular, v5.12.0 elliptical)
 - Metal compute kernel `psf_fit_gaussian` in Shaders.metal
 - Circular Gaussian: I(r) = A·exp(-r²/2σ²) + B, 3 free params
 - Gauss-Newton with Levenberg-Marquardt damping, 8 iterations, 11×11 stamps
 - Replaces CPU linearized Gaussian FWHM when GPU available
 - Fitted amplitude A → accurate PSF flux = 2πAσ²
+- **Elliptical Gaussian** (v5.12.0): `psf_fit_elliptical` kernel, 5 free params (A, σx, σy, θ, B)
+- 12 iterations, 5×5 Gaussian elimination with partial pivoting
+- Eccentricity derived analytically: √(1 - σy²/σx²), PA from θ
+- Preferred over image moments when chi² < 1000 (more accurate for well-fitted stars)
+- Elliptical PSF flux: 2π·A·σx·σy (more accurate than circular)
 - PSF flux z-score replaces star count in Stage 2 combinedZ (fallback to stars when nil)
 - PSF Flux column in file list (hideable, formatted as K/M suffixes)
 

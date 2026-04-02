@@ -81,23 +81,57 @@ struct FrameHistoryContentView: View {
                     .padding(.horizontal, 12)
                     .padding(.top, 6)
 
-                // Stale records indicator
-                if model.staleRecordCount > 0 {
+                // Stale records indicator with re-analysis button
+                if model.staleRecordCount > 0 || model.isReAnalyzing {
                     HStack(spacing: 6) {
                         Image(systemName: "arrow.triangle.2.circlepath")
                             .font(.system(size: fs(10)))
                             .foregroundColor(.orange)
-                        Text("\(model.staleRecordCount) frames scored with older algorithm (v\(kAlgorithmVersion) is current)")
-                            .font(.system(size: fs(10), design: .monospaced))
-                            .foregroundColor(fgDim)
+
+                        if model.isReAnalyzing {
+                            Text("Re-analyzing \(model.reAnalysisProgress)/\(model.reAnalysisTotal) frames...")
+                                .font(.system(size: fs(10), design: .monospaced))
+                                .foregroundColor(fgDim)
+                            ProgressView(value: Double(model.reAnalysisProgress),
+                                         total: max(1, Double(model.reAnalysisTotal)))
+                                .progressViewStyle(.linear)
+                                .frame(maxWidth: 200)
+                        } else {
+                            Text("\(model.staleRecordCount) frames scored with older algorithm (v\(kAlgorithmVersion) is current)")
+                                .font(.system(size: fs(10), design: .monospaced))
+                                .foregroundColor(fgDim)
+                        }
+
                         Spacer()
-                        Text("Re-analysis available in future update")
-                            .font(.system(size: fs(9)))
-                            .foregroundColor(fgDim)
+
+                        if !model.isReAnalyzing {
+                            Button {
+                                model.reAnalyzeStaleRecords()
+                            } label: {
+                                Label("Re-Analyze", systemImage: "arrow.clockwise")
+                                    .font(.system(size: fs(10)))
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .tint(.orange)
+                            .controlSize(.small)
+                        }
                     }
                     .padding(.horizontal, 12)
                     .padding(.vertical, 4)
                     .background(AppColors.bgControl(nightMode))
+                }
+
+                // Monthly aggregation indicator
+                if model.useMonthlyAggregation {
+                    HStack(spacing: 4) {
+                        Image(systemName: "calendar")
+                            .font(.system(size: fs(9)))
+                            .foregroundColor(.secondary)
+                        Text("Showing monthly averages (date range >6 months)")
+                            .font(.system(size: fs(9)))
+                            .foregroundColor(.secondary)
+                    }
+                    .padding(.horizontal, 12)
                 }
 
                 // Chart selector

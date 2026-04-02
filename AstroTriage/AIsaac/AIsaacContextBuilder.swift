@@ -659,11 +659,12 @@ struct AIsaacContextBuilder {
         - PixInsight WBPP reads SSWEIGHT/PSFSWGHT automatically for weighted integration.
 
         GPU PSF FITTING:
-        - Metal compute kernel fits circular Gaussian PSF per star: I(r) = A·exp(-r²/2σ²) + B.
-        - Gauss-Newton with LM damping, 8 iterations on 11×11 stamps, 3 free params (A, σ, B).
-        - Replaces CPU linearized Gaussian: proper fitted amplitude → accurate flux (2πAσ²).
+        - Two Metal compute kernels: circular (3 params: A, σ, B) and elliptical (5 params: A, σx, σy, θ, B).
+        - Gauss-Newton with LM damping, 8-12 iterations on 11×11 stamps.
+        - Circular fit: replaces CPU linearized Gaussian FWHM with proper fitted σ.
+        - Elliptical fit: derives eccentricity analytically from σx/σy and PA from θ (preferred over image moments).
         - PSF Flux column (enable via column picker): total star signal per frame. Higher = better.
-        - PSF flux z-score replaces star count in quality scoring when available.
+        - PSF flux z-score replaces star count in quality scoring when available (more robust, immune to hot pixel inflation).
 
         DOME/DARK FRAME DETECTION:
         - Rule 0b: stars ≥10000 (absolute ceiling after auto-escalation) or ≥5000 + background <0.003.

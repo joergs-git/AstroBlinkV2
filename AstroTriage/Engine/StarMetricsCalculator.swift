@@ -208,9 +208,10 @@ enum StarMetricsCalculator {
         guard hfrValues.count >= minStars, fwhmValues.count >= minStars else { return nil }
 
         // ── GPU PSF Fitting (when available) ──
-        // Replaces CPU linearized FWHM with proper Gauss-Newton fitted σ.
-        // Also produces fitted amplitude for accurate flux computation.
+        // Circular fit: replaces CPU FWHM with proper Gauss-Newton fitted σ.
+        // Elliptical fit: derives eccentricity + PA analytically from σx/σy/θ.
         var gpuFitResults: [PreviewGenerator.PSFFitResult]?
+        var gpuEllipticalResults: [PreviewGenerator.PSFEllipticalResult]?
         if let gen = generator {
             let fitInput = toMeasure.enumerated().map { (i, star) -> (x: Float, y: Float, background: Float, peakBrightness: Float) in
                 let bg = estimateBackground(ptr: ptr, channelOffset: channelOffset, width: w,
@@ -218,10 +219,14 @@ enum StarMetricsCalculator {
                                             innerR: bgInnerRadius, outerR: bgOuterRadius)
                 return (x: star.x, y: star.y, background: bg, peakBrightness: star.brightness)
             }
+            // Circular fit for robust FWHM
             let results = gen.fitPSF(image: image, stars: fitInput, channel: channel)
             if results.count == toMeasure.count {
                 gpuFitResults = results
-                // Replace CPU FWHM with GPU-fitted FWHM for stars with good fit (χ² < 1000)
+                // Replace CPU FWHM with GPU-fitted FWHM for stars with good fit (χ² < 1000).
+                // Keep CPU values as fallback when GPU fit quality is poor (e.g. bad seeing).
+                let savedCpuFWHM = fwhmValues
+                let savedPerStar = perStarFWHM
                 fwhmValues.removeAll()
                 for (i, fit) in results.enumerated() {
                     let fittedFWHM = Double(fit.sigma) * 2.3548
@@ -230,6 +235,16 @@ enum StarMetricsCalculator {
                         perStarFWHM[i] = fittedFWHM
                     }
                 }
+                // Fall back to CPU FWHM if GPU produced too few valid fits
+                if fwhmValues.count < minStars {
+                    fwhmValues = savedCpuFWHM
+                    perStarFWHM = savedPerStar
+                }
+            }
+            // Elliptical fit for eccentricity + PA (same stars, same input)
+            let ellipResults = gen.fitPSFElliptical(image: image, stars: fitInput, channel: channel)
+            if ellipResults.count == toMeasure.count {
+                gpuEllipticalResults = ellipResults
             }
         }
 
@@ -273,25 +288,45 @@ enum StarMetricsCalculator {
                 // Reject streaks again with the FWHM-adaptive aperture (more accurate than Pass 0)
                 if shape.axisRatio < streakAxisRatioThreshold { continue }
 
-                eccValues.append(shape.eccentricity)
-
-                // Look up HFR/FWHM from Pass 1 by position match
+                // Look up HFR/FWHM and elliptical fit from Pass 1 by position match
                 var matchedHFR: Double? = nil
                 var matchedFWHM: Double? = nil
+                var matchedEllipFit: PreviewGenerator.PSFEllipticalResult? = nil
                 for (j, m) in toMeasure.enumerated() {
                     if abs(m.x - star.x) < 2 && abs(m.y - star.y) < 2 {
                         matchedHFR = perStarHFR[j]
                         matchedFWHM = perStarFWHM[j]
+                        if let ellipFits = gpuEllipticalResults, j < ellipFits.count,
+                           ellipFits[j].chi2 < 1000 {
+                            matchedEllipFit = ellipFits[j]
+                        }
                         break
                     }
                 }
 
+                // Prefer PSF-derived eccentricity/PA when elliptical fit is good.
+                // Image moments are the fallback for stars without GPU fit.
+                let finalEcc: Double
+                let finalPA: Double?
+                let finalAR: Double?
+                if let eFit = matchedEllipFit {
+                    finalEcc = eFit.eccentricity
+                    finalPA = eFit.positionAngleDeg
+                    finalAR = eFit.axisRatio
+                } else {
+                    finalEcc = shape.eccentricity
+                    finalPA = shape.positionAngle
+                    finalAR = shape.axisRatio
+                }
+
+                eccValues.append(finalEcc)
+
                 details.append(StarDetail(
                     x: star.x, y: star.y,
-                    eccentricity: shape.eccentricity,
+                    eccentricity: finalEcc,
                     hfr: matchedHFR, fwhm: matchedFWHM,
-                    positionAngle: shape.positionAngle,
-                    axisRatio: shape.axisRatio
+                    positionAngle: finalPA,
+                    axisRatio: finalAR
                 ))
             }
         }
@@ -321,22 +356,26 @@ enum StarMetricsCalculator {
             correctedTotal = rawTotal
         }
 
-        // PSF flux estimation: use GPU-fitted amplitude when available,
-        // else approximate from peak brightness. Flux = 2π × A × σ².
+        // PSF flux estimation: prefer elliptical fit (2π·A·σx·σy) when available,
+        // fall back to circular (2π·A·σ²), then to peak brightness approximation.
         var measuredFluxSum: Double = 0
         var fluxStarCount = 0
         for (i, star) in toMeasure.enumerated() {
             let fwhm = perStarFWHM[i] ?? medianFWHM
             if fwhm > 0 {
-                // Use GPU-fitted amplitude for accurate flux when available
-                let amplitude: Double
-                if let fits = gpuFitResults, i < fits.count, fits[i].chi2 < 1000 {
-                    amplitude = Double(fits[i].amplitude)
+                let flux: Double
+                if let eFits = gpuEllipticalResults, i < eFits.count, eFits[i].chi2 < 1000 {
+                    // Elliptical: 2π·A·σx·σy (most accurate)
+                    flux = eFits[i].psfFlux
+                } else if let fits = gpuFitResults, i < fits.count, fits[i].chi2 < 1000 {
+                    // Circular: 2π·A·σ²
+                    let sigma = fwhm / 2.355
+                    flux = Double(fits[i].amplitude) * 2.0 * Double.pi * sigma * sigma
                 } else {
-                    amplitude = Double(star.brightness)
+                    // CPU fallback from peak brightness
+                    let sigma = fwhm / 2.355
+                    flux = Double(star.brightness) * 2.0 * Double.pi * sigma * sigma
                 }
-                let sigma = fwhm / 2.355
-                let flux = amplitude * 2.0 * Double.pi * sigma * sigma
                 measuredFluxSum += flux
                 fluxStarCount += 1
             }

@@ -4,6 +4,23 @@ All notable changes to AstroBlink & AIsaac will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [5.12.0] — 2026-04-02
+
+### Added
+- **Elliptical GPU PSF Fitting** — New Metal kernel `psf_fit_elliptical` fits 5-parameter elliptical Gaussian (A, σx, σy, θ, B) via Gauss-Newton with Levenberg-Marquardt damping. Derives eccentricity analytically from σx/σy and position angle from θ — more accurate than image moments for well-fitted stars
+- **PSF Flux Z-Score Display** — PSF Flux z-score now visible in Quality Metrics panel (header inspector) and quality column tooltip. Shows how total stellar signal compares to the group
+- **Frame History Re-Analysis** — Orange "Re-Analyze" button in History window re-scores all stale records (older algorithm version) using current scoring engine. Handles frames in small groups by preserving existing tier and bumping version
+- **Monthly Chart Aggregation** — History window charts automatically switch to monthly buckets when date range exceeds 6 months. Calendar icon indicator shown. Affects Score, Efficiency, and Performance charts
+- **PSF Flux Persistence** — psfFlux column added to Frame History DB (migration v6). Enables historical PSF flux comparison across sessions
+- **PixInsight Bridge Skeleton** — Separate `pixinsight-astroblink` repo with ES5 PJSR script for importing AstroBlink triage results into PixInsight. CSV parser, TreeBox UI, SSWEIGHT header writing, platform detection
+
+### Fixed
+- **FWHM CPU Fallback** — When GPU circular PSF fit produces chi² > 1000 for all stars (poor seeing), CPU-computed FWHM values are now preserved as fallback. Previously, GPU fit cleared all CPU values then failed quality checks, leaving FWHM as nil — causing scoring to miss garbage frames
+- **Re-Analysis Completeness** — Frames in groups too small for QualityEstimator (minimum group size not met) now get their algorithm version bumped anyway, preventing stale record count from sticking
+
+### Changed
+- Algorithm version bumped to 13 (from 12). Elliptical PSF, psfFlux persistence, FWHM fallback
+
 ## [5.11.0] — 2026-04-02
 
 ### Added

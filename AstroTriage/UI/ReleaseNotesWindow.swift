@@ -34,6 +34,14 @@ class ReleaseNotesWindowController {
 // MARK: - Release notes data (shared between view and copy)
 
 private let allReleases: [(version: String, date: String, items: [(ReleaseNotesView.ChangeType, String, String)])] = [
+    ("5.12.0", "April 2, 2026", [
+        (.added, "Elliptical PSF Fitting", "New 5-parameter GPU kernel (A, σx, σy, θ, B) derives eccentricity and position angle analytically from the PSF shape — more accurate than image moments."),
+        (.added, "PSF Flux Z-Score", "PSF Flux z-score now shown in Quality Metrics panel and tooltip. Shows how total stellar signal compares to the group."),
+        (.added, "Frame History Re-Analysis", "Re-Analyze button in History window re-scores stale records with current algorithm. One click to update all frames scored with older versions."),
+        (.added, "Monthly Chart Aggregation", "History charts auto-switch to monthly buckets when date range exceeds 6 months for cleaner long-term trends."),
+        (.added, "PixInsight Bridge", "New companion PJSR script imports AstroBlink triage results into PixInsight. Reads CSV, displays triage table, writes SSWEIGHT keywords."),
+        (.fixed, "FWHM on Poor Seeing Frames", "CPU FWHM values now preserved as fallback when GPU fit fails. Fixes missing FWHM/trailing data on frames with bad seeing."),
+    ]),
     ("5.11.0", "April 2, 2026", [
         (.added, "GPU PSF Fitting", "Metal compute kernel fits circular Gaussian PSF model per star using Gauss-Newton optimization. Replaces CPU linearized FWHM with proper nonlinear fit — gives accurate amplitude, sigma, and flux."),
         (.added, "PSFSignalWeight Export", "PixInsight 1.8.9+ compatible PSFSWGHT keyword written alongside SSWEIGHT. More robust than SNRWeight — PSF flux inherently rejects hot pixels and satellites."),
