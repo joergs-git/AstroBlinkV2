@@ -2167,9 +2167,15 @@ class TriageViewModel: ObservableObject {
     // MARK: - SSWEIGHT Export
 
     /// Export SSWEIGHT keyword to FITS/XISF headers for WBPP integration.
+    /// Operates on highlighted files if any are selected, otherwise all scored files.
     /// Weight formula: clamp(0, 100, 50 + qualityZScore * 20) * (1 - trailingScore * 0.5 * filterTrailingMult)
     func exportSSWEIGHT() {
-        let scoredImages = images.filter { $0.qualityBreakdown != nil }
+        // Use selected files if highlighted, otherwise all scored images
+        let selected = selectedEntries.filter { $0.qualityBreakdown != nil }
+        let scoredImages = selected.isEmpty
+            ? images.filter { $0.qualityBreakdown != nil }
+            : selected
+        let scope = selected.isEmpty ? "all \(scoredImages.count)" : "\(scoredImages.count) selected"
         guard !scoredImages.isEmpty else {
             statusMessage = "No quality scores available — load and cache images first"
             return
@@ -2177,7 +2183,7 @@ class TriageViewModel: ObservableObject {
 
         // Confirmation dialog
         let alert = NSAlert()
-        alert.messageText = "Export SSWEIGHT to \(scoredImages.count) files?"
+        alert.messageText = "Export SSWEIGHT to \(scope) files?"
         alert.informativeText = "This writes the SSWEIGHT keyword (float, 0-100) into each file's header.\n\nPixInsight WBPP can use this for weighted integration.\n\nA CSV backup will also be created."
         alert.alertStyle = .informational
         alert.addButton(withTitle: "Export")
@@ -2252,58 +2258,9 @@ class TriageViewModel: ObservableObject {
         }
     }
 
-    // MARK: - SSWEIGHT Removal
-
-    /// Remove SSWEIGHT keyword from all FITS/XISF headers in the current session.
-    /// Also removes the CSV backup file if present.
-    func removeSSWEIGHT() {
-        let eligibleImages = images.filter { $0.isFITS || $0.isXISF }
-        guard !eligibleImages.isEmpty else {
-            statusMessage = "No FITS/XISF files in session"
-            return
-        }
-
-        let alert = NSAlert()
-        alert.messageText = "Remove SSWEIGHT from \(eligibleImages.count) files?"
-        alert.informativeText = "This deletes the SSWEIGHT keyword from all file headers.\n\nThe CSV backup file will also be removed if present.\n\nThis cannot be undone."
-        alert.alertStyle = .warning
-        alert.addButton(withTitle: "Remove")
-        alert.addButton(withTitle: "Cancel")
-
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
-
-        var succeeded = 0
-        var failed = 0
-
-        for entry in eligibleImages {
-            let path = entry.decodingURL.path
-
-            let result: WriteResult
-            if entry.isXISF {
-                result = delete_xisf_keyword(path, path, "SSWEIGHT")
-            } else {
-                result = delete_fits_keyword(path, "SSWEIGHT")
-            }
-
-            if result.success == 1 {
-                succeeded += 1
-            } else {
-                failed += 1
-            }
-        }
-
-        // Remove CSV backup file
-        if let rootURL = sessionRootURL {
-            let csvURL = rootURL.appendingPathComponent("AstroBlinkV2_SSWEIGHT.csv")
-            try? FileManager.default.removeItem(at: csvURL)
-        }
-
-        if failed > 0 {
-            statusMessage = "SSWEIGHT removed: \(succeeded) files (\(failed) failed)"
-        } else {
-            statusMessage = "SSWEIGHT removed from \(succeeded) files"
-        }
-    }
+    // SSWEIGHT removal: use Batch Rename → scope "Delete Key", keyword "SSWEIGHT"
+    // No separate removeSSWEIGHT() needed — batch rename handles deletion with
+    // backup, undo, and verification. CSV cleanup is separate if needed.
 
     // MARK: - Stretch Strength (current image only)
 
@@ -4124,7 +4081,8 @@ class TriageViewModel: ObservableObject {
             images[i].qualityBreakdown = batchScores[images[i].url]
         }
 
-        statusMessage = "Batch: \(result.succeeded) files modified"
+        statusMessage = "Batch: \(result.succeeded) files modified — reload folder to apply header changes"
+        needsTableRefresh = true
     }
 
     func undoBatchRename() {

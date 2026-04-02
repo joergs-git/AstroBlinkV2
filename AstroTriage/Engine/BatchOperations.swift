@@ -2,11 +2,12 @@
 import Foundation
 import ImageDecoderBridge
 
-// Scope of a batch operation: filename, header, or both
+// Scope of a batch operation: filename, header, both, or delete keyword
 enum BatchScope: Equatable {
     case filenameOnly
     case headerOnly(keyword: String)
     case both(keyword: String)
+    case deleteKeyword(keyword: String)   // Remove keyword entirely from header
 }
 
 // Specification for a batch rename/header edit operation
@@ -73,13 +74,13 @@ struct BatchOperations {
             switch spec.scope {
             case .filenameOnly:
                 break  // newFilename already computed above
-            case .headerOnly:
-                newFilename = nil  // Don't rename file for header-only scope
+            case .headerOnly, .deleteKeyword:
+                newFilename = nil  // Don't rename file for header/delete scope
             case .both:
                 break  // Keep both
             }
 
-            // Header replacement
+            // Header replacement or deletion
             switch spec.scope {
             case .headerOnly(let keyword), .both(let keyword):
                 // Read current header value
@@ -90,6 +91,12 @@ struct BatchOperations {
                         headerChanges.append((key: keyword, oldValue: currentValue, newValue: newValue))
                     }
                 }
+            case .deleteKeyword(let keyword):
+                // Check if keyword exists — if so, mark for deletion
+                if let currentValue = readHeaderValue(url: entry.url, keyword: keyword) {
+                    headerChanges.append((key: keyword, oldValue: currentValue, newValue: "⌫ DELETE"))
+                }
+                newFilename = nil  // No filename change for delete operations
             case .filenameOnly:
                 break
             }
@@ -145,23 +152,41 @@ struct BatchOperations {
 
             // Step 2: Header modification (before rename, since URL hasn't changed yet)
             for change in item.headerChanges {
-                let writeError = writeHeader(url: currentURL, keyword: change.key, value: change.newValue)
-                if let error = writeError {
-                    // Restore from backup
-                    try? fm.removeItem(at: currentURL)
-                    try? fm.copyItem(at: backupURL, to: originalURL)
-                    failed.append((url: originalURL, error: "Header write failed: \(error)"))
-                    continue
-                }
+                let isDelete = change.newValue == "⌫ DELETE"
 
-                // Verify the write
-                if let readBack = readHeaderValue(url: currentURL, keyword: change.key) {
-                    if readBack != change.newValue {
-                        // Restore from backup
+                if isDelete {
+                    // Delete keyword entirely from header
+                    let deleteError = deleteHeader(url: currentURL, keyword: change.key)
+                    if let error = deleteError {
                         try? fm.removeItem(at: currentURL)
                         try? fm.copyItem(at: backupURL, to: originalURL)
-                        failed.append((url: originalURL, error: "Verification failed: wrote '\(change.newValue)' but read back '\(readBack)'"))
+                        failed.append((url: originalURL, error: "Header delete failed: \(error)"))
                         continue
+                    }
+                    // Verify deletion: keyword should no longer exist
+                    if readHeaderValue(url: currentURL, keyword: change.key) != nil {
+                        try? fm.removeItem(at: currentURL)
+                        try? fm.copyItem(at: backupURL, to: originalURL)
+                        failed.append((url: originalURL, error: "Delete verification failed: '\(change.key)' still present"))
+                        continue
+                    }
+                } else {
+                    let writeError = writeHeader(url: currentURL, keyword: change.key, value: change.newValue)
+                    if let error = writeError {
+                        try? fm.removeItem(at: currentURL)
+                        try? fm.copyItem(at: backupURL, to: originalURL)
+                        failed.append((url: originalURL, error: "Header write failed: \(error)"))
+                        continue
+                    }
+
+                    // Verify the write
+                    if let readBack = readHeaderValue(url: currentURL, keyword: change.key) {
+                        if readBack != change.newValue {
+                            try? fm.removeItem(at: currentURL)
+                            try? fm.copyItem(at: backupURL, to: originalURL)
+                            failed.append((url: originalURL, error: "Verification failed: wrote '\(change.newValue)' but read back '\(readBack)'"))
+                            continue
+                        }
                     }
                 }
             }
@@ -346,6 +371,38 @@ struct BatchOperations {
                     ptr.withMemoryRebound(to: CChar.self, capacity: 256) { cStr in
                         String(cString: cStr)
                     }
+                }
+            }
+            return nil
+        }
+    }
+
+    /// Delete a header keyword from a FITS or XISF file
+    private static func deleteHeader(url: URL, keyword: String) -> String? {
+        let path = url.path
+        let ext = url.pathExtension.lowercased()
+
+        if ext == "xisf" {
+            let tempPath = path + ".tmp"
+            let result = delete_xisf_keyword(path, tempPath, keyword)
+            if result.success == 0 {
+                try? FileManager.default.removeItem(atPath: tempPath)
+                return withUnsafePointer(to: result.error) { ptr in
+                    ptr.withMemoryRebound(to: CChar.self, capacity: 256) { String(cString: $0) }
+                }
+            }
+            do {
+                try FileManager.default.removeItem(atPath: path)
+                try FileManager.default.moveItem(atPath: tempPath, toPath: path)
+            } catch {
+                return "Atomic rename failed: \(error.localizedDescription)"
+            }
+            return nil
+        } else {
+            let result = delete_fits_keyword(path, keyword)
+            if result.success == 0 {
+                return withUnsafePointer(to: result.error) { ptr in
+                    ptr.withMemoryRebound(to: CChar.self, capacity: 256) { String(cString: $0) }
                 }
             }
             return nil

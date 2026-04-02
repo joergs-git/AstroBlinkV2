@@ -40,6 +40,7 @@ enum BatchScopeSelection: String, CaseIterable {
     case filenameOnly = "Filename"
     case headerOnly = "Header"
     case both = "Both"
+    case deleteKeyword = "Delete Key"
 }
 
 // MARK: - Main View
@@ -289,6 +290,8 @@ struct BatchRenameView: View {
             scope = .headerOnly(keyword: headerKeyword)
         case .both:
             scope = .both(keyword: headerKeyword)
+        case .deleteKeyword:
+            scope = .deleteKeyword(keyword: headerKeyword)
         }
         return BatchRenameSpec(
             searchPattern: searchText,
