@@ -4,22 +4,40 @@ import SwiftUI
 // MARK: - App Store URL (update when published)
 let appStoreURL = "https://apps.apple.com/app/astroblinkv2/id6760241266?mt=12"
 
+// Singleton handler registered before SwiftUI takes over the event pipeline
+class URLSchemeHandler: NSObject {
+    static let shared = URLSchemeHandler()
+    @objc func handleGetURL(_ event: NSAppleEventDescriptor, withReply reply: NSAppleEventDescriptor) {
+        guard let urlString = event.paramDescriptor(forKeyword: AEKeyword(keyDirectObject))?.stringValue,
+              let url = URL(string: urlString),
+              url.scheme == "astroblink",
+              let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              components.host == "open",
+              let folderPath = components.queryItems?.first(where: { $0.name == "folder" })?.value else { return }
+        let folderURL = URL(fileURLWithPath: folderPath)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            NotificationCenter.default.post(name: .openFolderAtPath, object: folderURL)
+        }
+    }
+}
+
 @main
 struct AstroBlinkV2App: App {
     // Use NSApplicationDelegateAdaptor so we can customize the About panel
     @NSApplicationDelegateAdaptor(AstroBlinkV2AppDelegate.self) var appDelegate
 
+    init() {
+        // Register URL scheme handler BEFORE SwiftUI steals the event pipeline
+        NSAppleEventManager.shared().setEventHandler(
+            URLSchemeHandler.shared,
+            andSelector: #selector(URLSchemeHandler.handleGetURL(_:withReply:)),
+            forEventClass: AEEventClass(kInternetEventClass),
+            andEventID: AEEventID(kAEGetURL))
+    }
+
     var body: some Scene {
         WindowGroup {
             ContentView()
-                .onOpenURL { url in
-                    guard url.scheme == "astroblink" else { return }
-                    if let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
-                       components.host == "open",
-                       let folderPath = components.queryItems?.first(where: { $0.name == "folder" })?.value {
-                        NotificationCenter.default.post(name: .openFolderAtPath, object: URL(fileURLWithPath: folderPath))
-                    }
-                }
         }
         .windowStyle(.titleBar)
         .defaultSize(width: 1400, height: 900)
@@ -177,6 +195,17 @@ class AstroBlinkV2AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    // PI handoff: timer checks clipboard for ASTROBLINK_PI_OPEN: marker.
+    // Uses @objc selector + strong target reference — guaranteed to fire on main RunLoop.
+    @objc private func checkPIClipboard() {
+        guard let content = NSPasteboard.general.string(forType: .string),
+              content.hasPrefix("ASTROBLINK_PI_OPEN:") else { return }
+        let folderPath = String(content.dropFirst("ASTROBLINK_PI_OPEN:".count))
+        NSPasteboard.general.clearContents()
+        guard !folderPath.isEmpty, FileManager.default.fileExists(atPath: folderPath) else { return }
+        NotificationCenter.default.post(name: .openFolderAtPath, object: URL(fileURLWithPath: folderPath))
+    }
+
     // Clean up caches and ensure iCloud has latest data before quitting
     func applicationWillTerminate(_ notification: Notification) {
         // Export Frame History to iCloud so other Macs get the latest data
@@ -186,14 +215,15 @@ class AstroBlinkV2AppDelegate: NSObject, NSApplicationDelegate {
 
     // Show splash screen on launch (unless user opted out)
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // Register Apple Event handler for astroblink:// URL scheme
-        // (works for future use when URL delivery issue is resolved)
-        NSAppleEventManager.shared().setEventHandler(
-            self,
-            andSelector: #selector(handleGetURLEvent(_:withReply:)),
-            forEventClass: AEEventClass(kInternetEventClass),
-            andEventID: AEEventID(kAEGetURL)
-        )
+        // PI handoff: check clipboard every 2s for ASTROBLINK_PI_OPEN: marker
+        // (delayed start to ensure RunLoop is running)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
+            guard let self else { return }
+            Timer.scheduledTimer(timeInterval: 2.0, target: self,
+                                 selector: #selector(self.checkPIClipboard),
+                                 userInfo: nil, repeats: true)
+        }
+
         // Skip heavy init when running as test host
         let isTestHost = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
 

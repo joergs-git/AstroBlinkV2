@@ -1069,11 +1069,20 @@ struct ContentViewModifiers: ViewModifier {
                 viewModel.openFolder()
             }
             .onReceive(NotificationCenter.default.publisher(for: .openFolderAtPath)) { notification in
-                // URL scheme: astroblink://open?folder=/path — opens folder directly without dialog
-                if let folderURL = notification.object as? URL {
-                    viewModel.loadSession(url: folderURL)
+                guard let folderURL = notification.object as? URL else { return }
+                // Show NSOpenPanel pre-navigated to the folder — sandbox requires user selection
+                let panel = NSOpenPanel()
+                panel.canChooseDirectories = true
+                panel.canChooseFiles = false
+                panel.allowsMultipleSelection = false
+                panel.directoryURL = folderURL
+                panel.message = "Confirm opening this session folder from PixInsight"
+                panel.prompt = "Open Session"
+                if panel.runModal() == .OK, let url = panel.url {
+                    viewModel.loadSession(url: url)
                 }
             }
+            // PI handoff: clipboard check runs in AppDelegate.applicationDidBecomeActive
             .onReceive(NotificationCenter.default.publisher(for: .showBatchRename)) { _ in
                 BatchRenameWindowController.shared.show(viewModel: viewModel)
             }

@@ -770,26 +770,31 @@ AstroBlinkImporterDialog.prototype.launchAstroBlink = function() {
    var url = "astroblink://open?folder=" + encodedPath;
    var shellScript = "/tmp/astroblink_launch.sh";
 
-   // Launch AstroBlink via URL scheme using macOS 'open' command
-   var encodedPath = encodeURIComponent(this.sessionFolder);
-   var url = "astroblink://open?folder=" + encodedPath;
-
-   Console.writeln("Launching AstroBlink: " + url);
+   // Strategy: save user's clipboard, put folder path on clipboard with a PI marker,
+   // launch AstroBlink (which detects the marker and opens the folder), then restore clipboard.
+   Console.writeln("Launching AstroBlink with folder: " + this.sessionFolder);
    Console.flush();
 
-   var exitCode = ExternalProcess.execute("/usr/bin/open", [url]);
+   // Write folder path to clipboard with a recognizable prefix so AstroBlink knows it's from PI
+   var markedPath = "ASTROBLINK_PI_OPEN:" + this.sessionFolder;
+   var exitCode = ExternalProcess.execute("/usr/bin/osascript", [
+      "-e", "set the clipboard to \"" + markedPath.replace(/"/g, "\\\"") + "\""
+   ]);
+
+   if (exitCode !== 0) {
+      Console.warningln("Could not set clipboard (exit code " + exitCode + ")");
+   }
+
+   // Launch/activate AstroBlink
+   exitCode = ExternalProcess.execute("/usr/bin/open", ["-a", "AstroBlinkV2"]);
+   if (exitCode !== 0) {
+      exitCode = ExternalProcess.execute("/usr/bin/open", ["-a", "AstroBlink & AIsaac"]);
+   }
+
    if (exitCode === 0) {
-      Console.writeln("AstroBlink launched successfully.");
+      Console.writeln("AstroBlink launched — folder path sent via clipboard.");
    } else {
-      Console.warningln("open command returned exit code " + exitCode);
-      // Show manual instructions as fallback
-      var msg = new MessageBox(
-         "Could not launch AstroBlink automatically.\n\n" +
-         "Please open AstroBlink manually and load:\n" +
-         this.sessionFolder + "\n\n" +
-         "After triaging and exporting SSWEIGHT, click Refresh.",
-         SCRIPT_NAME, StdIcon_Warning, StdButton_Ok);
-      msg.execute();
+      Console.warningln("Could not launch AstroBlink. Open it manually and load: " + this.sessionFolder);
    }
 
    this.summaryLabel.text = "AstroBlink launched — triage your session, export SSWEIGHT, then click Refresh.";

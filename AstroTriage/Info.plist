@@ -30,6 +30,19 @@
     <string>AIsaac uses speech recognition for voice commands — ask questions about your astrophotography session by speaking.</string>
     <key>NSMicrophoneUsageDescription</key>
     <string>AIsaac uses the microphone for voice input — hold the mic button to speak your question.</string>
+    <key>CFBundleDocumentTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleTypeName</key>
+            <string>Folder</string>
+            <key>CFBundleTypeRole</key>
+            <string>Viewer</string>
+            <key>LSItemContentTypes</key>
+            <array>
+                <string>public.folder</string>
+            </array>
+        </dict>
+    </array>
     <key>CFBundleURLTypes</key>
     <array>
         <dict>
