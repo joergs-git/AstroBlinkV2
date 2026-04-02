@@ -84,7 +84,8 @@ struct BatchOperations {
             case .headerOnly(let keyword), .both(let keyword):
                 // Read current header value
                 if let currentValue = readHeaderValue(url: entry.url, keyword: keyword) {
-                    let newValue = applyReplacement(to: currentValue, spec: spec)
+                    // Header values use case-insensitive matching (FITS filter names etc.)
+                    let newValue = applyReplacement(to: currentValue, spec: spec, caseInsensitive: true)
                     if newValue != currentValue {
                         headerChanges.append((key: keyword, oldValue: currentValue, newValue: newValue))
                     }
@@ -251,16 +252,21 @@ struct BatchOperations {
 
     // MARK: - Private helpers
 
-    /// Apply search/replace to a string using plain text or regex
-    private static func applyReplacement(to input: String, spec: BatchRenameSpec) -> String {
+    /// Apply search/replace to a string using plain text or regex.
+    /// When caseInsensitive is true, matching ignores case (used for header values
+    /// where FITS keywords like FILTER are case-insensitive).
+    private static func applyReplacement(to input: String, spec: BatchRenameSpec, caseInsensitive: Bool = false) -> String {
         if spec.isRegex {
-            guard let regex = try? NSRegularExpression(pattern: spec.searchPattern) else {
+            var options: NSRegularExpression.Options = []
+            if caseInsensitive { options.insert(.caseInsensitive) }
+            guard let regex = try? NSRegularExpression(pattern: spec.searchPattern, options: options) else {
                 return input
             }
             let range = NSRange(input.startIndex..., in: input)
             return regex.stringByReplacingMatches(in: input, range: range, withTemplate: spec.replacement)
         } else {
-            return input.replacingOccurrences(of: spec.searchPattern, with: spec.replacement)
+            return input.replacingOccurrences(of: spec.searchPattern, with: spec.replacement,
+                                              options: caseInsensitive ? .caseInsensitive : [])
         }
     }
 
