@@ -331,7 +331,7 @@ struct QualityEstimator {
                 if let stars = starsValues[i] {
                     if stars >= 10000 {
                         darkFrameIndices.insert(i)
-                    } else if stars >= 3000, let bgLevel = entry.noiseMedian, bgLevel < 0.005 {
+                    } else if stars >= 5000, let bgLevel = entry.noiseMedian, bgLevel < 0.003 {
                         darkFrameIndices.insert(i)
                     }
                 }
@@ -460,13 +460,13 @@ struct QualityEstimator {
                 // Detection paths:
                 // (a) Stars ≥ 10000: physically impossible for real stars after 16σ escalation
                 //     in PreviewGenerator. Even dense Milky Way fields reduce to < 5000.
-                // (b) Stars ≥ 3000 AND very low background (< 0.005): no real sky frame has
-                //     this little signal — even faintest narrowband dark-site exposures show
-                //     background > 0.005 (328 ADU) from sky glow and sensor offset.
+                // (b) Stars ≥ 5000 AND near-zero background (< 0.003): conservative threshold
+                //     avoids false positives on wide-field narrowband (140mm Ha can have
+                //     3000-5000 real stars with background 0.003-0.005 at dark sites).
                 if let stars = starsValues[localIdx] {
                     if stars >= 10000 {
                         garbageReasons.append(.noisePeaks)
-                    } else if stars >= 3000, let bgLevel = entry.noiseMedian, bgLevel < 0.005 {
+                    } else if stars >= 5000, let bgLevel = entry.noiseMedian, bgLevel < 0.003 {
                         garbageReasons.append(.noisePeaks)
                     }
                 }

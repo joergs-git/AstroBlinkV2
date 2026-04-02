@@ -272,21 +272,37 @@ struct BatchOperations {
         if ext == "xisf" {
             var result = read_xisf_headers(path)
             defer { free_header_result(&result) }
-            guard result.success != 0 else { return nil }
-            for i in 0..<result.count {
-                let key = String(cString: &result.entries[Int(i)].key.0)
+            guard result.success != 0, result.entries != nil else { return nil }
+            for i in 0..<Int(result.count) {
+                let key = withUnsafePointer(to: &result.entries[i].key) {
+                    $0.withMemoryRebound(to: CChar.self, capacity: MemoryLayout.size(ofValue: result.entries[i].key)) {
+                        String(cString: $0)
+                    }
+                }
                 if key.uppercased() == keyword.uppercased() {
-                    return String(cString: &result.entries[Int(i)].value.0)
+                    return withUnsafePointer(to: &result.entries[i].value) {
+                        $0.withMemoryRebound(to: CChar.self, capacity: MemoryLayout.size(ofValue: result.entries[i].value)) {
+                            String(cString: $0)
+                        }
+                    }
                 }
             }
         } else {
             var result = read_fits_headers(path)
             defer { free_header_result(&result) }
-            guard result.success != 0 else { return nil }
-            for i in 0..<result.count {
-                let key = String(cString: &result.entries[Int(i)].key.0)
+            guard result.success != 0, result.entries != nil else { return nil }
+            for i in 0..<Int(result.count) {
+                let key = withUnsafePointer(to: &result.entries[i].key) {
+                    $0.withMemoryRebound(to: CChar.self, capacity: MemoryLayout.size(ofValue: result.entries[i].key)) {
+                        String(cString: $0)
+                    }
+                }
                 if key.uppercased() == keyword.uppercased() {
-                    return String(cString: &result.entries[Int(i)].value.0)
+                    return withUnsafePointer(to: &result.entries[i].value) {
+                        $0.withMemoryRebound(to: CChar.self, capacity: MemoryLayout.size(ofValue: result.entries[i].value)) {
+                            String(cString: $0)
+                        }
+                    }
                 }
             }
         }
