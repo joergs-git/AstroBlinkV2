@@ -770,21 +770,27 @@ AstroBlinkImporterDialog.prototype.launchAstroBlink = function() {
    var url = "astroblink://open?folder=" + encodedPath;
    var shellScript = "/tmp/astroblink_launch.sh";
 
-   // Show folder path for the user to open in AstroBlink
-   var msg = new MessageBox(
-      "Open AstroBlink and load this folder:\n\n" +
-      this.sessionFolder + "\n\n" +
-      "Steps:\n" +
-      "1. Open AstroBlink (Cmd+O or drag folder)\n" +
-      "2. Triage your frames\n" +
-      "3. Export SSWEIGHT\n" +
-      "4. Come back here and click Refresh\n\n" +
-      "The folder path has been copied to the Process Console.",
-      SCRIPT_NAME, StdIcon_Information, StdButton_Ok);
-   msg.execute();
+   // Launch AstroBlink via URL scheme using macOS 'open' command
+   var encodedPath = encodeURIComponent(this.sessionFolder);
+   var url = "astroblink://open?folder=" + encodedPath;
 
-   Console.writeln("<b>Session folder:</b> " + this.sessionFolder);
+   Console.writeln("Launching AstroBlink: " + url);
    Console.flush();
+
+   var exitCode = ExternalProcess.execute("/usr/bin/open", [url]);
+   if (exitCode === 0) {
+      Console.writeln("AstroBlink launched successfully.");
+   } else {
+      Console.warningln("open command returned exit code " + exitCode);
+      // Show manual instructions as fallback
+      var msg = new MessageBox(
+         "Could not launch AstroBlink automatically.\n\n" +
+         "Please open AstroBlink manually and load:\n" +
+         this.sessionFolder + "\n\n" +
+         "After triaging and exporting SSWEIGHT, click Refresh.",
+         SCRIPT_NAME, StdIcon_Warning, StdButton_Ok);
+      msg.execute();
+   }
 
    this.summaryLabel.text = "AstroBlink launched — triage your session, export SSWEIGHT, then click Refresh.";
    this.statsLabel.text = "";

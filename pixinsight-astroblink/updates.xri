@@ -14,7 +14,7 @@
    </description>
    <platform os="all" arch="noarch" version="1.8.9:1.9.9">
       <package fileName="AstroBlinkImporter-1.2.0.zip"
-               sha1="9efb32eae1dbb5b1d35c6465daecf5f5296bfd8e"
+               sha1="18d4f968faa3488fbcc2c9b06eec796986d28eac"
                type="script"
                releaseDate="20260402">
          <title>
