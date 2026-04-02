@@ -59,6 +59,12 @@ WriteResult write_fits_keyword(const char* path, const char* keyword, const char
 WriteResult write_xisf_keyword(const char* path, const char* save_path,
                                 const char* keyword, const char* value);
 
+// Delete a FITS header keyword (removes the keyword entirely)
+WriteResult delete_fits_keyword(const char* path, const char* keyword);
+
+// Delete an XISF FITS header keyword
+WriteResult delete_xisf_keyword(const char* path, const char* save_path, const char* keyword);
+
 // Free pixel data returned by decode functions
 void free_decode_result(DecodeResult* result);
 

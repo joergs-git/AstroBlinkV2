@@ -437,9 +437,22 @@ struct ContentView: View {
             // ── Group 2: Actions ──
             autoMarkToolbarButton
             aisaacToolbarButton
-            sfToolbarButton("square.and.arrow.up", "SSWEIGHT\nExport", "Export quality weights to FITS/XISF headers for WBPP.\nAlso creates CSV backup.") {
-                viewModel.exportSSWEIGHT()
+            Menu {
+                Button("Export SSWEIGHT") { viewModel.exportSSWEIGHT() }
+                Button("Remove SSWEIGHT") { viewModel.removeSSWEIGHT() }
+            } label: {
+                VStack(spacing: 2) {
+                    Image(systemName: "square.and.arrow.up")
+                        .font(.system(size: 16))
+                    Text("SSWEIGHT\nExport")
+                        .font(.system(size: 9))
+                        .multilineTextAlignment(.center)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(height: 48)
             }
+            .help("Export or remove SSWEIGHT keyword in FITS/XISF headers")
             sfToolbarButton("trash", "Delete", "Move spacebar-marked files to _predel/ staging folder (⌘⌫)\nFiles are NOT permanently deleted") { viewModel.moveMarkedToPreDelete() }
             if viewModel.canUndoPreDelete {
                 sfToolbarButton("arrow.uturn.backward", "Undo", "Undo last Pre-Delete (⌘Z)") { viewModel.undoPreDelete() }

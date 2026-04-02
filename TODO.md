@@ -109,6 +109,16 @@ All original implementation phases are complete:
 - [ ] Could be per-file (context menu) or batch (whole session)
 - [ ] Must also handle the CSV backup file (`AstroBlinkV2_SSWEIGHT.csv`)
 
+### PSFSignalWeight Compatibility
+- [ ] Compute PixInsight-compatible PSFSignalWeight (PSFSW) from existing star detection
+- [ ] ΣPSFFlux: sum of detected star brightness values (total star signal per frame)
+- [ ] ΣPSFMeanFlux: mean star brightness (resolution/seeing proxy)
+- [ ] N*: robust noise from noiseMAD (already computed)
+- [ ] M*: background level from noiseMedian (already computed)
+- [ ] Write PSFSW keyword alongside SSWEIGHT so WBPP can use either
+- [ ] More robust than SNRWeight — PSF fitting inherently rejects non-PSF sources (satellites, hot pixels)
+- [ ] Reference: PixInsight 1.8.9+ SubframeSelector PSF Signal Weight algorithm
+
 ### False Positive Reporting
 - [ ] Right-click → "Report Wrong Detection" on any garbage/trash frame
 - [ ] Upload to Supabase: full QualityBreakdown (z-scores, garbage reasons, tier), setup fingerprint, filter, exposure, FL, pixel size, all metrics, algorithm version

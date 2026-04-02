@@ -363,6 +363,14 @@ class TriageViewModel: ObservableObject {
             if let columnId = Self.columnAliases[prefix], !value.isEmpty {
                 if ColumnDefinition.isNumericColumn(columnId) {
                     return matchesNumericFilter(entry, column: columnId, query: value)
+                } else if columnId == "filter" {
+                    // Filter-aware matching: use canonical filter names so filter:Ha
+                    // matches H, H2, HII, H-alpha, ha_7nm etc. (all canonicalize to "Ha")
+                    let entryCanonical = ColorCombineEngine.canonicalFilterName(entry.filter ?? "").lowercased()
+                    let queryCanonical = ColorCombineEngine.canonicalFilterName(value).lowercased()
+                    if entryCanonical == queryCanonical { return true }
+                    // Fallback: raw contains for non-canonical filter names
+                    return (entry.filter ?? "").lowercased().contains(value)
                 } else {
                     return ColumnDefinition.value(for: columnId, from: entry)
                         .lowercased().contains(value)
@@ -2232,6 +2240,59 @@ class TriageViewModel: ObservableObject {
             statusMessage = "SSWEIGHT exported: \(succeeded) files (\(failed) failed)"
         } else {
             statusMessage = "SSWEIGHT exported to \(succeeded) files + CSV backup"
+        }
+    }
+
+    // MARK: - SSWEIGHT Removal
+
+    /// Remove SSWEIGHT keyword from all FITS/XISF headers in the current session.
+    /// Also removes the CSV backup file if present.
+    func removeSSWEIGHT() {
+        let eligibleImages = images.filter { $0.isFITS || $0.isXISF }
+        guard !eligibleImages.isEmpty else {
+            statusMessage = "No FITS/XISF files in session"
+            return
+        }
+
+        let alert = NSAlert()
+        alert.messageText = "Remove SSWEIGHT from \(eligibleImages.count) files?"
+        alert.informativeText = "This deletes the SSWEIGHT keyword from all file headers.\n\nThe CSV backup file will also be removed if present.\n\nThis cannot be undone."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Remove")
+        alert.addButton(withTitle: "Cancel")
+
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+
+        var succeeded = 0
+        var failed = 0
+
+        for entry in eligibleImages {
+            let path = entry.decodingURL.path
+
+            let result: WriteResult
+            if entry.isXISF {
+                result = delete_xisf_keyword(path, path, "SSWEIGHT")
+            } else {
+                result = delete_fits_keyword(path, "SSWEIGHT")
+            }
+
+            if result.success == 1 {
+                succeeded += 1
+            } else {
+                failed += 1
+            }
+        }
+
+        // Remove CSV backup file
+        if let rootURL = sessionRootURL {
+            let csvURL = rootURL.appendingPathComponent("AstroBlinkV2_SSWEIGHT.csv")
+            try? FileManager.default.removeItem(at: csvURL)
+        }
+
+        if failed > 0 {
+            statusMessage = "SSWEIGHT removed: \(succeeded) files (\(failed) failed)"
+        } else {
+            statusMessage = "SSWEIGHT removed from \(succeeded) files"
         }
     }
 

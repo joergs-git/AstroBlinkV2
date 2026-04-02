@@ -360,6 +360,72 @@ extern "C" WriteResult write_xisf_keyword(const char* path, const char* save_pat
 }
 
 // ============================================================================
+// FITS header keyword deletion — removes keyword entirely
+// ============================================================================
+
+extern "C" WriteResult delete_fits_keyword(const char* path, const char* keyword) {
+    WriteResult result;
+    memset(&result, 0, sizeof(result));
+
+    fitsfile* fptr = nullptr;
+    int status = 0;
+
+    if (fits_open_diskfile(&fptr, path, READWRITE, &status)) {
+        result.success = 0;
+        fits_get_errstatus(status, result.error);
+        return result;
+    }
+
+    // Delete keyword — cfitsio fits_delete_key removes the entire card
+    if (fits_delete_key(fptr, keyword, &status)) {
+        // KEY_NO_EXIST is not a fatal error — keyword was already absent
+        if (status == KEY_NO_EXIST) {
+            status = 0;
+            result.success = 1;
+        } else {
+            result.success = 0;
+            fits_get_errstatus(status, result.error);
+            fits_close_file(fptr, &status);
+            return result;
+        }
+    } else {
+        result.success = 1;
+    }
+
+    fits_close_file(fptr, &status);
+    return result;
+}
+
+// ============================================================================
+// XISF header keyword deletion — removes keyword via libxisf
+// ============================================================================
+
+extern "C" WriteResult delete_xisf_keyword(const char* path, const char* save_path,
+                                            const char* keyword) {
+    WriteResult result;
+    memset(&result, 0, sizeof(result));
+
+    try {
+        LibXISF::XISFModify modify;
+        modify.open(path);
+
+        // Remove keyword from first image (index 0)
+        modify.removeFITSKeyword(0, keyword);
+
+        modify.save(save_path);
+        modify.close();
+
+        result.success = 1;
+
+    } catch (const std::exception& e) {
+        result.success = 0;
+        snprintf(result.error, sizeof(result.error), "XISF delete error: %.240s", e.what());
+    }
+
+    return result;
+}
+
+// ============================================================================
 // Memory cleanup (Lesson L4: caller MUST free C-allocated memory)
 // ============================================================================
 
