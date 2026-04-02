@@ -12,6 +12,16 @@ struct AstroBlinkV2App: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .onOpenURL { url in
+                    // Handle astroblink://open?folder=/path/to/session
+                    guard url.scheme == "astroblink" else { return }
+                    if let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+                       components.host == "open",
+                       let folderPath = components.queryItems?.first(where: { $0.name == "folder" })?.value {
+                        let folderURL = URL(fileURLWithPath: folderPath)
+                        NotificationCenter.default.post(name: .openFolderAtPath, object: folderURL)
+                    }
+                }
         }
         .windowStyle(.titleBar)
         .defaultSize(width: 1400, height: 900)
@@ -555,6 +565,7 @@ extension Notification.Name {
     static let zoomReset = Notification.Name("zoomReset")
     static let zoomPresetSmall = Notification.Name("zoomPresetSmall")
     static let zoomPresetLarge = Notification.Name("zoomPresetLarge")
+    static let openFolderAtPath = Notification.Name("openFolderAtPath")  // URL scheme: astroblink://open?folder=...
 }
 
 // AppDelegate extension for help window

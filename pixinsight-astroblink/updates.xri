@@ -13,12 +13,12 @@
       </p>
    </description>
    <platform os="all" arch="noarch" version="1.8.9:1.9.9">
-      <package fileName="AstroBlinkImporter-1.1.0.zip"
-               sha1="9b9be54ea96d648aa02d0a4343b2a1edc1b91035"
+      <package fileName="AstroBlinkImporter-1.2.0.zip"
+               sha1="26fb0d16c9309033f623b433460acf9263c49a28"
                type="script"
                releaseDate="20260402">
          <title>
-            AstroBlink Importer v1.1.0
+            AstroBlink Importer v1.2.0
          </title>
          <description>
             <p>Import AstroBlink triage results and SSWEIGHT values into PixInsight.</p>
@@ -28,10 +28,12 @@
                <li>Color-coded quality tier display (Excellent/Good/Borderline/Trash)</li>
                <li>Sortable table (SSWEIGHT, Quality, FWHM, Stars, SNR)</li>
                <li>Write SSWEIGHT/PSFSWGHT keywords into FITS/XISF headers</li>
-               <li>Ready for WBPP weighted integration</li>
+               <li><b>Open in AstroBlink</b> — launch triage directly from PI</li>
+               <li><b>Prepare for WBPP</b> — generates kept-frames file list</li>
             </ul>
-            <p><b>v1.1.0:</b> Fixed CSV column mapping, added color-coded tiers,
-               sort controls, SNR/Trailing columns, subfolder search.</p>
+            <p><b>v1.2.0:</b> Added "Open in AstroBlink" button (launches app via URL scheme),
+               "Prepare for WBPP" button (creates kept-files list with WBPP instructions),
+               Refresh button for re-importing after triage.</p>
          </description>
       </package>
    </platform>

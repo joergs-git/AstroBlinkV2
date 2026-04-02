@@ -30,6 +30,17 @@
     <string>AIsaac uses speech recognition for voice commands — ask questions about your astrophotography session by speaking.</string>
     <key>NSMicrophoneUsageDescription</key>
     <string>AIsaac uses the microphone for voice input — hold the mic button to speak your question.</string>
+    <key>CFBundleURLTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleURLName</key>
+            <string>com.joergsflow.AstroBlinkV2.url</string>
+            <key>CFBundleURLSchemes</key>
+            <array>
+                <string>astroblink</string>
+            </array>
+        </dict>
+    </array>
     <key>UTImportedTypeDeclarations</key>
     <array>
         <dict>

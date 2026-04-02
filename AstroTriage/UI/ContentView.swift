@@ -1068,6 +1068,12 @@ struct ContentViewModifiers: ViewModifier {
             .onReceive(NotificationCenter.default.publisher(for: .openFolderRequest)) { _ in
                 viewModel.openFolder()
             }
+            .onReceive(NotificationCenter.default.publisher(for: .openFolderAtPath)) { notification in
+                // URL scheme: astroblink://open?folder=/path — opens folder directly without dialog
+                if let folderURL = notification.object as? URL {
+                    viewModel.loadSession(url: folderURL)
+                }
+            }
             .onReceive(NotificationCenter.default.publisher(for: .showBatchRename)) { _ in
                 BatchRenameWindowController.shared.show(viewModel: viewModel)
             }

@@ -35,7 +35,7 @@
 // ============================================================================
 
 var SCRIPT_NAME = "AstroBlinkImporter";
-var SCRIPT_VERSION = "1.1.0";
+var SCRIPT_VERSION = "1.2.0";
 var CSV_FILENAME = "AstroBlinkV2_SSWEIGHT.csv";
 
 // Column definitions — match AstroBlink's actual CSV export format:
@@ -365,6 +365,24 @@ function AstroBlinkImporterDialog() {
       }
    };
 
+   // "Open in AstroBlink" — launches the macOS app with this folder via URL scheme
+   this.launchButton = new PushButton(this);
+   this.launchButton.text = "Open in AstroBlink";
+   this.launchButton.toolTip = "Launch AstroBlink to triage this session folder. Come back and click Refresh when done.";
+   this.launchButton.enabled = false;
+   this.launchButton.onClick = function() {
+      self.launchAstroBlink();
+   };
+
+   // "Refresh" — re-check for CSV after AstroBlink triage
+   this.refreshButton = new PushButton(this);
+   this.refreshButton.text = "Refresh";
+   this.refreshButton.toolTip = "Re-check for AstroBlink CSV results after triaging.";
+   this.refreshButton.enabled = false;
+   this.refreshButton.onClick = function() {
+      self.loadCSV();
+   };
+
    // ── Sort Controls ──
    var sortLabel = new Label(this);
    sortLabel.text = "Sort by:";
@@ -439,6 +457,14 @@ function AstroBlinkImporterDialog() {
       self.writeKeywordsToFiles();
    };
 
+   this.wbppButton = new PushButton(this);
+   this.wbppButton.text = "Prepare for WBPP";
+   this.wbppButton.toolTip = "Create a file list of kept frames for WBPP. SSWEIGHT is already in the headers.";
+   this.wbppButton.enabled = false;
+   this.wbppButton.onClick = function() {
+      self.prepareForWBPP();
+   };
+
    this.closeButton = new PushButton(this);
    this.closeButton.text = "Close";
    this.closeButton.onClick = function() {
@@ -451,6 +477,8 @@ function AstroBlinkImporterDialog() {
    folderSizer.add(folderLabel);
    folderSizer.add(this.folderEdit, 100);
    folderSizer.add(this.browseButton);
+   folderSizer.add(this.launchButton);
+   folderSizer.add(this.refreshButton);
 
    var sortSizer = new HorizontalSizer;
    sortSizer.spacing = 4;
@@ -461,6 +489,7 @@ function AstroBlinkImporterDialog() {
    var buttonSizer = new HorizontalSizer;
    buttonSizer.spacing = 8;
    buttonSizer.addStretch();
+   buttonSizer.add(this.wbppButton);
    buttonSizer.add(this.writeButton);
    buttonSizer.add(this.closeButton);
 
@@ -492,8 +521,11 @@ AstroBlinkImporterDialog.prototype.loadCSV = function() {
    var csvPath = findCSV(this.sessionFolder);
    if (csvPath === null) {
       this.summaryLabel.text = "No " + CSV_FILENAME + " found in folder or parent.";
-      this.statsLabel.text = "Run AstroBlink first and export SSWEIGHT to create the CSV.";
+      this.statsLabel.text = "Click 'Open in AstroBlink' to triage, then 'Refresh' to import results.";
       this.writeButton.enabled = false;
+      this.wbppButton.enabled = false;
+      this.launchButton.enabled = true;
+      this.refreshButton.enabled = true;
       return;
    }
 
@@ -502,6 +534,7 @@ AstroBlinkImporterDialog.prototype.loadCSV = function() {
       this.summaryLabel.text = "CSV is empty — no scored frames found.";
       this.statsLabel.text = "";
       this.writeButton.enabled = false;
+      this.wbppButton.enabled = false;
       return;
    }
 
@@ -511,6 +544,9 @@ AstroBlinkImporterDialog.prototype.loadCSV = function() {
    this.populateTreeBox();
    this.updateSummary();
    this.writeButton.enabled = true;
+   this.wbppButton.enabled = true;
+   this.launchButton.enabled = true;
+   this.refreshButton.enabled = true;
 };
 
 // ── Refresh TreeBox after sort change ──
@@ -701,6 +737,106 @@ AstroBlinkImporterDialog.prototype.findFile = function(filename) {
    }
 
    return null;
+};
+
+// ── Launch AstroBlink via URL scheme ──
+
+AstroBlinkImporterDialog.prototype.launchAstroBlink = function() {
+   if (!this.sessionFolder || this.sessionFolder.length === 0) {
+      var msg = new MessageBox("Select a session folder first.",
+         SCRIPT_NAME, StdIcon_Warning, StdButton_Ok);
+      msg.execute();
+      return;
+   }
+
+   if (!isMacOS()) {
+      var msg = new MessageBox(
+         "AstroBlink is a macOS application.\n" +
+         "Triage your session on a Mac, then import the CSV here.",
+         SCRIPT_NAME, StdIcon_Information, StdButton_Ok);
+      msg.execute();
+      return;
+   }
+
+   // Launch via astroblink:// URL scheme — AstroBlink opens and loads the folder
+   var encodedPath = this.sessionFolder.replace(/ /g, "%20");
+   var url = "astroblink://open?folder=" + encodedPath;
+
+   Console.writeln("Launching AstroBlink: " + url);
+   Console.flush();
+
+   // macOS: use 'open' command to handle URL scheme
+   var p = new ExternalProcess;
+   p.start("open", [url]);
+   p.waitForFinished();
+
+   this.summaryLabel.text = "AstroBlink launched — triage your session, export SSWEIGHT, then click Refresh.";
+   this.statsLabel.text = "";
+};
+
+// ── Prepare kept-files list for WBPP ──
+
+AstroBlinkImporterDialog.prototype.prepareForWBPP = function() {
+   if (this.records.length === 0) return;
+
+   // Collect kept frames (excellent + good) with their full file paths
+   var keptFiles = [];
+   var keptCount = 0;
+   var trashCount = 0;
+
+   for (var i = 0; i < this.records.length; i++) {
+      var r = this.records[i];
+      var tier = (r["QualityTier"] || "").toLowerCase();
+      var filename = r["Filename"];
+      if (!filename) continue;
+
+      if (tier === "trash") {
+         trashCount++;
+         continue;
+      }
+
+      // Find actual file path
+      var filePath = this.findFile(filename);
+      if (filePath) {
+         keptFiles.push(filePath);
+         keptCount++;
+      }
+   }
+
+   if (keptFiles.length === 0) {
+      var msg = new MessageBox("No kept frames found to prepare for WBPP.",
+         SCRIPT_NAME, StdIcon_Warning, StdButton_Ok);
+      msg.execute();
+      return;
+   }
+
+   // Write kept-files list to session folder
+   var listPath = this.sessionFolder + "/AstroBlinkV2_WBPP_files.txt";
+   var f = new File;
+   f.createForWriting(listPath);
+   for (var j = 0; j < keptFiles.length; j++) {
+      f.outTextLn(keptFiles[j]);
+   }
+   f.close();
+
+   Console.writeln(format("<b>WBPP file list: %d kept frames written to %s</b>", keptFiles.length, listPath));
+   Console.writeln(format("  Kept: %d  |  Rejected: %d  |  Total: %d",
+      keptCount, trashCount, this.records.length));
+
+   var instructions =
+      format("Ready for WBPP!\n\n" +
+      "%d frames kept, %d rejected (trash).\n\n" +
+      "Kept-files list saved to:\n%s\n\n" +
+      "Next steps in WBPP:\n" +
+      "1. Add the kept files (listed above) to WBPP\n" +
+      "2. Under 'Image Registration':\n" +
+      "   - Set 'Frame Weight' keyword to: SSWEIGHT\n" +
+      "3. Run WBPP — frames will be weighted by AstroBlink quality scores\n\n" +
+      "Note: SSWEIGHT is already written into the file headers.",
+      keptCount, trashCount, listPath);
+
+   var msg = new MessageBox(instructions, SCRIPT_NAME, StdIcon_Information, StdButton_Ok);
+   msg.execute();
 };
 
 // ============================================================================
