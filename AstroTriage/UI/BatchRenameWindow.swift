@@ -222,14 +222,33 @@ struct BatchRenameView: View {
 
     // MARK: - Actions
 
+    /// Returns the entries to operate on: selected files if any are highlighted,
+    /// otherwise all visible images. Safety: user must explicitly select files.
+    private var targetEntries: [ImageEntry] {
+        let selected = viewModel.selectedEntries
+        return selected.isEmpty ? [] : selected
+    }
+
     private func generatePreview() {
+        let entries = targetEntries
+        guard !entries.isEmpty else {
+            resultMessage = "No files selected. Highlight files in the file list first."
+            showResult = true
+            return
+        }
         let spec = buildSpec()
-        previewItems = BatchOperations.preview(spec: spec, entries: viewModel.images)
+        previewItems = BatchOperations.preview(spec: spec, entries: entries)
         hasPreview = true
         showResult = false
     }
 
     private func executeChanges() {
+        let entries = targetEntries
+        guard !entries.isEmpty else {
+            resultMessage = "No files selected. Highlight files in the file list first."
+            showResult = true
+            return
+        }
         let spec = buildSpec()
         isExecuting = true
         showResult = false
@@ -242,7 +261,7 @@ struct BatchRenameView: View {
         }
 
         DispatchQueue.global(qos: .userInitiated).async {
-            let result = BatchOperations.execute(spec: spec, entries: viewModel.images, sessionRoot: sessionRoot)
+            let result = BatchOperations.execute(spec: spec, entries: entries, sessionRoot: sessionRoot)
 
             DispatchQueue.main.async {
                 isExecuting = false

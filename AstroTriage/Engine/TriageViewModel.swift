@@ -209,6 +209,15 @@ class TriageViewModel: ObservableObject {
     // Selected row indices from the file list (for multi-select operations like stacking)
     var selectedTableIndices: IndexSet = IndexSet()
 
+    /// Returns the currently selected visible entries, or empty if nothing selected.
+    /// Used by batch operations to operate only on highlighted files.
+    var selectedEntries: [ImageEntry] {
+        let visible = visibleImages
+        return selectedTableIndices.compactMap { idx in
+            idx < visible.count ? visible[idx] : nil
+        }
+    }
+
     // Real-time system stats (CPU + memory), updated every 2 seconds
     struct SystemStats {
         var memory: String   // "MEM 2.1 GB"

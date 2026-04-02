@@ -1010,14 +1010,12 @@ struct QualityEstimator {
             // Need at least 6 frames in the session pool for meaningful comparison
             guard indices.count >= minGroupSize else { continue }
 
-            // Only run cross-group sanity when pool contains multiple filter/night groups
-            let distinctGroups = Set(indices.map { i -> String in
-                let e = entries[i]
-                let f = (e.filter ?? "").uppercased()
-                let n = e.observingNight ?? ""
-                return "\(f)|\(n)"
-            })
-            guard distinctGroups.count >= 2 else { continue }
+            // Only run cross-group sanity when pool spans multiple nights.
+            // Single-night sessions with multiple filters (e.g. H + OIII) have legitimate
+            // FWHM differences between filters — that's optics, not a bad night.
+            // Session sanity is designed to catch uniformly bad NIGHTS, not filter differences.
+            let distinctNights = Set(indices.compactMap { entries[$0].observingNight })
+            guard distinctNights.count >= 2 else { continue }
 
             // Collect metrics from ALL frames in the pool (across all filters/nights)
             var fwhms: [Double] = []
