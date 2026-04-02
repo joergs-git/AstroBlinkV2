@@ -63,6 +63,8 @@ struct ImageEntry: Identifiable, Hashable {
     var computedFWHM: Double?       // FWHM measured from image data (pixels)
     var computedStarCount: Int?     // Number of stars measured
     var computedEccentricity: Double?  // Median star eccentricity [0..1] from 2D image moments
+    var psfFluxSum: Double?            // Total estimated PSF flux (for PSFSignalWeight)
+    var psfMeanFlux: Double?           // Mean PSF flux per star (resolution/seeing proxy)
     var focalLength: Double?           // From FOCALLEN header (mm) — for adaptive trailing thresholds
     var pixelSizeMicrons: Double?      // From XPIXSZ header (microns) — for arcsec/pixel computation
     var siteLatitude: Double?          // From SITELAT header — imaging site latitude

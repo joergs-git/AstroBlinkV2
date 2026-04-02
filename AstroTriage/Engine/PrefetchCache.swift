@@ -166,7 +166,8 @@ class PrefetchCache {
                             measuredStarCount: 0, totalStarCount: totalStarCount,
                             medianEccentricity: nil,
                             starDetails: [],
-                            starChainFraction: 0, trailCandidateCount: 0, trailRejectCount: 0
+                            starChainFraction: 0, trailCandidateCount: 0, trailRejectCount: 0,
+                            psfFluxSum: 0, psfMeanFlux: 0
                         )
                     }
                 }
@@ -360,7 +361,8 @@ class PrefetchCache {
                                 measuredStarCount: 0, totalStarCount: totalStarCount,
                                 medianEccentricity: nil,
                                 starDetails: [],
-                                starChainFraction: 0, trailCandidateCount: 0, trailRejectCount: 0
+                                starChainFraction: 0, trailCandidateCount: 0, trailRejectCount: 0,
+                                psfFluxSum: 0, psfMeanFlux: 0
                             )
                         }
                     }

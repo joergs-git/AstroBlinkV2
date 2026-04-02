@@ -27,6 +27,12 @@ struct StarMetrics {
     let trailCandidateCount: Int
     // Number of detections confirmed as trail after axis ratio verification (0 = false positive or no trail).
     let trailRejectCount: Int
+    // PSF Signal Weight components (PixInsight 1.8.9+ compatibility)
+    // psfFluxSum: estimated total PSF flux = Σ(brightness × π × (FWHM/2)²) for measured stars,
+    //   scaled by totalCount/measuredCount to estimate full-image flux
+    // psfMeanFlux: mean PSF flux per star (proxy for resolution/seeing quality)
+    let psfFluxSum: Double
+    let psfMeanFlux: Double
 }
 
 // Result of 2D moment analysis on a single star: eccentricity + position angle + axis ratio
@@ -286,6 +292,25 @@ enum StarMetricsCalculator {
             correctedTotal = rawTotal
         }
 
+        // PSF flux estimation: approximate total flux under each star's PSF
+        // For a Gaussian PSF: flux ≈ peak_brightness × 2π × σ² where σ = FWHM / 2.355
+        // Uses actual peak brightness from DetectedStar + per-star FWHM from measurement
+        var measuredFluxSum: Double = 0
+        var fluxStarCount = 0
+        for (i, star) in toMeasure.enumerated() {
+            let fwhm = perStarFWHM[i] ?? medianFWHM
+            if fwhm > 0 {
+                let sigma = fwhm / 2.355
+                let flux = Double(star.brightness) * 2.0 * Double.pi * sigma * sigma
+                measuredFluxSum += flux
+                fluxStarCount += 1
+            }
+        }
+        // Scale up to full image: measured stars are a subset (center crop + filtering)
+        let scaleFactor = fluxStarCount > 0 ? Double(correctedTotal) / Double(fluxStarCount) : 1.0
+        let totalPsfFlux = measuredFluxSum * scaleFactor
+        let meanPsfFlux = fluxStarCount > 0 ? measuredFluxSum / Double(fluxStarCount) : 0
+
         return StarMetrics(
             medianHFR: medianHFR,
             medianFWHM: medianFWHM,
@@ -295,7 +320,9 @@ enum StarMetricsCalculator {
             starDetails: details,
             starChainFraction: chainFraction,
             trailCandidateCount: trailIndices.count,
-            trailRejectCount: streakRejectCount
+            trailRejectCount: streakRejectCount,
+            psfFluxSum: totalPsfFlux,
+            psfMeanFlux: meanPsfFlux
         )
     }
 

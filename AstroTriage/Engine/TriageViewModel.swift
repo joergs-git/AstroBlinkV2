@@ -1124,6 +1124,8 @@ class TriageViewModel: ObservableObject {
                     if metrics.medianFWHM > 0 { self.images[idx].computedFWHM = metrics.medianFWHM }
                     self.images[idx].computedStarCount = metrics.totalStarCount
                     self.images[idx].computedEccentricity = metrics.medianEccentricity
+                    self.images[idx].psfFluxSum = metrics.psfFluxSum
+                    self.images[idx].psfMeanFlux = metrics.psfMeanFlux
                     self.images[idx].starChainFraction = metrics.starChainFraction
                     if !metrics.starDetails.isEmpty {
                         self.images[idx].starDetails = metrics.starDetails
@@ -1405,6 +1407,8 @@ class TriageViewModel: ObservableObject {
                     if metrics.medianFWHM > 0 { self.images[idx].computedFWHM = metrics.medianFWHM }
                     self.images[idx].computedStarCount = metrics.totalStarCount
                     self.images[idx].computedEccentricity = metrics.medianEccentricity
+                    self.images[idx].psfFluxSum = metrics.psfFluxSum
+                    self.images[idx].psfMeanFlux = metrics.psfMeanFlux
                     self.images[idx].starChainFraction = metrics.starChainFraction
                     if !metrics.starDetails.isEmpty {
                         self.images[idx].starDetails = metrics.starDetails
@@ -2193,7 +2197,7 @@ class TriageViewModel: ObservableObject {
 
         var succeeded = 0
         var failed = 0
-        var csvLines: [String] = ["Filename,SSWEIGHT,QualityTier,TrailingScore,FWHM,HFR,Ecc,SNR,StarCount"]
+        var csvLines: [String] = ["Filename,SSWEIGHT,PSFSWGHT,QualityTier,TrailingScore,FWHM,HFR,Ecc,SNR,StarCount"]
 
         for entry in scoredImages {
             guard let bd = entry.qualityBreakdown else { continue }
@@ -2212,17 +2216,36 @@ class TriageViewModel: ObservableObject {
             let weightStr = String(format: "%.2f", weight)
             let path = entry.decodingURL.path
 
-            // Write to file header
-            let result: WriteResult
+            // Compute PSFSignalWeight: psfFluxSum / (noiseMAD² + ε)
+            // Normalized to ~0-100 range via log scaling for PI compatibility
+            var psfswStr = ""
+            if let flux = entry.psfFluxSum, let mad = entry.noiseMAD, mad > 0 {
+                // PSF Signal Weight: total star flux normalized by noise²
+                // Log scale compresses the dynamic range to a usable weight
+                let rawPSFSW = flux / (Double(mad) * Double(mad) + 1e-10)
+                let psfsw = max(0.0, min(100.0, log10(max(1, rawPSFSW)) * 10.0))
+                psfswStr = String(format: "%.2f", psfsw)
+            }
+
+            // Write SSWEIGHT and PSFSW to file header
+            var writeOK = false
             if entry.isXISF {
-                result = write_xisf_keyword(path, path, "SSWEIGHT", weightStr)
+                let r1 = write_xisf_keyword(path, path, "SSWEIGHT", weightStr)
+                writeOK = r1.success == 1
+                if !psfswStr.isEmpty {
+                    _ = write_xisf_keyword(path, path, "PSFSWGHT", psfswStr)
+                }
             } else if entry.isFITS {
-                result = write_fits_keyword(path, "SSWEIGHT", weightStr)
+                let r1 = write_fits_keyword(path, "SSWEIGHT", weightStr)
+                writeOK = r1.success == 1
+                if !psfswStr.isEmpty {
+                    _ = write_fits_keyword(path, "PSFSWGHT", psfswStr)
+                }
             } else {
                 continue
             }
 
-            if result.success == 1 {
+            if writeOK {
                 succeeded += 1
             } else {
                 failed += 1
@@ -2241,7 +2264,7 @@ class TriageViewModel: ObservableObject {
                 snr = ""
             }
             let stars = entry.displayStarCount.map { "\($0)" } ?? ""
-            csvLines.append("\(entry.filename),\(weightStr),\(tierName),\(ts),\(fwhm),\(hfr),\(ecc),\(snr),\(stars)")
+            csvLines.append("\(entry.filename),\(weightStr),\(psfswStr),\(tierName),\(ts),\(fwhm),\(hfr),\(ecc),\(snr),\(stars)")
         }
 
         // Write CSV backup
