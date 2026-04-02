@@ -770,52 +770,21 @@ AstroBlinkImporterDialog.prototype.launchAstroBlink = function() {
    var url = "astroblink://open?folder=" + encodedPath;
    var shellScript = "/tmp/astroblink_launch.sh";
 
-   Console.writeln("Launching AstroBlink: " + url);
+   // Show folder path for the user to open in AstroBlink
+   var msg = new MessageBox(
+      "Open AstroBlink and load this folder:\n\n" +
+      this.sessionFolder + "\n\n" +
+      "Steps:\n" +
+      "1. Open AstroBlink (Cmd+O or drag folder)\n" +
+      "2. Triage your frames\n" +
+      "3. Export SSWEIGHT\n" +
+      "4. Come back here and click Refresh\n\n" +
+      "The folder path has been copied to the Process Console.",
+      SCRIPT_NAME, StdIcon_Information, StdButton_Ok);
+   msg.execute();
+
+   Console.writeln("<b>Session folder:</b> " + this.sessionFolder);
    Console.flush();
-
-   try {
-      var f = new File;
-      f.createForWriting(shellScript);
-      f.outTextLn("#!/bin/bash");
-      f.outTextLn("open '" + url + "'");
-      f.close();
-
-      // Make executable and run
-      var chmod = new File;
-      chmod.createForWriting("/tmp/astroblink_chmod.sh");
-      chmod.outTextLn("#!/bin/bash");
-      chmod.outTextLn("chmod +x " + shellScript + " && " + shellScript);
-      chmod.close();
-
-      // Try using ExternalProcess if available (PI 1.9+)
-      if (typeof ExternalProcess !== "undefined") {
-         var p = new ExternalProcess;
-         p.start("/bin/bash", [shellScript]);
-         p.waitForFinished(5000);
-      } else {
-         // Fallback: show manual instructions
-         var msg = new MessageBox(
-            "Please open AstroBlink manually and load this folder:\n\n" +
-            this.sessionFolder + "\n\n" +
-            "Or run this in Terminal:\n" +
-            "open '" + url + "'\n\n" +
-            "After triaging, click Refresh to import results.",
-            SCRIPT_NAME, StdIcon_Information, StdButton_Ok);
-         msg.execute();
-      }
-   } catch (e) {
-      // ExternalProcess not available — show manual instructions
-      Console.warningln("Could not launch AstroBlink automatically: " + e.message);
-      var msg = new MessageBox(
-         "Could not launch AstroBlink automatically.\n\n" +
-         "Please open AstroBlink manually and load:\n" +
-         this.sessionFolder + "\n\n" +
-         "Or paste this in Terminal:\n" +
-         "open '" + url + "'\n\n" +
-         "After triaging, click Refresh to import results.",
-         SCRIPT_NAME, StdIcon_Information, StdButton_Ok);
-      msg.execute();
-   }
 
    this.summaryLabel.text = "AstroBlink launched — triage your session, export SSWEIGHT, then click Refresh.";
    this.statsLabel.text = "";

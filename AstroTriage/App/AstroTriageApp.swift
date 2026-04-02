@@ -12,6 +12,14 @@ struct AstroBlinkV2App: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .onOpenURL { url in
+                    guard url.scheme == "astroblink" else { return }
+                    if let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
+                       components.host == "open",
+                       let folderPath = components.queryItems?.first(where: { $0.name == "folder" })?.value {
+                        NotificationCenter.default.post(name: .openFolderAtPath, object: URL(fileURLWithPath: folderPath))
+                    }
+                }
         }
         .windowStyle(.titleBar)
         .defaultSize(width: 1400, height: 900)
@@ -154,15 +162,15 @@ class AstroBlinkV2AppDelegate: NSObject, NSApplicationDelegate {
 
     // Handle astroblink:// URL scheme via Apple Events (most reliable on macOS)
     @objc func handleGetURLEvent(_ event: NSAppleEventDescriptor, withReply reply: NSAppleEventDescriptor) {
-        guard let urlString = event.paramDescriptor(forKeyword: AEKeyword(keyDirectObject))?.stringValue,
-              let url = URL(string: urlString),
+        let urlString = event.paramDescriptor(forKeyword: AEKeyword(keyDirectObject))?.stringValue
+
+        guard let urlString, let url = URL(string: urlString),
               url.scheme == "astroblink" else { return }
 
         if let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
            components.host == "open",
            let folderPath = components.queryItems?.first(where: { $0.name == "folder" })?.value {
             let folderURL = URL(fileURLWithPath: folderPath)
-            // Delay to ensure SwiftUI window is ready (especially on cold launch)
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
                 NotificationCenter.default.post(name: .openFolderAtPath, object: folderURL)
             }
@@ -179,7 +187,7 @@ class AstroBlinkV2AppDelegate: NSObject, NSApplicationDelegate {
     // Show splash screen on launch (unless user opted out)
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Register Apple Event handler for astroblink:// URL scheme
-        // This is the most reliable way on macOS — works on cold launch and reactivation
+        // (works for future use when URL delivery issue is resolved)
         NSAppleEventManager.shared().setEventHandler(
             self,
             andSelector: #selector(handleGetURLEvent(_:withReply:)),
