@@ -82,6 +82,9 @@ struct ImageEntry: Identifiable, Hashable {
     // Star chain detection (tracking hop pattern)
     var starChainFraction: Double?     // Fraction of stars in parallel close-neighbor chains [0..1]
 
+    // User confidence rating: 0 = unrated, 1-3 = star rating (orthogonal to quality scoring)
+    var userConfidence: Int = 0
+
     // File identity hash (SHA256 of first 64KB) — for Frame History Database
     var fileHash: String?
     // Human-readable short ID derived from fileHash (e.g. "A3-2917")

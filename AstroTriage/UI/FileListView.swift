@@ -386,6 +386,11 @@ struct FileListView: NSViewRepresentable {
                 return makeQualityCell(for: entry, in: tableView)
             }
 
+            // User confidence rating: 1-3 star icons
+            if colId == "userConfidence" {
+                return makeConfidenceCell(for: entry, in: tableView)
+            }
+
             // Regular text column
             let value = ColumnDefinition.value(for: colId, from: entry)
             let isMetricCol = Self.barColumns.contains(colId)
@@ -570,6 +575,40 @@ struct FileListView: NSViewRepresentable {
                     lockView.bottomAnchor.constraint(equalTo: cellView.bottomAnchor, constant: -1),
                 ])
             }
+
+            return cellView
+        }
+
+        // User confidence rating cell: 1-3 filled stars in yellow, empty if unrated
+        private func makeConfidenceCell(for entry: ImageEntry, in tableView: NSTableView) -> NSView {
+            let identifier = NSUserInterfaceItemIdentifier("Cell_userConfidence")
+            let cellView: NSTableCellView
+
+            if let reused = tableView.makeView(withIdentifier: identifier, owner: self) as? NSTableCellView {
+                cellView = reused
+            } else {
+                let cell = NSTableCellView()
+                cell.identifier = identifier
+                let label = NSTextField(labelWithString: "")
+                label.translatesAutoresizingMaskIntoConstraints = false
+                label.alignment = .center
+                label.font = .systemFont(ofSize: round(10 * lastFontScale))
+                cell.addSubview(label)
+                cell.textField = label
+                NSLayoutConstraint.activate([
+                    label.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 2),
+                    label.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -2),
+                    label.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
+                ])
+                cellView = cell
+            }
+
+            let conf = entry.userConfidence
+            cellView.textField?.stringValue = conf > 0 ? String(repeating: "★", count: conf) : ""
+            cellView.textField?.textColor = conf > 0 ? .systemYellow : .secondaryLabelColor
+            cellView.toolTip = conf > 0
+                ? "\(conf)-star confidence (press 1/2/3 to change, same key to clear)"
+                : "Unrated (press 1/2/3 to rate)"
 
             return cellView
         }

@@ -130,7 +130,7 @@ final class FrameHistoryDatabaseTests: XCTestCase {
             moonIllumination: moon, moonDistance: moonDist,
             qualityTier: tier, combinedZScore: zScore,
             garbageReasons: nil, isLockedKeep: 0,
-            filterTrailingMultiplier: 1.0, wasDeleted: 0,
+            filterTrailingMultiplier: 1.0, userConfidence: 0, wasDeleted: 0,
             algorithmVersion: 1,
             recordedAt: ISO8601DateFormatter().string(from: Date()),
             width: 9576, height: 6388

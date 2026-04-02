@@ -346,6 +346,7 @@ class TriageViewModel: ObservableObject {
         "foc": "focuserTemp", "foctemp": "focuserTemp", "focusertemp": "focuserTemp",
         "telescope": "telescope", "tel": "telescope",
         "binning": "binning", "bin": "binning",
+        "rating": "userConfidence", "conf": "userConfidence", "confidence": "userConfidence",
     ]
 
     // Check if an image entry matches the current filter criteria.
@@ -1154,6 +1155,10 @@ class TriageViewModel: ObservableObject {
                 guard let self = self else { return }
                 if let idx = self.images.firstIndex(where: { $0.url == url }) {
                     self.images[idx].fileHash = hash
+                    // Restore user confidence rating from Frame History DB
+                    if let record = try? FrameHistoryDatabase.shared.frameRecord(fileHash: hash) {
+                        self.images[idx].userConfidence = record.userConfidence
+                    }
                 }
             }
         )
@@ -1434,6 +1439,10 @@ class TriageViewModel: ObservableObject {
                 guard let self = self else { return }
                 if let idx = self.images.firstIndex(where: { $0.url == url }) {
                     self.images[idx].fileHash = hash
+                    // Restore user confidence rating from Frame History DB
+                    if let record = try? FrameHistoryDatabase.shared.frameRecord(fileHash: hash) {
+                        self.images[idx].userConfidence = record.userConfidence
+                    }
                 }
             }
         )
@@ -3046,6 +3055,43 @@ class TriageViewModel: ObservableObject {
         recomputeSNRRetention()
         updateConvergence()
         statusMessage = "Cleared \(count) marks"
+    }
+
+    // MARK: - User Confidence Rating
+
+    /// Set confidence rating for frames at given row indices. Same value toggles off (clears to 0).
+    func setUserConfidence(_ rating: Int, forRows rows: IndexSet) {
+        guard !rows.isEmpty else {
+            statusMessage = "No frames selected"
+            return
+        }
+
+        var changed = 0
+        var lastRating = 0
+        for idx in rows where idx >= 0 && idx < images.count {
+            let current = images[idx].userConfidence
+            let newVal = (current == rating) ? 0 : rating
+            images[idx].userConfidence = newVal
+            lastRating = newVal
+            changed += 1
+
+            // Persist to Frame History DB if file hash available
+            if let hash = images[idx].fileHash {
+                let conf = newVal
+                Task {
+                    try? FrameHistoryDatabase.shared.updateUserConfidence(
+                        fileHash: hash, confidence: conf)
+                }
+            }
+        }
+
+        needsTableRefresh = true
+        if lastRating == 0 {
+            statusMessage = "Cleared confidence rating for \(changed) frame\(changed == 1 ? "" : "s")"
+        } else {
+            let stars = String(repeating: "★", count: lastRating)
+            statusMessage = "\(stars) confidence set for \(changed) frame\(changed == 1 ? "" : "s")"
+        }
     }
 
     // MARK: - Skip/Hide Marked

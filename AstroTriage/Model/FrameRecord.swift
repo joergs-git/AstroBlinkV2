@@ -86,6 +86,7 @@ struct FrameRecord: Codable, FetchableRecord, PersistableRecord {
     var bortleClass: Double?        // Bortle 1.0-9.0 fractional from BortleEstimator
     var canonicalTarget: String?    // Normalized target name for grouping
 
+    var userConfidence: Int          // 0 = unrated, 1-3 = star rating
     var wasDeleted: Int             // 0 or 1
 
     // Meta
@@ -182,6 +183,7 @@ extension FrameRecord {
             filterTrailingMultiplier: entry.qualityBreakdown?.filterTrailingMultiplier,
             bortleClass: entry.bortleClass,
             canonicalTarget: entry.canonicalTarget,
+            userConfidence: entry.userConfidence,
             wasDeleted: entry.isMarkedForDeletion ? 1 : 0,
             algorithmVersion: kAlgorithmVersion,
             recordedAt: iso.string(from: Date()),

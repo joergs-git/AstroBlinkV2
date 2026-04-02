@@ -237,6 +237,11 @@ final class FrameHistoryDatabase {
             try db.execute(sql: "ALTER TABLE frame_record ADD COLUMN psfFlux DOUBLE")
         }
 
+        // v7: Add userConfidence column for user confidence ratings (1-3 stars)
+        migrator.registerMigration("v7_user_confidence") { db in
+            try db.execute(sql: "ALTER TABLE frame_record ADD COLUMN userConfidence INTEGER NOT NULL DEFAULT 0")
+        }
+
         try migrator.migrate(db)
     }
 
@@ -255,6 +260,15 @@ final class FrameHistoryDatabase {
     func saveSessionRecord(_ session: SessionRecord) throws {
         try dbQueue.write { db in
             try session.save(db)
+        }
+    }
+
+    /// Update user confidence rating for a frame by file hash.
+    func updateUserConfidence(fileHash: String, confidence: Int) throws {
+        try dbQueue.write { db in
+            try db.execute(
+                sql: "UPDATE frame_record SET userConfidence = ? WHERE fileHash = ?",
+                arguments: [confidence, fileHash])
         }
     }
 
@@ -282,6 +296,13 @@ final class FrameHistoryDatabase {
     }
 
     // MARK: - Read API
+
+    /// Fetch a single frame record by file hash.
+    func frameRecord(fileHash: String) throws -> FrameRecord? {
+        try dbQueue.read { db in
+            try FrameRecord.fetchOne(db, key: fileHash)
+        }
+    }
 
     /// Historical frames for a setup, optionally filtered by filter/exposure.
     /// Excludes the current session to avoid self-comparison.

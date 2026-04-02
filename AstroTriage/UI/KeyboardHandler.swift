@@ -181,6 +181,34 @@ struct KeyboardHandler {
             return true
         }
 
+        // 1/2/3: Set user confidence rating (1-3 stars). Same key again toggles off.
+        if modifiers.isEmpty, chars == "1" || chars == "2" || chars == "3" {
+            let rating = Int(String(chars.first!))!
+            Task { @MainActor in
+                if let tableView = findTableView() {
+                    let selectedRows = tableView.selectedRowIndexes
+                    guard !selectedRows.isEmpty else { return }
+                    // Map visible rows to real indices when filtering is active
+                    let isFiltered = viewModel.hideMarked || viewModel.showOnlyMarked || !viewModel.filterText.isEmpty
+                    if isFiltered {
+                        let visible = viewModel.visibleImages
+                        var realIndices = IndexSet()
+                        for row in selectedRows where row < visible.count {
+                            if let realIdx = viewModel.images.firstIndex(where: { $0.url == visible[row].url }) {
+                                realIndices.insert(realIdx)
+                            }
+                        }
+                        viewModel.setUserConfidence(rating, forRows: realIndices)
+                    } else {
+                        viewModel.setUserConfidence(rating, forRows: selectedRows)
+                    }
+                } else {
+                    viewModel.setUserConfidence(rating, forRows: IndexSet(integer: viewModel.selectedIndex))
+                }
+            }
+            return true
+        }
+
         // S: Toggle Lock STF (freeze exact stretch params from current image)
         if modifiers.isEmpty, chars == "s" {
             Task { @MainActor in viewModel.toggleLockSTF() }

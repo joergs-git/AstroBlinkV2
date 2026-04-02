@@ -292,6 +292,9 @@ struct FrameHistoryContentView: View {
                 }
                 .chartYScale(domain: 0...100)
                 .chartYAxisLabel("Score (0-100)")
+                .chartScrollableAxes(.horizontal)
+                .chartXVisibleDomain(length: Self.scrollVisibleDomain)
+                .chartScrollPosition(initialX: scores.last?.date.addingTimeInterval(-Self.scrollVisibleDomain) ?? Date())
                 .chartPlotStyle { plot in plot.background(chartBg).clipped() }
                 .chartOverlay { proxy in chartHoverTracker(proxy: proxy) }
                 .frame(minHeight: 300)
@@ -377,6 +380,9 @@ struct FrameHistoryContentView: View {
                 }
                 .chartYScale(domain: 0...100)
                 .chartYAxisLabel("Frames Kept %")
+                .chartScrollableAxes(.horizontal)
+                .chartXVisibleDomain(length: Self.scrollVisibleDomain)
+                .chartScrollPosition(initialX: data.last?.date.addingTimeInterval(-Self.scrollVisibleDomain) ?? Date())
                 .chartPlotStyle { plot in plot.background(chartBg).clipped() }
                 .chartOverlay { proxy in chartHoverTracker(proxy: proxy) }
                 .frame(minHeight: 300)
@@ -512,6 +518,9 @@ struct FrameHistoryContentView: View {
                 }
                 .chartYAxisLabel("FWHM (px)")
                 .modifier(PercentileYScale(values: data.map(\.rawFWHM)))
+                .chartScrollableAxes(.horizontal)
+                .chartXVisibleDomain(length: Self.scrollVisibleDomain)
+                .chartScrollPosition(initialX: data.last?.date.addingTimeInterval(-Self.scrollVisibleDomain) ?? Date())
                 .chartPlotStyle { plot in plot.background(chartBg).clipped() }
                 .chartOverlay { proxy in chartHoverTracker(proxy: proxy) }
                 .frame(minHeight: 300)
@@ -1133,6 +1142,12 @@ struct FrameHistoryContentView: View {
         if point.total < 10 { causes.append("very few frames") }
         return causes
     }
+
+    // MARK: - Chart Scroll/Zoom Helpers
+
+    /// Visible window for scrollable date-axis charts (90 days in seconds).
+    /// Charts with date > 90 days can be scrolled horizontally to see older data.
+    private static let scrollVisibleDomain: TimeInterval = 90 * 24 * 3600
 
     // MARK: - Chart Hover Tooltip Helpers
 
