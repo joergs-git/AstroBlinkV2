@@ -34,6 +34,16 @@ class ReleaseNotesWindowController {
 // MARK: - Release notes data (shared between view and copy)
 
 private let allReleases: [(version: String, date: String, items: [(ReleaseNotesView.ChangeType, String, String)])] = [
+    ("5.11.0", "April 2, 2026", [
+        (.added, "GPU PSF Fitting", "Metal compute kernel fits circular Gaussian PSF model per star using Gauss-Newton optimization. Replaces CPU linearized FWHM with proper nonlinear fit — gives accurate amplitude, sigma, and flux."),
+        (.added, "PSFSignalWeight Export", "PixInsight 1.8.9+ compatible PSFSWGHT keyword written alongside SSWEIGHT. More robust than SNRWeight — PSF flux inherently rejects hot pixels and satellites."),
+        (.added, "PSF Flux Column", "New hideable column showing total PSF signal per frame. Higher = more useful star signal. Enable via column picker."),
+        (.added, "Dome/Dark Frame Detection", "Closed dome images now reliably detected by star count + background level. Hot pixel clusters no longer fool the detector even when they produce valid HFR."),
+        (.added, "Batch Delete Keyword", "New 'Delete Key' scope in Batch Rename removes any FITS/XISF header keyword entirely. Use for SSWEIGHT removal."),
+        (.added, "Filter Search Aliases", "filter:Ha now matches H, H2, HII, H-alpha and all other canonical aliases."),
+        (.fixed, "Session Sanity False Positives", "Single-night multi-filter sessions no longer false-trash frames when filters have different FWHM characteristics."),
+        (.fixed, "Batch Header Editing", "Case-insensitive matching, null pointer crash fix, selected-files-only safety."),
+    ]),
     ("5.10.3", "April 2, 2026", [
         (.fixed, "Trailing False Positives on Long FL", "Trailing garbage rules now require the frame to be a trailing outlier (z > 1σ) within its group. Fixes mass false positives on RC12/long FL where normal optical eccentricity triggered trailing detection."),
     ]),

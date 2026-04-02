@@ -4,6 +4,29 @@ All notable changes to AstroBlink & AIsaac will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [5.11.0] — 2026-04-02
+
+### Added
+- **GPU PSF Fitting** — Metal compute kernel (`psf_fit_gaussian`) replaces CPU linearized Gaussian FWHM estimation. Gauss-Newton optimization with Levenberg-Marquardt damping, 8 iterations on 11×11 stamps, 3 free parameters (Amplitude, Sigma, Background). Proper fitted amplitude enables accurate PSF flux computation
+- **PSFSignalWeight (PSFSWGHT)** — PixInsight 1.8.9+ compatible weight keyword written alongside SSWEIGHT during export. Computed as `log10(psfFluxSum / noiseMAD²) × 10`. More robust than SNRWeight — PSF-based flux inherently rejects non-PSF sources (hot pixels, satellites)
+- **PSF Flux Column** — New hideable column showing total PSF signal per frame (formatted as K/M suffixes). Higher = more total star signal = better. Searchable via `psf:>500000`
+- **PSF Flux in Quality Scoring** — PSF flux z-score replaces star count in Stage 2 combinedZ when available. Captures both star count AND brightness — immune to hot pixel inflation
+- **Dome/Dark Frame Detection (Rule 0b)** — Detects closed dome images by star count ≥10000 (absolute ceiling after 16σ auto-escalation) or ≥5000 + near-zero background (<0.003). Dark frames excluded from group statistics to prevent contamination
+- **SSWEIGHT on Selection** — Export operates on highlighted files if any selected, all scored files otherwise
+- **Batch Delete Keyword** — New "Delete Key" scope in Batch Rename removes FITS/XISF header keywords entirely (e.g. SSWEIGHT). C bridge: `delete_fits_keyword` / `delete_xisf_keyword`
+- **Filter Search Aliases** — `filter:Ha` now matches H, H2, HII, H-alpha via `canonicalFilterName()` resolution. Fallback raw contains for non-canonical names
+
+### Fixed
+- **Session Sanity Multi-Night Guard** — Stage 1.5 now requires ≥2 distinct nights. Single-night multi-filter sessions (NGC7000 H+O) no longer false-trash Ha frames when OIII has lower FWHM
+- **Batch Header Case-Insensitive** — Header value replacement uses case-insensitive matching (FILTER "H" matches search "h")
+- **Batch Header Crash** — Fixed null pointer crash in `String(cString:)` when reading headers via safe pointer rebinding
+- **Batch Rename Selected-Only** — Operations now require files to be highlighted first for safety
+- **Dark Frame Group Statistics** — Dome frames excluded from median/z-score computation, preventing real frames from appearing as outliers
+
+### Changed
+- Algorithm version bumped to 12 (from 11). Dark frame detection + PSF flux scoring
+- SSWEIGHT toolbar button simplified (single Export, removal via Batch Rename Delete Key)
+
 ## [5.10.3] — 2026-04-02
 
 ### Fixed

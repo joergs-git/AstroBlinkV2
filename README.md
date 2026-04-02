@@ -48,7 +48,8 @@ AIsaac knows your equipment, remembers your imaging history, understands light p
 - **Compare with Best (C key)** — side-by-side synchronized zoom/pan with star eccentricity overlay and PA direction arrows.
 - **Culling Autopilot** — one-click auto-marking (Conservative/Balanced/Aggressive) with integration impact preview. Convergence guard warns when quality spread is too tight for further culling. Session Spread stats show per-metric distribution.
 - **Blink Playback** — play/stop button with adjustable delay (0.1–2s) cycles through visible images endlessly. Respects filters and hide-marked. ESC to stop.
-- **SSWEIGHT Export** — writes PixInsight-compatible weight keywords into FITS/XISF headers for WBPP.
+- **SSWEIGHT & PSFSignalWeight Export** — writes PixInsight-compatible SSWEIGHT and PSFSWGHT keywords into FITS/XISF headers. GPU PSF fitting (Metal Gauss-Newton) for accurate flux. Batch keyword deletion via Batch Rename.
+- **GPU PSF Fitting** — Metal compute kernel fits circular Gaussian PSF model per star. Proper fitted amplitude replaces peak pixel for accurate flux and FWHM measurement.
 - **Native FITS/XISF QuickLook** — Finder thumbnails and spacebar previews with debayer support for color cameras.
 - **Bortle Sky Quality (VIIRS 2024)** — real satellite-measured light pollution for every frame. Fractional Bortle (e.g. B4.8) from NOAA VIIRS 2024 annual composite via Supabase lookup. Computed from SITELAT/SITELONG FITS headers. Offline fallback via embedded Falchi 2015 atlas.
 - **Frame History Database** — persistent SQLite tracking all per-frame quality metrics across sessions. Cross-session scoring, global frame IDs, iCloud backup, archive NAS scanning.

@@ -648,11 +648,27 @@ struct AIsaacContextBuilder {
         - Files are NEVER permanently deleted by the app. User can empty _predel/ manually or via Finder Trash.
         - K key: toggle skip-marked during arrow navigation. H key: cycle hide marked / show only marked / show all.
 
-        SSWEIGHT EXPORT:
-        - File menu → Export SSWEIGHT. Writes quality weight (0-100) to each FITS/XISF file header.
-        - Formula: (50 + z-score × 20) × trailing penalty. Filter-aware trailing multiplier applied.
-        - Locked KEEP frames get minimum weight 50. CSV backup created in session root.
-        - PixInsight WBPP reads SSWEIGHT automatically for weighted integration — better frames get more influence.
+        SSWEIGHT & PSFSignalWeight EXPORT:
+        - Toolbar → SSWEIGHT Export. Writes to highlighted files (or all if none selected).
+        - SSWEIGHT formula: (50 + z-score × 20) × trailing penalty. Filter-aware multiplier.
+        - PSFSWGHT: PixInsight 1.8.9+ compatible PSF Signal Weight. Uses GPU-fitted PSF flux: \
+        log10(psfFluxSum / noiseMAD²) × 10. More robust than SNRWeight — rejects hot pixels/satellites.
+        - Both keywords written to FITS/XISF headers. CSV backup with both values.
+        - Locked KEEP frames get minimum SSWEIGHT 50.
+        - Remove keywords: Batch Rename (Cmd+Shift+R) → scope "Delete Key" → keyword "SSWEIGHT" or "PSFSWGHT".
+        - PixInsight WBPP reads SSWEIGHT/PSFSWGHT automatically for weighted integration.
+
+        GPU PSF FITTING:
+        - Metal compute kernel fits circular Gaussian PSF per star: I(r) = A·exp(-r²/2σ²) + B.
+        - Gauss-Newton with LM damping, 8 iterations on 11×11 stamps, 3 free params (A, σ, B).
+        - Replaces CPU linearized Gaussian: proper fitted amplitude → accurate flux (2πAσ²).
+        - PSF Flux column (enable via column picker): total star signal per frame. Higher = better.
+        - PSF flux z-score replaces star count in quality scoring when available.
+
+        DOME/DARK FRAME DETECTION:
+        - Rule 0b: stars ≥10000 (absolute ceiling after auto-escalation) or ≥5000 + background <0.003.
+        - Hot pixel clusters can produce valid HFR — detection uses count + background, not HFR.
+        - Dark frames excluded from group statistics to prevent contaminating real frame scores.
 
         COLOR COMBINE (mono cameras only):
         - Stack menu → Color Combine. Requires multiple filters (e.g., Ha + OIII + SII).

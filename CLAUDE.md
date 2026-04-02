@@ -307,12 +307,30 @@ PrefetchCache:
 - Blue lock badge on quality column icons
 - `isLockedKeep` field on QualityBreakdown
 
-### SSWEIGHT Export
-- Weight formula: `clamp(0, 100, 50 + qualityZScore*20) * (1 - trailingScore*0.5*filterTrailingMult)`
+### SSWEIGHT & PSFSignalWeight Export
+- SSWEIGHT formula: `clamp(0, 100, 50 + qualityZScore*20) * (1 - trailingScore*0.5*filterTrailingMult)`
+- PSFSWGHT formula: `clamp(0, 100, log10(psfFluxSum / noiseMAD²) × 10)` — PixInsight 1.8.9+ compatible
 - filterTrailingMult: 0.3 (narrowband), 0.6 (RGB), 1.0 (luminance), 0.7 (unknown)
-- Locked KEEP frames get minimum weight of 50
+- Locked KEEP frames get minimum SSWEIGHT of 50
 - Writes via `write_fits_keyword` / `write_xisf_keyword` (C bridge)
-- CSV backup: `AstroBlinkV2_SSWEIGHT.csv` in session root
+- Deletion via `delete_fits_keyword` / `delete_xisf_keyword` (C bridge, Batch Rename "Delete Key" scope)
+- CSV backup: `AstroBlinkV2_SSWEIGHT.csv` in session root (includes both SSWEIGHT and PSFSWGHT)
+- Export operates on highlighted files (or all scored if none selected)
+
+### GPU PSF Fitting (v5.11.0)
+- Metal compute kernel `psf_fit_gaussian` in Shaders.metal
+- Circular Gaussian: I(r) = A·exp(-r²/2σ²) + B, 3 free params
+- Gauss-Newton with Levenberg-Marquardt damping, 8 iterations, 11×11 stamps
+- Replaces CPU linearized Gaussian FWHM when GPU available
+- Fitted amplitude A → accurate PSF flux = 2πAσ²
+- PSF flux z-score replaces star count in Stage 2 combinedZ (fallback to stars when nil)
+- PSF Flux column in file list (hideable, formatted as K/M suffixes)
+
+### Dome/Dark Frame Detection (v5.11.0)
+- Rule 0b: stars ≥ 10000 (absolute ceiling) or stars ≥ 5000 + noiseMedian < 0.003
+- Dark frames excluded from group statistics (medians, z-scores) in pre-pass
+- Stage 1 garbage excluded from session sanity P10/P90 benchmarks
+- Session sanity requires ≥2 distinct nights (single-night multi-filter is optics, not bad night)
 
 ### Key Files
 - `AstroTriage/Engine/CalibrationDatabase.swift` — Persistence, Welford, fingerprinting
