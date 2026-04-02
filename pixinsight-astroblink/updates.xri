@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xri version="1.0">
+   <description>
+      <p>
+         AstroBlink Importer for PixInsight
+      </p>
+      <p>
+         Import AstroBlink triage results (SSWEIGHT, quality tiers, PSF metrics)
+         into PixInsight for use with WeightedBatchPreProcessing (WBPP).
+      </p>
+      <p>
+         AstroBlink: <a href="https://github.com/joergs-git/AstroBlinkV2">https://github.com/joergs-git/AstroBlinkV2</a>
+      </p>
+   </description>
+   <platform os="all" arch="noarch" version="1.8.9:1.9.9">
+      <package fileName="AstroBlinkImporter-1.1.0.zip"
+               sha1="9b9be54ea96d648aa02d0a4343b2a1edc1b91035"
+               type="script"
+               releaseDate="20260402">
+         <title>
+            AstroBlink Importer v1.1.0
+         </title>
+         <description>
+            <p>Import AstroBlink triage results and SSWEIGHT values into PixInsight.</p>
+            <p><b>Features:</b></p>
+            <ul>
+               <li>Import AstroBlinkV2_SSWEIGHT.csv from session folders</li>
+               <li>Color-coded quality tier display (Excellent/Good/Borderline/Trash)</li>
+               <li>Sortable table (SSWEIGHT, Quality, FWHM, Stars, SNR)</li>
+               <li>Write SSWEIGHT/PSFSWGHT keywords into FITS/XISF headers</li>
+               <li>Ready for WBPP weighted integration</li>
+            </ul>
+            <p><b>v1.1.0:</b> Fixed CSV column mapping, added color-coded tiers,
+               sort controls, SNR/Trailing columns, subfolder search.</p>
+         </description>
+      </package>
+   </platform>
+</xri>
