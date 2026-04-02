@@ -339,6 +339,7 @@ class TriageViewModel: ObservableObject {
         "exp": "exposure", "exposure": "exposure",
         "fwhm": "fwhm", "hfr": "hfr",
         "stars": "starCount", "starcount": "starCount",
+        "psf": "psfFlux", "flux": "psfFlux", "psfflux": "psfFlux",
         "temp": "sensorTemp", "sensortemp": "sensorTemp",
         "gain": "gain", "offset": "offset",
         "amb": "ambientTemp", "ambtemp": "ambientTemp", "ambienttemp": "ambientTemp",

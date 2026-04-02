@@ -25,6 +25,7 @@ struct ColumnDefinition {
         ColumnDefinition(identifier: "quality",     title: "Q",         defaultWidth: 28,  minWidth: 28,  isDefaultVisible: true,  isHideable: true),
         ColumnDefinition(identifier: "snrContrib",  title: "Contrib",  defaultWidth: 55,  minWidth: 40,  isDefaultVisible: true,  isHideable: true),
         ColumnDefinition(identifier: "starCount",   title: "Stars",     defaultWidth: 55,  minWidth: 40,  isDefaultVisible: true,  isHideable: true),
+        ColumnDefinition(identifier: "psfFlux",     title: "PSF Flux",  defaultWidth: 65,  minWidth: 45,  isDefaultVisible: false, isHideable: true),
         ColumnDefinition(identifier: "fwhm",        title: "FWHM",      defaultWidth: 55,  minWidth: 40,  isDefaultVisible: true,  isHideable: true),
         ColumnDefinition(identifier: "hfr",         title: "HFR",       defaultWidth: 50,  minWidth: 40,  isDefaultVisible: true,  isHideable: true),
         ColumnDefinition(identifier: "snr",         title: "SNR",       defaultWidth: 50,  minWidth: 40,  isDefaultVisible: true,  isHideable: true),
@@ -115,6 +116,11 @@ struct ColumnDefinition {
         case "exposure":    return entry.exposure.map { formatExposure($0) } ?? ""
         case "hfr":         return entry.displayHFR.map { String(format: "%.2f", $0) } ?? ""
         case "starCount":   return entry.displayStarCount.map { String($0) } ?? ""
+        case "psfFlux":
+            guard let flux = entry.psfFluxSum else { return "" }
+            if flux >= 1_000_000 { return String(format: "%.1fM", flux / 1_000_000) }
+            if flux >= 1_000 { return String(format: "%.1fK", flux / 1_000) }
+            return String(format: "%.0f", flux)
         case "sensorTemp":  return entry.sensorTemp.map { String(format: "%.1f", $0) } ?? ""
         case "fwhm":        return entry.displayFWHM.map { String(format: "%.2f", $0) } ?? ""
         case "gain":        return entry.gain.map { String($0) } ?? ""
@@ -155,6 +161,7 @@ struct ColumnDefinition {
         case "exposure":    return entry.exposure
         case "hfr":         return entry.displayHFR
         case "starCount":   return entry.displayStarCount.map { Double($0) }
+        case "psfFlux":     return entry.psfFluxSum
         case "sensorTemp":  return entry.sensorTemp
         case "fwhm":        return entry.displayFWHM
         case "gain":        return entry.gain.map { Double($0) }
@@ -198,7 +205,7 @@ struct ColumnDefinition {
     // Returns true if this column has numeric values (used for header click sort indicator)
     static func isNumericColumn(_ columnId: String) -> Bool {
         switch columnId {
-        case "frameNumber", "exposure", "hfr", "starCount", "sensorTemp",
+        case "frameNumber", "exposure", "hfr", "starCount", "psfFlux", "sensorTemp",
              "fwhm", "gain", "offset", "focuserTemp", "ambientTemp", "fileSize", "snr", "quality", "snrContrib", "eccentricity",
              "moonPhase", "moonDist":
             return true
