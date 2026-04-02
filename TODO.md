@@ -109,6 +109,15 @@ All original implementation phases are complete:
 - [ ] Could be per-file (context menu) or batch (whole session)
 - [ ] Must also handle the CSV backup file (`AstroBlinkV2_SSWEIGHT.csv`)
 
+### False Positive Reporting
+- [ ] Right-click → "Report Wrong Detection" on any garbage/trash frame
+- [ ] Upload to Supabase: full QualityBreakdown (z-scores, garbage reasons, tier), setup fingerprint, filter, exposure, FL, pixel size, all metrics, algorithm version
+- [ ] Include 512px JPEG thumbnail (STF-stretched preview, downscaled, ~50-100KB) for visual verification
+- [ ] Anonymous — setup fingerprint is already anonymized SHA256, no filenames/paths
+- [ ] Dashboard/admin view to analyze reports: which rules produce most false positives, per-setup patterns
+- [ ] Feeds into Community Detection Phase 2 (agreement learning) and future ML training data
+- [ ] Could also allow reporting false negatives (good frames that should have been flagged)
+
 ### ~~Benchmark Sharing~~ ✓ (shipped)
 - [x] Upload/compare stack benchmarks via Supabase
 - [x] Community leaderboard for stacking performance

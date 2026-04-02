@@ -12,6 +12,43 @@ Records with `algorithmVersion < kAlgorithmVersion` are candidates for re-analys
 
 ---
 
+## Version 12 — v5.10.4 (2026-04-02)
+
+**Dark frame / dome closed detection fix.**
+
+### Problem
+Closed dome images (dark frames labeled as LIGHT) showed 17,000-18,000 "stars" from hot
+pixel detections but were NOT flagged as garbage. Previous Rule 0b required HFR == nil/0,
+but hot pixel clusters on sensors with amp glow can produce valid HFR measurements (1-3px),
+bypassing the check. Affected frames had no quality icon (blank Q column) and were not
+auto-marked, mixing garbage dome frames into keep stacks.
+
+### Root Cause
+1. Hot pixels are genuine outliers in read noise distribution — survive even 16σ auto-escalation
+2. Some hot pixel clusters (warm columns, amp glow regions) create 2-3px structures with
+   measurable HFR, defeating the "no valid HFR = noise" assumption
+3. No rule checked background level (noiseMedian) — the definitive signal for dark frames
+4. Dome frames have LOW FWHM (~3px vs real ~5px) and HIGH star counts, so Rule R7
+   (star count anomaly) didn't fire either (requires elevated FWHM)
+
+### Change
+Rule 0b now uses two independent detection paths instead of relying on HFR:
+- **Path A**: Stars ≥ 10,000 → absolute ceiling. After PreviewGenerator's 16σ auto-escalation,
+  no real star field retains this many detections (even dense Milky Way fields reduce to < 5,000)
+- **Path B**: Stars ≥ 3,000 AND noiseMedian < 0.005 → dark frame. Real sky frames always have
+  measurable background (> 328 ADU / 0.005 normalized) from sky glow and sensor offset
+
+### Files modified
+- `QualityEstimator.swift` — Rule 0b rewritten (HFR dependency removed)
+- `FrameRecord.swift` — kAlgorithmVersion 11 → 12
+
+### Expected impact
+- Dark/dome frames with hot pixel HFR correctly flagged as garbage (`.noisePeaks`)
+- Real star fields unaffected (count < 10,000 after escalation; background > 0.005)
+- Dense fields (globular clusters, Milky Way): count < 5,000 after 16σ, background > 0.005
+
+---
+
 ## Version 11 — v5.10.3 (2026-04-02)
 
 **Trailing outlier guard for long focal length telescopes.**

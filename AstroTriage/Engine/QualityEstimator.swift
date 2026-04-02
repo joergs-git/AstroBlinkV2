@@ -26,6 +26,7 @@ enum GarbageReason: String, Hashable {
     case backgroundAnomaly = "abnormal background (clouds/gradient)"
     case trackingHop       = "tracking hops (star chains)"
     case starCountDrop     = "atmospheric attenuation (cloud/dew/fog)"
+    case noisePeaks        = "noise peaks, not real stars (dome/cap)"
     case twilightExposure  = "captured during twilight/daylight"
 }
 
@@ -320,14 +321,52 @@ struct QualityEstimator {
                 return Double(med / mad)
             }
 
-            // SNR contribution: find best SNR in group for relative scoring
-            let validSNRs = snrValues.compactMap { $0 }
+            // ── Pre-pass: identify dark frames that would contaminate group statistics ──
+            // Dark frames (dome closed, lens cap) have 10000+ hot pixel "stars", near-zero
+            // background, and extreme metric values. If they outnumber real frames in a group,
+            // they BECOME the group median, making every real frame look like an outlier.
+            // Detect them early and null out their metrics so they don't skew statistics.
+            var darkFrameIndices: Set<Int> = []
+            for (i, entry) in groupEntries.enumerated() {
+                if let stars = starsValues[i] {
+                    if stars >= 10000 {
+                        darkFrameIndices.insert(i)
+                    } else if stars >= 3000, let bgLevel = entry.noiseMedian, bgLevel < 0.005 {
+                        darkFrameIndices.insert(i)
+                    }
+                }
+            }
+
+            // Create cleaned metric arrays with dark frames nulled out
+            let cleanStarsValues: [Double?] = starsValues.enumerated().map {
+                darkFrameIndices.contains($0.offset) ? nil : $0.element
+            }
+            let cleanFwhmValues: [Double?] = fwhmValues.enumerated().map {
+                darkFrameIndices.contains($0.offset) ? nil : $0.element
+            }
+            let cleanHfrValues: [Double?] = hfrValues.enumerated().map {
+                darkFrameIndices.contains($0.offset) ? nil : $0.element
+            }
+            let cleanSnrValues: [Double?] = snrValues.enumerated().map {
+                darkFrameIndices.contains($0.offset) ? nil : $0.element
+            }
+            let noiseMadValues: [Double?] = groupEntries.map { $0.noiseMAD.map { Double($0) } }
+            let cleanNoiseMadValues: [Double?] = noiseMadValues.enumerated().map {
+                darkFrameIndices.contains($0.offset) ? nil : $0.element
+            }
+            let trailingValues: [Double?] = groupEntries.map { $0.trailingScore }
+            let cleanTrailingValues: [Double?] = trailingValues.enumerated().map {
+                darkFrameIndices.contains($0.offset) ? nil : $0.element
+            }
+
+            // SNR contribution: find best SNR in group (excluding dark frames)
+            let validSNRs = cleanSnrValues.compactMap { $0 }
             let snrBest = validSNRs.max() ?? 0
 
             // Detect bimodal/unreliable star counts: if coefficient of variation > 1.0,
             // star counts span orders of magnitude — likely galaxy/nebula contamination
             // making the GPU detector threshold-sensitive. Ignore star count for scoring.
-            let validStarCounts = starsValues.compactMap { $0 }
+            let validStarCounts = cleanStarsValues.compactMap { $0 }
             if validStarCounts.count >= 2 {
                 let scMean = validStarCounts.reduce(0, +) / Double(validStarCounts.count)
                 if scMean > 0 {
@@ -338,15 +377,18 @@ struct QualityEstimator {
                 }
             }
 
-            // Compute group statistics for absolute garbage detection
-            let starsMedian = sortedMedian(starsValues)
-            let snrMedian = sortedMedian(snrValues)
-            let fwhmMedian = sortedMedian(fwhmValues)
-            let hfrMedian = sortedMedian(hfrValues)
+            // Compute group statistics excluding dark frames
+            let starsMedian = sortedMedian(cleanStarsValues)
+            let snrMedian = sortedMedian(cleanSnrValues)
+            let fwhmMedian = sortedMedian(cleanFwhmValues)
+            let hfrMedian = sortedMedian(cleanHfrValues)
             // Background level: detect clouds/gradient via anomalous background median
             let bgValues: [Double?] = groupEntries.map { $0.noiseMedian.map { Double($0) } }
-            let bgMedian = sortedMedian(bgValues)
-            let bgMAD = medianAbsoluteDeviation(bgValues, median: bgMedian)
+            let cleanBgValues: [Double?] = bgValues.enumerated().map {
+                darkFrameIndices.contains($0.offset) ? nil : $0.element
+            }
+            let bgMedian = sortedMedian(cleanBgValues)
+            let bgMAD = medianAbsoluteDeviation(cleanBgValues, median: bgMedian)
 
             // Plate-solved center coordinates for pointing offset detection
             // Compute group median RA/Dec and FOV (degrees) for decentered-target check
@@ -364,13 +406,13 @@ struct QualityEstimator {
                 return (sensorWidthMM / fl) * (180.0 / .pi)  // radians → degrees
             }()
 
-            // Z-scores for relative scoring
-            let fwhmZscores  = zscores(values: fwhmValues)
-            let hfrZscores   = zscores(values: hfrValues)
-            let starsZscores = zscores(values: starsValues)
-            let noiseMadZscores = zscores(values: groupEntries.map { $0.noiseMAD.map { Double($0) } })
+            // Z-scores for relative scoring (computed from clean data)
+            let fwhmZscores  = zscores(values: cleanFwhmValues)
+            let hfrZscores   = zscores(values: cleanHfrValues)
+            let starsZscores = zscores(values: cleanStarsValues)
+            let noiseMadZscores = zscores(values: cleanNoiseMadValues)
             // Use trailing score (consensus-weighted, FL-adaptive) instead of raw eccentricity
-            let trailingZscores = zscores(values: groupEntries.map { $0.trailingScore })
+            let trailingZscores = zscores(values: cleanTrailingValues)
 
             for (localIdx, globalIdx) in indices.enumerated() {
                 let entry = entries[globalIdx]
@@ -408,6 +450,25 @@ struct QualityEstimator {
                 let hasNoNoise = (entry.noiseMAD ?? 0) == 0
                 if hasBeenMeasured && hasNoStars && hasNoNoise {
                     garbageReasons.append(.noData)
+                }
+
+                // Rule 0b: Dark frame / dome closed / lens cap detection.
+                // Dark frames have near-zero sky background but hot pixels create thousands
+                // of false star detections that survive even 16σ auto-escalation.
+                // Hot pixel clusters can produce valid HFR/FWHM measurements, so we can NOT
+                // rely on HFR being nil — instead check star count + background level.
+                // Detection paths:
+                // (a) Stars ≥ 10000: physically impossible for real stars after 16σ escalation
+                //     in PreviewGenerator. Even dense Milky Way fields reduce to < 5000.
+                // (b) Stars ≥ 3000 AND very low background (< 0.005): no real sky frame has
+                //     this little signal — even faintest narrowband dark-site exposures show
+                //     background > 0.005 (328 ADU) from sky glow and sensor offset.
+                if let stars = starsValues[localIdx] {
+                    if stars >= 10000 {
+                        garbageReasons.append(.noisePeaks)
+                    } else if stars >= 3000, let bgLevel = entry.noiseMedian, bgLevel < 0.005 {
+                        garbageReasons.append(.noisePeaks)
+                    }
                 }
 
                 // Rule 1: No stars or near-zero stars → garbage
@@ -966,6 +1027,10 @@ struct QualityEstimator {
 
             for i in indices {
                 let e = entries[i]
+                // Skip Stage 1 garbage from benchmark computation — dome/dark frames
+                // would contaminate session benchmarks with unrealistic metrics
+                // (17000 hot pixel "stars", FWHM 3, SNR 113)
+                if let bd = result[e.url], !bd.garbageReasons.isEmpty { continue }
                 if let v = e.computedFWHM ?? e.fwhm { fwhms.append(v) }
                 if let med = e.noiseMedian, let mad = e.noiseMAD, mad > 0 {
                     snrs.append(Double(med / mad))
