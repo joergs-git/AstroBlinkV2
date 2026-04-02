@@ -159,7 +159,8 @@ class PrefetchCache {
                     if !stars.isEmpty {
                         let metrics = StarMetricsCalculator.measure(
                             stars: stars, fullResImage: imageForSTF, channel: channel,
-                            totalStarCount: totalStarCount
+                            totalStarCount: totalStarCount,
+                            generator: generator
                         )
                         starMetricsResult = metrics ?? StarMetrics(
                             medianHFR: 0, medianFWHM: 0,

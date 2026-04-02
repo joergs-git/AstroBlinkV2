@@ -1233,3 +1233,151 @@ kernel void wiener_sharpen(
         output[offset + idx] = max(0.0, orig + params.strength * 0.7 * regularized);
     }
 }
+
+// ============================================================================
+// PSF Fitting — Circular Gaussian, Gauss-Newton optimization
+// One thread per star. Fits I(x,y) = A * exp(-r²/(2σ²)) + B on 11×11 stamp.
+// Free params: Amplitude A, sigma σ, Background B. Position fixed from detection.
+// ============================================================================
+
+struct PSFFitInput {
+    float x;        // full-res star center X
+    float y;        // full-res star center Y
+    float bg;       // estimated background level
+    float peakVal;  // initial amplitude guess (peak - background)
+};
+
+struct PSFFitOutput {
+    float amplitude;    // fitted peak amplitude above background
+    float sigma;        // fitted Gaussian sigma (FWHM = 2.355 * sigma)
+    float background;   // fitted background level
+    float chi2;         // reduced chi² (goodness of fit)
+};
+
+kernel void psf_fit_gaussian(
+    device const uint16_t* image     [[buffer(0)]],
+    device const PSFFitInput* stars  [[buffer(1)]],
+    device PSFFitOutput* results     [[buffer(2)]],
+    constant int& width              [[buffer(3)]],
+    constant int& height             [[buffer(4)]],
+    constant int& channel            [[buffer(5)]],
+    constant int& channelCount       [[buffer(6)]],
+    constant int& starCount          [[buffer(7)]],
+    uint tid [[thread_position_in_grid]])
+{
+    if (tid >= uint(starCount)) return;
+
+    PSFFitInput star = stars[tid];
+    int cx = int(star.x + 0.5);
+    int cy = int(star.y + 0.5);
+
+    // Stamp half-size: 11×11 window
+    const int R = 5;
+    const int stampW = 2 * R + 1;
+    const int stampN = stampW * stampW; // 121
+
+    // Bounds check
+    if (cx - R < 0 || cx + R >= width || cy - R < 0 || cy + R >= height) {
+        results[tid] = PSFFitOutput{0, 0, 0, 1e10};
+        return;
+    }
+
+    // Read stamp from full-res image
+    int planeSize = width * height;
+    int chOff = min(channel, channelCount - 1) * planeSize;
+    float stamp[121]; // 11×11 max
+    for (int dy = -R; dy <= R; dy++) {
+        for (int dx = -R; dx <= R; dx++) {
+            stamp[(dy + R) * stampW + (dx + R)] = float(image[chOff + (cy + dy) * width + (cx + dx)]);
+        }
+    }
+
+    // Initial parameter guess
+    float A = max(star.peakVal, 1.0f);
+    float sigma = 2.0;
+    float B = star.bg;
+
+    // Gauss-Newton iterations (3 params: A, σ, B)
+    for (int iter = 0; iter < 8; iter++) {
+        // Accumulate 3×3 normal matrix (JᵀJ) and 3×1 gradient (Jᵀr)
+        float H00 = 0, H01 = 0, H02 = 0;
+        float H11 = 0, H12 = 0, H22 = 0;
+        float g0 = 0, g1 = 0, g2 = 0;
+
+        float s2 = max(sigma * sigma, 0.01f);
+        float inv2s2 = 0.5 / s2;
+        float s3 = sigma * s2; // σ³
+
+        for (int dy = -R; dy <= R; dy++) {
+            for (int dx = -R; dx <= R; dx++) {
+                float r2 = float(dx * dx + dy * dy);
+                float e = exp(-r2 * inv2s2);
+                float model = A * e + B;
+                float residual = stamp[(dy + R) * stampW + (dx + R)] - model;
+
+                // Jacobian: ∂model/∂A = e, ∂model/∂σ = A*r²/σ³*e, ∂model/∂B = 1
+                float jA = e;
+                float jS = A * r2 / s3 * e;
+                float jB = 1.0;
+
+                // Upper triangle of JᵀJ (symmetric)
+                H00 += jA * jA; H01 += jA * jS; H02 += jA * jB;
+                                 H11 += jS * jS; H12 += jS * jB;
+                                                   H22 += jB * jB;
+                // Jᵀr
+                g0 += jA * residual;
+                g1 += jS * residual;
+                g2 += jB * residual;
+            }
+        }
+
+        // Add Levenberg-Marquardt damping (λ on diagonal)
+        float lambda = 0.01;
+        H00 += lambda * H00; H11 += lambda * H11; H22 += lambda * H22;
+
+        // Solve 3×3 symmetric system via Cramer's rule
+        // Full matrix: [[H00,H01,H02],[H01,H11,H12],[H02,H12,H22]]
+        float det = H00 * (H11 * H22 - H12 * H12)
+                  - H01 * (H01 * H22 - H12 * H02)
+                  + H02 * (H01 * H12 - H11 * H02);
+
+        if (abs(det) < 1e-20) break;
+
+        float invDet = 1.0 / det;
+        float dA = invDet * (g0 * (H11 * H22 - H12 * H12)
+                            - H01 * (g1 * H22 - H12 * g2)
+                            + H02 * (g1 * H12 - H11 * g2));
+        float dS = invDet * (H00 * (g1 * H22 - H12 * g2)
+                            - g0 * (H01 * H22 - H12 * H02)
+                            + H02 * (H01 * g2 - g1 * H02));
+        float dB = invDet * (H00 * (H11 * g2 - g1 * H12)
+                            - H01 * (H01 * g2 - g1 * H02)
+                            + g0 * (H01 * H12 - H11 * H02));
+
+        A += dA;
+        sigma += dS;
+        B += dB;
+
+        // Clamp to physical range
+        sigma = clamp(sigma, 0.3f, 15.0f);
+        A = max(A, 0.0f);
+
+        // Early exit on convergence
+        if (abs(dA) < 0.1 && abs(dS) < 0.001 && abs(dB) < 0.1) break;
+    }
+
+    // Compute reduced chi²
+    float chi2 = 0;
+    float s2f = max(sigma * sigma, 0.01f);
+    float inv2s2f = 0.5 / s2f;
+    for (int dy = -R; dy <= R; dy++) {
+        for (int dx = -R; dx <= R; dx++) {
+            float r2 = float(dx * dx + dy * dy);
+            float model = A * exp(-r2 * inv2s2f) + B;
+            float r = stamp[(dy + R) * stampW + (dx + R)] - model;
+            chi2 += r * r;
+        }
+    }
+
+    results[tid] = PSFFitOutput{A, sigma, B, chi2 / float(stampN - 3)};
+}

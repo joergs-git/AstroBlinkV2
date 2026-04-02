@@ -23,6 +23,7 @@ class PreviewGenerator {
     let bin2xPipeline: MTLComputePipelineState?
     let postProcessPipeline: MTLComputePipelineState?
     let starDetectPipeline: MTLComputePipelineState?
+    let psfFitPipeline: MTLComputePipelineState?
 
     // Bayer pattern string to shader index mapping
     private static let bayerPatternMap: [String: Int] = [
@@ -72,6 +73,14 @@ class PreviewGenerator {
             self.starDetectPipeline = starPipe
         } else {
             self.starDetectPipeline = nil
+        }
+
+        // Load GPU PSF fitting kernel
+        if let psfFunc = library.makeFunction(name: "psf_fit_gaussian"),
+           let psfPipe = try? device.makeComputePipelineState(function: psfFunc) {
+            self.psfFitPipeline = psfPipe
+        } else {
+            self.psfFitPipeline = nil
         }
     }
 
@@ -747,5 +756,82 @@ class PreviewGenerator {
         }
 
         return stars
+    }
+
+    // MARK: - GPU PSF Fitting
+
+    /// PSF fit result for one star: fitted amplitude, sigma, background, and chi²
+    struct PSFFitResult {
+        let amplitude: Float    // Fitted peak above background
+        let sigma: Float        // Gaussian sigma (FWHM = 2.355 * sigma)
+        let background: Float   // Fitted local background
+        let chi2: Float         // Reduced chi² (goodness of fit)
+    }
+
+    /// GPU-accelerated circular Gaussian PSF fitting for filtered stars.
+    /// Runs Gauss-Newton optimization (8 iterations, 3 params: A, σ, B) on 11×11 stamps.
+    /// Returns one PSFFitResult per input star, or empty array on GPU failure.
+    func fitPSF(
+        image: DecodedImage,
+        stars: [(x: Float, y: Float, background: Float, peakBrightness: Float)],
+        channel: Int = 0
+    ) -> [PSFFitResult] {
+        guard let pipeline = psfFitPipeline, !stars.isEmpty else { return [] }
+
+        let count = stars.count
+        // Input buffer: packed (x, y, bg, peak) per star = 16 bytes each
+        let inputSize = count * 16
+        guard let inputBuffer = device.makeBuffer(length: inputSize, options: .storageModeShared),
+              let outputBuffer = device.makeBuffer(length: count * 16, options: .storageModeShared),
+              let commandBuffer = commandQueue.makeCommandBuffer(),
+              let encoder = commandBuffer.makeComputeCommandEncoder() else { return [] }
+
+        // Fill input buffer
+        let inputPtr = inputBuffer.contents()
+        for (i, s) in stars.enumerated() {
+            let offset = i * 16
+            inputPtr.storeBytes(of: s.x, toByteOffset: offset, as: Float.self)
+            inputPtr.storeBytes(of: s.y, toByteOffset: offset + 4, as: Float.self)
+            inputPtr.storeBytes(of: s.background, toByteOffset: offset + 8, as: Float.self)
+            inputPtr.storeBytes(of: s.peakBrightness, toByteOffset: offset + 12, as: Float.self)
+        }
+
+        encoder.setComputePipelineState(pipeline)
+        encoder.setBuffer(image.buffer, offset: 0, index: 0)
+        encoder.setBuffer(inputBuffer, offset: 0, index: 1)
+        encoder.setBuffer(outputBuffer, offset: 0, index: 2)
+        var w = Int32(image.width)
+        var h = Int32(image.height)
+        var ch = Int32(min(channel, image.channelCount - 1))
+        var cc = Int32(image.channelCount)
+        var sc = Int32(count)
+        encoder.setBytes(&w, length: 4, index: 3)
+        encoder.setBytes(&h, length: 4, index: 4)
+        encoder.setBytes(&ch, length: 4, index: 5)
+        encoder.setBytes(&cc, length: 4, index: 6)
+        encoder.setBytes(&sc, length: 4, index: 7)
+
+        // One thread per star
+        let tg = MTLSize(width: min(64, count), height: 1, depth: 1)
+        let grid = MTLSize(width: (count + 63) / 64, height: 1, depth: 1)
+        encoder.dispatchThreadgroups(grid, threadsPerThreadgroup: tg)
+        encoder.endEncoding()
+        commandBuffer.commit()
+        commandBuffer.waitUntilCompleted()
+
+        // Read results
+        let outPtr = outputBuffer.contents()
+        var results: [PSFFitResult] = []
+        results.reserveCapacity(count)
+        for i in 0..<count {
+            let offset = i * 16
+            results.append(PSFFitResult(
+                amplitude: outPtr.load(fromByteOffset: offset, as: Float.self),
+                sigma: outPtr.load(fromByteOffset: offset + 4, as: Float.self),
+                background: outPtr.load(fromByteOffset: offset + 8, as: Float.self),
+                chi2: outPtr.load(fromByteOffset: offset + 12, as: Float.self)
+            ))
+        }
+        return results
     }
 }

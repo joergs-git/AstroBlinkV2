@@ -87,11 +87,13 @@ enum StarMetricsCalculator {
     /// Two-pass approach:
     ///   Pass 1: Compute FWHM for all stars (used to determine adaptive eccentricity aperture)
     ///   Pass 2: Compute eccentricity with FWHM-scaled aperture + extract PA and axis ratio
+    /// When generator is provided, GPU PSF fitting replaces CPU FWHM/flux computation.
     static func measure(
         stars: [DetectedStar],
         fullResImage image: DecodedImage,
         channel: Int = 0,
-        totalStarCount: Int? = nil
+        totalStarCount: Int? = nil,
+        generator: PreviewGenerator? = nil
     ) -> StarMetrics? {
         let w = image.width
         let h = image.height
@@ -205,8 +207,35 @@ enum StarMetricsCalculator {
 
         guard hfrValues.count >= minStars, fwhmValues.count >= minStars else { return nil }
 
+        // ── GPU PSF Fitting (when available) ──
+        // Replaces CPU linearized FWHM with proper Gauss-Newton fitted σ.
+        // Also produces fitted amplitude for accurate flux computation.
+        var gpuFitResults: [PreviewGenerator.PSFFitResult]?
+        if let gen = generator {
+            let fitInput = toMeasure.enumerated().map { (i, star) -> (x: Float, y: Float, background: Float, peakBrightness: Float) in
+                let bg = estimateBackground(ptr: ptr, channelOffset: channelOffset, width: w,
+                                            cx: Int(star.x.rounded()), cy: Int(star.y.rounded()),
+                                            innerR: bgInnerRadius, outerR: bgOuterRadius)
+                return (x: star.x, y: star.y, background: bg, peakBrightness: star.brightness)
+            }
+            let results = gen.fitPSF(image: image, stars: fitInput, channel: channel)
+            if results.count == toMeasure.count {
+                gpuFitResults = results
+                // Replace CPU FWHM with GPU-fitted FWHM for stars with good fit (χ² < 1000)
+                fwhmValues.removeAll()
+                for (i, fit) in results.enumerated() {
+                    let fittedFWHM = Double(fit.sigma) * 2.3548
+                    if fit.chi2 < 1000 && fittedFWHM >= 1.0 && fittedFWHM <= 20.0 {
+                        fwhmValues.append(fittedFWHM)
+                        perStarFWHM[i] = fittedFWHM
+                    }
+                }
+            }
+        }
+
         hfrValues.sort()
         fwhmValues.sort()
+        guard fwhmValues.count >= minStars else { return nil }
         let medianHFR = hfrValues[hfrValues.count / 2]
         let medianFWHM = fwhmValues[fwhmValues.count / 2]
 
@@ -292,16 +321,22 @@ enum StarMetricsCalculator {
             correctedTotal = rawTotal
         }
 
-        // PSF flux estimation: approximate total flux under each star's PSF
-        // For a Gaussian PSF: flux ≈ peak_brightness × 2π × σ² where σ = FWHM / 2.355
-        // Uses actual peak brightness from DetectedStar + per-star FWHM from measurement
+        // PSF flux estimation: use GPU-fitted amplitude when available,
+        // else approximate from peak brightness. Flux = 2π × A × σ².
         var measuredFluxSum: Double = 0
         var fluxStarCount = 0
         for (i, star) in toMeasure.enumerated() {
             let fwhm = perStarFWHM[i] ?? medianFWHM
             if fwhm > 0 {
+                // Use GPU-fitted amplitude for accurate flux when available
+                let amplitude: Double
+                if let fits = gpuFitResults, i < fits.count, fits[i].chi2 < 1000 {
+                    amplitude = Double(fits[i].amplitude)
+                } else {
+                    amplitude = Double(star.brightness)
+                }
                 let sigma = fwhm / 2.355
-                let flux = Double(star.brightness) * 2.0 * Double.pi * sigma * sigma
+                let flux = amplitude * 2.0 * Double.pi * sigma * sigma
                 measuredFluxSum += flux
                 fluxStarCount += 1
             }
