@@ -4,6 +4,17 @@ All notable changes to AstroBlink & AIsaac will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [5.13.0] — 2026-04-03
+
+### Added
+- **User Confidence Rating** — Press 1/2/3 to rate selected frames with 1-3 stars (same key toggles off). Yellow star icons in new ★ column after Quality. Persisted in Frame History DB via GRDB (migration v7). Filter syntax: `rating:1`, `rating:2`, `rating:3`, `rating:>0`. Works with multi-selection
+- **Chart Scroll & Zoom** — Frame History date-axis charts (Session Score, Efficiency, Equipment Health) now support horizontal scroll and pinch-to-zoom. 90-day visible window, positioned at most recent data
+- **PixInsight Bridge v1.2.0** — Enhanced PI script: "Open in AstroBlink" button launches the app from PI with session folder pre-selected (clipboard handoff + sandbox-safe dialog). "Prepare for WBPP" creates kept-files list. Color-coded quality tiers, sort controls, SNR/Trailing columns. Installable via PI Update Repository
+- **astroblink:// URL Scheme** — Registered custom URL scheme for external app communication. Used by PI Bridge for folder handoff
+
+### Changed
+- PixInsight Bridge script uses `ExternalProcess.execute` (confirmed PJSR API) and clipboard marker for reliable cross-app communication with sandboxed AstroBlink
+
 ## [5.12.0] — 2026-04-02
 
 ### Added

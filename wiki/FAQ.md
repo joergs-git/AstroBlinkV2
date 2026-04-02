@@ -70,6 +70,22 @@ PSF Flux measures the total stellar signal in a frame by summing the fitted Gaus
 **Q: Why do the History charts look different at long time ranges?**
 When the selected time range exceeds 6 months, charts automatically switch to monthly aggregation for cleaner trends. A calendar icon indicates this mode. This avoids cluttered daily bars over many months.
 
+## Confidence Rating
+
+**Q: What is the confidence rating?**
+Press 1, 2, or 3 on a selected frame to assign a user confidence rating (shown as yellow stars in the file list). Pressing the same key again clears the rating. Ratings are persisted in the Frame History Database and survive session reloads. Use `rating:1`, `rating:2`, or `rating:3` in the search bar to filter by rating. Note: 0 is zoom reset, not confidence clear.
+
+**Q: When should I use confidence ratings?**
+Use them to manually flag frames you've visually inspected. For example, rate "3" for frames with exceptional detail, "1" for frames you're unsure about. They complement SmartCull's automatic scoring with your own visual assessment. Ratings are independent of the quality tier — a borderline frame can get a high confidence rating if you see something the algorithm missed.
+
+## PixInsight Bridge
+
+**Q: How do I use AstroBlink with PixInsight?**
+Install the AstroBlink Importer script from the PixInsight Update Repository (raw.githubusercontent.com). The script launches AstroBlink from within PixInsight, imports the CSV with SSWEIGHT/PSFSWGHT scores, and prepares a WBPP-ready file list. This lets you triage in AstroBlink and stack in PixInsight with quality weights applied.
+
+**Q: Why does the PixInsight bridge use clipboard instead of URL scheme?**
+macOS SwiftUI blocks external event delivery (URL schemes, Apple Events, etc.) when using @NSApplicationDelegateAdaptor. The clipboard marker + timer polling is the reliable workaround. The `astroblink://` URL scheme is registered but not functional due to this SwiftUI limitation.
+
 ## Stacking
 
 **Q: Is LightspeedStacker a replacement for PixInsight/APP?**

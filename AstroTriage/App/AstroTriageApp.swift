@@ -747,6 +747,7 @@ struct HelpContentView: View {
                 shortcutRow("Cmd + 0", "Fit image to view (reset zoom)")
                 shortcutRow("Cmd + 1", "Zoom to 100% (actual pixels)")
                 shortcutRow("Cmd + 2", "Zoom to 200%")
+                shortcutRow("1 / 2 / 3", "Set confidence rating (1-3 stars, same key clears)")
 
                 Divider()
 
@@ -882,6 +883,7 @@ struct HelpContentView: View {
                 featureRow("fwhm:>4", "Numeric filter with operators: >, <, >=, <=")
                 featureRow("stars:<500", "Find images with fewer than 500 detected stars")
                 featureRow("exp:300", "Find images with specific exposure time")
+                featureRow("rating:1 / rating:2 / rating:3", "Filter by confidence rating")
                 featureRow("Mark / Unmark buttons", "Mark or unmark all filtered images at once")
                 Text("After filtering, use Mark to checkmark all matches, then Cmd+M to move them or Cmd+⌫ for pre-delete.")
                     .font(.system(size: 11))

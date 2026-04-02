@@ -325,48 +325,46 @@ Uncompressed XISF: ~17ms decode (SSD limited). LZ4-compressed: ~100-300ms (CPU d
 
 ---
 
-## PixInsight Bridge — "AstroBlink Importer" (SIDE PROJECT, feature/pixinsight-bridge)
+## PixInsight Bridge — "AstroBlink Importer" (v1.2.0 COMPLETE 2026-04-03)
 
-Separate GitHub repo: `pixinsight-astroblink`. PJSR Script (ES5/SpiderMonkey 24) for
-PixInsight that imports AstroBlink triage results and preconfigures WBPP workflow.
+Subdirectory `pixinsight-astroblink/` in main repo. PJSR Script (ES5/SpiderMonkey 24) for
+PixInsight that imports AstroBlink triage results and prepares WBPP workflow.
 Distributed via PI Update Repository on GitHub Raw URLs.
 
-### Phase 1: PJSR Script
-- [ ] Project structure (`src/scripts/AstroBlinkImporter/`)
-- [ ] CSV import (`AstroBlinkV2_SSWEIGHT.csv` parser, fallback to FITS/XISF header)
-- [ ] Triage table UI (TreeBox widget, color-coded quality tiers, sortable columns)
-- [ ] SSWEIGHT header sync (write CSV weights into FITS/XISF headers via FITSKeyword API)
-- [ ] Summary stats (total frames, kept, rejected, integration time)
+### Phase 1: PJSR Script ✅
+- [x] Project structure (`src/scripts/AstroBlinkImporter/`)
+- [x] CSV import (`AstroBlinkV2_SSWEIGHT.csv` parser, subfolder search)
+- [x] Triage table UI (TreeBox widget, color-coded quality tiers, sortable columns)
+- [x] SSWEIGHT header sync (write via FileFormatInstance read-modify-write pattern)
+- [x] Summary stats (total frames, kept, rejected, avg SSWEIGHT/FWHM)
 
-### Platform & Prerequisite Checks
-- [ ] Detect macOS vs Windows (`CoreApplication.platform` or `File.systemTempDirectory` path check)
-- [ ] Windows: show error dialog "AstroBlink is macOS only" with App Store + GitHub wiki links
-- [ ] Check if AstroBlink is installed (`/Applications/AstroBlinkV2.app` or `~/Applications/`)
-- [ ] Not installed: friendly dialog with download links (Mac App Store URL + GitHub wiki)
+### Platform & Prerequisite Checks ✅
+- [x] Detect macOS vs Windows (informational, non-blocking)
+- [x] Check if AstroBlink is installed (returns true on macOS for dev builds)
 
-### Phase 2: PI Update Repository
-- [ ] `updates.xri` manifest + `.tar.gz` package
-- [ ] GitHub Raw URL: `https://raw.githubusercontent.com/joergs-git/pixinsight-astroblink/main/`
-- [ ] One-click install via PI Resources → Updates → Manage Repositories
-- [ ] Script appears under Script → Batch Processing → AstroBlink Importer
+### Phase 2: PI Update Repository ✅
+- [x] `updates.xri` manifest + ZIP package with correct `src/scripts/` paths
+- [x] GitHub Raw URL: `https://raw.githubusercontent.com/joergs-git/AstroBlinkV2/main/pixinsight-astroblink/`
+- [x] One-click install via PI Resources → Updates → Manage Repositories
+- [x] Script appears under Script → Batch Processing → AstroBlink Importer
+
+### Phase 2.5: PI → AstroBlink Handoff ✅
+- [x] "Open in AstroBlink" button — clipboard marker + ExternalProcess.execute
+- [x] AstroBlink clipboard timer picks up ASTROBLINK_PI_OPEN: marker
+- [x] NSOpenPanel pre-navigated to folder (sandbox-safe, user clicks "Open Session")
+- [x] "Prepare for WBPP" button — writes kept-files list + WBPP instructions
+- [x] "Refresh" button — re-imports CSV after triage
 
 ### Phase 3: Extensions (post-V1)
-- [ ] WBPP integration (process icon export with SSWEIGHT weighting)
-- [ ] Quality visualizer (FWHM/Stars/SNR timeline plot)
+- [ ] Quality visualizer in PI (FWHM/Stars/SNR timeline from Frame History DB)
 - [ ] JSON triage report (richer than CSV)
 - [ ] SubframeSelector comparison (correlate PI metrics with AstroBlink)
+- [ ] PI Developer Certification for signed repository
 
 ### Phase 4: Community & Marketing
 - [ ] PI Forum post (New Scripts and Modules)
 - [ ] AstroBlink Wiki page: "PixInsight Integration"
 - [ ] README with install screenshots + example session
-
-### Key Technical Notes
-- PJSR = SpiderMonkey 24 (ES5 only): NO let/const, NO arrow functions, NO template literals
-- `Console.writeln()` not `console.log()`
-- File I/O synchronous, UI via Dialog/Sizer system (Qt-like)
-- XISF header writing: test if `FileFormatInstance.setKeywords()` works for XISF
-- Estimated effort: ~12-15h for V1
 
 ---
 
@@ -417,43 +415,33 @@ median or averaged sigma-clipped for flats.
 - Weight: equal (all calibration frames same exposure/conditions)
 - PixelMath for master flat: `$T / mean($T)` after integration
 
-## Future TODOs — User Confidence Rating (1/2/3 Stars)
+## v5.13.0 — User Confidence Rating, Chart Zoom, PI Bridge (COMPLETE 2026-04-03)
 
-### Concept
-User can press 1, 2, or 3 on keyboard for highlighted file(s) to assign a personal confidence score:
-- **1 star** = low confidence / disagree with auto-rating
-- **2 stars** = unsure / needs review
-- **3 stars** = high confidence / fully agree with auto-rating
-- **0 (default)** = unrated
+### User Confidence Rating ✅
+- [x] `userConfidence: Int` (0-3) on ImageEntry
+- [x] GRDB migration v7 — `userConfidence` column on frame_record
+- [x] Keyboard 1/2/3 sets rating (same key toggles off), works with multi-selection
+- [x] Yellow star icons ★ column after Quality, default visible
+- [x] Persistence: write to Frame History DB on rating change, restore on file hash match
+- [x] Filter syntax: `rating:1`, `rating:2`, `rating:3`, `rating:>0`
+- [x] Column alias: `rating`, `conf`, `confidence`
 
-Orthogonal to deletion marking — both are tracked independently.
-Valuable for ML/community learning, especially borderline cases.
+### Chart Scroll & Zoom ✅
+- [x] `chartScrollableAxes(.horizontal)` on Session Score, Efficiency, Equipment Health
+- [x] 90-day visible domain, positioned at most recent data
+- [x] Pinch/scroll zoom on time axis
 
-### Implementation Plan
-- [ ] `userConfidence: Int` (0-3) on ImageEntry, persisted in SQLite (GRDB)
-- [ ] Keyboard shortcuts: 1/2/3 set rating, 0 clears. Works on single + multi-selection
-- [ ] Tiny star icons column (left side), default visible: 0=empty, 1-3=filled stars
-- [ ] Persistence key: file content hash (SHA256 of first 64KB) + filename basename
-  - Hash-first for reliability (renamed files still match)
-  - Filename fallback for speed (skip hash if basename unique in DB)
-- [ ] SQLite table: `user_ratings(content_hash TEXT, filename TEXT, confidence INT, marked_delete BOOL, timestamp TEXT)`
-  - Index on content_hash + filename for fast lookup
-  - Tested for 1M+ rows: SQLite handles this trivially (B-tree, <1ms lookup)
-- [ ] Session load: batch-lookup ratings by filename set, lazy hash verification
-- [ ] Filter syntax: `rating:0`, `rating:1`, `rating:2`, `rating:3`, `rating:unrated`, `rating:rated`
-- [ ] Export: include confidence column in SSWEIGHT CSV + optional Supabase upload
-- [ ] ML/community value: confidence ratings paired with quality metrics = labeled training data
-
-### Performance Considerations (1M+ files)
-- SQLite single-row lookup by indexed hash: O(log n), <1ms even at 10M rows
-- Batch insert on session load: use GRDB `batchInsert` / transactions (1000 rows/batch)
-- No in-memory dictionary of all ratings — query on demand per visible page
-- Star icon rendering: lightweight SF Symbol, no performance concern
+### PixInsight Bridge v1.2.0 ✅
+- [x] Full PI Update Repository (updates.xri + ZIP package)
+- [x] "Open in AstroBlink" — clipboard marker + ExternalProcess.execute + sandbox-safe dialog
+- [x] "Prepare for WBPP" — kept-files list + WBPP instructions
+- [x] Color-coded quality tiers, sort dropdown, SNR/Trailing columns
+- [x] Correct FileFormatInstance read-modify-write for header writing
 
 ### Future: Community Learning Integration
-- Anonymous upload: (setupFingerprint, qualityMetrics, userConfidence) tuples
-- Crowdsourced ground truth for detection algorithm training
-- Requires opt-in consent + Supabase backend (see project_community_detection_learning.md)
+- [ ] Anonymous upload: (setupFingerprint, qualityMetrics, userConfidence) tuples
+- [ ] Crowdsourced ground truth for detection algorithm training
+- [ ] Export confidence column in SSWEIGHT CSV
 
 ## v5.6.0 — Frame History Database + Archive Scanner (COMPLETE 2026-03-28)
 - [x] GRDB.swift SQLite integration (FrameHistoryDatabase, FrameRecord, SessionRecord)
@@ -490,15 +478,16 @@ Valuable for ML/community learning, especially borderline cases.
 - [x] PixInsight Bridge repo skeleton (pixinsight-astroblink)
 
 ## Open TODOs — Frame History & Charts
-- [ ] Chart zoom: pinch/scroll zoom on time axis (chartXScale modifier)
+- [x] Chart zoom: pinch/scroll zoom on time axis (chartScrollableAxes, 90-day window)
 - [ ] Chart tooltip/hover: show exact values on hover (SwiftUI Charts annotation)
 - [ ] Twilight bands overlay on quality timeline chart (AreaMark background)
 - [ ] FWHM histogram: current session distribution overlaid on historical
 - [ ] Archive scanner: detect and flag files that no longer exist (fileGone marker)
 - [ ] Archive scanner: progress notification via Pushover when done
 - [ ] Bortle class estimation from SITELAT/SITELONG (needs embedded light pollution dataset)
-- [ ] User confidence rating (1/2/3 stars) — persisted in FrameHistory DB
+- [x] User confidence rating (1/2/3 stars) — persisted in FrameHistory DB (v5.13.0)
 - [ ] WBPP file organizer: auto-organize files into WBPP directory structure
+- [ ] PI Bridge: show Frame History data in PI script window
 
 ## Future TODOs — Testing
 - [ ] Fix pre-existing DecoderTests.testMetalBufferCreation failure

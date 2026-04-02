@@ -594,7 +594,7 @@ struct AIsaacContextBuilder {
         red X = garbage, blue "?" = uncertain (small group, ambiguous quality). Blue lock badge = calibration-locked KEEP.
         - Hover quality icon for tooltip: per-metric z-scores, SNR contribution %, human-readable reason, KEEP/DELETE advice.
         - Filter bar (top): type text to filter by filename. Filter syntax: "filter:Ha", "q:trash", "fwhm:>4", \
-        "stars:<500", "snr:<20", "trail:>0.5", "file:NGC". Combine with spaces.
+        "stars:<500", "snr:<20", "trail:>0.5", "rating:>0", "file:NGC". Combine with spaces.
 
         IMAGE VIEWER:
         - Scroll to zoom (trackpad or mouse wheel). +/- keys also zoom. Cmd+/Cmd-: 25% step zoom.
@@ -701,6 +701,7 @@ struct AIsaacContextBuilder {
         - I: toggle header inspector panel. C: compare current frame with best in group.
         - K: toggle skip-marked during navigation. H: cycle hide marked / show only marked / show all.
         - +/-: zoom in/out. 0: reset zoom. Double-click: fit to view. Option+drag: pan.
+        - 1/2/3: set confidence rating (1-3 stars, same key clears). Yellow star column.
         - Cmd+O: open folder (Cmd-click for multi-folder). Cmd+W: close window.
         - Cmd+/Cmd-: 25% step zoom. Cmd+0: fit to view. Cmd+1: 100%. Cmd+2: 200%.
 
@@ -752,6 +753,8 @@ struct AIsaacContextBuilder {
         - Target picker: filter charts by specific target.
         - Target picker: filter by canonical target name (normalized: "NGC 7000" = "NGC7000", "Orion Nebula" = "M42").
         - Filter color convention: R=red, G=green, B=blue, L=grey, Ha=orange, OIII=teal, SII=yellow, Hbeta=cyan.
+        - Date-axis charts support horizontal scroll + pinch zoom (90-day window). \
+        Auto-aggregates to monthly bars when date range exceeds 6 months.
 
         BORTLE SKY QUALITY:
         - Bortle column (B1-B9, fractional like B4.8) in file list. Computed from SITELAT/SITELONG coordinates.
@@ -778,6 +781,18 @@ struct AIsaacContextBuilder {
         - Multi-select: if frames are selected, blinks only those frames.
         - ESC or Stop button to end. Status bar shows "Blink" pill during playback.
         - Great for quickly spotting trailing, clouds, or focus shifts across the session.
+
+        USER CONFIDENCE RATING (v5.13.0):
+        - Press 1/2/3 on selected frames to assign a personal confidence score (1-3 stars). \
+        Same key again clears the rating. Yellow star column in file list.
+        - Persisted in Frame History database (survives session reload/app restart).
+        - Filter syntax: "rating:1", "rating:2", "rating:3", "rating:>0" (any rated).
+        - Orthogonal to deletion marking — both tracked independently.
+
+        PIXINSIGHT BRIDGE (v5.13.0):
+        - PixInsight PJSR script "AstroBlink Importer" can launch AstroBlink from PI.
+        - Imports AstroBlinkV2_SSWEIGHT.csv with quality tiers, SSWEIGHT, and PSFSWGHT values.
+        - Prepares WBPP file list with pre-applied weights for seamless integration.
 
         CONVERGENCE GUARD (v5.10.0):
         - Autopilot warns before marking when quality spread is already tight (< 0.3) or SNR loss exceeds integration loss.
@@ -889,13 +904,14 @@ struct AIsaacContextBuilder {
         - If you use a filter and the list becomes empty, immediately follow with clear_filter.
         - Quality filter syntax: "q:trash", "q:borderline", "q:good", "q:excellent", "q:unscored"
         - Trailing filter: "trail:>0.5" (frames with trailing score above threshold)
+        - Rating filter: "rating:1", "rating:2", "rating:3", "rating:>0" (user confidence)
 
         CRITICAL: When the user asks you to "show", "view", "open", "highlight", "go to", \
         "navigate", "mark", "filter", or any action verb — you MUST include the corresponding \
         command block. Don't just TALK about the frame — actually DO IT. \
         Example: user says "show me #19" → you MUST include a view command AND your text.
 
-        Valid filter syntax: "filter:Ha", "filter:L", "fwhm:>4", "stars:<500", "file:NGC", "snr:<20", "q:trash", "q:excellent", "trail:>0.5"
+        Valid filter syntax: "filter:Ha", "filter:L", "fwhm:>4", "stars:<500", "file:NGC", "snr:<20", "q:trash", "q:excellent", "trail:>0.5", "rating:1", "rating:>0"
 
         Examples:
         User: "show me the Ha frames" → filter + "Here are your Ha frames."

@@ -34,6 +34,11 @@ class ReleaseNotesWindowController {
 // MARK: - Release notes data (shared between view and copy)
 
 private let allReleases: [(version: String, date: String, items: [(ReleaseNotesView.ChangeType, String, String)])] = [
+    ("5.13.0", "April 3, 2026", [
+        (.added, "User Confidence Rating", "Press 1/2/3 to rate frames with 1-3 stars. Yellow star icons in the new ★ column. Same key toggles off. Persisted across sessions via Frame History DB. Filter with rating:1/2/3."),
+        (.added, "Chart Scroll & Zoom", "Frame History date-axis charts now support horizontal scroll and pinch-to-zoom. 90-day visible window, auto-positioned at most recent data."),
+        (.added, "PixInsight Bridge v1.2", "Enhanced PI script: 'Open in AstroBlink' launches the app from PixInsight with your session folder pre-selected. 'Prepare for WBPP' creates a kept-files list with SSWEIGHT instructions."),
+    ]),
     ("5.12.0", "April 2, 2026", [
         (.added, "Elliptical PSF Fitting", "New 5-parameter GPU kernel (A, σx, σy, θ, B) derives eccentricity and position angle analytically from the PSF shape — more accurate than image moments."),
         (.added, "PSF Flux Z-Score", "PSF Flux z-score now shown in Quality Metrics panel and tooltip. Shows how total stellar signal compares to the group."),

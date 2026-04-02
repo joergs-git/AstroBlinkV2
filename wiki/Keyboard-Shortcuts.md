@@ -10,6 +10,7 @@
 ## Triage
 | Key | Action |
 |-----|--------|
+| 1 / 2 / 3 | Set confidence rating (1-3 stars, same key clears) |
 | Space | Toggle pre-delete mark (single or multi-selection) |
 | Cmd+Backspace | Move marked files to _predel/ staging folder |
 | Cmd+M | Move marked files to a chosen folder |

@@ -49,6 +49,8 @@ AIsaac knows your equipment, remembers your imaging history, understands light p
 - **Culling Autopilot** — one-click auto-marking (Conservative/Balanced/Aggressive) with integration impact preview. Convergence guard warns when quality spread is too tight for further culling. Session Spread stats show per-metric distribution.
 - **Blink Playback** — play/stop button with adjustable delay (0.1–2s) cycles through visible images endlessly. Respects filters and hide-marked. ESC to stop.
 - **SSWEIGHT & PSFSignalWeight Export** — writes PixInsight-compatible SSWEIGHT and PSFSWGHT keywords into FITS/XISF headers. GPU PSF fitting (Metal Gauss-Newton) for accurate flux. Batch keyword deletion via Batch Rename.
+- **User Confidence Rating** — Press 1/2/3 to rate frames with 1-3 yellow stars (same key toggles off). Persisted in Frame History DB. Filter with `rating:1`, `rating:2`, `rating:3`.
+- **PixInsight Bridge** — PI script launches AstroBlink from PixInsight, imports CSV with quality scores, and prepares WBPP file lists. Available via PI Update Repository.
 - **GPU PSF Fitting** — Metal compute kernels: circular (3 params) and elliptical (5 params: A, σx, σy, θ, B) Gaussian PSF fitting per star. Elliptical fit derives eccentricity and PA analytically. CPU FWHM fallback when GPU fit quality is poor.
 - **Native FITS/XISF QuickLook** — Finder thumbnails and spacebar previews with debayer support for color cameras.
 - **Bortle Sky Quality (VIIRS 2024)** — real satellite-measured light pollution for every frame. Fractional Bortle (e.g. B4.8) from NOAA VIIRS 2024 annual composite via Supabase lookup. Computed from SITELAT/SITELONG FITS headers. Offline fallback via embedded Falchi 2015 atlas.
@@ -275,6 +277,7 @@ After a night of imaging you might have 200-600 sub-exposures. Some have clouds,
 | `I` | Toggle FITS/XISF header inspector |
 | `D` | Toggle OSC debayer (when Bayer images detected) |
 | `N` | Toggle night mode (red-on-black) |
+| `1` `2` `3` | Set confidence rating (1-3 stars, same key clears) |
 | `C` | Compare with best frame |
 | `U` | Unmark all |
 | `Cmd+` `Cmd-` | Increase / decrease font size |
