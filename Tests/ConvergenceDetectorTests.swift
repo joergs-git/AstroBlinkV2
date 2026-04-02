@@ -15,7 +15,7 @@ final class ConvergenceDetectorTests: XCTestCase {
         entry.qualityBreakdown = QualityBreakdown(
             tier: zScore > 0.5 ? .excellent : zScore > -0.3 ? .good : zScore > -1.2 ? .borderline : .trash,
             combinedZScore: zScore,
-            starsZ: nil, fwhmZ: nil, hfrZ: nil, noiseZ: nil, trailingZ: nil,
+            starsZ: nil, fwhmZ: nil, hfrZ: nil, noiseZ: nil, trailingZ: nil, psfFluxZ: nil,
             snrContribution: nil, snrSquared: nil, garbageReasons: [],
             isLockedKeep: false, reasoningText: nil
         )

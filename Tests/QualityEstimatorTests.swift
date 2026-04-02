@@ -1065,21 +1065,26 @@ final class QualityEstimatorTests: XCTestCase {
     /// Good L-filter group + bad B-filter group (same target/exposure).
     /// The bad B frames should be demoted by session-wide cross-group comparison.
     func testSessionSanityCheck_demotesBadCrossGroup() {
-        // 10 good L frames: FWHM 3.0, SNR 50 (med 0.05, mad 0.001)
+        // 10 good L frames (night 1): FWHM 3.0, SNR 50 (med 0.05, mad 0.001)
         let goodL: [ImageEntry] = (0..<10).map { i in
-            makeEntry(index: i, filter: "L", target: "M82", exposure: 180,
+            var e = makeEntry(index: i, filter: "L", target: "M82", exposure: 180,
                       noiseMAD: 0.001, noiseMedian: 0.05,
                       computedFWHM: 3.0 + Double.random(in: -0.2...0.2),
                       computedStarCount: 3000 + Int.random(in: -200...200),
                       computedEccentricity: 0.35)
+            e.date = "2026-03-15"; e.time = "22:00:00"
+            return e
         }
-        // 8 bad B frames: FWHM 10.0, SNR ~8 (med 0.05, mad 0.006)
+        // 8 bad B frames (night 2): FWHM 10.0, SNR ~8 (med 0.05, mad 0.006)
+        // Session sanity requires ≥2 distinct nights to fire
         let badB: [ImageEntry] = (0..<8).map { i in
-            makeEntry(index: 100 + i, filter: "B", target: "M82", exposure: 180,
+            var e = makeEntry(index: 100 + i, filter: "B", target: "M82", exposure: 180,
                       noiseMAD: 0.006, noiseMedian: 0.05,
                       computedFWHM: 10.0 + Double.random(in: -0.3...0.3),
                       computedStarCount: 2400 + Int.random(in: -200...200),
                       computedEccentricity: 0.65)
+            e.date = "2026-01-20"; e.time = "22:00:00"
+            return e
         }
 
         let entries = goodL + badB

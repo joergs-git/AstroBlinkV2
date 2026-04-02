@@ -42,6 +42,7 @@ struct QualityBreakdown: Hashable {
     let hfrZ: Double?
     let noiseZ: Double?
     let trailingZ: Double?  // Trailing score z-score (higher = more trailing = worse)
+    let psfFluxZ: Double?   // PSF flux z-score (higher = more total star signal = better)
 
     // SNR contribution: (SNR_i / SNR_best)^2 as percentage [0..100]
     // Shows how much this frame adds to a weighted stack relative to the best frame.
@@ -316,6 +317,7 @@ struct QualityEstimator {
                 let count = allHaveHeaderStars ? entry.starCount : entry.computedStarCount
                 return count.map { Double($0) }
             }
+            let psfFluxValues: [Double?] = groupEntries.map { $0.psfFluxSum }
             let snrValues: [Double?] = groupEntries.map { entry in
                 guard let med = entry.noiseMedian, let mad = entry.noiseMAD, mad > 0 else { return nil }
                 return Double(med / mad)
@@ -345,6 +347,9 @@ struct QualityEstimator {
                 darkFrameIndices.contains($0.offset) ? nil : $0.element
             }
             let cleanHfrValues: [Double?] = hfrValues.enumerated().map {
+                darkFrameIndices.contains($0.offset) ? nil : $0.element
+            }
+            let cleanPsfFluxValues: [Double?] = psfFluxValues.enumerated().map {
                 darkFrameIndices.contains($0.offset) ? nil : $0.element
             }
             let cleanSnrValues: [Double?] = snrValues.enumerated().map {
@@ -410,6 +415,7 @@ struct QualityEstimator {
             let fwhmZscores  = zscores(values: cleanFwhmValues)
             let hfrZscores   = zscores(values: cleanHfrValues)
             let starsZscores = zscores(values: cleanStarsValues)
+            let psfFluxZscores = zscores(values: cleanPsfFluxValues)
             let noiseMadZscores = zscores(values: cleanNoiseMadValues)
             // Use trailing score (consensus-weighted, FL-adaptive) instead of raw eccentricity
             let trailingZscores = zscores(values: cleanTrailingValues)
@@ -668,6 +674,7 @@ struct QualityEstimator {
                         hfrZ: cappedZ(hfrZscores[localIdx]),
                         noiseZ: cappedZ(noiseMadZscores[localIdx]),
                         trailingZ: cappedZ(trailingZscores[localIdx]),
+                        psfFluxZ: cappedZ(psfFluxZscores[localIdx]),
                         snrContribution: nil,
                         snrSquared: snrSq,
                         garbageReasons: garbageReasons,
@@ -705,7 +712,13 @@ struct QualityEstimator {
                     zSum += -min(cap, max(-cap, z)) * 1.0     // lower HFR = better → negate
                     wSum += 1.0
                 }
-                if let z = starsZscores[localIdx] {
+                // PSF flux replaces star count when available — it captures both
+                // star count AND brightness (more robust, immune to hot pixel inflation).
+                // Falls back to star count z-score when PSF flux is not computed.
+                if let z = psfFluxZscores[localIdx] {
+                    zSum += min(cap, max(-cap, z)) * starWeight  // higher flux = better → keep sign
+                    wSum += starWeight
+                } else if let z = starsZscores[localIdx] {
                     zSum += min(cap, max(-cap, z)) * starWeight  // higher stars = better → keep sign
                     wSum += starWeight
                 }
@@ -825,6 +838,7 @@ struct QualityEstimator {
                     hfrZ: cappedZ(hfrZscores[localIdx]),
                     noiseZ: cappedZ(noiseMadZscores[localIdx]),
                     trailingZ: cappedZ(trailingZscores[localIdx]),
+                    psfFluxZ: cappedZ(psfFluxZscores[localIdx]),
                     snrContribution: displayContrib,
                     snrSquared: snrSq,
                     garbageReasons: [],
@@ -898,6 +912,7 @@ struct QualityEstimator {
                     hfrZ: oldBD.hfrZ,
                     noiseZ: oldBD.noiseZ,
                     trailingZ: oldBD.trailingZ,
+                    psfFluxZ: oldBD.psfFluxZ,
                     snrContribution: oldBD.snrContribution,
                     snrSquared: oldBD.snrSquared,
                     garbageReasons: [],
@@ -1111,6 +1126,7 @@ struct QualityEstimator {
                     combinedZScore: bd.combinedZScore,
                     starsZ: bd.starsZ, fwhmZ: bd.fwhmZ, hfrZ: bd.hfrZ,
                     noiseZ: bd.noiseZ, trailingZ: bd.trailingZ,
+                    psfFluxZ: bd.psfFluxZ,
                     snrContribution: newTier == .trash ? nil : bd.snrContribution,
                     snrSquared: bd.snrSquared,
                     garbageReasons: [],

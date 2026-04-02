@@ -130,7 +130,7 @@ final class CommunityDetectionTests: XCTestCase {
         // Excellent — no recommendation needed (empty is fine)
         let excellent = QualityBreakdown(
             tier: .excellent, combinedZScore: 1.5,
-            starsZ: 1.0, fwhmZ: -0.5, hfrZ: nil, noiseZ: -0.3, trailingZ: nil,
+            starsZ: 1.0, fwhmZ: -0.5, hfrZ: nil, noiseZ: -0.3, trailingZ: nil, psfFluxZ: nil,
             snrContribution: 95, snrSquared: 100,
             garbageReasons: [], isLockedKeep: false, reasoningText: nil
         )
@@ -140,7 +140,7 @@ final class CommunityDetectionTests: XCTestCase {
         // Good — no recommendation needed
         let good = QualityBreakdown(
             tier: .good, combinedZScore: 0.3,
-            starsZ: 0.5, fwhmZ: -0.2, hfrZ: nil, noiseZ: 0.1, trailingZ: nil,
+            starsZ: 0.5, fwhmZ: -0.2, hfrZ: nil, noiseZ: 0.1, trailingZ: nil, psfFluxZ: nil,
             snrContribution: 80, snrSquared: 64,
             garbageReasons: [], isLockedKeep: false, reasoningText: nil
         )
@@ -149,7 +149,7 @@ final class CommunityDetectionTests: XCTestCase {
         // Borderline — must show KEEP or REVIEW (never empty)
         let borderline = QualityBreakdown(
             tier: .borderline, combinedZScore: -1.0,
-            starsZ: -0.5, fwhmZ: 0.8, hfrZ: nil, noiseZ: 0.3, trailingZ: nil,
+            starsZ: -0.5, fwhmZ: 0.8, hfrZ: nil, noiseZ: 0.3, trailingZ: nil, psfFluxZ: nil,
             snrContribution: 40, snrSquared: 16,
             garbageReasons: [], isLockedKeep: false, reasoningText: nil
         )
@@ -162,7 +162,7 @@ final class CommunityDetectionTests: XCTestCase {
         // Trash with garbage reasons — must show DELETE
         let garbageTrash = QualityBreakdown(
             tier: .trash, combinedZScore: -99,
-            starsZ: nil, fwhmZ: nil, hfrZ: nil, noiseZ: nil, trailingZ: nil,
+            starsZ: nil, fwhmZ: nil, hfrZ: nil, noiseZ: nil, trailingZ: nil, psfFluxZ: nil,
             snrContribution: nil, snrSquared: nil,
             garbageReasons: [.noStars], isLockedKeep: false, reasoningText: nil
         )
@@ -173,7 +173,7 @@ final class CommunityDetectionTests: XCTestCase {
         // Trash without garbage reasons (z-score based) — must show DELETE
         let zscoreTrash = QualityBreakdown(
             tier: .trash, combinedZScore: -2.5,
-            starsZ: -2.0, fwhmZ: 2.5, hfrZ: nil, noiseZ: 1.5, trailingZ: nil,
+            starsZ: -2.0, fwhmZ: 2.5, hfrZ: nil, noiseZ: 1.5, trailingZ: nil, psfFluxZ: nil,
             snrContribution: nil, snrSquared: nil,
             garbageReasons: [], isLockedKeep: false, reasoningText: nil
         )
@@ -187,7 +187,7 @@ final class CommunityDetectionTests: XCTestCase {
     func testLockedKeepRecommendation() {
         let locked = QualityBreakdown(
             tier: .good, combinedZScore: 0.1,
-            starsZ: 0.0, fwhmZ: 0.0, hfrZ: nil, noiseZ: 0.0, trailingZ: nil,
+            starsZ: 0.0, fwhmZ: 0.0, hfrZ: nil, noiseZ: 0.0, trailingZ: nil, psfFluxZ: nil,
             snrContribution: 50, snrSquared: 25,
             garbageReasons: [], isLockedKeep: true, reasoningText: nil
         )
@@ -198,7 +198,7 @@ final class CommunityDetectionTests: XCTestCase {
     func testCommunityFloorRecommendation() {
         var communityLocked = QualityBreakdown(
             tier: .good, combinedZScore: -0.3,
-            starsZ: 0.0, fwhmZ: 0.2, hfrZ: nil, noiseZ: 0.1, trailingZ: nil,
+            starsZ: 0.0, fwhmZ: 0.2, hfrZ: nil, noiseZ: 0.1, trailingZ: nil, psfFluxZ: nil,
             snrContribution: 60, snrSquared: 36,
             garbageReasons: [], isLockedKeep: false, reasoningText: nil
         )
@@ -213,7 +213,7 @@ final class CommunityDetectionTests: XCTestCase {
         // local calibration message must win
         var both = QualityBreakdown(
             tier: .good, combinedZScore: 0.5,
-            starsZ: 0.5, fwhmZ: -0.2, hfrZ: nil, noiseZ: -0.1, trailingZ: nil,
+            starsZ: 0.5, fwhmZ: -0.2, hfrZ: nil, noiseZ: -0.1, trailingZ: nil, psfFluxZ: nil,
             snrContribution: 70, snrSquared: 49,
             garbageReasons: [], isLockedKeep: true, reasoningText: nil
         )
@@ -232,7 +232,7 @@ final class CommunityDetectionTests: XCTestCase {
         // The community floor only applies to z-score borderline/trash, not garbage.
         let garbage = QualityBreakdown(
             tier: .trash, combinedZScore: -99,
-            starsZ: nil, fwhmZ: nil, hfrZ: nil, noiseZ: nil, trailingZ: nil,
+            starsZ: nil, fwhmZ: nil, hfrZ: nil, noiseZ: nil, trailingZ: nil, psfFluxZ: nil,
             snrContribution: nil, snrSquared: nil,
             garbageReasons: [.noStars], isLockedKeep: false, reasoningText: nil
         )
