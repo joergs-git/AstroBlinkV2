@@ -337,12 +337,28 @@ PrefetchCache:
 - Stage 1 garbage excluded from session sanity P10/P90 benchmarks
 - Session sanity requires ≥2 distinct nights (single-night multi-filter is optics, not bad night)
 
+### Target-Aware Quality Scoring (v5.14.0)
+- **DeepSkyTargetDatabase** — 229+ deep-sky targets with type classification (galaxy, nebula, cluster, etc.)
+- Target name resolution via canonical lookup (handles aliases, catalog prefixes, common names)
+- GroupKey uses canonical target names for consistent grouping across naming variations
+- **Type-Based Metric Weight Modifiers** — Adjusts metric importance per target type:
+  - Galaxies: star count less critical (small angular size), FWHM/trailing more important
+  - Nebulae/SHO: star count weight reduced (extended emission dominates)
+  - Star clusters: star count highly weighted (stars ARE the target)
+- **FL-Aware MAD Floor** — Prevents z-scores from exploding on uniform sessions:
+  - FWHM floor: max(0.3px, 0.15 * medianFWHM) — tighter at long FL
+  - Stars floor: max(5%, 3% of median) — prevents tiny variations from dominating
+- **Planet Exclusion** — Solar system objects (Moon, planets) excluded from quality scoring entirely
+  (fundamentally different imaging: short exposures, lucky imaging, no deep-sky metrics apply)
+
 ### Key Files
+- `AstroTriage/Engine/DeepSkyTargetDatabase.swift` — 229+ targets, type classification, canonical name lookup
 - `AstroTriage/Engine/CalibrationDatabase.swift` — Persistence, Welford, fingerprinting
 - `AstroTriage/Engine/ConvergenceDetector.swift` — Spread analysis, readiness formula
-- `AstroTriage/Engine/QualityEstimator.swift` — Absolute floor, isLockedKeep, GroupKey now internal
+- `AstroTriage/Engine/QualityEstimator.swift` — Absolute floor, isLockedKeep, GroupKey canonical names, target-aware weights, MAD floor
 - `Tests/CalibrationDatabaseTests.swift` — 11 tests
 - `Tests/ConvergenceDetectorTests.swift` — 8 tests
+- `Tests/ScoringValidationTests.swift` — Target-aware scoring validation
 
 ---
 
@@ -403,6 +419,14 @@ encoder.dispatchThreadgroups(g, threadsPerThreadgroup: tg)
 | FITS   | Uncompressed        | cfitsio   | Standard                           |
 | FITS   | fpack (ZTILE Rice)  | cfitsio   | cfitsio handlet transparent        |
 | FITS   | fpack (ZTILE GZIP)  | cfitsio   | cfitsio handlet transparent        |
+| FITS   | float32 (BITPIX=-32)| cfitsio   | APP, PixInsight, GraxPert output   |
+| FITS   | float64 (BITPIX=-64)| cfitsio   | PixInsight output                  |
+
+**FITS Float Support (v5.14.0):** Decoder checks BITPIX keyword to determine data type.
+Integer FITS (BITPIX=16/32) read as TUSHORT. Float FITS (BITPIX=-32/-64) read as TFLOAT
+with auto-range detection: values in [0,1] scaled to uint16 range, values >1 assumed
+pre-scaled. Fixed in both macOS (`Packages/ImageDecoder/`) and iOS
+(`AstroFileViewer-iOS/Packages/ImageDecoder/`) decoders.
 
 ---
 

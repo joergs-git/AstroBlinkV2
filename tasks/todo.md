@@ -489,6 +489,29 @@ median or averaged sigma-clipped for flats.
 - [ ] WBPP file organizer: auto-organize files into WBPP directory structure
 - [ ] PI Bridge: show Frame History data in PI script window
 
+## v5.14.0 — Target-Aware Scoring + Float FITS (COMPLETE 2026-04-03)
+
+### Target-Aware Quality Scoring ✅
+- [x] DeepSkyTargetDatabase — 229+ targets with type classification
+- [x] Type-based metric weight modifiers (galaxy/nebula/cluster)
+- [x] FL-aware MAD floor (prevents z-score explosion on uniform sessions)
+- [x] Planet exclusion from quality scoring
+- [x] GroupKey canonical target names
+- [x] ScoringValidationTests
+
+### Float32/Float64 FITS Support ✅
+- [x] BITPIX-aware decoder — checks BITPIX before choosing read datatype
+- [x] Float FITS (BITPIX=-32/-64) read as TFLOAT with auto-range detection
+- [x] Fixed in macOS decoder (Packages/ImageDecoder/)
+- [x] Fixed in iOS decoder (AstroFileViewer-iOS/Packages/ImageDecoder/)
+- [x] Supports APP, PixInsight, GraxPert output files
+
+### iOS AstroFileViewer v1.4.1 (build 17) ✅
+- [x] Float FITS decoder fix applied
+- [x] TestFlight upload
+
+---
+
 ## Future TODOs — Testing
 - [ ] Fix pre-existing DecoderTests.testMetalBufferCreation failure
 - [x] ~~CI: GitHub Actions workflow~~ — Metal required, won't work on GitHub runners

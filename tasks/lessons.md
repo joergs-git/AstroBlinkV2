@@ -324,6 +324,12 @@
 - **Rule:** When skipping cached items in a pipeline, check if ALL required outputs were delivered, not just the primary output (texture). Use a `needsAnalysis` set for frames that need re-processing. Also add delayed rescore retry to catch MainActor Task delivery races.
 - **Applies to:** PrefetchCache.swift, TriageViewModel scoring triggers
 
+## [2026-04-03] — FITS decoder must check BITPIX before choosing read datatype
+- **Mistake:** FITS decoder always read pixel data as TUSHORT (unsigned 16-bit integer). Float FITS files (BITPIX=-32 from APP/GraxPert, BITPIX=-64 from PixInsight) have values in [0.0, 1.0] range. Reading float 0.5 as uint16 truncates to 0 — all-black images.
+- **Root cause:** The original decoder was written for NINA output only, which always writes 16-bit integer FITS. When users processed files through Astro Pixel Processor, PixInsight, or GraxPert, the output was float32/float64 FITS — a format the decoder silently misread.
+- **Rule:** Always check the BITPIX keyword before choosing the cfitsio read datatype. BITPIX=16/32 → TUSHORT, BITPIX=-32/-64 → TFLOAT. For float data, auto-detect value range: if max <= 1.0, scale by 65535; if max > 1.0, assume pre-scaled. This applies to BOTH macOS and iOS decoders — they share the same C bridge code pattern but are separate source files.
+- **Applies to:** ImageDecoderBridge.cpp (both Packages/ImageDecoder/ and AstroFileViewer-iOS/Packages/ImageDecoder/), any FITS reading code
+
 ## [2026-04-02] — SwiftUI on macOS blocks ALL external event delivery for cross-process IPC
 - **Mistake:** Registered `astroblink://` URL scheme for PixInsight Bridge integration. URL scheme registered correctly in Info.plist and macOS resolved it, but SwiftUI's @NSApplicationDelegateAdaptor silently swallowed the `application(_:open:)` callback. The app never received the URL.
 - **Root cause:** SwiftUI on macOS intercepts and blocks virtually all external event delivery mechanisms: custom URL schemes, Apple Events, file open events via `application(_:openFile:)`, DistributedNotificationCenter observers, UserDefaults written by external processes (KVO never fires), and `applicationDidBecomeActive` notifications from external activation. This is a known SwiftUI lifecycle issue with @NSApplicationDelegateAdaptor where the SwiftUI app lifecycle takes precedence over AppKit delegate methods.
