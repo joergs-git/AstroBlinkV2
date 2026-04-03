@@ -12,6 +12,69 @@ Records with `algorithmVersion < kAlgorithmVersion` are candidates for re-analys
 
 ---
 
+## Version 14 — v5.14.0 (2026-04-03)
+
+**Target-aware quality scoring, practical significance MAD floor, planet exclusion.**
+
+### Changes
+
+1. **Deep-Sky Target Database** — 229+ embedded targets with TargetType classification
+   (galaxy, emission nebula, planetary nebula, globular cluster, IFN, etc.), angular size,
+   RA/Dec J2000, magnitude, surface brightness, and filter recommendations per target.
+
+2. **Target-type-aware metric weights** — Stage 2 combinedZ multiplies base weights by
+   target-type modifiers:
+   - Galaxy: FWHM 1.4x, trailing 1.2x (resolution-critical, trailing destroys detail)
+   - Emission nebula: noise 1.4x, FWHM 0.7x (SNR-critical, diffuse targets tolerate bloated PSF)
+   - IFN: noise 2.0x, FWHM 0.4x, trailing 0.3x (every photon counts)
+   - Globular cluster: star 0.2x (star count meaningless due to crowding)
+   - Unknown targets: all 1.0x (preserves previous behavior)
+
+3. **FOV fill ratio modulation** — Secondary weight adjustment based on target angular size
+   vs sensor FOV. Small target in large FOV → FWHM weight +20%. Target fills frame →
+   noise weight +20%.
+
+4. **Practical significance MAD floor** — Minimum effective MAD per metric prevents z-score
+   amplification of tiny differences in tight sessions:
+   - FWHM: FL-aware floor via `0.30 / arcsecPerPixel` (0.20-0.80px range)
+   - HFR: 0.65x of FWHM floor
+   - Star count: max(20, median×10%)
+   - Noise MAD: 0.0008
+   - Trailing: 0.04
+   Ensures "FWHM 4.6 vs 4.5" never causes tier demotion.
+
+5. **FL-dependent FWHM MAD floor** — At long focal length (small plate scale), atmospheric
+   seeing spreads across more pixels. The FWHM floor scales inversely with arcsec/pixel:
+   - RASA 620mm (1.25"/px): floor = 0.24px
+   - Ref140 904mm (0.86"/px): floor = 0.35px
+   - EdgeHD 2032mm (0.38"/px): floor = 0.79px
+   - RC12 2423mm (0.32"/px): floor = 0.80px (capped)
+
+6. **GroupKey canonicalization** — Uses `TargetCatalog.canonicalName()` instead of raw target
+   strings. "NGC 7000", "NGC7000", "North America Nebula" now land in the same scoring group.
+   Same fix for PoolKey in session sanity.
+
+7. **Planet/solar system exclusion** — Targets named Jupiter, Saturn, Moon, Sun, Mars, Venus,
+   Mercury, etc. are excluded from `computeScores()` entirely. Prevents homogeneous planetary
+   groups from normalizing to .good via z-score compression.
+
+### Files modified
+- `QualityEstimator.swift` — Target weights, MAD floor, GroupKey/PoolKey fix, planet filter
+- `DeepSkyTargetDatabase.swift` — New file: 229 targets with types, sizes, filter recs
+- `FrameRecord.swift` — kAlgorithmVersion 13 → 14
+
+### Expected impact
+- **Galaxy targets**: Slightly stricter on FWHM/trailing, more lenient on noise/stars
+- **Emission nebulae**: Slightly stricter on noise/SNR, more lenient on FWHM/trailing
+- **IFN targets**: Much stricter on noise, very lenient on FWHM/trailing
+- **Tight sessions**: Fewer false borderline/trash from insignificant metric differences
+- **Long FL setups**: FWHM scoring more tolerant of seeing-limited pixel spread
+- **Unknown targets**: No change (all modifiers = 1.0)
+- **Planet frames**: No longer scored (excluded)
+- **GroupKey**: Sessions with mixed target name formats now merge correctly
+
+---
+
 ## Version 13 — v5.12.0 (2026-04-02)
 
 **PSFSignalWeight as additive 6th metric + elliptical PSF fitting.**

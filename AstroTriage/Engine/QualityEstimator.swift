@@ -210,7 +210,7 @@ struct QualityEstimator {
     // Narrowband: slight trailing barely affects diffuse emission — very lenient.
     // RGB: star color matters, moderate resolution needs.
     // Luminance: the sharpness channel — full strictness.
-    private static let narrowbandCanonical: Set<String> = ["Ha", "OIII", "SII", "Hbeta", "NII"]
+    static let narrowbandCanonical: Set<String> = ["Ha", "OIII", "SII", "Hbeta", "NII"]
     private static let rgbCanonical: Set<String> = ["R", "G", "B"]
 
     /// Filter-aware trailing penalty multiplier (base value).
@@ -220,6 +220,28 @@ struct QualityEstimator {
         if rgbCanonical.contains(canonical)        { return 0.6 }
         if canonical == "L"                         { return 1.0 }
         return 0.7  // Unknown or exotic filters — conservative default
+    }
+
+    // MARK: - Solar system exclusion
+
+    /// Solar system targets that cannot be quality-scored with deep-sky rules.
+    /// Planetary imaging uses fundamentally different techniques (lucky imaging,
+    /// video capture, very short exposures) incompatible with deep-sky scoring.
+    private static let solarSystemTargets: Set<String> = [
+        "moon", "luna", "jupiter", "saturn", "mars", "venus", "mercury",
+        "sun", "sol", "uranus", "neptune", "pluto",
+        "io", "europa", "ganymede", "callisto", "titan", "enceladus",
+        "deimos", "phobos", "lunar"
+    ]
+
+    /// Check if a target name refers to a solar system object.
+    static func isSolarSystemTarget(_ target: String?) -> Bool {
+        guard let t = target?.lowercased().trimmingCharacters(in: .whitespaces),
+              !t.isEmpty else { return false }
+        return solarSystemTargets.contains(t)
+            || t.hasPrefix("solar") || t.hasPrefix("lunar")
+            || t.hasPrefix("jupiter") || t.hasPrefix("saturn")
+            || t.hasPrefix("mars") || t.hasPrefix("venus")
     }
 
     // Severity-dependent trailing multiplier thresholds (named constants for tuning)
@@ -252,6 +274,12 @@ struct QualityEstimator {
         communityBaseline: CommunityBaseline? = nil,
         historicalBaselines: HistoricalBaselines? = nil
     ) -> [URL: QualityBreakdown] {
+        // Solar system target exclusion — these cannot be quality-scored with deep-sky rules.
+        // A homogeneous group of planetary frames would normalize to .good (z-scores = 0),
+        // which is incorrect. Skip them entirely.
+        let filteredEntries = entries.filter { !Self.isSolarSystemTarget($0.target) }
+        let entries = filteredEntries
+
         // Two-pass night-aware scoring for multi-night sessions:
         // Pass 1: combined groups (all nights merged) → every entry gets a baseline score
         // Pass 2: per-night groups (>= minGroupSize) → overwrite with per-night scores
@@ -301,6 +329,31 @@ struct QualityEstimator {
             let isNarrowband = !isBroadband
             var starWeight: Double = isNarrowband ? 0.5 : 1.2
             let trailMult = filterTrailingMultiplier(for: canonical)
+
+            // Target-type-aware weight modifiers:
+            // Galaxy → resolution-critical (FWHM 1.4x), IFN → SNR-critical (noise 2.0x), etc.
+            // Falls back to 1.0 (no modification) for unknown targets.
+            let targetType = DeepSkyTargetDatabase.targetType(for: groupEntries.first?.target)
+            let fwhmWeightMod = targetType?.fwhmWeightModifier ?? 1.0
+            let starWeightMod = targetType?.starWeightModifier ?? 1.0
+            let noiseWeightMod = targetType?.noiseWeightModifier ?? 1.0
+            let trailWeightMod = targetType?.trailingWeightModifier ?? 1.0
+
+            // FOV fill ratio modulation (secondary adjustment on top of target type).
+            // Small target in large FOV → boost FWHM. Target fills FOV → boost noise.
+            let fovMod: (fwhmMod: Double, noiseMod: Double) = {
+                guard let target = DeepSkyTargetDatabase.lookup(
+                    groupEntries.first?.canonicalTarget ?? TargetCatalog.canonicalName(groupEntries.first?.target ?? "")
+                ),
+                      let fl = groupEntries.first?.focalLength, fl > 0,
+                      let px = groupEntries.first?.pixelSizeMicrons, px > 0,
+                      let w = groupEntries.first?.width, let h = groupEntries.first?.height else {
+                    return (fwhmMod: 1.0, noiseMod: 1.0)
+                }
+                let fillRatio = target.fovFillRatio(focalLength: fl, pixelSizeMicrons: px,
+                                                     sensorWidth: w, sensorHeight: h)
+                return DeepSkyTargetDatabase.fovWeightModulation(fillRatio: fillRatio)
+            }()
 
             // Per-group source consistency
             let allHaveHeaderFWHM = groupEntries.allSatisfy { $0.fwhm != nil }
@@ -411,14 +464,19 @@ struct QualityEstimator {
                 return (sensorWidthMM / fl) * (180.0 / .pi)  // radians → degrees
             }()
 
-            // Z-scores for relative scoring (computed from clean data)
-            let fwhmZscores  = zscores(values: cleanFwhmValues)
-            let hfrZscores   = zscores(values: cleanHfrValues)
-            let starsZscores = zscores(values: cleanStarsValues)
-            let psfFluxZscores = zscores(values: cleanPsfFluxValues)
-            let noiseMadZscores = zscores(values: cleanNoiseMadValues)
+            // Z-scores for relative scoring (computed from clean data).
+            // FWHM MAD floor scales with focal length: at long FL (small plate scale),
+            // atmospheric seeing spreads across more pixels, so larger pixel differences
+            // are physically insignificant.
+            let arcsecPP = groupEntries.first?.arcsecPerPixel
+            let fwhmFloor = fwhmMADFloor(arcsecPerPixel: arcsecPP)
+            let fwhmZscores  = zscores(values: cleanFwhmValues, metric: .fwhm, floorOverride: fwhmFloor)
+            let hfrZscores   = zscores(values: cleanHfrValues, metric: .hfr, floorOverride: fwhmFloor * 0.65)
+            let starsZscores = zscores(values: cleanStarsValues, metric: .starCount)
+            let psfFluxZscores = zscores(values: cleanPsfFluxValues, metric: .psfFlux)
+            let noiseMadZscores = zscores(values: cleanNoiseMadValues, metric: .noiseMAD)
             // Use trailing score (consensus-weighted, FL-adaptive) instead of raw eccentricity
-            let trailingZscores = zscores(values: cleanTrailingValues)
+            let trailingZscores = zscores(values: cleanTrailingValues, metric: .trailing)
 
             for (localIdx, globalIdx) in indices.enumerated() {
                 let entry = entries[globalIdx]
@@ -705,30 +763,38 @@ struct QualityEstimator {
                 // FWHM and HFR are ~95% correlated (both measure star sharpness).
                 // Using both double-penalizes slightly-softer frames.
                 // Use FWHM when available; HFR only as fallback.
+                // Target-type + FOV fill ratio modifiers adjust weight: galaxy 1.4x, IFN 0.4x, etc.
+                let fwhmW = 1.0 * fwhmWeightMod * fovMod.fwhmMod
                 if let z = fwhmZscores[localIdx] {
-                    zSum += -min(cap, max(-cap, z)) * 1.0     // lower FWHM = better → negate
-                    wSum += 1.0
+                    zSum += -min(cap, max(-cap, z)) * fwhmW     // lower FWHM = better → negate
+                    wSum += fwhmW
                 } else if let z = hfrZscores[localIdx] {
-                    zSum += -min(cap, max(-cap, z)) * 1.0     // lower HFR = better → negate
-                    wSum += 1.0
+                    zSum += -min(cap, max(-cap, z)) * fwhmW     // lower HFR = better → negate
+                    wSum += fwhmW
                 }
                 // PSF flux replaces star count when available — it captures both
                 // star count AND brightness (more robust, immune to hot pixel inflation).
                 // Falls back to star count z-score when PSF flux is not computed.
+                // Target-type modifier: cluster 0.2x (star count meaningless), galaxy 0.8x, etc.
+                let starW = starWeight * starWeightMod
                 if let z = psfFluxZscores[localIdx] {
-                    zSum += min(cap, max(-cap, z)) * starWeight  // higher flux = better → keep sign
-                    wSum += starWeight
+                    zSum += min(cap, max(-cap, z)) * starW      // higher flux = better → keep sign
+                    wSum += starW
                 } else if let z = starsZscores[localIdx] {
-                    zSum += min(cap, max(-cap, z)) * starWeight  // higher stars = better → keep sign
-                    wSum += starWeight
+                    zSum += min(cap, max(-cap, z)) * starW      // higher stars = better → keep sign
+                    wSum += starW
                 }
+                // Noise weight: IFN 2.0x (every photon counts), emission nebula 1.4x, galaxy 0.8x
+                let noiseW = 1.0 * noiseWeightMod * fovMod.noiseMod
                 if let z = noiseMadZscores[localIdx] {
-                    zSum += -min(cap, max(-cap, z)) * 1.0     // lower noise = better → negate
-                    wSum += 1.0
+                    zSum += -min(cap, max(-cap, z)) * noiseW    // lower noise = better → negate
+                    wSum += noiseW
                 }
+                // Trailing weight: galaxy 1.2x (elongation destroys detail), IFN 0.3x (irrelevant)
+                let trailW = effectiveTrailMult * trailWeightMod
                 if let z = trailingZscores[localIdx] {
-                    zSum += -min(cap, max(-cap, z)) * effectiveTrailMult  // lower trailing = better → negate
-                    wSum += effectiveTrailMult    // Severity-dependent: escalates from baseMult toward 1.0
+                    zSum += -min(cap, max(-cap, z)) * trailW    // lower trailing = better → negate
+                    wSum += trailW
                 }
 
                 guard wSum > 0 else { continue }
@@ -1005,16 +1071,19 @@ struct QualityEstimator {
         entries: [ImageEntry],
         result: inout [URL: QualityBreakdown]
     ) {
-        // Build session pools: group by object+exposure (ignoring filter and night)
+        // Build session pools: group by object+exposure+focalLength (ignoring filter and night).
+        // Focal length is critical: RASA 620mm and RC12 1964mm must never share a pool.
         struct PoolKey: Hashable {
             let target: String
             let exposure: Int
+            let focalLength: Int
         }
         var pools: [PoolKey: [Int]] = [:]
         for (i, entry) in entries.enumerated() {
             let key = PoolKey(
-                target: (entry.target ?? "").trimmingCharacters(in: .whitespaces),
-                exposure: entry.exposure.map { Int($0.rounded()) } ?? 0
+                target: entry.canonicalTarget ?? TargetCatalog.canonicalName(entry.target ?? ""),
+                exposure: entry.exposure.map { Int($0.rounded()) } ?? 0,
+                focalLength: entry.focalLength.map { Int(($0 / 50).rounded()) * 50 } ?? 0
             )
             pools[key, default: []].append(i)
         }
@@ -1066,6 +1135,25 @@ struct QualityEstimator {
             let starsP90 = stars.isEmpty ? 0 : stars[min(stars.count - 1, stars.count * 9 / 10)]
             let eccP10 = eccs.isEmpty ? 0 : eccs[max(0, eccs.count / 10)]         // Best 10% Ecc
 
+            // Target-type-aware FWHM threshold scaling.
+            // Emission nebulae and IFN are diffuse — FWHM differences matter less.
+            // Galaxies and clusters need tight PSFs — keep strict threshold.
+            let poolTarget = entries[indices.first ?? 0].target
+            let poolTargetType = DeepSkyTargetDatabase.targetType(for: poolTarget)
+            let fwhmSanityMultiplier: Double = {
+                switch poolTargetType {
+                case .emissionNebula, .hiiRegion, .supernovaRemnant, .wolfRayetNebula:
+                    return 1.6   // More lenient: 1.6x P10 instead of 1.3x
+                case .ifn, .darkNebula, .starFormingRegion:
+                    return 1.8   // Even more lenient for diffuse targets
+                case .reflectionNebula:
+                    return 1.5
+                default:
+                    return 1.3   // Standard: galaxies, clusters, unknown
+                }
+            }()
+            let severeFwhmMultiplier = fwhmSanityMultiplier + 0.1  // Severe = slightly above normal threshold
+
             // Check each frame against session-wide best-decile benchmarks
             // Tighter than median: P10 for FWHM/Ecc (lower=better), P90 for SNR/Stars (higher=better)
             for i in indices {
@@ -1079,9 +1167,11 @@ struct QualityEstimator {
 
                 var flags: [String] = []
 
-                // FWHM: frame > 1.3× the session's best-decile → significantly worse seeing
+                // FWHM: frame significantly above session's best-decile → worse seeing.
+                // Threshold is target-type-aware: emission nebulae get 1.6x (diffuse, FWHM less critical),
+                // galaxies/clusters get 1.3x (resolution critical).
                 if let fwhm = entry.computedFWHM ?? entry.fwhm, fwhmP10 > 0 {
-                    if fwhm > fwhmP10 * 1.3 { flags.append("FWHM far above session norm") }
+                    if fwhm > fwhmP10 * fwhmSanityMultiplier { flags.append("FWHM far above session norm") }
                 }
                 // SNR: frame < 0.4× the session's best-decile → dramatically lower signal
                 if let med = entry.noiseMedian, let mad = entry.noiseMAD, mad > 0, snrP90 > 3 {
@@ -1101,7 +1191,7 @@ struct QualityEstimator {
                 // more photons than RGB) but seeing is catastrophically worse.
                 var isSevereOutlier = false
                 if let fwhm = entry.computedFWHM ?? entry.fwhm, fwhmP10 > 0 {
-                    if fwhm > fwhmP10 * 1.4 { isSevereOutlier = true }
+                    if fwhm > fwhmP10 * severeFwhmMultiplier { isSevereOutlier = true }
                 }
 
                 guard flags.count >= 2 || (flags.count >= 1 && isSevereOutlier) else { continue }
@@ -1143,6 +1233,43 @@ struct QualityEstimator {
 
     // MARK: - Private helpers
 
+    /// Practical significance MAD floors per metric.
+    /// Prevents z-score amplification of tiny differences in tight sessions.
+    /// A human would never reject a frame with FWHM 4.6 when median is 4.5 —
+    /// these floors ensure the scoring system agrees.
+    /// Only affects Stage 2 z-scores, NOT Stage 1 garbage rules (which use absolute thresholds).
+    enum MetricType {
+        case fwhm, hfr, starCount, noiseMAD, trailing, psfFlux, generic
+    }
+
+    /// Compute FL-aware FWHM practical MAD floor.
+    /// At long FL (small plate scale), atmospheric seeing spreads across more pixels,
+    /// so the "insignificant difference" threshold is wider in pixels.
+    /// Base: 0.30px at 1.0"/px. Scales inversely with plate scale.
+    /// Range: [0.20, 0.80] px to prevent extremes.
+    static func fwhmMADFloor(arcsecPerPixel: Double?) -> Double {
+        guard let scale = arcsecPerPixel, scale > 0 else { return 0.30 }
+        // At 1.0"/px (reference): floor = 0.30px
+        // At 0.32"/px (RC12 2423mm): floor = 0.30 * (1.0/0.32) = 0.94 → capped at 0.80
+        // At 1.25"/px (RASA 620mm): floor = 0.30 * (1.0/1.25) = 0.24 → floored at 0.20
+        // At 0.50"/px (EdgeHD 2032mm): floor = 0.30 * (1.0/0.50) = 0.60
+        return min(0.80, max(0.20, 0.30 / scale))
+    }
+
+    /// Minimum effective MAD per metric. When natural variation is below this threshold,
+    /// differences are considered physically insignificant and z-scores are compressed.
+    private static func practicalMADFloor(for metric: MetricType, median: Double) -> Double {
+        switch metric {
+        case .fwhm:      return 0.30      // Default; overridden by FL-aware floor at call site
+        case .hfr:       return 0.20      // Same principle as FWHM
+        case .starCount: return max(20.0, median * 0.10)  // 10% variation is detection noise
+        case .noiseMAD:  return 0.0008    // Measurement precision floor at 5% subsample
+        case .trailing:  return 0.04      // Measurement noise from limited star sample (60 stars)
+        case .psfFlux:   return max(1.0, median * 0.10)   // 10% flux variation is noise
+        case .generic:   return 0.0       // No floor for unknown metrics
+        }
+    }
+
     /// Compute z-scores for an array of optional Doubles.
     /// Uses median/MAD instead of mean/stddev for robustness against outliers.
     /// One exceptional frame (superb seeing) won't skew the group statistics and
@@ -1151,7 +1278,9 @@ struct QualityEstimator {
     /// for normal distributions, so existing z-score thresholds remain valid.
     /// Falls back to mean/stddev when MAD=0 (>50% of values identical — rare in
     /// real data but common in synthetic test groups).
-    private static func zscores(values: [Double?]) -> [Double?] {
+    /// The practical MAD floor prevents penalization of insignificant differences.
+    /// Optional floorOverride replaces the default practical floor for this metric.
+    private static func zscores(values: [Double?], metric: MetricType = .generic, floorOverride: Double? = nil) -> [Double?] {
         let present = values.compactMap { $0 }.sorted()
         guard present.count >= 2 else {
             return Array(repeating: nil, count: values.count)
@@ -1159,16 +1288,21 @@ struct QualityEstimator {
 
         let median = present[present.count / 2]
         let deviations = present.map { Swift.abs($0 - median) }.sorted()
-        let mad = deviations[deviations.count / 2] * 1.4826  // normalized MAD → σ estimate
+        let rawMAD = deviations[deviations.count / 2] * 1.4826  // normalized MAD → σ estimate
 
-        if mad > 0 {
+        // Apply practical significance floor: compress z-scores when variation
+        // is below the threshold of physical significance for this metric.
+        let floor = floorOverride ?? practicalMADFloor(for: metric, median: median)
+        let effectiveMAD = max(rawMAD, floor)
+
+        if effectiveMAD > 0 {
             return values.map { val -> Double? in
                 guard let v = val else { return nil }
-                return (v - median) / mad
+                return (v - median) / effectiveMAD
             }
         }
 
-        // MAD = 0: majority of values identical. Fall back to mean/stddev which
+        // MAD = 0 AND floor = 0 (generic metric): Fall back to mean/stddev which
         // handles this case correctly (the few different values become clear outliers).
         let mean = present.reduce(0, +) / Double(present.count)
         let variance = present.map { ($0 - mean) * ($0 - mean) }.reduce(0, +) / Double(present.count)
@@ -1309,15 +1443,21 @@ struct QualityEstimator {
 // MARK: - Group key
 
 struct GroupKey: Hashable {
-    let filter:   String
-    let object:   String
-    let exposure: Int
-    let night:    String?   // observingNight for multi-night sessions, nil for single-night
+    let filter:      String
+    let object:      String
+    let exposure:    Int
+    let focalLength: Int     // Rounded FL in mm — prevents cross-setup comparison
+    let night:       String? // observingNight for multi-night sessions, nil for single-night
 
     init(entry: ImageEntry, useNight: Bool = false) {
-        filter   = (entry.filter   ?? "").uppercased().trimmingCharacters(in: .whitespaces)
-        object   = (entry.target   ?? "").trimmingCharacters(in: .whitespaces)
-        exposure = entry.exposure.map { Int($0.rounded()) } ?? 0
-        night    = useNight ? entry.observingNight : nil
+        filter      = (entry.filter   ?? "").uppercased().trimmingCharacters(in: .whitespaces)
+        // Use canonical target name to unify "NGC 7000", "NGC7000", "North America Nebula"
+        object      = entry.canonicalTarget ?? TargetCatalog.canonicalName(entry.target ?? "")
+        exposure    = entry.exposure.map { Int($0.rounded()) } ?? 0
+        // Focal length discriminates setups: RASA 620mm vs RC12 1964mm must NEVER be
+        // in the same group — they have completely different plate scales and FWHM expectations.
+        // Round to nearest 50mm to tolerate minor FL reporting differences between sessions.
+        focalLength = entry.focalLength.map { Int(($0 / 50).rounded()) * 50 } ?? 0
+        night       = useNight ? entry.observingNight : nil
     }
 }

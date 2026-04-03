@@ -724,6 +724,8 @@ final class QualityEstimatorTests: XCTestCase {
     /// Uses filter "L" (trailMult=1.0) so eccentricity threshold isn't raised.
     func testMultipleGarbageReasons() {
         var entries = makeGroup(count: 24, fwhm: 3.5, hfr: 2.0, starCount: 3000, noiseMAD: 0.01, filter: "L")
+        // Ensure all entries share the same FL bucket as the bad frame
+        for i in 0..<entries.count { entries[i].focalLength = 2455.0 }
         // Frame with BOTH low stars AND extreme eccentricity
         var bad = makeEntry(index: 99, filter: "L", fwhm: 3.5, hfr: 2.0, starCount: 10, noiseMAD: 0.01,
                             computedEccentricity: 0.70, focalLength: 2455.0)

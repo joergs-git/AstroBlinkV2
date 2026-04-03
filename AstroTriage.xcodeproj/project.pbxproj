@@ -24,6 +24,7 @@
 		27A50C3C24B073F7FA400012 /* ImageEntryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1ABC62333FF8D3609F74755 /* ImageEntryTests.swift */; };
 		2AC85F5C8AE08A1DB6A74261 /* KeyboardHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 763931350538CED5EA81290D /* KeyboardHandler.swift */; };
 		31747A36A973DE54498AA159 /* FrameRecord.swift in Sources */ = {isa = PBXBuildFile; fileRef = F90E148C13F8C7FE088D1524 /* FrameRecord.swift */; };
+		31947D5AB6C982F422ECFD8C /* DeepSkyTargetDatabase.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0FAA26375FEB3A7D2F9BFBAC /* DeepSkyTargetDatabase.swift */; };
 		37DA495A008C7E13F6D23D6C /* HeaderInspectorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D45AA5729C0A57A6C12C9C2 /* HeaderInspectorView.swift */; };
 		390301387CB9257F1DAE9235 /* MetadataExtractor.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAC4AFD3D3784B02004BA98D /* MetadataExtractor.swift */; };
 		399A544B01D518D97920F138 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AE4E059ADDE28F88AF19A8DF /* Assets.xcassets */; };
@@ -47,6 +48,7 @@
 		6A70C46FBC8628846E42189A /* AIsaacSpeech.swift in Sources */ = {isa = PBXBuildFile; fileRef = 08F0D2BEEDC92E723A57A4DE /* AIsaacSpeech.swift */; };
 		6A801D391463BD0101AE4EAA /* BatchOperations.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC91195CA425D12B99F20516 /* BatchOperations.swift */; };
 		6F0B663C43C9629F2CE3C655 /* GPUStarDetectionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 107592623F603E84A4E408A9 /* GPUStarDetectionTests.swift */; };
+		6FA733CDA65AB773F874383C /* ScoringValidationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 349FE588694CBEF50831E753 /* ScoringValidationTests.swift */; };
 		7025BB820EB0394F1BD3F5B8 /* TrailingAnalyzer.swift in Sources */ = {isa = PBXBuildFile; fileRef = B8942CE397AE911C7346F9D1 /* TrailingAnalyzer.swift */; };
 		785DA5B582B5E5DD03CF89AE /* QualityEstimator.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC2B51C4B8F25806E968FDB4 /* QualityEstimator.swift */; };
 		7A69119E8C46AEEEC3903EDA /* TexturePool.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABAF1B6D447B16F3447CF29C /* TexturePool.swift */; };
@@ -158,6 +160,7 @@
 		08F0D2BEEDC92E723A57A4DE /* AIsaacSpeech.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIsaacSpeech.swift; sourceTree = "<group>"; };
 		0BFB130B08CCDD11AC1018A7 /* StarMetricsCalculator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StarMetricsCalculator.swift; sourceTree = "<group>"; };
 		0F4C747A549511B45DCACC15 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		0FAA26375FEB3A7D2F9BFBAC /* DeepSkyTargetDatabase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeepSkyTargetDatabase.swift; sourceTree = "<group>"; };
 		107592623F603E84A4E408A9 /* GPUStarDetectionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GPUStarDetectionTests.swift; sourceTree = "<group>"; };
 		18942289A31EB02EAC0670C9 /* FrameHistoryDatabase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FrameHistoryDatabase.swift; sourceTree = "<group>"; };
 		19E7CEF533FCAE62802CFC77 /* MetadataExtractorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetadataExtractorTests.swift; sourceTree = "<group>"; };
@@ -171,6 +174,7 @@
 		24F8E2016E26D881862A1E76 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		2888071D5D7B050F791FC4C6 /* BortleGrid.bin */ = {isa = PBXFileReference; lastKnownFileType = archive.macbinary; path = BortleGrid.bin; sourceTree = "<group>"; };
 		32B55DBDF2FD18BEF1399C8D /* ArchiveScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArchiveScanner.swift; sourceTree = "<group>"; };
+		349FE588694CBEF50831E753 /* ScoringValidationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScoringValidationTests.swift; sourceTree = "<group>"; };
 		3BCBBE41D0B90CC98443F843 /* GradientRemoval.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GradientRemoval.swift; sourceTree = "<group>"; };
 		3E84C4C954C1B6E8C561713D /* ThumbnailProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThumbnailProvider.swift; sourceTree = "<group>"; };
 		40D54AA4B026ABD4997C7758 /* STFCalculator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = STFCalculator.swift; sourceTree = "<group>"; };
@@ -323,6 +327,7 @@
 				19E7CEF533FCAE62802CFC77 /* MetadataExtractorTests.swift */,
 				E291DE3DBC147FB649506D61 /* NINAFilenameParserTests.swift */,
 				7F143D9906FBF9F56814DB68 /* QualityEstimatorTests.swift */,
+				349FE588694CBEF50831E753 /* ScoringValidationTests.swift */,
 				A05ABE70A121689E1D00FB32 /* SessionScannerTests.swift */,
 				C73F68266BEC1BE0872283EB /* StarAnalyzerTests.swift */,
 			);
@@ -393,6 +398,7 @@
 				78F34710ED7DC2766AE2501F /* CommunityBaseline.swift */,
 				9357E837EAC43DB99DF08C8F /* CommunityDetectionService.swift */,
 				4EC5D8FEF949DAD6CA5217B2 /* ConvergenceDetector.swift */,
+				0FAA26375FEB3A7D2F9BFBAC /* DeepSkyTargetDatabase.swift */,
 				A6E06E1261BF9CF423889B91 /* FileHasher.swift */,
 				18942289A31EB02EAC0670C9 /* FrameHistoryDatabase.swift */,
 				AA671A0260128DA976044970 /* FrameHistoryModel.swift */,
@@ -679,6 +685,7 @@
 				5E675BB37EE91BCC5AA74C71 /* MetadataExtractorTests.swift in Sources */,
 				CC6E11E8FA4788135037A3CE /* NINAFilenameParserTests.swift in Sources */,
 				FC90856759FCA3D20B44ABED /* QualityEstimatorTests.swift in Sources */,
+				6FA733CDA65AB773F874383C /* ScoringValidationTests.swift in Sources */,
 				E54F7D793DBBAA3ADA082451 /* SessionScannerTests.swift in Sources */,
 				9D950EBF4E4EBC1A00430834 /* StarAnalyzerTests.swift in Sources */,
 			);
@@ -734,6 +741,7 @@
 				3AE8C59AED6435B5F41CA9AF /* ContentView.swift in Sources */,
 				2356F4E612C0145A8DAD2063 /* ConvergenceDetector.swift in Sources */,
 				FF242D8AC80D34562D5B296A /* DecodedImage.swift in Sources */,
+				31947D5AB6C982F422ECFD8C /* DeepSkyTargetDatabase.swift in Sources */,
 				A557AE1C0894A7ED185F5BDC /* FileHasher.swift in Sources */,
 				1864DE963C0E5E7717212E46 /* FileListView.swift in Sources */,
 				C4AB2A0721C2A52C27DC95AC /* FrameHistoryDatabase.swift in Sources */,

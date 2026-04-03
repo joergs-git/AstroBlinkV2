@@ -564,12 +564,15 @@ class TriageViewModel: ObservableObject {
         let targetKey = (entry.target ?? "").trimmingCharacters(in: .whitespaces)
         let filterKey = (entry.filter ?? "").uppercased().trimmingCharacters(in: .whitespaces)
         let expKey = entry.exposure.map { Int($0.rounded()) } ?? 0
+        // Focal length bucket — RASA 620mm and RC12 1964mm must never compare
+        let flKey = entry.focalLength.map { Int(($0 / 50).rounded()) * 50 } ?? 0
 
         let groupImages = images.filter { img in
             let t = (img.target ?? "").trimmingCharacters(in: .whitespaces)
             let f = (img.filter ?? "").uppercased().trimmingCharacters(in: .whitespaces)
             let e = img.exposure.map { Int($0.rounded()) } ?? 0
-            return t == targetKey && f == filterKey && e == expKey
+            let fl = img.focalLength.map { Int(($0 / 50).rounded()) * 50 } ?? 0
+            return t == targetKey && f == filterKey && e == expKey && fl == flKey
         }
 
         // Find the best frame for comparison.
@@ -579,28 +582,43 @@ class TriageViewModel: ObservableObject {
             .filter { $0.url != entry.url }
             .max(by: { ($0.qualityZScore ?? -100) < ($1.qualityZScore ?? -100) })
 
-        // If group best is still garbage/borderline, try same target+exposure across all filters
+        // Cross-filter fallback: SAME FILTER with different exposure first,
+        // then same filter class as absolute last resort.
+        // L vs R looks different (star brightness, noise profile), Ha vs L is completely wrong.
+        // Always prefer same filter. Only fall back within class (NB↔NB, BB↔BB) if nothing else.
+        let selectedCanonical = ColorCombineEngine.canonicalFilterName(filterKey)
+
+        // Fallback 1: same filter + same setup, any exposure (e.g., Ha 300s best is garbage → try Ha 180s)
         if best == nil || (best!.qualityTier != .excellent && best!.qualityTier != .good) {
-            let crossFilter = images.filter { img in
+            let sameFilterAnyExp = images.filter { img in
                 let t = (img.target ?? "").trimmingCharacters(in: .whitespaces)
-                let e = img.exposure.map { Int($0.rounded()) } ?? 0
-                return t == targetKey && e == expKey && img.url != entry.url
+                let f = (img.filter ?? "").uppercased().trimmingCharacters(in: .whitespaces)
+                let fl = img.focalLength.map { Int(($0 / 50).rounded()) * 50 } ?? 0
+                return t == targetKey && f == filterKey && fl == flKey && img.url != entry.url
             }
-            if let crossBest = crossFilter.max(by: { ($0.qualityZScore ?? -100) < ($1.qualityZScore ?? -100) }),
-               (crossBest.qualityZScore ?? -100) > (best?.qualityZScore ?? -100) {
-                best = crossBest
+            if let sfBest = sameFilterAnyExp.max(by: { ($0.qualityZScore ?? -100) < ($1.qualityZScore ?? -100) }),
+               (sfBest.qualityZScore ?? -100) > (best?.qualityZScore ?? -100) {
+                best = sfBest
             }
         }
 
-        // If still no good reference, try any frame with the same target
+        // Fallback 2 (last resort): same filter CLASS + same setup + same target.
+        // NB↔NB (Ha can compare to OIII — both show nebula structure, similar star profiles).
+        // BB↔BB (L can compare to R — both broadband, similar star fields).
+        // Never NB↔BB (Ha vs L looks completely different).
+        // Always same setup (FL) — never compare RASA to RC12.
         if best == nil || (best!.qualityTier != .excellent && best!.qualityTier != .good) {
-            let anyTarget = images.filter { img in
+            let selectedIsNarrowband = QualityEstimator.narrowbandCanonical.contains(selectedCanonical)
+            let sameClass = images.filter { img in
                 let t = (img.target ?? "").trimmingCharacters(in: .whitespaces)
-                return t == targetKey && img.url != entry.url
+                let f = ColorCombineEngine.canonicalFilterName((img.filter ?? "").uppercased().trimmingCharacters(in: .whitespaces))
+                let isNB = QualityEstimator.narrowbandCanonical.contains(f)
+                let fl = img.focalLength.map { Int(($0 / 50).rounded()) * 50 } ?? 0
+                return t == targetKey && fl == flKey && img.url != entry.url && isNB == selectedIsNarrowband
             }
-            if let anyBest = anyTarget.max(by: { ($0.qualityZScore ?? -100) < ($1.qualityZScore ?? -100) }),
-               (anyBest.qualityZScore ?? -100) > (best?.qualityZScore ?? -100) {
-                best = anyBest
+            if let classBest = sameClass.max(by: { ($0.qualityZScore ?? -100) < ($1.qualityZScore ?? -100) }),
+               (classBest.qualityZScore ?? -100) > (best?.qualityZScore ?? -100) {
+                best = classBest
             }
         }
 
