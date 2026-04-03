@@ -4,6 +4,27 @@ All notable changes to AstroBlink & AIsaac will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [5.14.0] — 2026-04-03
+
+### Added
+- **Deep-Sky Target Database** — 229+ embedded deep-sky targets with type classification (galaxy, emission nebula, planetary nebula, globular cluster, IFN, etc.), angular sizes, RA/Dec J2000, magnitude, surface brightness, constellation, and filter recommendations (SHO/HOO/LRGB ratios per target type)
+- **Target-Aware Quality Scoring** — Stage 2 metric weights adjust by target type: galaxies weight FWHM 1.4x and trailing 1.2x (resolution-critical), emission nebulae weight noise 1.4x (SNR-critical), IFN weights noise 2.0x with FWHM only 0.4x (every photon counts). Unknown targets use 1.0x (unchanged behavior)
+- **FOV Fill Ratio Modulation** — Secondary weight adjustment based on target angular size vs sensor FOV. Small target in large FOV boosts FWHM weight. Target fills frame boosts noise weight
+- **Practical Significance MAD Floor** — Prevents z-score amplification of insignificant metric differences in tight sessions. FWHM floor scales with focal length (0.20-0.80px), stars floor 10% of median, noise floor 0.0008, trailing floor 0.04. A human would never reject FWHM 4.6 vs 4.5 — now the scoring agrees
+- **Planet/Solar System Exclusion** — Jupiter, Saturn, Moon, Sun, Mars, Venus, Mercury and other solar system objects excluded from quality scoring entirely (fundamentally different imaging technique)
+- **Scoring Regression Tests** — 9 golden-set tests with real M82 metric values: trailing detection, chain detection, dark frame isolation, narrowband preservation, cross-setup scoring, tight session sanity, tier distribution. Runs in 0.014s, catches regressions before manual testing
+- **Session Sanity Target-Type Thresholds** — FWHM sanity multiplier scales by target type: emission nebulae 1.6x P10 (diffuse targets tolerate seeing), IFN/dark nebula 1.8x, galaxies/clusters unchanged at 1.3x
+
+### Fixed
+- **GroupKey Canonicalization** — GroupKey and PoolKey now use `TargetCatalog.canonicalName()` instead of raw strings. "NGC 7000", "NGC7000", and "North America Nebula" now land in the same scoring group
+- **GroupKey Setup Separation** — GroupKey includes focal length (±50mm bucket) to prevent cross-setup scoring. RASA 620mm and RC12 1964mm frames of the same target are scored in separate groups (different plate scales, different FWHM expectations)
+- **Session Sanity Cross-Setup** — PoolKey deliberately excludes focal length so session sanity can cross-compare setups. January RC12 bad data is still caught by comparing against March data, even at different FL
+- **Compare Filter Matching** — Compare with Best now prioritizes: 1) same filter + same setup, 2) same filter any exposure, 3) same filter class (NB↔NB, BB↔BB). Never compares Ha to L or R to L — different channels look completely different
+- **R0b Dark Frame FL-Scaling** — Path B star threshold now scales with focal length: wide-field (620mm) threshold ~10000 (many real stars), long FL (2423mm) threshold ~5100 (few real stars). Background threshold tightened from 0.003 to 0.002. Fixes false positive on L-eXtreme filter at low gain
+
+### Changed
+- Algorithm version bumped to 14 (from 13). Target-aware weights, MAD floor, FL-aware grouping, R0b FL-scaling
+
 ## [5.13.0] — 2026-04-03
 
 ### Added

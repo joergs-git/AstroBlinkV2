@@ -157,33 +157,46 @@ final class ScoringValidationTests: XCTestCase {
     }
 
     func testR0b_DarkFrame_PathB() {
+        // RC12 at 2423mm → FL-scaled threshold ~5100. Stars=8000 with bg=0.001 triggers.
         var entries = makeBaselineGroup(setup: Self.rc12, count: 10)
-        entries[0].computedStarCount = 6000
-        entries[0].noiseMedian = 0.002
+        entries[0].computedStarCount = 8000
+        entries[0].noiseMedian = 0.001
 
         let scores = score(entries: entries)
         XCTAssertTrue(reasons(for: 0, in: entries, scores: scores).contains(.noisePeaks),
-            "stars=6000 + bg=0.002 must trigger R0b Path B")
+            "stars=8000 + bg=0.001 at long FL must trigger R0b Path B")
     }
 
     func testR0b_Guard_BelowStarThreshold() {
         var entries = makeBaselineGroup(setup: Self.rc12, count: 10)
         entries[0].computedStarCount = 4500
-        entries[0].noiseMedian = 0.002
+        entries[0].noiseMedian = 0.001
 
         let scores = score(entries: entries)
         XCTAssertFalse(reasons(for: 0, in: entries, scores: scores).contains(.noisePeaks),
-            "stars=4500 must NOT trigger R0b (below 5000)")
+            "stars=4500 must NOT trigger R0b (below threshold)")
     }
 
     func testR0b_Guard_AboveBackgroundThreshold() {
         var entries = makeBaselineGroup(setup: Self.rc12, count: 10)
-        entries[0].computedStarCount = 6000
+        entries[0].computedStarCount = 8000
         entries[0].noiseMedian = 0.004
 
         let scores = score(entries: entries)
         XCTAssertFalse(reasons(for: 0, in: entries, scores: scores).contains(.noisePeaks),
-            "stars=6000 + bg=0.004 must NOT trigger R0b (bg above 0.003)")
+            "stars=8000 + bg=0.004 must NOT trigger R0b (bg above 0.002)")
+    }
+
+    func testR0b_Guard_WidefieldHighStars_NotDarkFrame() {
+        // Wide-field (620mm) with 5200 real stars + low gain narrowband bg — must NOT trigger.
+        // FL-scaled threshold at 620mm: 7500 * (1000/620)^2 ≈ ~19500 → capped at 10000.
+        var entries = makeBaselineGroup(setup: Self.rasa, count: 10)
+        entries[0].computedStarCount = 5200
+        entries[0].noiseMedian = 0.0025
+
+        let scores = score(entries: entries)
+        XCTAssertFalse(reasons(for: 0, in: entries, scores: scores).contains(.noisePeaks),
+            "Wide-field 5200 stars + low-gain bg must NOT trigger R0b")
     }
 
     func testR0b_DarkFrame_IsolationFromGroupStats() {

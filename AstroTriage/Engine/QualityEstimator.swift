@@ -382,11 +382,26 @@ struct QualityEstimator {
             // they BECOME the group median, making every real frame look like an outlier.
             // Detect them early and null out their metrics so they don't skew statistics.
             var darkFrameIndices: Set<Int> = []
+            // FL-dependent star threshold for dark frame detection Path B.
+            // Wide-field scopes (620mm, 468mm) can have 5000+ real stars at dark sites.
+            // Long FL (2400mm) rarely exceeds 4000 real stars.
+            // Scale threshold with FOV area: shorter FL = higher threshold.
+            let darkStarThreshold: Double = {
+                guard let fl = groupEntries.first?.focalLength, fl > 0 else { return 7500 }
+                // Reference: 7500 at 1000mm. Scale inversely with FL² (FOV area ∝ 1/FL²)
+                // Clamp to [5000, 10000] to stay within physical bounds.
+                let scaled = 7500.0 * (1000.0 / fl) * (1000.0 / fl)
+                return min(10000, max(5000, scaled))
+            }()
+
             for (i, entry) in groupEntries.enumerated() {
                 if let stars = starsValues[i] {
                     if stars >= 10000 {
                         darkFrameIndices.insert(i)
-                    } else if stars >= 5000, let bgLevel = entry.noiseMedian, bgLevel < 0.003 {
+                    } else if stars >= darkStarThreshold, let bgLevel = entry.noiseMedian, bgLevel < 0.002 {
+                        // Path B: FL-scaled star threshold + very low background.
+                        // Wide-field (620mm): threshold ~9200 (wide FOV = many real stars)
+                        // Long FL (2423mm): threshold ~5000 (narrow FOV = few real stars)
                         darkFrameIndices.insert(i)
                     }
                 }
@@ -524,13 +539,13 @@ struct QualityEstimator {
                 // Detection paths:
                 // (a) Stars ≥ 10000: physically impossible for real stars after 16σ escalation
                 //     in PreviewGenerator. Even dense Milky Way fields reduce to < 5000.
-                // (b) Stars ≥ 5000 AND near-zero background (< 0.003): conservative threshold
-                //     avoids false positives on wide-field narrowband (140mm Ha can have
-                //     3000-5000 real stars with background 0.003-0.005 at dark sites).
+                // (b) Stars ≥ FL-dependent threshold AND extremely low background (< 0.002).
+                //     Wide-field (620mm) can have 5000+ real stars at low gain + narrowband.
+                //     Long FL (2400mm) rarely exceeds 4000 real stars.
                 if let stars = starsValues[localIdx] {
                     if stars >= 10000 {
                         garbageReasons.append(.noisePeaks)
-                    } else if stars >= 5000, let bgLevel = entry.noiseMedian, bgLevel < 0.003 {
+                    } else if stars >= darkStarThreshold, let bgLevel = entry.noiseMedian, bgLevel < 0.002 {
                         garbageReasons.append(.noisePeaks)
                     }
                 }
@@ -1071,19 +1086,21 @@ struct QualityEstimator {
         entries: [ImageEntry],
         result: inout [URL: QualityBreakdown]
     ) {
-        // Build session pools: group by object+exposure+focalLength (ignoring filter and night).
-        // Focal length is critical: RASA 620mm and RC12 1964mm must never share a pool.
+        // Build session pools: group by object+exposure (ignoring filter, night, AND focal length).
+        // Session sanity deliberately pools across setups: if January RC12 frames at 2455mm are
+        // all garbage but March RC12red08 frames at 1964mm are good, the cross-setup comparison
+        // catches the bad night. Without this, uniformly bad FL-specific groups normalize via
+        // z-scores and escape detection entirely.
+        // Note: GroupKey includes FL (separate scoring groups), but PoolKey does NOT (cross-check).
         struct PoolKey: Hashable {
             let target: String
             let exposure: Int
-            let focalLength: Int
         }
         var pools: [PoolKey: [Int]] = [:]
         for (i, entry) in entries.enumerated() {
             let key = PoolKey(
                 target: entry.canonicalTarget ?? TargetCatalog.canonicalName(entry.target ?? ""),
-                exposure: entry.exposure.map { Int($0.rounded()) } ?? 0,
-                focalLength: entry.focalLength.map { Int(($0 / 50).rounded()) * 50 } ?? 0
+                exposure: entry.exposure.map { Int($0.rounded()) } ?? 0
             )
             pools[key, default: []].append(i)
         }

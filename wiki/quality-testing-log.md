@@ -189,6 +189,57 @@ FWHM look "normal" within the group.
 
 ---
 
+---
+
+## v5.14.0 — Target-Aware Scoring & Regression Test Suite (2026-04-03)
+
+### Deep-Sky Target Database
+229+ embedded targets with TargetType classification. Each type has scoring weight modifiers
+that adjust FWHM, star count, noise, and trailing importance for quality scoring.
+
+### Automated Regression Tests (120 tests, 0.14 seconds)
+
+| Test Suite | Tests | Coverage |
+|---|---|---|
+| QualityEstimatorTests | 49 | All garbage rules, z-score math, tier assignment |
+| ScoringValidationTests | 41 | Target-aware weights, MAD floor, planet exclusion, cross-setup, FOV |
+| ScoringRegressionTests | 9 | M82 trailing, chain detection, dark frames, NB preservation |
+| CalibrationDatabaseTests | 11 | Welford algorithm, quality floor, fingerprinting |
+| ConvergenceDetectorTests | 11 | Spread analysis, SNR stopping, readiness |
+
+### Key Regression Tests
+
+**testM82_JanuaryTrailingFramesMustBeDetected:**
+15 good March frames + 15 bad January frames (trailing 0.35-0.65, consensus 0.65).
+Asserts ≥60% of January frames detected as non-good. Catches the exact regression where
+FL-bucketing or MAD floors cause uniformly bad groups to escape detection.
+
+**testCrossSetup_SeparateGroupScoring:**
+10 RASA frames (FWHM ~3.5px) + 10 RC12 frames (FWHM ~6px), same target.
+Asserts RC12 frames are NOT trashed by RASA comparison (different plate scales).
+
+**testR0b_Guard_WidefieldHighStars_NotDarkFrame:**
+Wide-field frame with 5200 real stars + low-gain narrowband background.
+Asserts NOT flagged as dark frame (FL-dependent threshold).
+
+### Bugs Found and Fixed During Testing
+
+1. **GroupKey FL-bucketing broke trailing detection** — Adding FL to GroupKey split January/March
+   M82 groups. Session sanity PoolKey also used FL, preventing cross-setup comparison. Fix: keep
+   FL in GroupKey (scoring) but remove from PoolKey (session sanity).
+
+2. **Compare showed H vs L reference** — Cross-filter fallback compared narrowband to broadband.
+   Fix: restrict fallback to same filter → same filter class (NB↔NB, BB↔BB).
+
+3. **Compare showed RASA as "best" for RC12 frame** — No FL matching in compare search.
+   Fix: all compare fallbacks require matching FL bucket.
+
+4. **R0b false positive on L-eXtreme at gain 10** — Stars=5185 + background<0.003 triggered
+   dark frame detection on a real sky frame. Fix: FL-dependent star threshold (wide-field higher),
+   background threshold tightened to 0.002.
+
+---
+
 *This log is maintained as part of the AstroTriage/AstroBlink quality assurance process.
 Each new detection feature or threshold change requires a full regression test across all
 7 setups before release.*

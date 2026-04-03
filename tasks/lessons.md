@@ -335,3 +335,15 @@
 - **Root cause:** SwiftUI on macOS intercepts and blocks virtually all external event delivery mechanisms: custom URL schemes, Apple Events, file open events via `application(_:openFile:)`, DistributedNotificationCenter observers, UserDefaults written by external processes (KVO never fires), and `applicationDidBecomeActive` notifications from external activation. This is a known SwiftUI lifecycle issue with @NSApplicationDelegateAdaptor where the SwiftUI app lifecycle takes precedence over AppKit delegate methods.
 - **Rule:** For cross-process IPC in a SwiftUI macOS app, the only reliable mechanism is clipboard marker + Timer polling. Write a known marker string to NSPasteboard from the external process, and poll for it with a Timer in the SwiftUI app (e.g. every 0.5s). Do NOT rely on URL schemes, Apple Events, DistributedNotifications, or any other standard macOS IPC — they all fail silently under SwiftUI.
 - **Applies to:** Any macOS SwiftUI app needing to receive data from external processes, PixInsight Bridge, automation scripts, inter-app communication
+
+## [2026-04-03] — GroupKey FL-bucketing broke trailing detection in uniformly bad groups
+- **Mistake:** Added focal length to GroupKey to prevent cross-setup scoring (RASA vs RC12). This split M82 January (FL 2455mm) from March (FL possibly different) into separate groups. January group was ALL bad trailing — z-scores normalized, trailing outlier guard prevented detection. Dozens of obvious trailing garbage frames escaped as "Good".
+- **Root cause:** FL-bucketing was added to GroupKey AND PoolKey (session sanity). When the session sanity pool also required FL match, it couldn't cross-compare bad January data against good March data from a different FL.
+- **Rule:** GroupKey SHOULD include FL (scoring must not compare different plate scales). But session sanity PoolKey must NOT include FL — session sanity exists specifically to catch uniformly bad groups by cross-comparing against the session's best data, even from different setups. Always run the ScoringRegressionTests (especially testM82_JanuaryTrailingFramesMustBeDetected) before presenting scoring changes.
+- **Applies to:** QualityEstimator GroupKey/PoolKey, any change to group composition logic
+
+## [2026-04-03] — R0b Path B false positive on low-gain narrowband (L-eXtreme)
+- **Mistake:** R0b Path B (stars >= 5000 AND bg < 0.003) flagged real NGC 7635 frame as "dome/cap". Frame had 5185 real stars with L-eXtreme filter at GAIN 10 on 620mm wide-field.
+- **Root cause:** Low gain (10) + dual-narrowband filter produces very low background (< 0.003 normalized). The 5000-star threshold was calibrated for gain 100+ where background is naturally higher. Wide-field setups also detect more stars than long FL.
+- **Rule:** R0b Path B star threshold must be FL-dependent: wide FOV sees more real stars, so threshold must be higher. Background threshold tightened from 0.003 to 0.002 (real dark frames are always < 0.001). Formula: `7500 * (1000/FL)^2`, clamped [5000, 10000].
+- **Applies to:** QualityEstimator R0b, any dark frame detection logic, low-gain imaging setups

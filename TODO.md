@@ -49,7 +49,38 @@ All original implementation phases are complete:
 
 ---
 
+## Shipped — v5.14.0
+
+- [x] **Deep-Sky Target Database** — 229+ targets with type classification, angular sizes, RA/Dec, filter recommendations
+- [x] **Target-Aware Quality Scoring** — Metric weights adjust by target type (galaxy FWHM 1.4x, IFN noise 2.0x, etc.)
+- [x] **FOV Fill Ratio** — Secondary weight modulation based on target size vs sensor FOV
+- [x] **Practical MAD Floor** — Prevents z-score amplification of insignificant differences in tight sessions
+- [x] **FL-Aware FWHM Floor** — MAD floor scales with plate scale (long FL = wider pixel floor)
+- [x] **Planet/Solar Exclusion** — Solar system objects excluded from quality scoring
+- [x] **GroupKey Canonicalization** — "NGC 7000" = "NGC7000" = "North America Nebula"
+- [x] **GroupKey Setup Separation** — FL bucket prevents cross-setup scoring (RASA vs RC12)
+- [x] **Session Sanity Cross-Setup** — PoolKey without FL allows cross-setup bad-night detection
+- [x] **Compare Filter/Setup Matching** — Same filter priority, same FL, NB↔NB only
+- [x] **R0b FL-Dependent Threshold** — Wide-field higher star threshold, tightened background
+- [x] **Session Sanity Target-Type Thresholds** — Emission nebula FWHM 1.6x, IFN 1.8x
+- [x] **Scoring Regression Tests** — 9 golden-set tests catching M82 trailing, R0b, cross-setup issues
+- [x] **Float32/Float64 FITS Support** — BITPIX-aware decoder for APP/PixInsight/GraxPert output
+
+---
+
 ## Open — Planned Features
+
+### Target Database UI
+- [ ] Browsable target catalog window (like Telescopius — sortable table with type, size, magnitude, filter recommendations)
+- [ ] Show which target matched the current session + active weight modifiers
+- [ ] FOV fill ratio visualization for current setup
+
+### Imaging Calendar / Planner
+- [ ] Monthly calendar view with moon phases and darkness hours
+- [ ] Target altitude curves per night from user's location
+- [ ] Moon proximity warnings per target
+- [ ] "Best targets tonight" ranking
+- [ ] Requires: altitude/azimuth calculator (RA/Dec + lat/lon + LST)
 
 ### WBPP File Organizer
 - [ ] Auto-organize triaged files into WBPP-compatible directory structure
