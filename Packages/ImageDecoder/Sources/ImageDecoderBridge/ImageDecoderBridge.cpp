@@ -118,7 +118,9 @@ extern "C" DecodeResult decode_xisf(const char* path) {
 
 // ============================================================================
 // FITS Decode — uses cfitsio
-// Lesson L1: MUST use TUSHORT to correctly handle BZERO=32768
+// Lesson L1: MUST use TUSHORT for integer FITS to correctly handle BZERO=32768
+// Float FITS (BITPIX=-32/-64): read as TFLOAT, auto-detect range, normalize
+// to uint16. Handles APP, PixInsight, GraxPert float output correctly.
 // ============================================================================
 
 extern "C" DecodeResult decode_fits(const char* path) {
@@ -132,6 +134,15 @@ extern "C" DecodeResult decode_fits(const char* path) {
         result.success = 0;
         fits_get_errstatus(status, result.error);
         return result;
+    }
+
+    // Determine pixel data type before reading
+    int bitpix = 0;
+    fits_get_img_type(fptr, &bitpix, &status);
+    if (status) {
+        // If BITPIX query fails, default to integer path (backwards compat)
+        status = 0;
+        bitpix = SHORT_IMG;
     }
 
     int naxis = 0;
@@ -166,9 +177,57 @@ extern "C" DecodeResult decode_fits(const char* path) {
     result.pixels = (uint16_t*)aligned;
 
     int anynull = 0;
-    // CRITICAL (Lesson L1): Use TUSHORT, not TSHORT!
-    // cfitsio automatically applies BZERO=32768 when reading as TUSHORT
-    fits_read_img(fptr, TUSHORT, 1, (long)pixelCount, nullptr, result.pixels, &anynull, &status);
+
+    if (bitpix == FLOAT_IMG || bitpix == DOUBLE_IMG) {
+        // Float FITS (BITPIX=-32 or -64): typical output from Astro Pixel Processor,
+        // PixInsight, GraxPert. Values usually normalized to [0,1].
+        // cfitsio converts double→float automatically when TFLOAT is requested.
+        float* floatBuf = (float*)malloc(pixelCount * sizeof(float));
+        if (!floatBuf) {
+            result.success = 0;
+            snprintf(result.error, sizeof(result.error), "Float buffer alloc failed (%zu bytes)",
+                     pixelCount * sizeof(float));
+            free(result.pixels);
+            result.pixels = nullptr;
+            fits_close_file(fptr, &status);
+            return result;
+        }
+
+        fits_read_img(fptr, TFLOAT, 1, (long)pixelCount, nullptr, floatBuf, &anynull, &status);
+
+        if (!status) {
+            // Auto-detect pixel value range for correct normalization:
+            // [0,1] = standard normalized (APP, PI, GraxPert)
+            // [0,N] where N>1 = ADU counts or other scaling
+            float maxVal = 0.0f;
+            for (size_t i = 0; i < pixelCount; i++) {
+                if (floatBuf[i] > maxVal) maxVal = floatBuf[i];
+            }
+
+            float scale;
+            if (maxVal <= 0.0f) {
+                scale = 0.0f;               // All-black/empty image
+            } else if (maxVal <= 1.0f) {
+                scale = 65535.0f;            // Normalized [0,1] → [0,65535]
+            } else {
+                scale = 65535.0f / maxVal;   // Map actual range → [0,65535]
+            }
+
+            for (size_t i = 0; i < pixelCount; i++) {
+                float v = floatBuf[i] * scale;
+                if (v < 0.0f) v = 0.0f;
+                if (v > 65535.0f) v = 65535.0f;
+                result.pixels[i] = (uint16_t)(v + 0.5f);
+            }
+        }
+
+        free(floatBuf);
+    } else {
+        // Integer FITS (BITPIX=8,16,32): use TUSHORT
+        // CRITICAL (Lesson L1): Use TUSHORT, not TSHORT!
+        // cfitsio automatically applies BZERO=32768 when reading as TUSHORT
+        fits_read_img(fptr, TUSHORT, 1, (long)pixelCount, nullptr, result.pixels, &anynull, &status);
+    }
 
     if (status) {
         result.success = 0;
