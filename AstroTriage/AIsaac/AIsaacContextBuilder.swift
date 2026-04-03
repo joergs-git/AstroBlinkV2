@@ -533,6 +533,20 @@ struct AIsaacContextBuilder {
           FWHM 1.0×, Noise 1.0×, Trailing severity-dependent (base: 0.3× NB, 0.6× RGB, 1.0× L, 0.7× unknown; \
           escalates toward 1.0× as trailing worsens via baseMult + (1-baseMult) × trailingScore²). \
           Z-scores capped at ±3.0.
+          * TARGET-AWARE WEIGHTS (v5.14.0): Stage 2 metric weights adjust by target type from a 229+ \
+          deep-sky target database. Galaxies: FWHM 1.4×, trailing 1.2× (resolution-critical). \
+          Emission nebulae/HII regions: noise 1.4×, FWHM 0.7× (SNR-critical). \
+          IFN: noise 2.0×, FWHM 0.4×, trailing 0.3× (every photon counts). \
+          Globular/open clusters: stars 0.2-0.3× (individual star count irrelevant). \
+          Planetary nebulae: FWHM 1.3× (small angular size). Unknown targets: all 1.0× (unchanged). \
+          FOV fill ratio modulation: small target in large FOV boosts FWHM +20%; target fills frame boosts noise +20%.
+          * PRACTICAL SIGNIFICANCE MAD FLOOR (v5.14.0): prevents z-score amplification in tight sessions. \
+          FWHM floor scales with focal length (0.20-0.80px). Stars floor: 10% of median. \
+          Noise floor: 0.0008. Trailing floor: 0.04. Differences smaller than the floor don't affect tier placement — \
+          FWHM 4.6 vs 4.5 will never cause a demotion.
+          * PLANET EXCLUSION (v5.14.0): solar system objects (Jupiter, Saturn, Moon, Mars, Venus, Mercury) \
+          are excluded from quality scoring entirely. Short-exposure lucky imaging uses fundamentally \
+          different metrics — these frames appear as "unscored", which is correct behavior.
           * Tiers: Excellent (z > 0.5), Good (z > -0.5), Borderline (z > -2.0), Trash (z ≤ -2.0)
         - Stage 3 — Rescue Rules (only promote, never demote):
           * A: FWHM + noise OK → Good. B: Star dip + sharp → Good. C: FWHM-only → Borderline.
@@ -765,8 +779,12 @@ struct AIsaacContextBuilder {
         - Affects scoring: background anomaly thresholds adjust for Bortle zone and moon illumination.
 
         TARGET CLUSTERING:
-        - Target names are normalized for consistent grouping across sessions.
+        - Target names are normalized for consistent grouping across sessions and within scoring.
         - "NGC 7000" = "NGC7000", "Orion Nebula" = "M42", "IC 63 Ghost" = "IC63".
+        - GroupKey (which controls which frames compare against each other for z-scores) uses canonical names — \
+        different naming of the same target lands in the same scoring group.
+        - GroupKey also includes focal length (±50mm bucket) to prevent cross-setup scoring — \
+        different plate scales produce different FWHM expectations.
         - History charts and target picker use canonical names. User sees clean, deduplicated target list.
 
         MOON DATA:

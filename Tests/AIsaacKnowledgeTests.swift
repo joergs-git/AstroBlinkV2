@@ -146,6 +146,25 @@ final class AIsaacKnowledgeTests: XCTestCase {
         }
     }
 
+    /// v5.14.0 target-aware scoring features must be documented in AIsaac's knowledge.
+    func testTargetAwareScoringDocumentedInPrompt() {
+        let prompt = AIsaacContextBuilder.appKnowledge.lowercased()
+
+        let concepts = [
+            "target-aware",         // Target-aware quality scoring
+            "target type",          // Type-based weights
+            "mad floor",            // Practical significance floor
+            "planet",               // Planet exclusion
+            "solar system",         // Solar system exclusion
+            "fov fill",             // FOV fill ratio modulation
+        ]
+
+        for concept in concepts {
+            XCTAssertTrue(prompt.contains(concept),
+                          "AIsaac prompt missing v5.14.0 concept: \"\(concept)\"")
+        }
+    }
+
     // MARK: - Frame Data Completeness
 
     /// The per-frame CSV header in AIsaac context must include all metric columns.

@@ -136,10 +136,13 @@ struct AstroBlinkV2App: App {
                 .keyboardShortcut("r", modifiers: [.command, .shift])
             }
 
-            // Window menu: Benchmark Stats
+            // Window menu: Benchmark Stats + Target Catalog
             CommandGroup(after: .windowList) {
                 Button("Benchmark Stats") {
                     NotificationCenter.default.post(name: .showBenchmarkStats, object: nil)
+                }
+                Button("Target Catalog") {
+                    NotificationCenter.default.post(name: .showTargetDatabase, object: nil)
                 }
             }
 
@@ -619,6 +622,7 @@ extension Notification.Name {
     static let zoomPresetSmall = Notification.Name("zoomPresetSmall")
     static let zoomPresetLarge = Notification.Name("zoomPresetLarge")
     static let openFolderAtPath = Notification.Name("openFolderAtPath")  // URL scheme: astroblink://open?folder=...
+    static let showTargetDatabase = Notification.Name("showTargetDatabase")
 }
 
 // AppDelegate extension for help window

@@ -431,6 +431,10 @@ struct ContentView: View {
             sfToolbarButton("clock.arrow.circlepath", "History", "Frame history — quality trends across all sessions") {
                 FrameHistoryController.shared.toggleWindow()
             }
+            sfToolbarButton("books.vertical", "Catalog", "Browse 229+ deep-sky targets with visibility, FOV sim, and filter gap analysis") {
+                let sessionTargets = Set(viewModel.images.compactMap { $0.canonicalTarget })
+                TargetDatabaseWindowController.shared.show(sessionTargets: sessionTargets)
+            }
 
             toolbarDivider
 
@@ -1088,6 +1092,10 @@ struct ContentViewModifiers: ViewModifier {
             }
             .onReceive(NotificationCenter.default.publisher(for: .showBenchmarkStats)) { _ in
                 BenchmarkStatsWindowController.shared.show(stats: viewModel.benchmarkStats, sessionRootURL: viewModel.sessionRootURL)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .showTargetDatabase)) { _ in
+                let sessionTargets = Set(viewModel.images.compactMap { $0.canonicalTarget })
+                TargetDatabaseWindowController.shared.show(sessionTargets: sessionTargets)
             }
             .onReceive(NotificationCenter.default.publisher(for: .showAIsaac)) { _ in
                 AIsaacWindowController.shared.updateContext(images: viewModel.images, viewModel: viewModel)

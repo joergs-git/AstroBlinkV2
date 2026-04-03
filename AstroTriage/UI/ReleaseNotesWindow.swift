@@ -34,6 +34,16 @@ class ReleaseNotesWindowController {
 // MARK: - Release notes data (shared between view and copy)
 
 private let allReleases: [(version: String, date: String, items: [(ReleaseNotesView.ChangeType, String, String)])] = [
+    ("5.14.0", "April 3, 2026", [
+        (.added, "Target-Aware Quality Scoring", "Metric weights adjust by target type: galaxies prioritize FWHM (1.4×), emission nebulae prioritize noise (1.4×), IFN weights noise 2.0×. 229+ embedded deep-sky targets with type classification."),
+        (.added, "FOV Fill Ratio Modulation", "Secondary weight adjustment based on target angular size vs sensor FOV. Small target boosts FWHM weight; target filling frame boosts noise weight."),
+        (.added, "Practical Significance MAD Floor", "Prevents z-score amplification in tight sessions. FWHM floor scales with focal length. Differences like FWHM 4.6 vs 4.5 no longer cause tier demotions."),
+        (.added, "Planet Exclusion", "Solar system objects (Jupiter, Saturn, Moon, etc.) excluded from quality scoring — short-exposure lucky imaging uses fundamentally different metrics."),
+        (.added, "Scoring Regression Tests", "9 golden-set tests with real M82 metrics catch scoring regressions before manual testing. Runs in 0.014s."),
+        (.fixed, "GroupKey Canonicalization", "\"NGC 7000\", \"NGC7000\", and \"North America Nebula\" now correctly land in the same scoring group. FL-bucketed to prevent cross-setup scoring."),
+        (.fixed, "Compare Filter Matching", "Compare with Best now prioritizes same filter + same setup. Never compares Ha to L or different filter classes."),
+        (.fixed, "Dark Frame FL-Scaling", "Wide-field dome detection threshold adjusted for focal length. Fixes false positive on L-eXtreme filter at low gain."),
+    ]),
     ("5.13.0", "April 3, 2026", [
         (.added, "User Confidence Rating", "Press 1/2/3 to rate frames with 1-3 stars. Yellow star icons in the new ★ column. Same key toggles off. Persisted across sessions via Frame History DB. Filter with rating:1/2/3."),
         (.added, "Chart Scroll & Zoom", "Frame History date-axis charts now support horizontal scroll and pinch-to-zoom. 90-day visible window, auto-positioned at most recent data."),
