@@ -4,6 +4,24 @@ All notable changes to AstroBlink & AIsaac will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [5.15.0] — 2026-04-04
+
+### Added
+- **Target Catalog Browser** — Supabase-backed catalog of 515+ deep-sky objects browsable from the app. Search by name/catalog/constellation, filter by type chips (15 types), constellation picker, difficulty picker. Detail panel with full object info
+- **Alt/Az Visibility Chart** — Tonight's altitude curve per target with 30° good-zone. Moon altitude overlay (dashed). Red dot + vertical rule at current time. Transit time, max altitude, hours above 30°
+- **Weather Bar** — Tonight's forecast from 7Timer + Open-Meteo: cloud cover, seeing (absolute + location-relative quality), temperature, humidity, wind. Moon illumination. Hourly cloud cover mini-chart with current hour highlighted
+- **FOV Simulation** — Proportional target-in-sensor rectangle visualization using your actual equipment profiles. Plate scale and fill ratio displayed
+- **Filter Gap Analysis** — Compares target's recommended filter ratios against your actual integration hours from Frame History DB. Traffic-light completion bars. "Need X more hours of FILTER" recommendations
+- **Location & Setup Picker** — Switch between known imaging locations and equipment setups. Weather and visibility recompute automatically on location change
+- **Moon Distance** — Angular separation from moon shown in target list (color-coded: red <30°, orange <60°) and detail panel
+- **DSS Sky Survey Thumbnails** — NASA/STScI public domain images (disk-cached) shown in detail panel. Per-target unique caching by coordinates
+- **Location-Relative Seeing** — Seeing quality contextualized for observer latitude (2" is normal in Germany, poor in Chile)
+- **AIsaac v5.14.0 Knowledge** — Target-aware scoring, MAD floor, planet exclusion documented in embedded prompt and Supabase remote knowledge
+- **What's New v5.14.0** — In-app release notes entry with 8 items
+
+### Changed
+- AIsaac knowledge test validates v5.14.0 concepts (target-aware, MAD floor, planet exclusion, FOV fill)
+
 ## [5.14.0] — 2026-04-03
 
 ### Added

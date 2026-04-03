@@ -489,6 +489,40 @@ median or averaged sigma-clipped for flats.
 - [ ] WBPP file organizer: auto-organize files into WBPP directory structure
 - [ ] PI Bridge: show Frame History data in PI script window
 
+## v5.15.0 — Target Catalog Browser (COMPLETE 2026-04-04)
+
+### Target Catalog Window ✅
+- [x] Supabase `target_catalog` table with 515 deep-sky objects, 15 types, 46 constellations
+- [x] TargetCatalogService — Supabase fetch, 24h TTL disk cache, flexible JSON decoder
+- [x] AltAzCalculator — alt/az computation, visibility curves, transit time, sunset/sunrise
+- [x] TargetDatabaseViewModel — filtering, sorting, Frame History queries, weather, visibility
+- [x] TargetDatabaseWindow — full SwiftUI UI (HSplitView, ~1200 lines)
+- [x] Search, type filter chips, constellation/difficulty pickers
+- [x] Alt/Az visibility chart with moon altitude overlay + current-time red dot
+- [x] Weather bar: cloud/seeing/temp/humidity/wind, location-relative seeing quality
+- [x] Hourly cloud cover mini-chart with current hour highlight
+- [x] FOV simulation with equipment profiles
+- [x] Filter gap analysis (recommended vs actual integration)
+- [x] Location & setup picker with weather refresh on switch
+- [x] Moon distance in list + detail, moon illumination in weather bar
+- [x] DSS thumbnails (disk-cached by RA/Dec) in detail panel
+- [x] Frame History integration (hours, sessions, median FWHM per target)
+- [x] Night mode + font scaling
+- [x] Menu item (Window > Target Catalog) + toolbar button
+- [x] AIsaac knowledge + Supabase remote knowledge updated for v5.14.0
+- [x] In-app What's New v5.14.0 entry
+
+### Future: Target Catalog Improvements
+- [ ] Upload DSS thumbnails to Supabase Storage for faster loading
+- [ ] Expand catalog to 1000+ objects (more Sharpless, Abell, LDN, southern sky)
+- [ ] Add imaging_notes and description for all 515 targets (many are null from bulk insert)
+- [ ] Date picker for visibility chart (check other nights)
+- [ ] "Best targets tonight" sorted list (pre-filtered by altitude + low moon + clear weather)
+- [ ] Export target list to NINA sequence file
+- [ ] Target-specific recommended integration time estimator (based on SB + Bortle + equipment)
+
+---
+
 ## v5.14.0 — Target-Aware Scoring + Float FITS (COMPLETE 2026-04-03)
 
 ### Target-Aware Quality Scoring ✅
