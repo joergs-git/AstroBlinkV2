@@ -78,6 +78,29 @@ Press 1, 2, or 3 on a selected frame to assign a user confidence rating (shown a
 **Q: When should I use confidence ratings?**
 Use them to manually flag frames you've visually inspected. For example, rate "3" for frames with exceptional detail, "1" for frames you're unsure about. They complement SmartCull's automatic scoring with your own visual assessment. Ratings are independent of the quality tier — a borderline frame can get a high confidence rating if you see something the algorithm missed.
 
+## Target Catalog
+
+**Q: Where does the Target Catalog data come from?**
+A Supabase-backed database with 515+ deep-sky objects. Data is cached locally for offline use and refreshed in the background when a connection is available. The catalog includes coordinates, photometry, angular sizes, filter recommendations, difficulty ratings, and imaging notes.
+
+**Q: Why don't I see visibility data for targets?**
+Visibility requires an observer location. Load any session that has SITELAT/SITELONG in the FITS headers, or use AIsaac so your location is learned automatically. Once a location is in your profile, the Target Catalog will use it even before opening a session.
+
+**Q: What is a "filter gap"?**
+The catalog includes recommended filter ratios for each target (e.g. Ha:3, OIII:2, SII:1 for SHO). The filter gap analysis compares your actual per-filter integration hours from the Frame History Database against these ratios. A gap means you have less than 40% of the expected proportional share for a filter — the orange warning triangle in the list highlights these.
+
+**Q: How does the FOV simulation work?**
+It uses your equipment profile (focal length + pixel size + sensor dimensions) to compute the sensor's field of view in arcminutes, then draws a proportional diagram showing the target's angular extent inside the sensor rectangle. Switch between equipment setups via the picker to compare framing.
+
+**Q: Where do the weather forecasts come from?**
+Two sources: [7Timer](http://www.7timer.info/) for astronomically-focused seeing and transparency, and [Open-Meteo](https://open-meteo.com/) for temperature, humidity, wind, and cloud cover. Seeing quality is contextualized for your latitude — "Good" in Central Europe means something different than in Chile.
+
+**Q: What are the DSS thumbnails?**
+Public domain images from NASA's Digitized Sky Survey (STScI), showing the sky survey view of each target. They are downloaded once and cached to disk for fast reload. The field of view adapts to the target's angular size.
+
+**Q: Can I use the Target Catalog offline?**
+Yes. After the first successful Supabase fetch, the entire catalog is cached as JSON on disk. Subsequent launches load from cache instantly. Only weather and DSS thumbnails require an internet connection — everything else works fully offline.
+
 ## PixInsight Bridge
 
 **Q: How do I use AstroBlink with PixInsight?**

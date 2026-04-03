@@ -1370,6 +1370,60 @@ struct HelpBackgroundView: View {
 
                 Divider()
 
+                // Target Catalog Browser
+                faqSection("Target Catalog Browser (v5.15.0)",
+                    """
+                    Browse 515+ deep-sky objects with planning tools. Open via Window menu \u{2192} Target Catalog \
+                    or the Catalog toolbar button.
+                    """)
+
+                faqItem("Search & Filter",
+                    """
+                    Search by name (common names, catalog IDs, aliases), filter by object type \
+                    (galaxy, nebula, cluster, etc.), constellation, or difficulty level. \
+                    Results update in real time as you type.
+                    """)
+
+                faqItem("Alt/Az Visibility Chart",
+                    """
+                    Altitude/Azimuth chart shows target visibility throughout the night with a \
+                    moon position overlay and current time marker. Plan your imaging session \
+                    around the best visibility window.
+                    """)
+
+                faqItem("Weather Forecast",
+                    """
+                    Integrated weather data: cloud cover, seeing conditions, temperature, humidity, \
+                    and wind speed. Auto-refreshes when you change location.
+                    """)
+
+                faqItem("FOV Simulation",
+                    """
+                    Field-of-view overlay using your equipment profiles. See how the target fits \
+                    your sensor and focal length before you go outside.
+                    """)
+
+                faqItem("Filter Gap Analysis",
+                    """
+                    Shows which filters need more integration time based on your existing data \
+                    from Frame History. Helps prioritize your next imaging session.
+                    """)
+
+                faqItem("Location & Setup Picker",
+                    """
+                    Select your observing location and equipment setup. Weather forecast \
+                    auto-refreshes when location changes. Moon distance and illumination \
+                    shown per target.
+                    """)
+
+                faqItem("DSS Sky Survey Thumbnails",
+                    """
+                    Preview images from the Digitized Sky Survey (NASA public domain) for \
+                    each target, so you know what to expect before imaging.
+                    """)
+
+                Divider()
+
                 // Tips
                 faqSection("Tips for Efficient Triage",
                     """

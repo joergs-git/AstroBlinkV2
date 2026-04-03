@@ -822,6 +822,25 @@ struct AIsaacContextBuilder {
         - Shows per-metric distribution: FWHM, Stars, Noise, Trailing with min/max range, z-score spread.
         - Tight/normal/wide labels per metric. Overall quality spread % with color-coded readiness bar.
 
+        TARGET CATALOG BROWSER (v5.15.0):
+        - Window menu → Target Catalog (or toolbar "Catalog" button). Browse 515+ deep-sky objects.
+        - Supabase-backed database with 24h cache (works offline after first fetch).
+        - Search by name, catalog ID, or constellation. Filter by type chips, constellation, difficulty.
+        - Detail panel: coordinates, angular size, magnitude, surface brightness, filter recommendations, \
+        scoring weight modifiers, aliases, imaging notes.
+        - Alt/Az VISIBILITY CHART: tonight's altitude curve for any target. Moon altitude dashed overlay. \
+        Red dot at current time. Shows transit time, max altitude, hours above 30°.
+        - WEATHER BAR: tonight's cloud %, seeing (location-relative quality), temperature, humidity, wind. \
+        Hourly cloud mini-chart with current hour highlighted. Data from 7Timer + Open-Meteo (free, no API key).
+        - FOV SIMULATION: proportional target-in-sensor rectangle using your equipment profile. \
+        Shows plate scale and fill ratio.
+        - FILTER GAP ANALYSIS: compares target's recommended filter ratios vs your actual integration hours \
+        from Frame History DB. Traffic-light bars per filter. "Need X more hours of FILTER" recommendations.
+        - Location & setup picker: switch between known imaging locations and equipment. Weather + visibility \
+        recompute automatically on location change.
+        - Moon distance shown per target in list (red <30°, orange <60°).
+        - DSS sky survey thumbnails (NASA public domain, disk-cached by coordinates).
+
         LINKS:
         - GitHub: https://github.com/joergs-git/AstroBlinkV2
         - AstroBin: https://app.astrobin.com/u/joergsflow#gallery

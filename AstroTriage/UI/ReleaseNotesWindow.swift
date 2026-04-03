@@ -34,6 +34,16 @@ class ReleaseNotesWindowController {
 // MARK: - Release notes data (shared between view and copy)
 
 private let allReleases: [(version: String, date: String, items: [(ReleaseNotesView.ChangeType, String, String)])] = [
+    ("5.15.0", "April 4, 2026", [
+        (.added, "Target Catalog Browser", "Browse 515+ deep-sky objects from a Supabase-backed catalog. Search by name, filter by type/constellation/difficulty. Detail panel with coordinates, photometry, filter recommendations, scoring weights, and aliases."),
+        (.added, "Alt/Az Visibility Chart", "See tonight's altitude curve for any target with moon altitude overlay (dashed). Red dot marks current time. Shows max altitude, transit time, and hours above 30°."),
+        (.added, "Weather Forecast Bar", "Tonight's cloud cover, seeing, temperature, humidity, and wind from 7Timer + Open-Meteo. Seeing quality contextualized for your latitude. Hourly cloud mini-chart with current hour highlighted."),
+        (.added, "FOV Simulation", "Proportional target-in-sensor rectangle using your actual equipment profile. Shows plate scale and fill ratio. Switch between equipment setups."),
+        (.added, "Filter Gap Analysis", "Compare recommended filter ratios against your actual integration hours from Frame History. Traffic-light bars per filter. 'Need X more hours of FILTER' recommendations."),
+        (.added, "Location & Setup Picker", "Switch between known imaging locations and equipment setups. Weather and visibility recompute automatically."),
+        (.added, "Moon Distance in List", "Angular separation from moon shown per target (red <30°, orange <60°). Moon illumination in weather bar."),
+        (.added, "DSS Sky Survey Thumbnails", "NASA public domain sky survey images in the detail panel. Disk-cached by coordinates for fast reload."),
+    ]),
     ("5.14.0", "April 3, 2026", [
         (.added, "Target-Aware Quality Scoring", "Metric weights adjust by target type: galaxies prioritize FWHM (1.4×), emission nebulae prioritize noise (1.4×), IFN weights noise 2.0×. 229+ embedded deep-sky targets with type classification."),
         (.added, "FOV Fill Ratio Modulation", "Secondary weight adjustment based on target angular size vs sensor FOV. Small target boosts FWHM weight; target filling frame boosts noise weight."),
