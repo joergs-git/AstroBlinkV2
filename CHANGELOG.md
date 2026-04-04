@@ -7,20 +7,24 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 ## [5.15.0] — 2026-04-04
 
 ### Added
-- **Target Catalog Browser** — Supabase-backed catalog of 515+ deep-sky objects browsable from the app. Search by name/catalog/constellation, filter by type chips (15 types), constellation picker, difficulty picker. Detail panel with full object info
-- **Alt/Az Visibility Chart** — Tonight's altitude curve per target with 30° good-zone. Moon altitude overlay (dashed). Red dot + vertical rule at current time. Transit time, max altitude, hours above 30°
-- **Weather Bar** — Tonight's forecast from 7Timer + Open-Meteo: cloud cover, seeing (absolute + location-relative quality), temperature, humidity, wind. Moon illumination. Hourly cloud cover mini-chart with current hour highlighted
-- **FOV Simulation** — Proportional target-in-sensor rectangle visualization using your actual equipment profiles. Plate scale and fill ratio displayed
-- **Filter Gap Analysis** — Compares target's recommended filter ratios against your actual integration hours from Frame History DB. Traffic-light completion bars. "Need X more hours of FILTER" recommendations
-- **Location & Setup Picker** — Switch between known imaging locations and equipment setups. Weather and visibility recompute automatically on location change
-- **Moon Distance** — Angular separation from moon shown in target list (color-coded: red <30°, orange <60°) and detail panel
-- **DSS Sky Survey Thumbnails** — NASA/STScI public domain images (disk-cached) shown in detail panel. Per-target unique caching by coordinates
-- **Location-Relative Seeing** — Seeing quality contextualized for observer latitude (2" is normal in Germany, poor in Chile)
-- **AIsaac v5.14.0 Knowledge** — Target-aware scoring, MAD floor, planet exclusion documented in embedded prompt and Supabase remote knowledge
-- **What's New v5.14.0** — In-app release notes entry with 8 items
+- **Target Catalog Browser** — Supabase-backed catalog of 533+ deep-sky objects. Search by name/catalog ID/alias, filter by type chips (15 types), difficulty picker. Sortable column headers. Detail panel with DSS thumbnail (enlarges on hover), coordinates, filter recommendations, scoring weights
+- **Alt/Az Visibility Chart** — Tonight's altitude curve with 25°/30° threshold lines. Moon altitude overlay (dashed yellow). Red dot + vertical rule at current time. Transit time, max altitude, hours above 30°
+- **Azimuth Direction Arrows** — Compass arrows showing target direction during the night (↑N →E ↓S ←W). Side-by-side with altitude sparkline in list rows
+- **Weather Forecast Bar** — Tonight's forecast from 7Timer + Open-Meteo: cloud cover, seeing (location-relative quality — 2" is normal in Germany, poor in Chile), temperature, humidity, wind. Moon illumination %. 1-hourly cloud bars with midnight gap and current hour highlight
+- **FOV Simulation** — Proportional target-in-sensor rectangle using your equipment profiles. Plate scale and fill ratio. Optimal FOV filter toggle (≥30% sensor fill)
+- **Filter Gap Analysis** — Compares recommended filter ratios against your actual integration hours (setup-specific, not total). Traffic-light bars. "Need X more hours of FILTER" recommendations. Only shown for previously imaged targets
+- **Location & Setup Picker** — Switch imaging locations and equipment setups. Weather, visibility, FOV, and integration hours all recompute automatically
+- **Moon Distance** — Angular separation in list (☽ icon, red <30°, orange <60°) and detail panel with illumination %
+- **DSS Sky Survey Thumbnails** — NASA/STScI public domain images, disk-cached by RA/Dec. Enlarges on hover in detail panel (120px → 300px)
+- **Floating Hover Card** — Mouse over target name shows compact datasheet with all key parameters. Follows mouse position
+- **Sortable Column Headers** — Click any header to sort (Name, Mag, Size, Alt, Hours). Active column highlighted with chevron
+- **AIsaac v5.14.0 + v5.15.0 Knowledge** — Target-aware scoring, MAD floor, planet exclusion, Target Catalog documented in embedded prompt and Supabase
+- **Data Sources** — OpenNGC (CC-BY-SA-4.0), 7Timer, Open-Meteo, NASA/STScI DSS
 
 ### Changed
 - AIsaac knowledge test validates v5.14.0 concepts (target-aware, MAD floor, planet exclusion, FOV fill)
+- AIsaacWeather: hourly cloud data from Open-Meteo stored separately for 1-hourly resolution
+- Integration hours filtered by selected equipment setup (setupHash) instead of total across all setups
 
 ## [5.14.0] — 2026-04-03
 

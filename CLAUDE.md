@@ -128,7 +128,9 @@ AstroTriage/
 │   │   │   ├── NINACSVReader.swift         # ImageMetaData.csv
 │   │   │   ├── FileOperationLog.swift      # Undo stack
 │   │   │   ├── ThumbnailCache.swift        # Disk + RAM cache
-│   │   │   └── SessionScanner.swift        # Folder scan + FSEvents
+│   │   │   ├── SessionScanner.swift        # Folder scan + FSEvents
+│   │   │   ├── TargetCatalogService.swift  # Supabase fetch + 24h disk cache
+│   │   │   └── AltAzCalculator.swift       # Alt/Az computation + visibility curves
 │   │   ├── Model/
 │   │   │   ├── ImageEntry.swift
 │   │   │   ├── TriageState.swift           # .active/.preDelete/.deleted
