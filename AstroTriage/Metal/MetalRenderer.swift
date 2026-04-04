@@ -36,9 +36,9 @@ class MetalRenderer: NSObject, MTKViewDelegate {
     private var normalizedTexture: MTLTexture?
 
     // Cached preview texture (pre-stretched, binned — bypass compute)
-    private var cachedPreviewTexture: MTLTexture?
-    private var cachedPreviewWidth: Int = 0
-    private var cachedPreviewHeight: Int = 0
+    private(set) var cachedPreviewTexture: MTLTexture?
+    private(set) var cachedPreviewWidth: Int = 0
+    private(set) var cachedPreviewHeight: Int = 0
 
     // STF parameters (computed once per image, reused across redraws)
     private var currentSTFParams: [STFParams] = []

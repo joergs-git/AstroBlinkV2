@@ -36,6 +36,7 @@
 |-----|--------|
 | Play button | Start auto-blink through visible images (adjustable delay 0.1–2s) |
 | ESC | Stop blink playback |
+| Film icon | Export blink as animated GIF or HEVC .mov (scale, loops, crop to zoom) |
 
 ## Font Scaling
 | Key | Action |

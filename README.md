@@ -48,7 +48,7 @@ AIsaac knows your equipment, remembers your imaging history, understands light p
 - **Metal GPU Rendering** — PixInsight-compatible STF auto-stretch, zero-copy Apple Silicon buffers, <32ms navigation on cache hit.
 - **Compare with Best (C key)** — side-by-side synchronized zoom/pan with star eccentricity overlay and PA direction arrows.
 - **Culling Autopilot** — one-click auto-marking (Conservative/Balanced/Aggressive) with integration impact preview. Convergence guard warns when quality spread is too tight for further culling. Session Spread stats show per-metric distribution.
-- **Blink Playback** — play/stop button with adjustable delay (0.1–2s) cycles through visible images endlessly. Respects filters and hide-marked. ESC to stop.
+- **Blink Playback & Video Export** — play/stop button with adjustable delay (0.1–2s) cycles through visible images endlessly. Export as animated GIF (size-constrained) or HEVC .mov with scale, loops, and crop-to-zoom. Multi-select support.
 - **SSWEIGHT & PSFSignalWeight Export** — writes PixInsight-compatible SSWEIGHT and PSFSWGHT keywords into FITS/XISF headers. GPU PSF fitting (Metal Gauss-Newton) for accurate flux. Batch keyword deletion via Batch Rename.
 - **User Confidence Rating** — Press 1/2/3 to rate frames with 1-3 yellow stars (same key toggles off). Persisted in Frame History DB. Filter with `rating:1`, `rating:2`, `rating:3`.
 - **PixInsight Bridge** — PI script launches AstroBlink from PixInsight, imports CSV with quality scores, and prepares WBPP file lists. Available via PI Update Repository.

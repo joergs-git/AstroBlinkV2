@@ -2,7 +2,7 @@
 
 Status: [ ] offen | [~] in Arbeit | [x] fertig
 
-Current version: **v5.10.0** (build 49)
+Current version: **v5.17.0** (build 60)
 
 ---
 
@@ -65,6 +65,10 @@ All original implementation phases are complete:
 - [x] **Session Sanity Target-Type Thresholds** — Emission nebula FWHM 1.6x, IFN 1.8x
 - [x] **Scoring Regression Tests** — 9 golden-set tests catching M82 trailing, R0b, cross-setup issues
 - [x] **Float32/Float64 FITS Support** — BITPIX-aware decoder for APP/PixInsight/GraxPert output
+- [x] **Blink Video Export** — GIF/MOV export with scale, loops, crop-to-zoom, size-constrained GIF (v5.17.0)
+- [x] **R0b FWHM Cross-Check** — Bright nebulae (M42 H-alpha) no longer falsely flagged as dome/dark (v5.16.0)
+- [x] **Moon Distance RA/DEC Fallback** — Reads RA/DEC keywords when CRVAL1/CRVAL2 absent (v5.16.0)
+- [x] **Target Catalog Aliases** — 40+ Sharpless, Caldwell, common name aliases added (v5.16.0)
 
 ---
 

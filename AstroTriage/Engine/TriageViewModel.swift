@@ -6,6 +6,7 @@ import MetalKit
 import UniformTypeIdentifiers
 import StoreKit
 import ImageDecoderBridge
+import AVFoundation
 
 // Central state manager for the triage workflow
 // @MainActor ensures all UI updates happen on main thread (Lesson L9)
@@ -3028,6 +3029,344 @@ class TriageViewModel: ObservableObject {
         schedulePlaybackTimer()
     }
 
+    // MARK: - Blink Video Export
+
+    enum BlinkExportFormat: String, CaseIterable { case mov, gif }
+
+    @Published var isExportingVideo: Bool = false
+    @Published var videoExportProgress: Double = 0
+
+    /// Export blink sequence as HEVC .mov or animated GIF.
+    /// - Parameter cropToZoom: If true, crops to the current zoom/pan view.
+    func exportBlinkVideo(format: BlinkExportFormat, loops: Int, scalePercent: Int,
+                          maxSizeMB: Double, highlightedRows: IndexSet?, fps: Double,
+                          cropToZoom: Bool = false) {
+        guard !images.isEmpty else { return }
+
+        // Build frame indices (same logic as startPlayback)
+        var frameIndices: [Int] = []
+        if let rows = highlightedRows, rows.count > 1 {
+            let visible = visibleImages
+            frameIndices = rows.compactMap { row -> Int? in
+                guard row < visible.count else { return nil }
+                return images.firstIndex(where: { $0.url == visible[row].url })
+            }
+        } else {
+            let visible = visibleImages
+            frameIndices = visible.compactMap { entry in
+                images.firstIndex(where: { $0.url == entry.url })
+            }
+        }
+        guard !frameIndices.isEmpty else { statusMessage = "No images to export"; return }
+
+        guard let cache = prefetchCache else { statusMessage = "Cache not ready"; return }
+        var textures: [MTLTexture] = []
+        for idx in frameIndices {
+            if let preview = cache.getPreview(for: images[idx].url) {
+                textures.append(preview.texture)
+            }
+        }
+        guard !textures.isEmpty else { statusMessage = "No cached frames — browse images first"; return }
+
+        // Compute crop rect from current zoom/pan if requested
+        let cropRect: CGRect? = cropToZoom ? visibleCropRect() : nil
+
+        let srcW = textures[0].width, srcH = textures[0].height
+        let cropW = cropRect != nil ? Int(cropRect!.width * CGFloat(srcW)) : srcW
+        let cropH = cropRect != nil ? Int(cropRect!.height * CGFloat(srcH)) : srcH
+        let scale = max(10, min(100, scalePercent))
+        let outW = (cropW * scale / 100) & ~1
+        let outH = (cropH * scale / 100) & ~1
+
+        let dateStr = { let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd_HHmmss"; return f.string(from: Date()) }()
+        let target = images[selectedIndex >= 0 && selectedIndex < images.count ? selectedIndex : 0].target ?? "Blink"
+        let ext = format == .gif ? "gif" : "mov"
+        let defaultName = "AstroBlink_\(target)_\(dateStr).\(ext)"
+
+        // Use NSSavePanel for sandbox-compatible file access
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = format == .gif ? [.gif] : [.movie]
+        panel.nameFieldStringValue = defaultName
+        panel.canCreateDirectories = true
+        guard panel.runModal() == .OK, let outputURL = panel.url else { return }
+
+        isExportingVideo = true
+        videoExportProgress = 0
+        statusMessage = "Exporting blink \(ext)..."
+        let totalFrames = textures.count * loops
+
+        Task.detached(priority: .userInitiated) { [weak self] in
+            do {
+                if format == .gif {
+                    try Self.writeBlinkGIF(textures: textures, loops: loops, outputURL: outputURL,
+                                           width: outW, height: outH, fps: fps, maxSizeMB: maxSizeMB,
+                                           cropRect: cropRect,
+                                           onProgress: { p in Task { @MainActor [weak self] in self?.videoExportProgress = p } })
+                } else {
+                    try await Self.writeBlinkMOV(textures: textures, loops: loops, outputURL: outputURL,
+                                                 width: outW, height: outH, fps: fps, cropRect: cropRect,
+                                                 onProgress: { p in Task { @MainActor [weak self] in self?.videoExportProgress = p } })
+                }
+                await MainActor.run { [weak self] in
+                    self?.isExportingVideo = false
+                    let sizeMB = (try? FileManager.default.attributesOfItem(atPath: outputURL.path)[.size] as? Int64)
+                        .map { Double($0) / (1024 * 1024) } ?? 0
+                    self?.statusMessage = String(format: "%@ saved to Desktop (%.1f MB, %d frames)", ext.uppercased(), sizeMB, totalFrames)
+                    NSWorkspace.shared.activateFileViewerSelecting([outputURL])
+                }
+            } catch {
+                await MainActor.run { [weak self] in
+                    self?.isExportingVideo = false
+                    self?.statusMessage = "Export failed: \(error.localizedDescription)"
+                }
+            }
+        }
+    }
+
+    // MARK: - Texture → CGImage helper
+
+    /// Convert BGRA8 MTLTexture to CGImage, optionally cropped and scaled.
+    /// GPU-compressed textures are blitted to a readable staging texture first.
+    /// - Parameters:
+    ///   - cropRect: Normalized crop rect (0-1 range) within the texture. nil = full image.
+    private nonisolated static func textureToImage(_ texture: MTLTexture, width: Int, height: Int,
+                                                    cropRect: CGRect? = nil) -> CGImage? {
+        let srcW = texture.width, srcH = texture.height
+
+        // If texture uses private/managed storage, blit to a shared staging texture
+        let readableTex: MTLTexture
+        if texture.storageMode != .shared {
+            let device = texture.device
+            let desc = MTLTextureDescriptor.texture2DDescriptor(
+                pixelFormat: .bgra8Unorm, width: srcW, height: srcH, mipmapped: false)
+            desc.storageMode = .shared
+            desc.usage = [.shaderRead]
+            guard let staging = device.makeTexture(descriptor: desc),
+                  let queue = device.makeCommandQueue(),
+                  let cmdBuf = queue.makeCommandBuffer(),
+                  let blit = cmdBuf.makeBlitCommandEncoder() else { return nil }
+            blit.copy(from: texture, sourceSlice: 0, sourceLevel: 0,
+                      sourceOrigin: MTLOrigin(), sourceSize: MTLSize(width: srcW, height: srcH, depth: 1),
+                      to: staging, destinationSlice: 0, destinationLevel: 0,
+                      destinationOrigin: MTLOrigin())
+            blit.endEncoding()
+            cmdBuf.commit()
+            cmdBuf.waitUntilCompleted()
+            readableTex = staging
+        } else {
+            readableTex = texture
+        }
+
+        var pixels = [UInt8](repeating: 0, count: srcW * srcH * 4)
+        readableTex.getBytes(&pixels, bytesPerRow: srcW * 4,
+                             from: MTLRegion(origin: MTLOrigin(), size: MTLSize(width: srcW, height: srcH, depth: 1)),
+                             mipmapLevel: 0)
+        let cs = CGColorSpaceCreateDeviceRGB()
+        let bi = CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue
+        guard let srcCtx = CGContext(data: &pixels, width: srcW, height: srcH,
+                                      bitsPerComponent: 8, bytesPerRow: srcW * 4, space: cs, bitmapInfo: bi),
+              let fullImg = srcCtx.makeImage() else { return nil }
+
+        // Apply crop if specified
+        let srcImg: CGImage
+        if let crop = cropRect {
+            let cx = Int(crop.origin.x * CGFloat(srcW))
+            let cy = Int(crop.origin.y * CGFloat(srcH))
+            let cw = max(2, Int(crop.width * CGFloat(srcW)))
+            let ch = max(2, Int(crop.height * CGFloat(srcH)))
+            let clampedRect = CGRect(x: max(0, cx), y: max(0, cy),
+                                     width: min(cw, srcW - max(0, cx)),
+                                     height: min(ch, srcH - max(0, cy)))
+            srcImg = fullImg.cropping(to: clampedRect) ?? fullImg
+        } else {
+            srcImg = fullImg
+        }
+
+        if srcImg.width == width && srcImg.height == height { return srcImg }
+
+        // Scale to output size
+        guard let destCtx = CGContext(data: nil, width: width, height: height,
+                                       bitsPerComponent: 8, bytesPerRow: width * 4, space: cs, bitmapInfo: bi) else { return nil }
+        destCtx.interpolationQuality = .high
+        destCtx.draw(srcImg, in: CGRect(x: 0, y: 0, width: width, height: height))
+        return destCtx.makeImage()
+    }
+
+    /// Compute the visible crop rectangle (normalized 0-1) from the current zoom/pan state.
+    /// Returns nil if showing the full image (zoom = fit-to-view).
+    func visibleCropRect() -> CGRect? {
+        guard let renderer = renderer, renderer.zoomScale > 1.01 else { return nil }
+        guard let mtkView = findMTKView() else { return nil }
+
+        let viewW = mtkView.bounds.width
+        let viewH = mtkView.bounds.height
+        // Get image dimensions from cached preview or current decoded image
+        let imgW: CGFloat
+        let imgH: CGFloat
+        if let tex = renderer.cachedPreviewTexture {
+            imgW = CGFloat(renderer.cachedPreviewWidth > 0 ? renderer.cachedPreviewWidth : tex.width)
+            imgH = CGFloat(renderer.cachedPreviewHeight > 0 ? renderer.cachedPreviewHeight : tex.height)
+        } else if let img = renderer.currentImage {
+            imgW = CGFloat(img.width)
+            imgH = CGFloat(img.height)
+        } else {
+            return nil
+        }
+
+        let baseFit = min(viewW / imgW, viewH / imgH)
+        let effectiveScale = baseFit * renderer.zoomScale
+
+        // Visible region in image coordinates
+        let visW = viewW / effectiveScale
+        let visH = viewH / effectiveScale
+        let centerX = imgW / 2.0 - renderer.panOffset.x / effectiveScale
+        let centerY = imgH / 2.0 - renderer.panOffset.y / effectiveScale
+
+        let x = (centerX - visW / 2.0) / imgW
+        let y = (centerY - visH / 2.0) / imgH
+        let w = visW / imgW
+        let h = visH / imgH
+
+        return CGRect(x: max(0, x), y: max(0, y),
+                      width: min(w, 1.0 - max(0, x)),
+                      height: min(h, 1.0 - max(0, y)))
+    }
+
+    // MARK: - Animated GIF writer
+
+    /// Write animated GIF with optional size constraint. If the result exceeds maxSizeMB,
+    /// frames are dropped (every 2nd, then 3rd...) until it fits.
+    private nonisolated static func writeBlinkGIF(
+        textures: [MTLTexture], loops: Int, outputURL: URL,
+        width: Int, height: Int, fps: Double, maxSizeMB: Double,
+        cropRect: CGRect? = nil,
+        onProgress: @Sendable (Double) -> Void
+    ) throws {
+        // Convert all textures to CGImages once
+        var cgImages: [CGImage] = []
+        for (i, tex) in textures.enumerated() {
+            if let img = textureToImage(tex, width: width, height: height, cropRect: cropRect) {
+                cgImages.append(img)
+            }
+            onProgress(Double(i + 1) / Double(textures.count) * 0.5)  // 50% for conversion
+        }
+        guard !cgImages.isEmpty else {
+            throw NSError(domain: "BlinkExport", code: 3,
+                          userInfo: [NSLocalizedDescriptionKey: "Failed to convert textures"])
+        }
+
+        // Build full frame sequence with loops
+        var allFrames: [CGImage] = []
+        for _ in 0..<loops { allFrames.append(contentsOf: cgImages) }
+
+        // Try writing, reduce frames if over size limit
+        var stride = 1
+        let maxBytes = Int64(maxSizeMB * 1024 * 1024)
+
+        while stride <= allFrames.count {
+            let frames = Swift.stride(from: 0, to: allFrames.count, by: stride).map { allFrames[$0] }
+            let delay = 1.0 / fps * Double(stride)
+
+            // Write GIF to data
+            let data = NSMutableData()
+            guard let dest = CGImageDestinationCreateWithData(data, UTType.gif.identifier as CFString,
+                                                               frames.count, nil) else { continue }
+            let gifProps = [kCGImagePropertyGIFDictionary: [kCGImagePropertyGIFLoopCount: 0]] as CFDictionary
+            CGImageDestinationSetProperties(dest, gifProps)
+
+            for (i, frame) in frames.enumerated() {
+                let frameProps = [kCGImagePropertyGIFDictionary: [
+                    kCGImagePropertyGIFDelayTime: delay,
+                    kCGImagePropertyGIFUnclampedDelayTime: delay
+                ]] as CFDictionary
+                CGImageDestinationAddImage(dest, frame, frameProps)
+                onProgress(0.5 + Double(i + 1) / Double(frames.count) * 0.5)
+            }
+
+            guard CGImageDestinationFinalize(dest) else { continue }
+
+            if maxSizeMB <= 0 || Int64(data.length) <= maxBytes {
+                try (data as Data).write(to: outputURL)
+                return
+            }
+
+            // Over limit — skip more frames
+            stride += 1
+        }
+
+        throw NSError(domain: "BlinkExport", code: 4,
+                      userInfo: [NSLocalizedDescriptionKey: "Cannot fit within \(Int(maxSizeMB)) MB even with 1 frame"])
+    }
+
+    // MARK: - HEVC MOV writer
+
+    private nonisolated static func writeBlinkMOV(
+        textures: [MTLTexture], loops: Int, outputURL: URL,
+        width: Int, height: Int, fps: Double, cropRect: CGRect? = nil,
+        onProgress: @Sendable (Double) -> Void
+    ) async throws {
+        try? FileManager.default.removeItem(at: outputURL)
+
+        let writer = try AVAssetWriter(outputURL: outputURL, fileType: .mov)
+        let videoSettings: [String: Any] = [
+            AVVideoCodecKey: AVVideoCodecType.hevc,
+            AVVideoWidthKey: width, AVVideoHeightKey: height,
+            AVVideoCompressionPropertiesKey: [
+                AVVideoAverageBitRateKey: max(500_000, width * height * 2),
+                AVVideoExpectedSourceFrameRateKey: fps
+            ]
+        ]
+        let writerInput = AVAssetWriterInput(mediaType: .video, outputSettings: videoSettings)
+        writerInput.expectsMediaDataInRealTime = false
+        let adaptor = AVAssetWriterInputPixelBufferAdaptor(assetWriterInput: writerInput,
+            sourcePixelBufferAttributes: [
+                kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
+                kCVPixelBufferWidthKey as String: width, kCVPixelBufferHeightKey as String: height
+            ])
+        writer.add(writerInput)
+        guard writer.startWriting() else {
+            throw NSError(domain: "BlinkExport", code: 1,
+                          userInfo: [NSLocalizedDescriptionKey: writer.error?.localizedDescription ?? "Write failed"])
+        }
+        writer.startSession(atSourceTime: .zero)
+
+        let totalFrames = textures.count * loops
+        var frameIndex = 0
+        let colorSpace = CGColorSpaceCreateDeviceRGB()
+        let bi = CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue
+
+        for _ in 0..<loops {
+            for texture in textures {
+                while !writerInput.isReadyForMoreMediaData {
+                    try await Task.sleep(nanoseconds: 10_000_000)
+                }
+                guard let pool = adaptor.pixelBufferPool else { continue }
+                var pb: CVPixelBuffer?
+                CVPixelBufferPoolCreatePixelBuffer(nil, pool, &pb)
+                guard let pixelBuffer = pb else { continue }
+
+                // Use textureToImage which handles GPU-compressed textures via blit
+                guard let img = textureToImage(texture, width: width, height: height, cropRect: cropRect) else { continue }
+
+                CVPixelBufferLockBaseAddress(pixelBuffer, [])
+                let dest = CVPixelBufferGetBaseAddress(pixelBuffer)!
+                let destBPR = CVPixelBufferGetBytesPerRow(pixelBuffer)
+                let ctx = CGContext(data: dest, width: width, height: height,
+                                    bitsPerComponent: 8, bytesPerRow: destBPR,
+                                    space: colorSpace, bitmapInfo: bi)
+                ctx?.draw(img, in: CGRect(x: 0, y: 0, width: width, height: height))
+                CVPixelBufferUnlockBaseAddress(pixelBuffer, [])
+
+                adaptor.append(pixelBuffer, withPresentationTime: CMTime(value: CMTimeValue(frameIndex), timescale: CMTimeScale(fps)))
+                frameIndex += 1
+                onProgress(Double(frameIndex) / Double(totalFrames))
+            }
+        }
+
+        writerInput.markAsFinished()
+        await writer.finishWriting()
+    }
+
     // MARK: - Search Filter
 
     // Mark all currently filtered/visible images for deletion
@@ -3191,7 +3530,7 @@ class TriageViewModel: ObservableObject {
         images[index].isMarkedForDeletion.toggle()
 
         let marked = images[index].isMarkedForDeletion
-        statusMessage = marked ? "Marked for deletion" : "Unmarked"
+        statusMessage = ""
         needsTableRefresh = true
         recomputeSNRRetention()
 
@@ -3215,7 +3554,7 @@ class TriageViewModel: ObservableObject {
             count += 1
         }
 
-        statusMessage = anyUnmarked ? "Marked \(count) for deletion" : "Unmarked \(count)"
+        statusMessage = ""
         needsTableRefresh = true
         recomputeSNRRetention()
         updateConvergence()

@@ -713,6 +713,14 @@ struct ContentView: View {
     }
 
     // Blink playback play/stop + delay picker
+    @State private var showExportPopover = false
+    @State private var exportLoops: Int = 1
+    @State private var exportScale: Int = 50
+    @State private var exportFormat: TriageViewModel.BlinkExportFormat = .gif
+    @State private var exportMaxSizeMB: Double = 5
+    @State private var capturedHighlightedRows: IndexSet?
+    @State private var exportCropToZoom: Bool = true
+
     private var blinkPlaybackControls: some View {
         HStack(spacing: 4) {
             Button(action: { togglePlayback() }) {
@@ -739,7 +747,123 @@ struct ContentView: View {
                     togglePlayback()
                 }
             }
+
+            Button(action: {
+                capturedHighlightedRows = getHighlightedRows()
+                showExportPopover.toggle()
+            }) {
+                if viewModel.isExportingVideo {
+                    ProgressView()
+                        .scaleEffect(0.5)
+                        .frame(width: 14, height: 14)
+                } else {
+                    Image(systemName: "film")
+                        .font(.system(size: 13))
+                        .foregroundColor(nightFg)
+                }
+            }
+            .buttonStyle(.plain)
+            .disabled(viewModel.isExportingVideo || viewModel.images.isEmpty)
+            .help("Export blink sequence as video")
+            .popover(isPresented: $showExportPopover) {
+                blinkExportPopover
+            }
         }
+    }
+
+    private var blinkExportPopover: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Export Blink")
+                .font(.headline)
+
+            HStack {
+                Text("Format:")
+                Picker("", selection: $exportFormat) {
+                    Text("GIF").tag(TriageViewModel.BlinkExportFormat.gif)
+                    Text("MOV").tag(TriageViewModel.BlinkExportFormat.mov)
+                }
+                .pickerStyle(.segmented)
+                .frame(width: 120)
+            }
+
+            HStack {
+                Text("Loops:")
+                Picker("", selection: $exportLoops) {
+                    Text("1").tag(1)
+                    Text("2").tag(2)
+                    Text("3").tag(3)
+                    Text("5").tag(5)
+                }
+                .pickerStyle(.segmented)
+                .frame(width: 160)
+            }
+
+            HStack {
+                Text("Scale:")
+                Picker("", selection: $exportScale) {
+                    Text("25%").tag(25)
+                    Text("50%").tag(50)
+                    Text("75%").tag(75)
+                    Text("100%").tag(100)
+                }
+                .pickerStyle(.segmented)
+                .frame(width: 200)
+            }
+
+            if viewModel.renderer?.zoomScale ?? 1.0 > 1.01 {
+                Toggle("Crop to current zoom", isOn: $exportCropToZoom)
+                    .font(.caption)
+            }
+
+            if exportFormat == .gif {
+                HStack {
+                    Text("Max size:")
+                    Picker("", selection: $exportMaxSizeMB) {
+                        Text("2 MB").tag(2.0)
+                        Text("5 MB").tag(5.0)
+                        Text("10 MB").tag(10.0)
+                        Text("No limit").tag(0.0)
+                    }
+                    .pickerStyle(.menu)
+                    .frame(width: 110)
+                }
+                Text("Frames auto-dropped to fit size limit")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
+
+            HStack {
+                Text("Speed:")
+                Text(String(format: "%.1fs/frame", viewModel.playbackDelay))
+                    .foregroundColor(.secondary)
+            }
+
+            let frameCount = capturedHighlightedRows.map { $0.count } ?? viewModel.visibleImages.count
+            let source = capturedHighlightedRows != nil ? "selected" : "visible"
+            Text("\(frameCount) \(source) frames × \(exportLoops) = \(frameCount * exportLoops) total")
+                .font(.caption)
+                .foregroundColor(.secondary)
+
+            HStack {
+                Spacer()
+                Button("Export") {
+                    showExportPopover = false
+                    let fps = 1.0 / viewModel.playbackDelay
+                    viewModel.exportBlinkVideo(
+                        format: exportFormat,
+                        loops: exportLoops,
+                        scalePercent: exportScale,
+                        maxSizeMB: exportMaxSizeMB,
+                        highlightedRows: capturedHighlightedRows,
+                        fps: fps,
+                        cropToZoom: exportCropToZoom
+                    )
+                }
+                .keyboardShortcut(.return)
+            }
+        }
+        .padding(12)
+        .frame(width: 270)
     }
 
     private func togglePlayback() {

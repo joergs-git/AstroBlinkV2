@@ -4,6 +4,20 @@ All notable changes to AstroBlink & AIsaac will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [5.17.0] — 2026-04-04
+
+### Added
+- **Blink Video Export** — Export blink sequence as animated GIF or HEVC .mov video. Film icon button next to blink delay picker opens export popover with:
+  - Format selection: GIF (with size limit: 2/5/10 MB, auto frame-dropping) or MOV (HEVC)
+  - Scale: 25%/50%/75%/100% of cached preview resolution
+  - Loops: 1/2/3/5 walkthroughs
+  - Crop to zoom: captures the current zoomed/panned view region
+  - Multi-select support: exports only highlighted rows if selected
+  - Save panel for sandbox-compatible file access
+
+### Fixed
+- **Status Bar Noise** — Removed "Marked for deletion" / "Unmarked" status messages that cluttered the status bar during rapid marking
+
 ## [5.16.0] — 2026-04-04
 
 ### Fixed

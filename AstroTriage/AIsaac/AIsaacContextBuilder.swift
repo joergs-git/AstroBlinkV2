@@ -802,6 +802,14 @@ struct AIsaacContextBuilder {
         - ESC or Stop button to end. Status bar shows "Blink" pill during playback.
         - Great for quickly spotting trailing, clouds, or focus shifts across the session.
 
+        BLINK VIDEO EXPORT (v5.17.0):
+        - Film icon button next to blink delay picker opens export popover.
+        - Export as animated GIF (with 2/5/10 MB size limit, auto frame-dropping) or HEVC .mov.
+        - Scale: 25%/50%/75%/100%. Loops: 1/2/3/5 walkthroughs.
+        - "Crop to current zoom" toggle captures only the zoomed/panned region.
+        - Multi-select: exports only highlighted rows if selected, otherwise all visible.
+        - Save dialog lets you choose destination (sandbox-compatible).
+
         USER CONFIDENCE RATING (v5.13.0):
         - Press 1/2/3 on selected frames to assign a personal confidence score (1-3 stars). \
         Same key again clears the rating. Yellow star column in file list.
