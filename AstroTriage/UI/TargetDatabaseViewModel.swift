@@ -79,8 +79,9 @@ class TargetDatabaseViewModel: ObservableObject {
     @Published var moonDistance: [String: Double] = [:]  // canonical name → degrees
     @Published var moonAltitudeCurve: [AltAzCalculator.VisibilityPoint] = []
 
-    /// Per-target compass directions (set of directions target passes through while above 15°)
-    var targetDirections: [String: Set<CompassDirection>] = [:]
+    /// Per-target compass directions: primary (at transit) + all directions while above 15°
+    var targetPrimaryDirection: [String: CompassDirection] = [:]  // direction at max altitude
+    var targetAllDirections: [String: Set<CompassDirection>] = [:]  // all directions above 15°
 
     /// Session targets (canonical names in current session)
     let sessionTargets: Set<String>
@@ -190,12 +191,12 @@ class TargetDatabaseViewModel: ObservableObject {
             }
         }
 
-        // Compass direction filter — OR logic: target must pass through at least one selected direction
+        // Compass direction filter — uses PRIMARY direction (at transit/max altitude)
+        // Selected directions are OR-linked: show if primary direction matches ANY selected
         if !selectedDirections.isEmpty {
             result = result.filter { target in
-                guard let dirs = targetDirections[target.canonicalName] else { return false }
-                // Target must pass through at least one selected direction
-                return !dirs.isDisjoint(with: selectedDirections)
+                guard let primary = targetPrimaryDirection[target.canonicalName] else { return false }
+                return selectedDirections.contains(primary)
             }
         }
 
@@ -413,7 +414,8 @@ class TargetDatabaseViewModel: ObservableObject {
                 moonCurve = []
             }
 
-            var directions: [String: Set<CompassDirection>] = [:]
+            var primaryDirs: [String: CompassDirection] = [:]
+            var allDirs: [String: Set<CompassDirection>] = [:]
 
             for target in targets {
                 let info = AltAzCalculator.tonightInfo(
@@ -423,8 +425,9 @@ class TargetDatabaseViewModel: ObservableObject {
                 )
                 results[target.canonicalName] = info
 
-                // Compute compass directions the target passes through (while above 15°)
+                // Compute compass directions: primary (at max alt) + all (while above 15°)
                 var dirs = Set<CompassDirection>()
+                var maxAltPoint: (alt: Double, time: Date) = (-99, today)
                 for point in info.curve where point.altitude >= 15 {
                     let altAz = AltAzCalculator.compute(
                         ra: target.raJ2000, dec: target.decJ2000,
@@ -432,8 +435,21 @@ class TargetDatabaseViewModel: ObservableObject {
                         utcDate: point.time
                     )
                     dirs.insert(CompassDirection.from(azimuth: altAz.azimuth))
+                    if point.altitude > maxAltPoint.alt {
+                        maxAltPoint = (point.altitude, point.time)
+                    }
                 }
-                directions[target.canonicalName] = dirs
+                allDirs[target.canonicalName] = dirs
+
+                // Primary direction = direction at maximum altitude (transit)
+                if maxAltPoint.alt > 0 {
+                    let transitAz = AltAzCalculator.compute(
+                        ra: target.raJ2000, dec: target.decJ2000,
+                        latitude: latitude, longitude: longitude,
+                        utcDate: maxAltPoint.time
+                    )
+                    primaryDirs[target.canonicalName] = CompassDirection.from(azimuth: transitAz.azimuth)
+                }
 
                 // Moon-target angular separation
                 if let mp = moonPos {
@@ -444,12 +460,13 @@ class TargetDatabaseViewModel: ObservableObject {
                     moonDists[target.canonicalName] = dist
                 }
             }
-            await MainActor.run { [results, moonDists, moonCurve, moonIllum, directions] in
+            await MainActor.run { [results, moonDists, moonCurve, moonIllum, primaryDirs, allDirs] in
                 self.tonightVisibility = results
                 self.moonDistance = moonDists
                 self.moonAltitudeCurve = moonCurve
                 self.moonIllumination = moonIllum
-                self.targetDirections = directions
+                self.targetPrimaryDirection = primaryDirs
+                self.targetAllDirections = allDirs
                 self.objectWillChange.send()
             }
         }
