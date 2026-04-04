@@ -499,7 +499,9 @@ struct AIsaacContextBuilder {
         - A frame can trigger MULTIPLE garbage reasons simultaneously (shown joined with "+").
         - Stage 1 — Garbage Detection (Rules 0-10, all checked independently):
           * R0 No signal: zero stars AND no noise → "no signal detected"
-          * R1 Near-zero stars: star count < 15-25% of median → "zero/near-zero stars"
+          * R0b Dark frame / dome closed: stars ≥ 10,000 (hot pixel false detections) or stars ≥ FL-scaled \
+          threshold + background < 0.002 → "noise peaks / dark frame". Detected early, metrics nulled.
+          * R1 Near-zero stars: star count < 15% (NB) / 25% (BB) of median → "zero/near-zero stars"
           * R1b Decentered target: plate-solved center offset > 30% of FOV → "target shifted off sensor"
           * R2 Low SNR: SNR < 50% of group median → "SNR catastrophically low"
           * R3 High FWHM: FWHM > 2× median → "severe defocus/tracking"

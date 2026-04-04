@@ -998,12 +998,12 @@ struct HelpBackgroundView: View {
                 Divider()
 
                 // Quality Scoring
-                faqSection("Quality Scoring — The 4-Tier System",
+                faqSection("Quality Scoring — The 5-Tier System",
                     """
                     AstroBlink automatically scores every image relative to its group (same target + filter + exposure). \
                     This means a 30s Ha sub is only compared to other 30s Ha subs — never to 180s Luminance frames.
 
-                    The scoring uses two stages:
+                    The scoring uses a 5-stage pipeline (SmartCull):
                     """)
 
                 faqItem("Stage 1 — Garbage Detection",
@@ -1017,19 +1017,21 @@ struct HelpBackgroundView: View {
 
                 faqItem("Stage 2 — Relative Ranking",
                     """
-                    Images that pass Stage 1 are ranked by a weighted z-score combining Stars (1.2x), \
-                    FWHM (1.0x), HFR (1.0x), Noise (1.0x), and Eccentricity (1.5x — highest weight, \
-                    because elongation can't be fixed by stacking). The z-score tells you how many \
-                    standard deviations each metric is from the group average.
+                    Images that pass Stage 1 are ranked by a weighted z-score combining PSF Flux / Stars \
+                    (1.2x broadband, 0.5x narrowband), FWHM (1.0x), Noise (1.0x), and Trailing \
+                    (filter-aware: 0.3x narrowband, 0.6x RGB, 1.0x luminance). PSF Flux replaces star \
+                    count when GPU fitting is available. Target-aware weights adjust by object type \
+                    (e.g. galaxies boost FWHM weight, nebulae boost noise weight). Z-scores are capped \
+                    at ±3.0 to prevent one extreme metric from dominating.
                     """)
 
                 qualityIconRow("circle.fill", .systemGreen, "Excellent (z > 0.5)",
                     "Best frames — clearly above average in the combined score. Keep these.")
-                qualityIconRow("circle.lefthalf.filled", .systemGreen, "Good (-0.3 to 0.5)",
+                qualityIconRow("circle.lefthalf.filled", .systemGreen, "Good (-0.5 to 0.5)",
                     "Solid frames — near average. Definitely usable, keep unless you have plenty.")
-                qualityIconRow("exclamationmark.circle", .systemOrange, "Borderline (-1.2 to -0.3)",
+                qualityIconRow("exclamationmark.circle", .systemOrange, "Borderline (-2.0 to -0.5)",
                     "Below average — 4 orange gradient levels from light (nearly good) to deep (nearly trash). Hover for per-metric breakdown and SNR contribution.")
-                qualityIconRow("xmark.circle.fill", .systemRed, "Trash (< -1.2 or Stage 1)",
+                qualityIconRow("xmark.circle.fill", .systemRed, "Trash (< -2.0 or Stage 1)",
                     "Either catastrophically bad (Stage 1) or statistically worst in group. Hover for reason.")
                 qualityIconRow("questionmark.circle", .systemBlue, "Uncertain (small group)",
                     "Group has fewer than 8 frames with ambiguous quality — not enough data for confident ranking.")
@@ -1070,10 +1072,12 @@ struct HelpBackgroundView: View {
 
                 faqItem("Why eccentricity matters most",
                     """
-                    Eccentricity has the highest quality weight (1.5x) because elongated stars are the one \
-                    defect that stacking cannot fix. Noise, FWHM variations, and star count differences are \
-                    all handled by sigma clipping and weighted stacking. But elongated stars create systematic \
-                    artifacts that persist in the final stack.
+                    Elongated stars are the one defect that stacking cannot fix. Noise, FWHM variations, \
+                    and star count differences are all handled by sigma clipping and weighted stacking. \
+                    But elongated stars create systematic artifacts that persist in the final stack. \
+                    The trailing score (which incorporates eccentricity) uses filter-aware weights: \
+                    full strictness for luminance (1.0x), moderate for RGB (0.6x), lenient for narrowband \
+                    (0.3x) since diffuse emission targets tolerate slight elongation.
                     """)
 
                 Divider()
@@ -1117,7 +1121,8 @@ struct HelpBackgroundView: View {
                     The total star count from GPU detection. Fewer stars than usual often indicates clouds, \
                     fog, high humidity, or tracking issues that smeared stars below the detection threshold. \
                     A sudden drop in star count is the most reliable single indicator of a problem. \
-                    Weight in quality score: 1.2x (slightly elevated). \
+                    Weight in quality score: 1.2x broadband, 0.5x narrowband. When GPU PSF fitting is \
+                    available, PSF Flux replaces star count (captures both count AND brightness). \
                     Note: a low star count can also occur when the mount recenters mid-session and shifts \
                     the target partially off the sensor. In this case the visible portion may look perfectly \
                     fine, but half the field is empty. If your images have plate-solved coordinates (CRVAL1/CRVAL2), \
@@ -1295,8 +1300,8 @@ struct HelpBackgroundView: View {
                 faqSection("SmartCull — Multi-Stage Quality Engine",
                     """
                     SmartCull is a 5-stage pipeline that handles ~99% of quality decisions \
-                    automatically, leaving only genuine edge cases for you. Validated on 1,457 frames \
-                    across 6 setups (3 telescopes, mono+OSC, narrowband+broadband).
+                    automatically, leaving only genuine edge cases for you. Validated on 1,638 frames \
+                    across 7 setups (4 telescopes, mono+OSC, narrowband+broadband).
                     """)
 
                 faqItem("Stage 1 — Garbage Detection",
@@ -1322,7 +1327,9 @@ struct HelpBackgroundView: View {
                 faqItem("Stage 2 — Z-Score Ranking",
                     """
                     Per-group (target + filter + exposure + night) robust z-scores using median/MAD. \
-                    Metrics: Stars (1.2x broadband, 0.5x narrowband), FWHM, HFR, Noise, Trailing (1.5x). \
+                    Metrics: PSF Flux / Stars (1.2x broadband, 0.5x narrowband), FWHM (1.0x), \
+                    Noise (1.0x), Trailing (filter-aware: 0.3x NB, 0.6x RGB, 1.0x luminance). \
+                    Target-aware weights adjust by object type (v5.14.0). \
                     Individual z-scores capped at ±3.0 to prevent one extreme value from dominating.
                     """)
 
@@ -1352,7 +1359,7 @@ struct HelpBackgroundView: View {
 
                 faqItem("Culling Autopilot",
                     """
-                    Click the quality status in the bottom bar for one-click auto-marking: \
+                    Click the auto-mark button (wand icon) in the toolbar for one-click auto-marking: \
                     Conservative (only Stage 1 garbage), Balanced (+ severe borderline), \
                     Aggressive (+ all borderline). Each mode shows frame count and integration \
                     impact before applying.
