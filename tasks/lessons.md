@@ -347,3 +347,27 @@
 - **Root cause:** Low gain (10) + dual-narrowband filter produces very low background (< 0.003 normalized). The 5000-star threshold was calibrated for gain 100+ where background is naturally higher. Wide-field setups also detect more stars than long FL.
 - **Rule:** R0b Path B star threshold must be FL-dependent: wide FOV sees more real stars, so threshold must be higher. Background threshold tightened from 0.003 to 0.002 (real dark frames are always < 0.001). Formula: `7500 * (1000/FL)^2`, clamped [5000, 10000].
 - **Applies to:** QualityEstimator R0b, any dark frame detection logic, low-gain imaging setups
+
+## [2026-04-04] — Supabase JSON integers break Swift Codable Double fields
+- **Mistake:** `CatalogTarget` struct used `Codable` auto-synthesis with `Double?` fields. Supabase returns integers for whole numbers (6 not 6.0), causing `DecodingError.typeMismatch`.
+- **Root cause:** Swift's `JSONDecoder` strictly matches number types. A JSON `6` decodes as Int but not Double.
+- **Rule:** For any struct decoded from Supabase REST JSON, use a custom `init(from:)` with flexible number decoding: try Double first, then Int, convert. Never rely on auto-synthesis for numeric fields.
+- **Applies to:** TargetCatalogService.CatalogTarget, any Supabase-backed Codable struct
+
+## [2026-04-04] — base64-prefix cache keys collide for similar URLs
+- **Mistake:** DSS thumbnail disk cache used `base64EncodedString().prefix(64)` of the URL as filename. All DSS URLs share the same base64 prefix (same domain/path), so different targets got the same cache file.
+- **Root cause:** base64 is not a hash — similar inputs produce similar outputs. Truncating to 64 chars lost the unique part (coordinates at the end).
+- **Rule:** For URL-based cache keys, extract the unique identifying parts (e.g. RA/Dec coordinates) directly, or use a proper hash (SHA256). Never truncate base64 as a cache key.
+- **Applies to:** Any disk cache keyed by URL
+
+## [2026-04-04] — SwiftUI List Section headers create gray gap above data
+- **Mistake:** Put column headers as a VStack item above a SwiftUI `List`, creating a large gray dead zone between headers and first row.
+- **Root cause:** SwiftUI `List` has internal padding/chrome that can't be removed from outside.
+- **Rule:** Put column headers as a pinned `Section(header:)` inside the List, not outside it. Use `.textCase(nil)` to prevent uppercase transformation.
+- **Applies to:** Any SwiftUI List with custom column headers
+
+## [2026-04-04] — Filter gap indicator should not show for never-imaged targets
+- **Mistake:** Gap icon showed for all targets missing filter data, including never-imaged ones. User feedback: "doesn't make sense to show gap for targets not shot at all."
+- **Root cause:** Original logic treated `history == nil` as a gap. But "never imaged" is different from "imaged but imbalanced."
+- **Rule:** Filter gap indicators and the "Has filter gap" toggle should require `history != nil`. A gap means "you started this target but some filters are underserved" — not "you haven't started yet."
+- **Applies to:** TargetDatabaseViewModel, TargetDatabaseWindow filter gap logic
