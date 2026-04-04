@@ -4,6 +4,12 @@ All notable changes to AstroBlink & AIsaac will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [5.15.1] — 2026-04-04
+
+### Fixed
+- **LSHandlerRank Warning** — Added missing `LSHandlerRank` key to Folder document type in Info.plist. Resolves Xcode build warning 90788 about incomplete document type configuration
+- **Direction Filter Transit Logic** — Compass direction filter now uses the primary direction at transit time instead of all directions throughout the night, giving more accurate filtering results
+
 ## [5.15.0] — 2026-04-04
 
 ### Added
