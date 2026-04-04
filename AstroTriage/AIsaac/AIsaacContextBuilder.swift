@@ -823,7 +823,7 @@ struct AIsaacContextBuilder {
         - Tight/normal/wide labels per metric. Overall quality spread % with color-coded readiness bar.
 
         TARGET CATALOG BROWSER (v5.15.0):
-        - Window menu → Target Catalog (or toolbar "Catalog" button). Browse 515+ deep-sky objects.
+        - Window menu → Target Catalog (or toolbar "Catalog" button). Browse 533+ deep-sky objects.
         - Supabase-backed database with 24h cache (works offline after first fetch).
         - Search by name, catalog ID, or constellation. Filter by type chips, constellation, difficulty.
         - Detail panel: coordinates, angular size, magnitude, surface brightness, filter recommendations, \

@@ -35,7 +35,7 @@ class ReleaseNotesWindowController {
 
 private let allReleases: [(version: String, date: String, items: [(ReleaseNotesView.ChangeType, String, String)])] = [
     ("5.15.0", "April 4, 2026", [
-        (.added, "Target Catalog Browser", "Browse 515+ deep-sky objects from a Supabase-backed catalog. Search by name, filter by type/constellation/difficulty. Detail panel with coordinates, photometry, filter recommendations, scoring weights, and aliases."),
+        (.added, "Target Catalog Browser", "Browse 533+ deep-sky objects from a Supabase-backed catalog. Search by name, filter by type/constellation/difficulty. Sortable column headers, hover card on target names, azimuth direction arrows, setup-specific integration hours. Detail panel with coordinates, photometry, filter recommendations, scoring weights, and aliases."),
         (.added, "Alt/Az Visibility Chart", "See tonight's altitude curve for any target with moon altitude overlay (dashed). Red dot marks current time. Shows max altitude, transit time, and hours above 30°."),
         (.added, "Weather Forecast Bar", "Tonight's cloud cover, seeing, temperature, humidity, and wind from 7Timer + Open-Meteo. Seeing quality contextualized for your latitude. Hourly cloud mini-chart with current hour highlighted."),
         (.added, "FOV Simulation", "Proportional target-in-sensor rectangle using your actual equipment profile. Shows plate scale and fill ratio. Switch between equipment setups."),
