@@ -13,8 +13,9 @@ class TargetDatabaseViewModel: ObservableObject {
     @Published var selectedType: String? = nil          // nil = all types
     @Published var selectedConstellation: String? = nil  // nil = all
     @Published var selectedDifficulty: String? = nil     // nil = all
-    @Published var showTonightOnly: Bool = false
+    @Published var showTonightOnly: Bool = true  // default: show only tonight-visible targets
     @Published var showGapsOnly: Bool = false
+    @Published var showOptimalFOV: Bool = false     // ≥30% FOV fill with current setup
     @Published var selectedTarget: TargetCatalogService.CatalogTarget? = nil
 
     enum SortField: String, CaseIterable {
@@ -71,8 +72,13 @@ class TargetDatabaseViewModel: ObservableObject {
         }
     }
 
-    /// Selected equipment setup index (for FOV simulation)
-    @Published var selectedSetupIndex: Int = 0
+    /// Selected equipment setup index (for FOV simulation + history filtering)
+    @Published var selectedSetupIndex: Int = 0 {
+        didSet {
+            computeFOVFillRatios()
+            loadTargetHistory()
+        }
+    }
 
     /// Available equipment setups from user profile
     var equipmentSetups: [AIsaacUserProfile.EquipmentSetup] = []
@@ -86,6 +92,9 @@ class TargetDatabaseViewModel: ObservableObject {
     /// Tonight's weather forecast (from 7Timer + Open-Meteo)
     @Published var weatherForecast: AIsaacWeatherService.AstroForecast?
     @Published var isLoadingWeather: Bool = false
+
+    /// Per-target FOV fill ratio with current setup
+    var fovFillRatios: [String: Double] = [:]
 
     // MARK: - Derived
 
@@ -136,13 +145,20 @@ class TargetDatabaseViewModel: ObservableObject {
             }
         }
 
-        // Filter gap filter (has recommended filters, actual hours < 80% of ratio)
+        // Filter gap filter — only targets with EXISTING history that have imbalanced filters
         if showGapsOnly {
             result = result.filter { target in
-                guard let primary = target.primaryFilter else { return false }
-                let history = targetHistory[target.canonicalName]
-                guard let history else { return true }  // never imaged = gap
+                guard let primary = target.primaryFilter,
+                      let history = targetHistory[target.canonicalName] else { return false }
                 return hasFilterGap(recommended: primary, actual: history.perFilterHours)
+            }
+        }
+
+        // Optimal FOV filter (≥30% fill with current setup)
+        if showOptimalFOV {
+            result = result.filter { target in
+                guard let fill = fovFillRatios[target.canonicalName] else { return false }
+                return fill >= 0.3
             }
         }
 
@@ -230,6 +246,9 @@ class TargetDatabaseViewModel: ObservableObject {
         // Load Frame History data for all known targets
         loadTargetHistory()
 
+        // Compute FOV fill ratios for all targets with current setup
+        computeFOVFillRatios()
+
         // Compute tonight's visibility for all targets
         if let loc = observerLocation {
             computeVisibility(latitude: loc.lat, longitude: loc.lon)
@@ -254,11 +273,32 @@ class TargetDatabaseViewModel: ObservableObject {
 
     // MARK: - Frame History Integration
 
+    func reloadTargetHistory() {
+        loadTargetHistory()
+        objectWillChange.send()
+    }
+
     private func loadTargetHistory() {
         let db = FrameHistoryDatabase.shared
+
+        // Build setupHash from selected equipment for setup-specific filtering
+        let setupHash: String?
+        if let setup = currentSetup {
+            let fp = SetupFingerprint(telescope: setup.telescope, camera: setup.camera,
+                                      focalLength: setup.focalLength, pixelSizeMicrons: setup.pixelSize)
+            setupHash = fp.hash
+        } else {
+            setupHash = nil
+        }
+
         do {
-            // Use nightlyTrendAll which aggregates per-night per-target per-filter
-            let summaries = try db.nightlyTrendAll()
+            // Filter by selected setup if available
+            let summaries: [NightSummary]
+            if let hash = setupHash {
+                summaries = try db.nightlyTrend(setupHash: hash)
+            } else {
+                summaries = try db.nightlyTrendAll()
+            }
 
             // Aggregate NightSummary records into per-target integration structs
             var byTarget: [String: TargetIntegration] = [:]
@@ -353,6 +393,23 @@ class TargetDatabaseViewModel: ObservableObject {
                 self.objectWillChange.send()
             }
         }
+    }
+
+    // MARK: - FOV Fill
+
+    func computeFOVFillRatios() {
+        guard let setup = currentSetup, let fov = fovArcmin(setup: setup) else {
+            fovFillRatios = [:]
+            return
+        }
+        let fovDiag = (fov.width * fov.width + fov.height * fov.height).squareRoot()
+        var ratios: [String: Double] = [:]
+        for target in allTargets {
+            guard let major = target.angularSizeMajor, let minor = target.angularSizeMinor else { continue }
+            let targetDiag = (major * major + minor * minor).squareRoot()
+            ratios[target.canonicalName] = targetDiag / fovDiag
+        }
+        fovFillRatios = ratios
     }
 
     // MARK: - Weather

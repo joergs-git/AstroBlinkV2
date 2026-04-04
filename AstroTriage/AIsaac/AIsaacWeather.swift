@@ -15,7 +15,13 @@ class AIsaacWeatherService {
 
     struct AstroForecast {
         let hours: [HourlyForecast]
+        let hourlyCloud: [HourlyCloud]  // 1-hourly cloud cover from Open-Meteo
         let fetchTime: Date
+
+        struct HourlyCloud {
+            let time: Date
+            let cloudCover: Int  // 0-100%
+        }
 
         struct HourlyForecast {
             let time: Date
@@ -145,7 +151,13 @@ class AIsaacWeatherService {
             ))
         }
 
-        let forecast = AstroForecast(hours: hours, fetchTime: Date())
+        // Build 1-hourly cloud cover array from Open-Meteo data
+        let hourlyCloud = weather.compactMap { entry -> AstroForecast.HourlyCloud? in
+            guard let cloud = entry.cloudCover else { return nil }
+            return AstroForecast.HourlyCloud(time: entry.time, cloudCover: cloud)
+        }
+
+        let forecast = AstroForecast(hours: hours, hourlyCloud: hourlyCloud, fetchTime: Date())
         cachedForecast = forecast
         cacheTime = Date()
         cachedLat = lat
@@ -205,6 +217,7 @@ class AIsaacWeatherService {
 
     private struct OpenMeteoEntry {
         let time: Date
+        let cloudCover: Int?
         let windSpeed: Double?
         let temperature: Double?
         let humidity: Int?
@@ -221,6 +234,7 @@ class AIsaacWeatherService {
                   let hourly = json["hourly"] as? [String: Any],
                   let times = hourly["time"] as? [String] else { return [] }
 
+            let clouds = hourly["cloud_cover"] as? [Int?]
             let temps = hourly["temperature_2m"] as? [Double?]
             let humidity = hourly["relative_humidity_2m"] as? [Int?]
             let wind = hourly["wind_speed_10m"] as? [Double?]
@@ -235,6 +249,7 @@ class AIsaacWeatherService {
                 guard let time = df.date(from: timeStr) else { continue }
                 entries.append(OpenMeteoEntry(
                     time: time,
+                    cloudCover: clouds?[safe: i] ?? nil,
                     windSpeed: wind?[safe: i] ?? nil,
                     temperature: temps?[safe: i] ?? nil,
                     humidity: humidity?[safe: i] ?? nil,

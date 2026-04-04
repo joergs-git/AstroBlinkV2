@@ -29,8 +29,15 @@ class TargetDatabaseWindowController {
         let hostingView = NSHostingView(rootView: rootView)
 
         let count = vm.totalCount
+        // 80% of full display width
+        let screen = NSScreen.main ?? NSScreen.screens.first
+        let screenW = screen?.frame.width ?? 1440
+        let screenH = screen?.frame.height ?? 900
+        let winW = screenW * 0.8
+        let winH = screenH * 0.8
+
         let win = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 1100, height: 720),
+            contentRect: NSRect(x: 0, y: 0, width: winW, height: winH),
             styleMask: [.titled, .closable, .resizable, .miniaturizable],
             backing: .buffered, defer: false
         )
@@ -50,16 +57,18 @@ struct TargetDatabaseContentView: View {
     @ObservedObject var viewModel: TargetDatabaseViewModel
     let nightMode: Bool
     @Environment(\.fontScale) private var fontScale
+    @State private var hoveredTarget: TargetCatalogService.CatalogTarget?
+    @State private var hoverPoint: CGPoint = .zero  // mouse position in list coordinate space
 
     var body: some View {
         HSplitView {
-            // Left pane: search + filters + list
+            // Left pane: search + filters + list (~75%)
             leftPane
-                .frame(minWidth: 520)
+                .frame(minWidth: 600, idealWidth: 900)
 
-            // Right pane: detail panel
+            // Right pane: detail panel (~30%)
             rightPane
-                .frame(minWidth: 340, idealWidth: 400)
+                .frame(minWidth: 300, idealWidth: 380, maxWidth: 500)
         }
         .background(AppColors.bg(nightMode))
     }
@@ -98,15 +107,46 @@ struct TargetDatabaseContentView: View {
                 .padding(.horizontal, 12)
                 .padding(.bottom, 4)
 
-            // Count + sort
-            countAndSortBar
-                .padding(.horizontal, 12)
-                .padding(.bottom, 6)
+            // Count label
+            HStack {
+                Text("\(viewModel.targetCount) of \(viewModel.totalCount) targets")
+                    .font(.system(size: 11 * fontScale, weight: .medium))
+                    .foregroundColor(AppColors.fg(nightMode))
+                if viewModel.historyCount > 0 {
+                    Text("· \(viewModel.historyCount) in your history")
+                        .font(.system(size: 11 * fontScale))
+                        .foregroundColor(AppColors.fgDim(nightMode))
+                }
+                Spacer()
+            }
+            .padding(.horizontal, 12)
+            .padding(.bottom, 2)
 
-            Divider()
-
-            // Target list
+            // Target list with pinned column headers (no gap)
             targetList
+                .overlay {
+                    GeometryReader { geo in
+                        // Floating hover card — follows mouse pointer
+                        if let target = hoveredTarget {
+                            let cardW: CGFloat = 340
+                            let cardH: CGFloat = 220
+                            // Position card to the right of cursor, clamped within bounds
+                            let x = min(hoverPoint.x + 20, geo.size.width - cardW / 2 - 8)
+                            let y = min(max(hoverPoint.y, cardH / 2 + 8), geo.size.height - cardH / 2 - 8)
+                            hoverCard(target)
+                                .position(x: x + cardW / 2, y: y)
+                                .allowsHitTesting(false)
+                        }
+                    }
+                }
+                .onContinuousHover { phase in
+                    switch phase {
+                    case .active(let loc):
+                        hoverPoint = loc
+                    case .ended:
+                        break
+                    }
+                }
         }
         .background(AppColors.bg(nightMode))
     }
@@ -130,16 +170,6 @@ struct TargetDatabaseContentView: View {
             .padding(6)
             .background(AppColors.bgInput(nightMode))
             .cornerRadius(6)
-
-            // Constellation picker
-            Picker("Con", selection: $viewModel.selectedConstellation) {
-                Text("All").tag(nil as String?)
-                ForEach(viewModel.allConstellations, id: \.self) { con in
-                    Text(con).tag(con as String?)
-                }
-            }
-            .frame(width: 80)
-            .font(.system(size: 11 * fontScale))
 
             // Difficulty picker
             Picker("Diff", selection: $viewModel.selectedDifficulty) {
@@ -224,45 +254,72 @@ struct TargetDatabaseContentView: View {
         if let forecast = viewModel.weatherForecast {
             let tz = TimeZone.current
             let cal = Calendar.current
-            let nightHours = forecast.hours.filter { hour in
-                let comps = cal.dateComponents(in: tz, from: hour.time)
+            // Use Open-Meteo 1-hourly cloud data, filtered to nighttime
+            let nightCloud = forecast.hourlyCloud.filter { entry in
+                let comps = cal.dateComponents(in: tz, from: entry.time)
                 let h = comps.hour ?? 12
                 return h >= 18 || h <= 6
-            }.prefix(12)
+            }
 
-            if !nightHours.isEmpty {
+            if !nightCloud.isEmpty {
                 let now = Date()
-                let currentHourIdx = nightHours.enumerated().min(by: {
+                // Only highlight current hour if it's actually nighttime right now
+                let nowComps = cal.dateComponents(in: tz, from: now)
+                let nowH = nowComps.hour ?? 12
+                let isNightNow = nowH >= 18 || nowH <= 6
+                let currentHourIdx: Int? = isNightNow ? nightCloud.enumerated().min(by: {
                     Swift.abs($0.element.time.timeIntervalSince(now)) < Swift.abs($1.element.time.timeIntervalSince(now))
-                })?.offset
-                HStack(spacing: 3) {
-                    ForEach(Array(nightHours.enumerated()), id: \.offset) { idx, hour in
+                })?.offset : nil
+
+                HStack(spacing: 1) {
+                    ForEach(Array(nightCloud.enumerated()), id: \.offset) { idx, hour in
                         let df = DateFormatter()
                         let _ = df.dateFormat = "HH"
                         let _ = df.timeZone = tz
                         let isCurrent = idx == currentHourIdx
-                        VStack(spacing: 2) {
-                            // Cloud % label on top
-                            Text("\(hour.cloudCover)")
-                                .font(.system(size: 8 * fontScale, weight: isCurrent ? .bold : .regular))
-                                .foregroundColor(isCurrent ? AppColors.accent(nightMode) : AppColors.fgVeryDim(nightMode))
-                            // Cloud bar (height proportional to cloud %)
-                            RoundedRectangle(cornerRadius: 2)
-                                .fill(hour.cloudCover < 30 ? AppColors.green(nightMode) :
-                                      hour.cloudCover < 60 ? AppColors.orange(nightMode) :
-                                      Color.red.opacity(0.6))
-                                .frame(width: 32, height: CGFloat(hour.cloudCover) / 100 * 26)
-                                .frame(height: 26, alignment: .bottom)
-                                .overlay(
-                                    // Current hour: bright border
-                                    isCurrent ? RoundedRectangle(cornerRadius: 2)
-                                        .stroke(AppColors.accent(nightMode), lineWidth: 2)
-                                        .frame(height: 26) : nil
-                                )
-                            // Hour label
-                            Text(df.string(from: hour.time))
-                                .font(.system(size: 9 * fontScale, weight: isCurrent ? .bold : .regular))
-                                .foregroundColor(isCurrent ? AppColors.accent(nightMode) : AppColors.fgDim(nightMode))
+                        let hourComps = cal.dateComponents(in: tz, from: hour.time)
+                        let isGap = (hourComps.hour ?? 0) == 0  // midnight gap indicator
+
+                        HStack(spacing: 0) {
+                            // Gap between evening and morning
+                            if isGap && idx > 0 {
+                                Rectangle()
+                                    .fill(AppColors.divider(nightMode))
+                                    .frame(width: 1, height: 32)
+                                    .padding(.horizontal, 2)
+                            }
+
+                            VStack(spacing: 0) {
+                                // Bar with % label floating on top
+                                let barH = CGFloat(max(hour.cloudCover, 4)) / 100 * 24
+                                ZStack(alignment: .top) {
+                                    VStack(spacing: 0) {
+                                        Spacer(minLength: 0)
+                                        RoundedRectangle(cornerRadius: 1.5)
+                                            .fill(hour.cloudCover < 30 ? AppColors.green(nightMode) :
+                                                  hour.cloudCover < 60 ? AppColors.orange(nightMode) :
+                                                  Color.red.opacity(0.6))
+                                            .frame(width: 20, height: barH)
+                                            .overlay(
+                                                isCurrent ? RoundedRectangle(cornerRadius: 1.5)
+                                                    .stroke(AppColors.accent(nightMode), lineWidth: 2) : nil
+                                            )
+                                    }
+                                    .frame(height: 24)
+
+                                    // % label floats above bar
+                                    Text("\(hour.cloudCover)")
+                                        .font(.system(size: 7 * fontScale, weight: isCurrent ? .bold : .regular))
+                                        .foregroundColor(isCurrent ? AppColors.accent(nightMode) : AppColors.fgVeryDim(nightMode))
+                                        .offset(y: -10)
+                                }
+                                .frame(height: 28)
+
+                                // Hour label
+                                Text(df.string(from: hour.time))
+                                    .font(.system(size: 7 * fontScale, weight: isCurrent ? .bold : .regular))
+                                    .foregroundColor(isCurrent ? AppColors.accent(nightMode) : AppColors.fgDim(nightMode))
+                            }
                         }
                     }
                 }
@@ -369,164 +426,311 @@ struct TargetDatabaseContentView: View {
             .toggleStyle(.checkbox)
             .help("Show targets where you need more integration in some filters")
 
+            Toggle(isOn: $viewModel.showOptimalFOV) {
+                Label("Optimal FOV (≥30%)", systemImage: "viewfinder")
+                    .font(.system(size: 11 * fontScale))
+            }
+            .toggleStyle(.checkbox)
+            .disabled(viewModel.currentSetup == nil)
+            .help(viewModel.currentSetup == nil ? "No equipment profile — load a session first" : "Show targets that fill at least 30% of your sensor FOV")
+
             Spacer()
         }
         .foregroundColor(AppColors.fg(nightMode))
     }
 
-    private var countAndSortBar: some View {
-        HStack {
-            let count = viewModel.targetCount
-            let total = viewModel.totalCount
-            let histCount = viewModel.historyCount
-            Text("\(count) of \(total) targets")
-                .font(.system(size: 11 * fontScale, weight: .medium))
-                .foregroundColor(AppColors.fg(nightMode))
-            if histCount > 0 {
-                Text("· \(histCount) in your history")
-                    .font(.system(size: 11 * fontScale))
-                    .foregroundColor(AppColors.fgDim(nightMode))
+    // Column widths — shared between header and rows for alignment
+    private let colW = (
+        dot: CGFloat(8), icon: CGFloat(16), name: CGFloat(160), spark: CGFloat(400),
+        mag: CGFloat(42), size: CGFloat(62), alt: CGFloat(34),
+        moon: CGFloat(50), hours: CGFloat(46), gap: CGFloat(14), filter: CGFloat(62)
+    )
+
+    private var columnHeaders: some View {
+        HStack(spacing: 6) {
+            Color.clear.frame(width: colW.dot)
+            Color.clear.frame(width: colW.icon)
+            sortableHeader("Name", field: .name, width: colW.name, alignment: .leading)
+            sortableHeader("Alt / Az Tonight", field: .altitude, width: colW.spark, alignment: .leading)
+            Spacer()
+            sortableHeader("Mag", field: .magnitude, width: colW.mag, alignment: .trailing)
+            sortableHeader("Size", field: .size, width: colW.size, alignment: .trailing)
+            sortableHeader("Alt", field: .altitude, width: colW.alt, alignment: .trailing)
+            Text("🌙").frame(width: colW.moon, alignment: .trailing)
+            sortableHeader("Hrs", field: .integration, width: colW.hours, alignment: .trailing)
+            Color.clear.frame(width: colW.gap)
+            Text("Filt").font(.system(size: 9 * fontScale, weight: .medium))
+                .foregroundColor(AppColors.fgDim(nightMode))
+                .frame(width: colW.filter, alignment: .center)
+        }
+        .padding(.vertical, 3)
+    }
+
+    /// Floating hover card — appears on mouse hover over a row, shows all key parameters
+    private func hoverCard(_ target: TargetCatalogService.CatalogTarget) -> some View {
+        let history = viewModel.targetHistory[target.canonicalName]
+        let visInfo = viewModel.tonightVisibility[target.canonicalName]
+        let moonDist = viewModel.moonDistance[target.canonicalName]
+        let fovFill = viewModel.fovFillRatios[target.canonicalName]
+        let fs: CGFloat = 11
+
+        return VStack(alignment: .leading, spacing: 6) {
+            // Header: name + type
+            HStack {
+                Text(target.canonicalName)
+                    .font(.system(size: (fs + 3) * fontScale, weight: .bold, design: .monospaced))
+                if let common = target.commonName {
+                    Text(common).font(.system(size: (fs + 1) * fontScale)).foregroundColor(.secondary)
+                }
+                Spacer()
+                let (icon, color) = typeIconInfo(target.targetType)
+                Label(target.typeDisplayName, systemImage: icon)
+                    .font(.system(size: fs * fontScale, weight: .medium))
+                    .foregroundColor(nightMode ? .red : color)
             }
 
-            Spacer()
+            Divider()
 
-            // Sort picker
-            Picker("Sort", selection: $viewModel.sortBy) {
-                ForEach(TargetDatabaseViewModel.SortField.allCases, id: \.self) { field in
-                    Text(field.rawValue).tag(field)
+            // Grid of key parameters
+            HStack(spacing: 16) {
+                // Left column
+                VStack(alignment: .leading, spacing: 3) {
+                    paramRow("RA", formatRA(target.raJ2000), fs)
+                    paramRow("Dec", formatDec(target.decJ2000), fs)
+                    paramRow("Con", target.constellation, fs)
+                    paramRow("Mag", target.magnitudeV != nil ? String(format: "%.1f", target.magnitudeV!) : "—", fs)
+                    paramRow("SB", target.surfaceBrightness != nil ? String(format: "%.1f", target.surfaceBrightness!) : "—", fs)
+                    paramRow("Size", target.angularSizeMajor != nil ? formatSize(target.angularSizeMajor!, target.angularSizeMinor) : "—", fs)
+                }
+
+                // Right column — tonight + history
+                VStack(alignment: .leading, spacing: 3) {
+                    if let vis = visInfo {
+                        paramRow("Alt", "\(Int(vis.maxAltitude))°", fs,
+                                 color: vis.maxAltitude >= 30 ? .green : .orange)
+                        paramRow(">30°", String(format: "%.1fh", vis.hoursAbove30), fs)
+                    }
+                    if let md = moonDist {
+                        paramRow("Moon", "\(Int(md))° (\(Int(viewModel.moonIllumination * 100))%)", fs,
+                                 color: md < 30 ? .red : nil)
+                    }
+                    if let fill = fovFill {
+                        paramRow("FOV", String(format: "%.0f%%", fill * 100), fs,
+                                 color: fill >= 0.3 ? .green : nil)
+                    }
+                    if let hist = history {
+                        paramRow("Hours", String(format: "%.1fh", hist.totalHours), fs, color: .accentColor)
+                        let filters = hist.perFilterHours.sorted(by: { $0.key < $1.key })
+                            .map { "\($0.key):\(String(format: "%.0f", $0.value))h" }.joined(separator: " ")
+                        Text(filters)
+                            .font(.system(size: (fs - 2) * fontScale, design: .monospaced))
+                            .foregroundColor(.secondary)
+                    }
                 }
             }
-            .frame(width: 120)
-            .font(.system(size: 11 * fontScale))
 
-            Button(action: { viewModel.sortAscending.toggle() }) {
-                Image(systemName: viewModel.sortAscending ? "arrow.up" : "arrow.down")
-                    .font(.system(size: 10))
+            // Filter recommendation
+            if let primary = target.primaryFilter {
+                HStack(spacing: 4) {
+                    Text("Filter:")
+                        .font(.system(size: (fs - 1) * fontScale, weight: .medium))
+                        .foregroundColor(.secondary)
+                    Text(primary.formatted)
+                        .font(.system(size: (fs - 1) * fontScale, weight: .medium))
+                        .foregroundColor(filterSetColor(primary.set, nightMode: nightMode))
+                }
             }
-            .buttonStyle(.plain)
-            .foregroundColor(AppColors.fg(nightMode))
         }
+        .padding(10)
+        .frame(width: 340)
+        .background(.ultraThinMaterial)
+        .cornerRadius(10)
+        .shadow(color: .black.opacity(0.2), radius: 8, x: 0, y: 4)
+    }
+
+    private func paramRow(_ label: String, _ value: String, _ fs: CGFloat, color: Color? = nil) -> some View {
+        HStack(spacing: 4) {
+            Text(label)
+                .font(.system(size: (fs - 1) * fontScale, weight: .medium))
+                .foregroundColor(.secondary)
+                .frame(width: 36, alignment: .trailing)
+            Text(value)
+                .font(.system(size: fs * fontScale, design: .monospaced))
+                .foregroundColor(color ?? AppColors.fg(nightMode))
+                .lineLimit(1)
+        }
+    }
+
+    private func sortableHeader(_ title: String, field: TargetDatabaseViewModel.SortField,
+                                width: CGFloat, alignment: Alignment) -> some View {
+        Button(action: {
+            if viewModel.sortBy == field {
+                viewModel.sortAscending.toggle()
+            } else {
+                viewModel.sortBy = field
+                viewModel.sortAscending = true
+            }
+        }) {
+            HStack(spacing: 2) {
+                Text(title)
+                if viewModel.sortBy == field {
+                    Image(systemName: viewModel.sortAscending ? "chevron.up" : "chevron.down")
+                        .font(.system(size: 7))
+                }
+            }
+            .font(.system(size: 10 * fontScale, weight: viewModel.sortBy == field ? .bold : .medium))
+            .foregroundColor(viewModel.sortBy == field ? AppColors.accent(nightMode) : AppColors.fgDim(nightMode))
+        }
+        .buttonStyle(.plain)
+        .frame(width: width, alignment: alignment)
     }
 
     // MARK: - Target List
 
     private var targetList: some View {
-        List(viewModel.filteredTargets, selection: $viewModel.selectedTarget) { target in
-            targetRow(target)
-                .tag(target)
-                .listRowBackground(
-                    viewModel.sessionTargets.contains(target.canonicalName)
-                        ? AppColors.accent(nightMode).opacity(0.08) : Color.clear
-                )
+        List(selection: $viewModel.selectedTarget) {
+            Section {
+                ForEach(viewModel.filteredTargets) { target in
+                    targetRow(target)
+                        .tag(target)
+                        .listRowBackground(
+                            viewModel.sessionTargets.contains(target.canonicalName)
+                                ? AppColors.accent(nightMode).opacity(0.08) : Color.clear
+                        )
+                }
+            } header: {
+                columnHeaders
+                    .textCase(nil)  // prevent uppercase transformation
+            }
         }
         .listStyle(.plain)
+        .environment(\.defaultMinListHeaderHeight, 0)
     }
 
     private func targetRow(_ target: TargetCatalogService.CatalogTarget) -> some View {
-        HStack(spacing: 8) {
-            // Session indicator dot
-            if viewModel.sessionTargets.contains(target.canonicalName) {
-                Circle()
-                    .fill(AppColors.accent(nightMode))
-                    .frame(width: 6, height: 6)
-            }
+        let fs: CGFloat = 13  // larger base font for readability
+        let history = viewModel.targetHistory[target.canonicalName]
+        let visInfo = viewModel.tonightVisibility[target.canonicalName]
+        let moonDist = viewModel.moonDistance[target.canonicalName]
+        let hasHistory = history != nil
+
+        return HStack(spacing: 6) {
+            // Session dot
+            Circle()
+                .fill(viewModel.sessionTargets.contains(target.canonicalName) ? AppColors.accent(nightMode) : .clear)
+                .frame(width: colW.dot, height: 6)
 
             // Type icon
             typeIcon(target.targetType)
-                .frame(width: 16)
+                .frame(width: colW.icon)
+                .help(target.typeDisplayName)
 
-            // Name + common name
-            VStack(alignment: .leading, spacing: 1) {
+            // Name + common name (single line) — hover here triggers info card
+            HStack(spacing: 4) {
                 Text(target.canonicalName)
-                    .font(.system(size: 12 * fontScale, weight: .semibold, design: .monospaced))
+                    .font(.system(size: fs * fontScale, weight: .semibold, design: .monospaced))
                     .foregroundColor(AppColors.fg(nightMode))
                 if let common = target.commonName {
                     Text(common)
-                        .font(.system(size: 10 * fontScale))
+                        .font(.system(size: (fs - 2) * fontScale))
                         .foregroundColor(AppColors.fgDim(nightMode))
-                        .lineLimit(1)
                 }
             }
-            .frame(minWidth: 140, alignment: .leading)
+            .lineLimit(1)
+            .frame(width: colW.name, alignment: .leading)
+            .onHover { isHovered in
+                hoveredTarget = isHovered ? target : nil
+            }
+
+            // Altitude + Azimuth diagrams side by side (split sparkline width)
+            HStack(spacing: 2) {
+                if let info = visInfo, !info.curve.isEmpty {
+                    miniAltitudeSparkline(curve: info.curve, width: colW.spark / 2 - 1, height: 28)
+                    miniAzimuthArrows(target: target, width: colW.spark / 2 - 1, height: 28)
+                } else {
+                    Color.clear.frame(width: colW.spark, height: 28)
+                }
+            }
+            .frame(width: colW.spark, height: 28)
 
             Spacer()
 
-            // Constellation
-            Text(target.constellation)
-                .font(.system(size: 11 * fontScale, design: .monospaced))
-                .foregroundColor(AppColors.fgDim(nightMode))
-                .frame(width: 30)
-
             // Magnitude
-            if let mag = target.magnitudeV {
-                Text(String(format: "%.1f", mag))
-                    .font(.system(size: 11 * fontScale, design: .monospaced))
-                    .foregroundColor(AppColors.fg(nightMode))
-                    .frame(width: 35, alignment: .trailing)
-            } else {
-                Text("—")
-                    .frame(width: 35, alignment: .trailing)
-                    .foregroundColor(AppColors.fgVeryDim(nightMode))
-            }
+            Text(target.magnitudeV != nil ? String(format: "%.1f", target.magnitudeV!) : "—")
+                .font(.system(size: fs * fontScale, design: .monospaced))
+                .foregroundColor(target.magnitudeV != nil ? AppColors.fg(nightMode) : AppColors.fgVeryDim(nightMode))
+                .lineLimit(1).fixedSize()
+                .frame(width: colW.mag, alignment: .trailing)
 
-            // Size
-            if let major = target.angularSizeMajor {
-                Text(formatSize(major, target.angularSizeMinor))
-                    .font(.system(size: 10 * fontScale, design: .monospaced))
-                    .foregroundColor(AppColors.fgDim(nightMode))
-                    .frame(width: 65, alignment: .trailing)
-            }
+            // Size (compact single-line)
+            Text(target.angularSizeMajor != nil ? formatSizeCompact(target.angularSizeMajor!, target.angularSizeMinor) : "—")
+                .font(.system(size: (fs - 1) * fontScale, design: .monospaced))
+                .foregroundColor(AppColors.fgDim(nightMode))
+                .lineLimit(1)
+                .frame(width: colW.size, alignment: .trailing)
 
-            // Tonight altitude
-            if let info = viewModel.tonightVisibility[target.canonicalName] {
-                Text(info.maxAltitude > 0 ? "\(Int(info.maxAltitude))°" : "—")
-                    .font(.system(size: 11 * fontScale, design: .monospaced))
-                    .foregroundColor(info.maxAltitude >= 30 ? AppColors.green(nightMode) :
-                                    info.maxAltitude >= 15 ? AppColors.orange(nightMode) :
-                                    AppColors.fgVeryDim(nightMode))
-                    .frame(width: 30, alignment: .trailing)
-                    .help("Max altitude tonight")
-            }
+            // Max altitude tonight
+            let maxAlt = visInfo?.maxAltitude ?? -99
+            Text(maxAlt > 0 ? "\(Int(maxAlt))°" : "—")
+                .font(.system(size: fs * fontScale, weight: .medium, design: .monospaced))
+                .lineLimit(1).fixedSize()
+                .foregroundColor(maxAlt >= 30 ? AppColors.green(nightMode) :
+                                maxAlt >= 15 ? AppColors.orange(nightMode) :
+                                AppColors.fgVeryDim(nightMode))
+                .frame(width: colW.alt, alignment: .trailing)
+                .help(maxAlt > 0 ? "Max altitude tonight: \(Int(maxAlt))° — \(maxAlt >= 30 ? "good" : maxAlt >= 15 ? "low" : "very low")" : "Below horizon tonight")
 
             // Moon distance
-            if let moonDist = viewModel.moonDistance[target.canonicalName] {
-                HStack(spacing: 2) {
-                    Image(systemName: "moon.fill")
-                        .font(.system(size: 8))
-                    Text("\(Int(moonDist))°")
-                        .font(.system(size: 10 * fontScale, design: .monospaced))
-                }
-                .foregroundColor(moonDist < 30 ? .red.opacity(0.7) :
-                                 moonDist < 60 ? AppColors.orange(nightMode) :
+            Text(moonDist != nil ? "☽\(Int(moonDist!))°" : "—")
+                .font(.system(size: (fs - 2) * fontScale, design: .monospaced))
+                .lineLimit(1).fixedSize()
+                .foregroundColor(moonDist != nil && moonDist! < 30 ? .red.opacity(0.7) :
+                                 moonDist != nil && moonDist! < 60 ? AppColors.orange(nightMode) :
                                  AppColors.fgVeryDim(nightMode))
-                .frame(width: 35, alignment: .trailing)
-                .help("Moon distance (\(Int(viewModel.moonIllumination * 100))% illuminated)")
-            }
+                .frame(width: colW.moon, alignment: .trailing)
+            .help(moonDist != nil ? "Moon: \(Int(moonDist!))° away (\(Int(viewModel.moonIllumination * 100))% illuminated)\(moonDist! < 30 ? " — too close!" : moonDist! < 60 ? " — moderate" : " — safe")" : "Moon distance unknown")
 
-            // Integration hours pill
-            if let history = viewModel.targetHistory[target.canonicalName] {
-                Text(String(format: "%.1fh", history.totalHours))
-                    .font(.system(size: 10 * fontScale, weight: .medium))
-                    .padding(.horizontal, 5)
-                    .padding(.vertical, 1)
+            // Integration hours (only if has history)
+            if let hist = history {
+                Text(String(format: "%.0fh", hist.totalHours))
+                    .font(.system(size: (fs - 1) * fontScale, weight: .medium))
+                    .lineLimit(1)
+                    .padding(.horizontal, 4).padding(.vertical, 1)
                     .background(AppColors.accent(nightMode).opacity(0.2))
                     .cornerRadius(4)
                     .foregroundColor(AppColors.accent(nightMode))
+                    .frame(width: colW.hours, alignment: .trailing)
+            } else {
+                Color.clear.frame(width: colW.hours)
             }
 
-            // Filter gap indicator
+            // Filter gap — ONLY for previously imaged targets
+            if hasHistory, let _ = target.primaryFilter,
+               viewModel.filterGapAnalysis(target: target)?.hasGap == true {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 10))
+                    .foregroundColor(AppColors.orange(nightMode))
+                    .frame(width: colW.gap)
+            } else {
+                Color.clear.frame(width: colW.gap)
+            }
+
+            // Recommended filter set pill (single line, abbreviated)
             if let primary = target.primaryFilter {
-                let history = viewModel.targetHistory[target.canonicalName]
-                let hasGap = history == nil || viewModel.filterGapAnalysis(target: target)?.hasGap == true
-                if hasGap {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .font(.system(size: 10))
-                        .foregroundColor(AppColors.orange(nightMode))
-                        .help("Filter gap — needs more integration")
-                }
+                Text(primary.set)
+                    .font(.system(size: (fs - 2) * fontScale, weight: .semibold))
+                    .lineLimit(1)
+                    .fixedSize()
+                    .padding(.horizontal, 4).padding(.vertical, 1)
+                    .background(filterSetColor(primary.set, nightMode: nightMode).opacity(0.2))
+                    .foregroundColor(filterSetColor(primary.set, nightMode: nightMode))
+                    .cornerRadius(3)
+                    .frame(width: colW.filter, alignment: .center)
+            } else {
+                Color.clear.frame(width: colW.filter)
             }
         }
-        .padding(.vertical, 2)
+        .padding(.vertical, 4)
     }
 
     // MARK: - Right Pane (Detail)
@@ -561,6 +765,121 @@ struct TargetDatabaseContentView: View {
         Image(systemName: icon)
             .font(.system(size: 11))
             .foregroundColor(nightMode ? .red.opacity(0.8) : color)
+    }
+
+    /// Mini altitude sparkline for list rows — shows rise/transit/set at a glance
+    private func miniAltitudeSparkline(curve: [AltAzCalculator.VisibilityPoint], width: CGFloat, height: CGFloat) -> some View {
+        Canvas { context, size in
+            guard curve.count > 1 else { return }
+            let maxAlt = 90.0
+            let step = size.width / CGFloat(curve.count - 1)
+
+            // Draw the altitude curve as a filled path
+            var path = Path()
+            path.move(to: CGPoint(x: 0, y: size.height))
+            for (i, point) in curve.enumerated() {
+                let x = CGFloat(i) * step
+                let y = size.height - (max(0, point.altitude) / maxAlt * Double(size.height))
+                path.addLine(to: CGPoint(x: x, y: y))
+            }
+            path.addLine(to: CGPoint(x: size.width, y: size.height))
+            path.closeSubpath()
+
+            let fillColor = nightMode ? Color.red.opacity(0.35) : Color.accentColor.opacity(0.25)
+            context.fill(path, with: .color(fillColor))
+
+            // Stroke the curve line on top
+            var linePath = Path()
+            for (i, point) in curve.enumerated() {
+                let x = CGFloat(i) * step
+                let y = size.height - (max(0, point.altitude) / maxAlt * Double(size.height))
+                if i == 0 { linePath.move(to: CGPoint(x: x, y: y)) }
+                else { linePath.addLine(to: CGPoint(x: x, y: y)) }
+            }
+            let lineColor = nightMode ? Color.red.opacity(0.7) : Color.accentColor.opacity(0.6)
+            context.stroke(linePath, with: .color(lineColor), lineWidth: 1.2)
+
+            // 25° dashed line (lower threshold)
+            let y25 = size.height - (25.0 / maxAlt * Double(size.height))
+            var dash25 = Path()
+            dash25.move(to: CGPoint(x: 0, y: y25))
+            dash25.addLine(to: CGPoint(x: size.width, y: y25))
+            context.stroke(dash25, with: .color(.orange.opacity(0.4)),
+                           style: StrokeStyle(lineWidth: 0.5, dash: [2, 2]))
+
+            // 30° dashed line (good imaging threshold)
+            let y30 = size.height - (30.0 / maxAlt * Double(size.height))
+            var dash30 = Path()
+            dash30.move(to: CGPoint(x: 0, y: y30))
+            dash30.addLine(to: CGPoint(x: size.width, y: y30))
+            context.stroke(dash30, with: .color(.green.opacity(0.5)),
+                           style: StrokeStyle(lineWidth: 0.5, dash: [3, 2]))
+        }
+        .frame(width: width, height: height)
+        .cornerRadius(3)
+        .help("Altitude tonight — green dashed = 30° (good), orange dashed = 25° (minimum)")
+    }
+
+    /// Mini azimuth direction arrows — shows compass direction during the night
+    private func miniAzimuthArrows(target: TargetCatalogService.CatalogTarget, width: CGFloat, height: CGFloat) -> some View {
+        Canvas { context, size in
+            guard let loc = viewModel.observerLocation else { return }
+            guard let visInfo = viewModel.tonightVisibility[target.canonicalName] else { return }
+            let points = visInfo.curve
+            guard points.count > 2 else { return }
+
+            let step = size.width / CGFloat(points.count - 1)
+            let arrowSpacing = max(3, Int(points.count) / 8)  // ~8 arrows across
+
+            for (i, point) in points.enumerated() {
+                guard i % arrowSpacing == arrowSpacing / 2, point.altitude > 0 else { continue }
+                // Compute azimuth for this time
+                let altAz = AltAzCalculator.compute(ra: target.raJ2000, dec: target.decJ2000,
+                                                     latitude: loc.lat, longitude: loc.lon,
+                                                     utcDate: point.time)
+                let az = altAz.azimuth
+                let x = CGFloat(i) * step
+                let cy = size.height / 2
+                let arrowLen: CGFloat = 5
+
+                // Arrow direction: 0°=N=up, 90°=E=right, 180°=S=down, 270°=W=left
+                let rad = az * .pi / 180
+                let dx = sin(rad) * Double(arrowLen)
+                let dy = -cos(rad) * Double(arrowLen)  // negative because Y grows downward
+
+                var arrowPath = Path()
+                arrowPath.move(to: CGPoint(x: x - CGFloat(dx), y: cy - CGFloat(dy)))
+                arrowPath.addLine(to: CGPoint(x: x + CGFloat(dx), y: cy + CGFloat(dy)))
+
+                let arrowColor = nightMode ? Color.red.opacity(0.5) : Color.blue.opacity(0.5)
+                context.stroke(arrowPath, with: .color(arrowColor), lineWidth: 1.5)
+
+                // Arrowhead
+                let headLen: CGFloat = 3
+                let headAngle = atan2(CGFloat(dy), CGFloat(dx))
+                let tip = CGPoint(x: x + CGFloat(dx), y: cy + CGFloat(dy))
+                var head = Path()
+                head.move(to: tip)
+                head.addLine(to: CGPoint(
+                    x: tip.x - headLen * cos(headAngle - .pi / 4),
+                    y: tip.y - headLen * sin(headAngle - .pi / 4)
+                ))
+                head.move(to: tip)
+                head.addLine(to: CGPoint(
+                    x: tip.x - headLen * cos(headAngle + .pi / 4),
+                    y: tip.y - headLen * sin(headAngle + .pi / 4)
+                ))
+                context.stroke(head, with: .color(arrowColor), lineWidth: 1)
+            }
+
+            // Cardinal labels
+            let labelFont = Font.system(size: 6).monospaced()
+            context.draw(Text("N").font(labelFont).foregroundColor(.gray.opacity(0.4)),
+                         at: CGPoint(x: size.width - 4, y: 3))
+        }
+        .frame(width: width, height: height)
+        .cornerRadius(3)
+        .help("Azimuth direction during the night (↑N ↓S →E ←W)")
     }
 }
 
@@ -606,8 +925,8 @@ struct TargetDetailView: View {
     private var headerSection: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(alignment: .top, spacing: 12) {
-                // DSS thumbnail (120x120)
-                dssThumbnail(url: target.dssThumbnailURL, size: 120)
+                // DSS thumbnail — enlarges on hover
+                ZoomableDSSThumbnail(url: target.dssThumbnailURL)
 
                 VStack(alignment: .leading, spacing: 4) {
             HStack {
@@ -932,10 +1251,11 @@ struct TargetDetailView: View {
             }
             if let minH = target.minIntegrationHours {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Min Integration").font(.system(size: 10 * fontScale, weight: .medium)).foregroundColor(AppColors.fgDim(nightMode))
-                    Text(String(format: "%.0fh+", minH))
+                    Text("Est. Min Integration").font(.system(size: 10 * fontScale, weight: .medium)).foregroundColor(AppColors.fgDim(nightMode))
+                    Text(String(format: "~%.0fh+", minH))
                         .font(.system(size: 13 * fontScale, design: .monospaced))
                         .foregroundColor(AppColors.fg(nightMode))
+                        .help("Rough estimate based on surface brightness and difficulty. Actual time depends on your f-ratio, Bortle class, and camera sensitivity.")
                 }
             }
             Spacer()
@@ -1188,6 +1508,18 @@ private func formatDec(_ degrees: Double) -> String {
     return String(format: "%@%02d° %02d' %04.1f\"", sign, d, m, s)
 }
 
+/// Compact single-line size format for list rows (no line breaks)
+private func formatSizeCompact(_ major: Double, _ minor: Double?) -> String {
+    if let minor {
+        if major >= 60 {
+            return String(format: "%.0f°×%.0f°", major / 60, minor / 60)
+        }
+        return String(format: "%.0f'×%.0f'", major, minor)
+    }
+    if major >= 60 { return String(format: "%.0f°", major / 60) }
+    return String(format: "%.0f'", major)
+}
+
 private func formatSize(_ major: Double, _ minor: Double?) -> String {
     if let minor {
         if major >= 60 {
@@ -1260,6 +1592,19 @@ private func weightColor(_ value: Double) -> Color {
     if value <= 1.2 { return .green }
     if value <= 1.5 { return .orange }
     return .red
+}
+
+private func filterSetColor(_ set: String, nightMode: Bool) -> Color {
+    if nightMode { return .red.opacity(0.8) }
+    switch set.uppercased() {
+    case "SHO":     return .orange
+    case "HOO":     return .teal
+    case "LRGB":    return .blue
+    case "HARGB", "HALRGB": return .purple
+    case "RGB":     return .green
+    case "L":       return .gray
+    default:        return .secondary
+    }
 }
 
 private func gapLevelColor(_ level: GapLevel) -> Color {
@@ -1372,4 +1717,17 @@ struct DSSThumbnailView: View {
 @ViewBuilder
 private func dssThumbnail(url: URL?, size: CGFloat) -> some View {
     DSSThumbnailView(url: url, size: size)
+}
+
+/// DSS thumbnail that enlarges on hover — 120px normal, 300px on hover
+struct ZoomableDSSThumbnail: View {
+    let url: URL?
+    @State private var isHovered = false
+
+    var body: some View {
+        DSSThumbnailView(url: url, size: isHovered ? 300 : 120)
+            .onHover { isHovered = $0 }
+            .animation(.easeInOut(duration: 0.2), value: isHovered)
+            .zIndex(isHovered ? 10 : 0)
+    }
 }

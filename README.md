@@ -190,6 +190,7 @@ After a night of imaging you might have 200-600 sub-exposures. Some have clouds,
 - **Weather overlay** — live cloud cover and transparency forecast integrated into the visibility timeline, so you can plan around the weather.
 - **FOV simulation** — frame your target with your actual equipment setup (telescope + camera). See exactly how the object fits your sensor before imaging.
 - **Filter gap analysis** — shows which filters you've already captured for each target and which still need integration time, based on your Frame History database.
+- **Data sources** — target coordinates, magnitudes, and angular sizes from [OpenNGC](https://github.com/mattiaverga/OpenNGC) (CC-BY-SA-4.0) enriched with hand-curated filter recommendations and astrophotography metadata. Weather from [7Timer](https://www.7timer.info) (seeing/transparency) and [Open-Meteo](https://open-meteo.com) (hourly cloud/wind/temperature). Sky survey thumbnails from [NASA/STScI DSS](https://archive.stsci.edu/cgi-bin/dss_form) (public domain).
 
 ### Metadata & Session Overview
 - NINA filename parsing — automatically extracts target, filter, exposure, gain, temperature, HFR, star count, and more

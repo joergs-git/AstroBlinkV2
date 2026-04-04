@@ -27,7 +27,7 @@ class AIsaacWindowController: NSWindowController {
         if let screen = NSScreen.main {
             let screenFrame = screen.visibleFrame
             let x = screenFrame.maxX - 450
-            let y = screenFrame.midY - 100
+            let y = screenFrame.maxY - screenFrame.height * 0.3
             window.setFrameOrigin(NSPoint(x: x, y: y))
         }
 
