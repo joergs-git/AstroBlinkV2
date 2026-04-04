@@ -81,7 +81,7 @@ Use them to manually flag frames you've visually inspected. For example, rate "3
 ## Target Catalog
 
 **Q: Where does the Target Catalog data come from?**
-A Supabase-backed database with 515+ deep-sky objects. Data is cached locally for offline use and refreshed in the background when a connection is available. The catalog includes coordinates, photometry, angular sizes, filter recommendations, difficulty ratings, and imaging notes.
+A Supabase-backed database with 533+ deep-sky objects. Data is cached locally for offline use and refreshed in the background when a connection is available. The catalog includes coordinates, photometry, angular sizes, filter recommendations, difficulty ratings, and imaging notes.
 
 **Q: Why don't I see visibility data for targets?**
 Visibility requires an observer location. Load any session that has SITELAT/SITELONG in the FITS headers, or use AIsaac so your location is learned automatically. Once a location is in your profile, the Target Catalog will use it even before opening a session.
@@ -97,6 +97,12 @@ Two sources: [7Timer](http://www.7timer.info/) for astronomically-focused seeing
 
 **Q: What are the DSS thumbnails?**
 Public domain images from NASA's Digitized Sky Survey (STScI), showing the sky survey view of each target. They are downloaded once and cached to disk for fast reload. The field of view adapts to the target's angular size.
+
+**Q: Why doesn't SH2-XXX (or another object) appear in the catalog?**
+The catalog is server-side on Supabase, so new targets can be added at any time without an app update. If you don't find an object, it may not be in the database yet. The search also checks aliases, so try alternate names (e.g. "Sh2-129" or "Flying Bat Nebula"). If it's still missing, request it via GitHub issues and it can be added server-side.
+
+**Q: Why do my integration hours differ between equipment setups?**
+Integration hours in the Target Catalog are filtered by the currently selected equipment setup. If you switch from your RC12 to your RASA, the hours column and per-filter breakdown update to show only frames captured with that specific rig. This lets you track progress per setup independently. Select "All Setups" (if available) to see combined totals.
 
 **Q: Can I use the Target Catalog offline?**
 Yes. After the first successful Supabase fetch, the entire catalog is cached as JSON on disk. Subsequent launches load from cache instantly. Only weather and DSS thumbnails require an internet connection — everything else works fully offline.

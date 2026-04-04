@@ -41,8 +41,8 @@ AIsaac knows your equipment, remembers your imaging history, understands light p
 ## Highlights
 
 - **AIsaac AI Assistant** — built-in astrophotography AI powered by Claude. Quality summaries, smart culling suggestions, filter advice, imaging plans, voice input, equipment memory. Free Sonnet tier included; bring your own API key for Opus.
-- **Target Catalog Browser** — browse 515+ deep-sky objects with real-time visibility charts, weather overlay, FOV simulation for your equipment, and filter gap analysis. Plan your next imaging session without leaving the app.
-- **SmartCull Quality Engine** — 5-stage pipeline (garbage detection → session sanity → z-score ranking → rescue rules → FWHM sanity) auto-classifies ~99% of frames. Target-aware scoring — 515+ deep-sky target database adjusts metric weights by object type (galaxies prioritize resolution, nebulae prioritize SNR, IFN keeps every photon). FL-aware MAD floor prevents penalizing insignificant differences. Severity-dependent trailing detection with orientation consensus (industry first). Atmospheric attenuation detection (cloud/dew/fog). Cross-group session sanity. Self-calibrating per-setup baseline.
+- **Target Catalog Browser** — browse 533+ deep-sky objects with real-time visibility charts, weather overlay, FOV simulation for your equipment, and filter gap analysis. Plan your next imaging session without leaving the app.
+- **SmartCull Quality Engine** — 5-stage pipeline (garbage detection → session sanity → z-score ranking → rescue rules → FWHM sanity) auto-classifies ~99% of frames. Target-aware scoring — 533+ deep-sky target database adjusts metric weights by object type (galaxies prioritize resolution, nebulae prioritize SNR, IFN keeps every photon). FL-aware MAD floor prevents penalizing insignificant differences. Severity-dependent trailing detection with orientation consensus (industry first). Atmospheric attenuation detection (cloud/dew/fog). Cross-group session sanity. Self-calibrating per-setup baseline.
 - **LightspeedStacker** — GPU warp+accumulate stacking, 10-20x faster than CPU. Hash-based triangle matching, Lanczos-3 interpolation, min/max pixel rejection. Color Combine for mono filter palettes (SHO, HOO, LRGB).
 - **GPU Post-Processing** — real-time stretch, sharpening, contrast, dark level, color saturation, bilateral denoise, Richardson-Lucy deconvolution, gradient removal, Wiener deconvolution, structure enhancement.
 - **Metal GPU Rendering** — PixInsight-compatible STF auto-stretch, zero-copy Apple Silicon buffers, <32ms navigation on cache hit.
@@ -185,7 +185,7 @@ After a night of imaging you might have 200-600 sub-exposures. Some have clouds,
 - **SSWEIGHT export** — writes PixInsight-compatible weight keyword (0-100) into FITS/XISF headers for WBPP weighted integration
 
 ### Target Catalog Browser
-- **515+ deep-sky objects** — galaxies, nebulae, star clusters, planetary nebulae, supernova remnants, and more. Searchable and filterable by type, constellation, magnitude, and size.
+- **533+ deep-sky objects** — galaxies, nebulae, star clusters, planetary nebulae, supernova remnants, and more. Searchable and filterable by type, constellation, magnitude, and size.
 - **Real-time visibility charts** — altitude/azimuth curves for your location showing when each target is observable, with twilight and moon indicators.
 - **Weather overlay** — live cloud cover and transparency forecast integrated into the visibility timeline, so you can plan around the weather.
 - **FOV simulation** — frame your target with your actual equipment setup (telescope + camera). See exactly how the object fits your sensor before imaging.

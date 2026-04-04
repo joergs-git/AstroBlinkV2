@@ -1,6 +1,6 @@
 # Target Catalog Browser
 
-The Target Catalog Browser (v5.15.0) is a built-in deep-sky object database with 515+ targets, backed by Supabase with offline disk caching. It helps you plan imaging sessions, track integration progress, and discover new targets for your equipment.
+The Target Catalog Browser (v5.15.0) is a built-in deep-sky object database with 533+ targets, backed by Supabase with offline disk caching. It helps you plan imaging sessions, track integration progress, and discover new targets for your equipment.
 
 Open it from the menu bar: **Window > Target Catalog**, or via AIsaac's "Nearby Objects" preset.
 
@@ -61,14 +61,18 @@ Filter by imaging difficulty level:
 - **Tonight visible** — show only targets that reach at least 30 degrees altitude tonight (requires observer location from FITS headers or user profile)
 - **Has filter gap** — show only targets where your actual integration is less than 40% of the proportional share for at least one recommended filter
 
+### Optimal FOV Filter
+
+- **Optimal FOV (>=30%)** — toggle to show only targets whose angular extent fills at least 30% of your selected equipment's sensor field of view. Requires an equipment setup to be selected.
+
 ### Sorting
 
-Sort the list by:
+Sort the list by clicking any column header. Supported sort columns:
 - Name, Type, Magnitude, Angular Size, Constellation
 - **Tonight Alt** — maximum altitude tonight (highest first)
 - **Your Hours** — total integration hours from your Frame History (most imaged first)
 
-Toggle ascending/descending with the arrow button.
+Click a header once for ascending, again for descending. The active sort column is indicated by an arrow glyph.
 
 ## Target List
 
@@ -82,8 +86,12 @@ Each row in the list shows:
 - **Angular size** — major axis in arcminutes (or degrees for large targets)
 - **Tonight altitude** — max altitude in degrees (green >= 30, orange >= 15, dim otherwise)
 - **Moon distance** — angular separation from the moon (red < 30 degrees, orange < 60 degrees)
-- **Integration hours** — your total hours from Frame History, shown as a blue pill badge
+- **Integration hours** — your total hours from Frame History, shown as a blue pill badge. When an equipment setup is selected, hours are filtered to show only integration from that specific setup.
 - **Filter gap indicator** — orange warning triangle when you need more integration in some filters
+
+### Hover Card
+
+Hovering the mouse over a target name in the list shows a floating compact datasheet with key facts at a glance: type, magnitude, angular size, tonight's max altitude, moon distance, and your integration hours. The card appears after a short delay and follows the cursor, disappearing when you move away.
 
 ## Detail Panel
 
@@ -91,7 +99,7 @@ Selecting a target opens a scrollable detail panel on the right with these secti
 
 ### Header
 
-- DSS sky survey thumbnail (120px, from NASA/STScI Digitized Sky Survey)
+- DSS sky survey thumbnail (120px, enlarges to 300px on hover; from NASA/STScI Digitized Sky Survey)
 - Canonical name and common name
 - "IN SESSION" badge if the target is in the currently loaded session
 - Type badge (color-coded)
@@ -111,6 +119,7 @@ A SwiftUI Charts area+line chart showing tonight's altitude curve for the target
 - **Moon altitude** — dashed yellow/gray line overlay, so you can see when the moon interferes
 - **30-degree line** — green dashed reference (practical lower limit for quality imaging)
 - **Current time marker** — red vertical rule + red dot on the target curve (when within the chart's time range)
+- **Azimuth direction arrows** — compass arrows along the altitude curve showing where the target is headed (N/NE/E/SE/S/SW/W/NW). These indicate the target's cardinal direction at each time point, so you can tell at a glance which part of the sky to point at and whether you need to plan for a meridian flip.
 - **Y-axis** — 0 to 90 degrees altitude
 - **X-axis** — time in 2-hour intervals through the night
 
@@ -189,7 +198,7 @@ The weather bar appears below the location picker and shows tonight's conditions
   - Quality labels: Exceptional, Very Good, Good, Average, Below Average
 - **Temperature, Humidity, Wind** — averaged over the first 8 nighttime hours
 - **Moon illumination** — percentage with color coding
-- **Hourly cloud mini-chart** — bar chart for nighttime hours (18:00-06:00), with the current hour highlighted by a bright border. Bars colored green/orange/red by cloud percentage.
+- **1-hourly cloud cover bars** — bar chart with one bar per hour for the nighttime window (18:00-06:00). A visual gap at midnight separates the evening and morning halves. The current hour is highlighted with a bright border for quick orientation. Bars are colored green/orange/red by cloud percentage.
 
 Weather data comes from two sources:
 - [7Timer](http://www.7timer.info/) — astronomically-focused seeing and transparency forecasts
@@ -211,6 +220,7 @@ Shows current coordinates in the bar (e.g. "50.9 degrees N, 6.9 degrees E").
 Switch between your known telescope+camera setups. This affects:
 - FOV simulation in the detail panel (plate scale, sensor coverage)
 - Fill ratio calculations
+- **Integration hours** — the "Your Hours" column and per-filter breakdown in the detail panel are filtered to show only hours captured with the selected equipment setup, so you can track progress per rig
 
 Equipment profiles are learned automatically from your session FITS headers and stored in the AIsaac user profile.
 
@@ -225,7 +235,7 @@ The detail panel shows a thumbnail image from NASA's Digitized Sky Survey (STScI
 
 ## Data Source
 
-The catalog is powered by a Supabase `target_catalog` table containing 515+ deep-sky objects. The app uses a TTL (time-to-live) caching strategy identical to other Supabase services:
+The catalog is powered by a Supabase `target_catalog` table containing 533+ deep-sky objects. The app uses a TTL (time-to-live) caching strategy identical to other Supabase services:
 - On launch, the cached JSON is loaded from disk for instant display
 - In the background, a refresh is attempted against Supabase
 - If the cache is empty (first launch), a synchronous fetch is triggered

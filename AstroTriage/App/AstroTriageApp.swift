@@ -1373,7 +1373,7 @@ struct HelpBackgroundView: View {
                 // Target Catalog Browser
                 faqSection("Target Catalog Browser (v5.15.0)",
                     """
-                    Browse 515+ deep-sky objects with planning tools. Open via Window menu \u{2192} Target Catalog \
+                    Browse 533+ deep-sky objects with planning tools. Open via Window menu \u{2192} Target Catalog \
                     or the Catalog toolbar button.
                     """)
 
@@ -1387,13 +1387,15 @@ struct HelpBackgroundView: View {
                 faqItem("Alt/Az Visibility Chart",
                     """
                     Altitude/Azimuth chart shows target visibility throughout the night with a \
-                    moon position overlay and current time marker. Plan your imaging session \
-                    around the best visibility window.
+                    moon position overlay, current time marker, and azimuth direction arrows \
+                    (compass bearings showing where the target is headed). Plan your imaging \
+                    session around the best visibility window.
                     """)
 
-                faqItem("Weather Forecast",
+                faqItem("Weather & Cloud Bars",
                     """
-                    Integrated weather data: cloud cover, seeing conditions, temperature, humidity, \
+                    Integrated weather data: cloud cover (1-hourly bars with midnight gap and \
+                    current hour highlight), seeing conditions, temperature, humidity, \
                     and wind speed. Auto-refreshes when you change location.
                     """)
 
@@ -1411,9 +1413,10 @@ struct HelpBackgroundView: View {
 
                 faqItem("Location & Setup Picker",
                     """
-                    Select your observing location and equipment setup. Weather forecast \
-                    auto-refreshes when location changes. Moon distance and illumination \
-                    shown per target.
+                    Select your observing location and equipment setup. Integration hours \
+                    are filtered by the selected equipment, so you can track progress per rig. \
+                    Weather forecast auto-refreshes when location changes. Hover over a target \
+                    name for a compact datasheet card. DSS thumbnails enlarge on hover.
                     """)
 
                 faqItem("DSS Sky Survey Thumbnails",

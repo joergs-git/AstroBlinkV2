@@ -29,7 +29,7 @@ AIsaac starts as a compact floating window with preset chips and an input field 
 - **Filter search** — type `filter:Ha` in the search bar to focus on one filter at a time
 - **Multi-folder** — Cmd+click multiple folders in the open dialog to merge sessions
 - **Night mode (N key)** — red-on-black UI for dark-adapted vision at the telescope
-- **Target Catalog** — open Window > Target Catalog to browse 515+ deep-sky objects with visibility charts, weather, FOV simulation, and filter gap analysis. Great for planning your next session before heading outside.
+- **Target Catalog** — open Window > Target Catalog to browse 533+ deep-sky objects with visibility charts, weather, FOV simulation, and filter gap analysis. Great for planning your next session before heading outside.
 
 ## Format Support
 
