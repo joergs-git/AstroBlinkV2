@@ -16,7 +16,40 @@ class TargetDatabaseViewModel: ObservableObject {
     @Published var showTonightOnly: Bool = true  // default: show only tonight-visible targets
     @Published var showGapsOnly: Bool = false
     @Published var showOptimalFOV: Bool = false     // ≥30% FOV fill with current setup
+    @Published var selectedDirections: Set<CompassDirection> = []  // empty = no filter
     @Published var selectedTarget: TargetCatalogService.CatalogTarget? = nil
+
+    /// 8 compass directions for azimuth filtering
+    enum CompassDirection: String, CaseIterable, Hashable {
+        case n = "N", ne = "NE", e = "E", se = "SE"
+        case s = "S", sw = "SW", w = "W", nw = "NW"
+
+        /// Azimuth range for this direction (degrees)
+        var azRange: ClosedRange<Double> {
+            switch self {
+            case .n:  return 337.5...360.0  // also 0...22.5, handled separately
+            case .ne: return 22.5...67.5
+            case .e:  return 67.5...112.5
+            case .se: return 112.5...157.5
+            case .s:  return 157.5...202.5
+            case .sw: return 202.5...247.5
+            case .w:  return 247.5...292.5
+            case .nw: return 292.5...337.5
+            }
+        }
+
+        static func from(azimuth: Double) -> CompassDirection {
+            let az = azimuth.truncatingRemainder(dividingBy: 360)
+            if az >= 337.5 || az < 22.5 { return .n }
+            if az < 67.5 { return .ne }
+            if az < 112.5 { return .e }
+            if az < 157.5 { return .se }
+            if az < 202.5 { return .s }
+            if az < 247.5 { return .sw }
+            if az < 292.5 { return .w }
+            return .nw
+        }
+    }
 
     enum SortField: String, CaseIterable {
         case name = "Name"
@@ -45,6 +78,9 @@ class TargetDatabaseViewModel: ObservableObject {
     @Published var moonIllumination: Double = 0  // 0-1
     @Published var moonDistance: [String: Double] = [:]  // canonical name → degrees
     @Published var moonAltitudeCurve: [AltAzCalculator.VisibilityPoint] = []
+
+    /// Per-target compass directions (set of directions target passes through while above 15°)
+    var targetDirections: [String: Set<CompassDirection>] = [:]
 
     /// Session targets (canonical names in current session)
     let sessionTargets: Set<String>
@@ -151,6 +187,15 @@ class TargetDatabaseViewModel: ObservableObject {
                 guard let primary = target.primaryFilter,
                       let history = targetHistory[target.canonicalName] else { return false }
                 return hasFilterGap(recommended: primary, actual: history.perFilterHours)
+            }
+        }
+
+        // Compass direction filter — OR logic: target must pass through at least one selected direction
+        if !selectedDirections.isEmpty {
+            result = result.filter { target in
+                guard let dirs = targetDirections[target.canonicalName] else { return false }
+                // Target must pass through at least one selected direction
+                return !dirs.isDisjoint(with: selectedDirections)
             }
         }
 
@@ -368,6 +413,8 @@ class TargetDatabaseViewModel: ObservableObject {
                 moonCurve = []
             }
 
+            var directions: [String: Set<CompassDirection>] = [:]
+
             for target in targets {
                 let info = AltAzCalculator.tonightInfo(
                     ra: target.raJ2000, dec: target.decJ2000,
@@ -375,6 +422,18 @@ class TargetDatabaseViewModel: ObservableObject {
                     date: today
                 )
                 results[target.canonicalName] = info
+
+                // Compute compass directions the target passes through (while above 15°)
+                var dirs = Set<CompassDirection>()
+                for point in info.curve where point.altitude >= 15 {
+                    let altAz = AltAzCalculator.compute(
+                        ra: target.raJ2000, dec: target.decJ2000,
+                        latitude: latitude, longitude: longitude,
+                        utcDate: point.time
+                    )
+                    dirs.insert(CompassDirection.from(azimuth: altAz.azimuth))
+                }
+                directions[target.canonicalName] = dirs
 
                 // Moon-target angular separation
                 if let mp = moonPos {
@@ -385,11 +444,12 @@ class TargetDatabaseViewModel: ObservableObject {
                     moonDists[target.canonicalName] = dist
                 }
             }
-            await MainActor.run { [results, moonDists, moonCurve, moonIllum] in
+            await MainActor.run { [results, moonDists, moonCurve, moonIllum, directions] in
                 self.tonightVisibility = results
                 self.moonDistance = moonDists
                 self.moonAltitudeCurve = moonCurve
                 self.moonIllumination = moonIllum
+                self.targetDirections = directions
                 self.objectWillChange.send()
             }
         }

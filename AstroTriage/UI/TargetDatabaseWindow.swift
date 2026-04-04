@@ -379,6 +379,51 @@ struct TargetDatabaseContentView: View {
         .foregroundColor(AppColors.fg(nightMode))
     }
 
+    /// Compass direction filter — 8 direction buttons arranged as a mini compass rose
+    private var directionFilter: some View {
+        HStack(spacing: 0) {
+            Text("Dir")
+                .font(.system(size: 9 * fontScale, weight: .medium))
+                .foregroundColor(AppColors.fgDim(nightMode))
+                .padding(.trailing, 4)
+
+            // Arrange as a single row for compactness: N NE E SE S SW W NW
+            HStack(spacing: 1) {
+                ForEach(TargetDatabaseViewModel.CompassDirection.allCases, id: \.self) { dir in
+                    let isActive = viewModel.selectedDirections.contains(dir)
+                    Button(action: {
+                        if isActive {
+                            viewModel.selectedDirections.remove(dir)
+                        } else {
+                            viewModel.selectedDirections.insert(dir)
+                        }
+                    }) {
+                        Text(dir.rawValue)
+                            .font(.system(size: 9 * fontScale, weight: isActive ? .bold : .regular))
+                            .frame(width: 22, height: 18)
+                            .background(isActive ? AppColors.accent(nightMode).opacity(0.4) : AppColors.bgControl(nightMode))
+                            .foregroundColor(isActive ? AppColors.accent(nightMode) : AppColors.fgDim(nightMode))
+                    }
+                    .buttonStyle(.plain)
+                    .cornerRadius(3)
+                }
+            }
+
+            // Clear button
+            if !viewModel.selectedDirections.isEmpty {
+                Button(action: { viewModel.selectedDirections.removeAll() }) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 10))
+                        .foregroundColor(AppColors.fgDim(nightMode))
+                }
+                .buttonStyle(.plain)
+                .padding(.leading, 3)
+            }
+        }
+        .disabled(viewModel.observerLocation == nil)
+        .help("Filter by compass direction — select directions where targets should be visible tonight. Selected = OR (show if in ANY), deselected = excluded.")
+    }
+
     private var typeFilterBar: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 6) {
@@ -432,9 +477,11 @@ struct TargetDatabaseContentView: View {
             }
             .toggleStyle(.checkbox)
             .disabled(viewModel.currentSetup == nil)
-            .help(viewModel.currentSetup == nil ? "No equipment profile — load a session first" : "Show targets that fill at least 30% of your sensor FOV")
 
             Spacer()
+
+            // Compass direction filter — toggle buttons for N/NE/E/SE/S/SW/W/NW
+            directionFilter
         }
         .foregroundColor(AppColors.fg(nightMode))
     }
