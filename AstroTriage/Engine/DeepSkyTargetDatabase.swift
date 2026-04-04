@@ -352,7 +352,7 @@ enum DeepSkyTargetDatabase {
         t("M1", "Crab Nebula", .supernovaRemnant,
           ra: 83.633, dec: 22.014, major: 6.0, minor: 4.0,
           mag: 8.4, sb: 12.0, con: "Tau",
-          filters: shoSNR, aliases: ["NGC1952"]),
+          filters: shoSNR, aliases: ["NGC1952", "SH2-244"]),
 
         // M2 — Globular cluster
         t("M2", nil, .globularCluster,
@@ -388,7 +388,7 @@ enum DeepSkyTargetDatabase {
         t("M8", "Lagoon Nebula", .emissionNebula,
           ra: 270.917, dec: -24.383, major: 90.0, minor: 40.0,
           mag: 6.0, sb: 13.0, con: "Sgr",
-          filters: shoDefault, aliases: ["NGC6523"]),
+          filters: shoDefault, aliases: ["NGC6523", "SH2-25"]),
 
         // M9 — Globular cluster
         t("M9", nil, .globularCluster,
@@ -429,13 +429,13 @@ enum DeepSkyTargetDatabase {
         t("M16", "Eagle Nebula", .emissionNebula,
           ra: 274.700, dec: -13.807, major: 35.0, minor: 28.0,
           mag: 6.0, sb: 13.0, con: "Ser",
-          filters: shoDefault, aliases: ["NGC6611"]),
+          filters: shoDefault, aliases: ["NGC6611", "SH2-49", "IC4703"]),
 
         // M17 — Omega/Swan Nebula
         t("M17", "Omega Nebula", .emissionNebula,
           ra: 275.196, dec: -16.172, major: 46.0, minor: 37.0,
           mag: 6.0, sb: 12.0, con: "Sgr",
-          filters: shoDefault, aliases: ["NGC6618"]),
+          filters: shoDefault, aliases: ["NGC6618", "SH2-45", "Swan Nebula"]),
 
         // M18 — Open cluster
         t("M18", nil, .openCluster,
@@ -454,7 +454,7 @@ enum DeepSkyTargetDatabase {
           filters: FilterRecommendation(.sho(ha: 6, oiii: 4, sii: 2),
               secondary: .lrgb(l: 4, r: 3, g: 3, b: 3),
               notes: "Emission + reflection components — NB for emission, LRGB for blue reflection"),
-          aliases: ["NGC6514"]),
+          aliases: ["NGC6514", "SH2-30"]),
 
         // M22 — Globular cluster
         t("M22", nil, .globularCluster,
@@ -516,7 +516,7 @@ enum DeepSkyTargetDatabase {
           filters: FilterRecommendation(.sho(ha: 4, oiii: 4, sii: 2),
               secondary: .rgb(r: 2, g: 2, b: 2),
               notes: "Very bright — short subs work; RGB for star colors"),
-          aliases: ["NGC1976"]),
+          aliases: ["NGC1976", "SH2-281"]),
 
         // M43 — De Mairan's Nebula (part of M42 complex)
         t("M43", "De Mairan's Nebula", .emissionNebula,
@@ -563,7 +563,7 @@ enum DeepSkyTargetDatabase {
         t("M51", "Whirlpool Galaxy", .galaxyGroup,
           ra: 202.470, dec: 47.195, major: 11.2, minor: 6.9,
           mag: 8.4, sb: 12.9, con: "CVn",
-          filters: galaxyHa, aliases: ["NGC5194"]),
+          filters: galaxyHa, aliases: ["NGC5194", "NGC5195"]),
 
         // M52 — Open cluster
         t("M52", nil, .openCluster,
@@ -930,12 +930,14 @@ enum DeepSkyTargetDatabase {
         // NGC 253 — Sculptor Galaxy
         t("NGC253", "Sculptor Galaxy", .galaxy,
           ra: 11.888, dec: -25.288, major: 27.5, minor: 6.8,
-          mag: 7.1, sb: 13.2, con: "Scl", filters: lrgbDefault),
+          mag: 7.1, sb: 13.2, con: "Scl", filters: lrgbDefault,
+          aliases: ["Caldwell 65", "Silver Dollar Galaxy"]),
 
         // NGC 281 — Pacman Nebula
         t("NGC281", "Pacman Nebula", .emissionNebula,
           ra: 13.167, dec: 56.633, major: 35.0, minor: 30.0,
-          mag: 7.4, sb: 13.0, con: "Cas", filters: shoDefault),
+          mag: 7.4, sb: 13.0, con: "Cas", filters: shoDefault,
+          aliases: ["SH2-184", "IC11"]),
 
         // NGC 457 — Owl Cluster / ET Cluster
         t("NGC457", "Owl Cluster", .openCluster,
@@ -948,9 +950,10 @@ enum DeepSkyTargetDatabase {
           mag: 4.3, con: "Per", filters: rgbDefault, aliases: ["NGC884"]),
 
         // NGC 891 — Edge-on galaxy
-        t("NGC891", nil, .galaxy,
+        t("NGC891", "Silver Sliver Galaxy", .galaxy,
           ra: 35.639, dec: 42.349, major: 13.5, minor: 2.5,
-          mag: 9.9, sb: 13.6, con: "And", filters: lrgbDefault),
+          mag: 9.9, sb: 13.6, con: "And", filters: lrgbDefault,
+          aliases: ["Caldwell 23"]),
 
         // NGC 1333 — Reflection nebula / star forming
         t("NGC1333", nil, .starFormingRegion,
@@ -989,12 +992,13 @@ enum DeepSkyTargetDatabase {
         t("NGC2237", "Rosette Nebula", .emissionNebula,
           ra: 97.967, dec: 5.033, major: 80.0, minor: 60.0,
           mag: 9.0, sb: 14.0, con: "Mon",
-          filters: shoDefault, aliases: ["NGC2238", "NGC2239", "NGC2246", "NGC2244"]),
+          filters: shoDefault, aliases: ["NGC2238", "NGC2239", "NGC2246", "NGC2244", "Caldwell 49", "SH2-275"]),
 
         // NGC 2264 — Cone Nebula / Christmas Tree
         t("NGC2264", "Cone Nebula", .emissionNebula,
           ra: 100.242, dec: 9.883, major: 20.0, minor: 10.0,
-          mag: 3.9, con: "Mon", filters: shoDefault),
+          mag: 3.9, con: "Mon", filters: shoDefault,
+          aliases: ["Christmas Tree Cluster", "SH2-273"]),
 
         // NGC 2359 — Thor's Helmet
         t("NGC2359", "Thor's Helmet", .wolfRayetNebula,
@@ -1124,7 +1128,8 @@ enum DeepSkyTargetDatabase {
           ra: 303.058, dec: 38.350, major: 18.0, minor: 12.0,
           mag: 7.4, con: "Cyg",
           filters: FilterRecommendation(.sho(ha: 5, oiii: 5, sii: 2),
-              notes: "OIII-rich Wolf-Rayet bubble")),
+              notes: "OIII-rich Wolf-Rayet bubble"),
+          aliases: ["Caldwell 27", "SH2-105"]),
 
         // NGC 6914 — Reflection nebula in Cygnus
         t("NGC6914", nil, .reflectionNebula,
@@ -1147,71 +1152,81 @@ enum DeepSkyTargetDatabase {
           mag: 7.0, con: "Cyg",
           filters: FilterRecommendation(.sho(ha: 4, oiii: 6, sii: 2),
               notes: "OIII dominant in Veil — use more OIII than typical SNR"),
-          aliases: ["NGC6992", "NGC6995", "NGC6979"]),
+          aliases: ["NGC6992", "NGC6995", "NGC6979", "Caldwell 33", "Caldwell 34", "Witch's Broom"]),
 
         // NGC 7000 — North America Nebula
         t("NGC7000", "North America Nebula", .emissionNebula,
           ra: 314.667, dec: 44.333, major: 120.0, minor: 100.0,
           mag: 4.0, sb: 15.0, con: "Cyg",
-          filters: shoDefault, aliases: ["IC5070"]),
+          filters: shoDefault, aliases: ["IC5070", "Caldwell 20", "SH2-117"]),
 
         // NGC 7023 — Iris Nebula
         t("NGC7023", "Iris Nebula", .reflectionNebula,
           ra: 315.392, dec: 68.167, major: 18.0, minor: 18.0,
           mag: 7.4, con: "Cep",
           filters: FilterRecommendation(.lrgb(l: 6, r: 3, g: 3, b: 4),
-              notes: "Blue reflection — extra B channel; NB mostly not useful")),
+              notes: "Blue reflection — extra B channel; NB mostly not useful"),
+          aliases: ["Caldwell 4"]),
 
         // NGC 7129 — Reflection/emission nebula
         t("NGC7129", nil, .starFormingRegion,
           ra: 325.700, dec: 66.117, major: 8.0, minor: 7.0,
           con: "Cep",
           filters: FilterRecommendation(.lrgb(l: 5, r: 3, g: 3, b: 3),
-              secondary: .hoo(ha: 2, oiii: 1))),
+              secondary: .hoo(ha: 2, oiii: 1)),
+          aliases: ["Caldwell 8"]),
 
         // NGC 7293 — Helix Nebula
         t("NGC7293", "Helix Nebula", .planetaryNebula,
           ra: 337.411, dec: -20.837, major: 25.0, minor: 22.0,
           mag: 7.3, sb: 13.5, con: "Aqr",
           filters: FilterRecommendation(.hoo(ha: 3, oiii: 4),
-              notes: "Large PN — OIII dominant, needs wide field")),
+              notes: "Large PN — OIII dominant, needs wide field"),
+          aliases: ["Caldwell 63"]),
 
         // NGC 7331 — Spiral galaxy
         t("NGC7331", nil, .galaxy,
           ra: 339.267, dec: 34.416, major: 10.5, minor: 3.7,
-          mag: 9.5, sb: 13.5, con: "Peg", filters: lrgbDefault),
+          mag: 9.5, sb: 13.5, con: "Peg", filters: lrgbDefault,
+          aliases: ["Caldwell 30"]),
 
         // NGC 7380 — Wizard Nebula
         t("NGC7380", "Wizard Nebula", .emissionNebula,
           ra: 341.800, dec: 58.133, major: 25.0, minor: 25.0,
-          mag: 7.2, con: "Cep", filters: shoDefault),
+          mag: 7.2, con: "Cep", filters: shoDefault,
+          aliases: ["SH2-142"]),
 
         // NGC 7479 — Barred spiral
         t("NGC7479", nil, .galaxy,
           ra: 346.236, dec: 12.323, major: 4.1, minor: 3.1,
-          mag: 10.9, con: "Peg", filters: lrgbDefault),
+          mag: 10.9, con: "Peg", filters: lrgbDefault,
+          aliases: ["Caldwell 44"]),
 
         // NGC 7635 — Bubble Nebula
         t("NGC7635", "Bubble Nebula", .emissionNebula,
           ra: 350.200, dec: 61.200, major: 15.0, minor: 8.0,
           mag: 7.0, con: "Cas",
           filters: FilterRecommendation(.sho(ha: 5, oiii: 4, sii: 3),
-              notes: "SII shows shock structure around the bubble")),
+              notes: "SII shows shock structure around the bubble"),
+          aliases: ["Caldwell 11", "SH2-162"]),
 
         // NGC 7662 — Blue Snowball Nebula
         t("NGC7662", "Blue Snowball", .planetaryNebula,
           ra: 351.958, dec: 42.533, major: 0.5, minor: 0.5,
-          mag: 8.3, con: "And", filters: hooPN),
+          mag: 8.3, con: "And", filters: hooPN,
+          aliases: ["Caldwell 22"]),
 
         // NGC 7789 — Caroline's Rose
         t("NGC7789", "Caroline's Rose", .openCluster,
           ra: 359.333, dec: 56.717, major: 16.0, minor: 16.0,
-          mag: 6.7, con: "Cas", filters: rgbDefault),
+          mag: 6.7, con: "Cas", filters: rgbDefault,
+          aliases: ["Caldwell 56"]),
 
         // NGC 7814 — Little Sombrero
         t("NGC7814", "Little Sombrero", .galaxy,
           ra: 0.812, dec: 16.146, major: 6.3, minor: 2.6,
-          mag: 10.6, con: "Peg", filters: lrgbDefault),
+          mag: 10.6, con: "Peg", filters: lrgbDefault,
+          aliases: ["Caldwell 43"]),
     ]
 
     // MARK: - IC Catalog Targets
@@ -1220,7 +1235,8 @@ enum DeepSkyTargetDatabase {
         // IC 342 — Hidden Galaxy
         t("IC342", "Hidden Galaxy", .galaxy,
           ra: 56.702, dec: 68.096, major: 21.4, minor: 20.9,
-          mag: 9.1, sb: 14.5, con: "Cam", filters: galaxyHa),
+          mag: 9.1, sb: 14.5, con: "Cam", filters: galaxyHa,
+          aliases: ["Caldwell 5"]),
 
         // IC 405 — Flaming Star Nebula
         t("IC405", "Flaming Star Nebula", .emissionNebula,
@@ -1246,7 +1262,8 @@ enum DeepSkyTargetDatabase {
         // IC 443 — Jellyfish Nebula
         t("IC443", "Jellyfish Nebula", .supernovaRemnant,
           ra: 94.250, dec: 22.567, major: 50.0, minor: 40.0,
-          con: "Gem", filters: shoSNR),
+          con: "Gem", filters: shoSNR,
+          aliases: ["SH2-248"]),
 
         // IC 1275 — Near M8
         t("IC1275", nil, .emissionNebula,
@@ -1256,7 +1273,8 @@ enum DeepSkyTargetDatabase {
         // IC 1318 — Butterfly/Sadr Nebula
         t("IC1318", "Sadr Region", .emissionNebula,
           ra: 305.450, dec: 40.250, major: 120.0, minor: 60.0,
-          con: "Cyg", filters: shoDefault),
+          con: "Cyg", filters: shoDefault,
+          aliases: ["Butterfly Nebula", "Gamma Cygni Nebula"]),
 
         // IC 1396 — Elephant's Trunk Nebula
         t("IC1396", "Elephant's Trunk Nebula", .emissionNebula,
@@ -1267,7 +1285,8 @@ enum DeepSkyTargetDatabase {
         // IC 1613 — Irregular galaxy (Local Group)
         t("IC1613", nil, .galaxy,
           ra: 16.200, dec: 2.133, major: 16.0, minor: 14.5,
-          mag: 9.2, con: "Cet", filters: lrgbDefault),
+          mag: 9.2, con: "Cet", filters: lrgbDefault,
+          aliases: ["Caldwell 51"]),
 
         // IC 1795 — Fish Head / Northern Bear
         t("IC1795", "Fish Head Nebula", .emissionNebula,
@@ -1283,7 +1302,8 @@ enum DeepSkyTargetDatabase {
         // IC 1848 — Soul Nebula
         t("IC1848", "Soul Nebula", .emissionNebula,
           ra: 44.100, dec: 60.433, major: 60.0, minor: 30.0,
-          con: "Cas", filters: shoDefault),
+          con: "Cas", filters: shoDefault,
+          aliases: ["SH2-199", "Westerhout 5", "W5"]),
 
         // IC 2118 — Witch Head Nebula
         t("IC2118", "Witch Head Nebula", .reflectionNebula,
@@ -1328,7 +1348,8 @@ enum DeepSkyTargetDatabase {
           mag: 7.2, con: "Cyg",
           filters: FilterRecommendation(.sho(ha: 5, oiii: 3, sii: 2),
               secondary: .lrgb(l: 4, r: 3, g: 3, b: 3),
-              notes: "Emission core + surrounding dark nebula")),
+              notes: "Emission core + surrounding dark nebula"),
+          aliases: ["Caldwell 19", "SH2-125"]),
     ]
 
     // MARK: - Sharpless HII Regions
@@ -1374,7 +1395,8 @@ enum DeepSkyTargetDatabase {
         // SH2-155 — Cave Nebula
         t("SH2-155", "Cave Nebula", .emissionNebula,
           ra: 342.967, dec: 62.600, major: 50.0, minor: 30.0,
-          con: "Cep", filters: shoDefault),
+          con: "Cep", filters: shoDefault,
+          aliases: ["Caldwell 9"]),
 
         // SH2-157 — Lobster Claw Nebula
         t("SH2-157", "Lobster Claw Nebula", .emissionNebula,
@@ -1396,7 +1418,8 @@ enum DeepSkyTargetDatabase {
           ra: 84.000, dec: 28.000, major: 180.0, minor: 180.0,
           con: "Tau",
           filters: FilterRecommendation(.hoo(ha: 6, oiii: 4),
-              notes: "Extremely faint — long integration needed; also known as Simeis 147")),
+              notes: "Extremely faint — long integration needed; also known as Simeis 147"),
+          aliases: ["Simeis 147", "Sim 147"]),
 
         // SH2-261 — Lower's Nebula
         t("SH2-261", "Lower's Nebula", .emissionNebula,
@@ -1469,7 +1492,8 @@ enum DeepSkyTargetDatabase {
           con: "Ori",
           filters: FilterRecommendation(.sho(ha: 6, oiii: 2, sii: 2),
               secondary: .lrgb(l: 6, r: 2, g: 2, b: 2),
-              notes: "Dark silhouette against IC434 Ha emission")),
+              notes: "Dark silhouette against IC434 Ha emission"),
+          aliases: ["IC434", "Barnard 33"]),
 
         // B72 — Snake Nebula
         t("B72", "Snake Nebula", .darkNebula,
@@ -1565,7 +1589,8 @@ enum DeepSkyTargetDatabase {
         // Leo Triplet (M65 + M66 + NGC 3628)
         t("LEOTRIPLET", "Leo Triplet", .galaxyGroup,
           ra: 169.900, dec: 13.100, major: 30.0, minor: 15.0,
-          con: "Leo", filters: lrgbDefault),
+          con: "Leo", filters: lrgbDefault,
+          aliases: ["M65", "M66", "NGC3628", "NGC3623", "NGC3627"]),
 
         // Markarian's Chain (Virgo Cluster)
         t("MARKARIANSCHAIN", "Markarian's Chain", .galaxyGroup,

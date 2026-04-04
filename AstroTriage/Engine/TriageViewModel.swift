@@ -4045,7 +4045,10 @@ class TriageViewModel: ObservableObject {
                 }
             )
         }
-        statusMessage = "Loading \(image.filename)..."
+        // Skip "Loading..." status during blink playback to avoid status bar flickering
+        if !isPlaying {
+            statusMessage = "Loading \(image.filename)..."
+        }
         let targetURL = image.url
         let decodeURL = image.decodingURL
         // Only pass Bayer pattern when debayer is enabled — otherwise show as mono

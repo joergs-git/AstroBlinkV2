@@ -46,7 +46,7 @@ struct ColumnDefinition {
         ColumnDefinition(identifier: "subfolder",   title: "Subfolder", defaultWidth: 80,  minWidth: 50,  isDefaultVisible: true,  isHideable: true),
         // Moon data (computed from date + site coordinates)
         ColumnDefinition(identifier: "moonPhase",   title: "Moon%",     defaultWidth: 50,  minWidth: 40,  isDefaultVisible: true,  isHideable: true),
-        ColumnDefinition(identifier: "moonDist",    title: "MoonDist",  defaultWidth: 60,  minWidth: 45,  isDefaultVisible: true,  isHideable: true),
+        ColumnDefinition(identifier: "moonDist",    title: "MoonDist",  defaultWidth: 75,  minWidth: 55,  isDefaultVisible: true,  isHideable: true),
         // Light pollution (computed from site coordinates)
         ColumnDefinition(identifier: "bortle",      title: "Bortle",    defaultWidth: 50,  minWidth: 40,  isDefaultVisible: true,  isHideable: true),
         // Hidden-by-default columns

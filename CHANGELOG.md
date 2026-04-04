@@ -4,6 +4,23 @@ All notable changes to AstroBlink & AIsaac will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [5.16.0] — 2026-04-04
+
+### Fixed
+- **M42 H-alpha False Positive** — Rule 0b dome/dark frame detection no longer falsely flags bright nebulae with 10000+ real star detections. Added FWHM + background cross-check: real PSFs (FWHM > 3px) with significant sky background pass through
+- **Moon Distance Column Empty** — Now reads `RA`/`DEC` FITS keywords (decimal degrees) as fallback when `CRVAL1`/`CRVAL2` are absent. NINA writes target coordinates as RA/DEC
+- **Blink Playback Status Flickering** — Suppressed "Loading..." status message during blink playback to prevent status bar flickering and window resizing
+
+### Changed
+- **Catalog Selection Highlight** — Changed from light blue (hard to read) to dark grey for better text readability
+- **MoonDist Column Width** — Increased default width from 60 to 75px for better value display
+
+### Added
+- **Target Catalog Aliases** — Added 40+ missing alternative designations across all catalogs:
+  - Sharpless IDs for Messier nebulae (M1→SH2-244, M8→SH2-25, M16→SH2-49, M17→SH2-45, M20→SH2-30, M42→SH2-281)
+  - Caldwell designations for NGC/IC objects (NGC253→C65, NGC891→C23, NGC7023→C4, NGC7293→C63, NGC7331→C30, NGC7380→SH2-142, NGC7635→C11/SH2-162, NGC7789→C56, IC342→C5, IC5146→C19/SH2-125, SH2-155→C9)
+  - Common names and cross-references (Leo Triplet→M65/M66/NGC3628, Horsehead→IC434, IC443→SH2-248, NGC6888→C27/SH2-105, Rosette→C49/SH2-275, IC1848→SH2-199/W5, Veil→C33/C34, SH2-240→Simeis 147)
+
 ## [5.15.1] — 2026-04-04
 
 ### Fixed

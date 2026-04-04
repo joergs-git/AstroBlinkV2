@@ -638,11 +638,14 @@ struct TargetDatabaseContentView: View {
         List(selection: $viewModel.selectedTarget) {
             Section {
                 ForEach(viewModel.filteredTargets) { target in
+                    let isSelected = viewModel.selectedTarget == target
                     targetRow(target)
                         .tag(target)
                         .listRowBackground(
-                            viewModel.sessionTargets.contains(target.canonicalName)
-                                ? AppColors.accent(nightMode).opacity(0.08) : Color.clear
+                            isSelected
+                                ? (nightMode ? Color(white: 0.2) : Color(white: 0.3))
+                                : (viewModel.sessionTargets.contains(target.canonicalName)
+                                    ? AppColors.accent(nightMode).opacity(0.08) : Color.clear)
                         )
                 }
             } header: {
