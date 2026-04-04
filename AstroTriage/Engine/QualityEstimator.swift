@@ -396,7 +396,16 @@ struct QualityEstimator {
 
             for (i, entry) in groupEntries.enumerated() {
                 if let stars = starsValues[i] {
-                    if stars >= 10000 {
+                    // Cross-check: real stars have FWHM > 3px and measurable background.
+                    // Hot pixel noise peaks from dark/dome frames have tiny FWHM (~1px)
+                    // and near-zero background. Bright nebulae (M42 H-alpha) can legitimately
+                    // produce 10000+ star detections with normal FWHM and significant background.
+                    let hasRealPSF = fwhmValues[i] != nil && fwhmValues[i]! > 3.0
+                    let hasSignificantBackground = entry.noiseMedian != nil && entry.noiseMedian! >= 0.002
+
+                    if stars >= 10000 && !(hasRealPSF && hasSignificantBackground) {
+                        // Path A: Extreme star count, but only if stars don't look real.
+                        // Genuine dense fields (M42 narrowband) have FWHM > 3px + measurable sky.
                         darkFrameIndices.insert(i)
                     } else if stars >= darkStarThreshold, let bgLevel = entry.noiseMedian, bgLevel < 0.002 {
                         // Path B: FL-scaled star threshold + very low background.
@@ -534,16 +543,18 @@ struct QualityEstimator {
                 // Rule 0b: Dark frame / dome closed / lens cap detection.
                 // Dark frames have near-zero sky background but hot pixels create thousands
                 // of false star detections that survive even 16σ auto-escalation.
-                // Hot pixel clusters can produce valid HFR/FWHM measurements, so we can NOT
-                // rely on HFR being nil — instead check star count + background level.
                 // Detection paths:
-                // (a) Stars ≥ 10000: physically impossible for real stars after 16σ escalation
-                //     in PreviewGenerator. Even dense Milky Way fields reduce to < 5000.
+                // (a) Stars ≥ 10000 AND no real PSF signature (FWHM ≤ 3px or bg < 0.002).
+                //     Bright nebulae (M42 H-alpha) can have 14000+ real star detections
+                //     with FWHM > 3px and significant background — these pass through.
                 // (b) Stars ≥ FL-dependent threshold AND extremely low background (< 0.002).
                 //     Wide-field (620mm) can have 5000+ real stars at low gain + narrowband.
                 //     Long FL (2400mm) rarely exceeds 4000 real stars.
                 if let stars = starsValues[localIdx] {
-                    if stars >= 10000 {
+                    let hasRealPSF = fwhmValues[localIdx] != nil && fwhmValues[localIdx]! > 3.0
+                    let hasSignificantBackground = entry.noiseMedian != nil && entry.noiseMedian! >= 0.002
+
+                    if stars >= 10000 && !(hasRealPSF && hasSignificantBackground) {
                         garbageReasons.append(.noisePeaks)
                     } else if stars >= darkStarThreshold, let bgLevel = entry.noiseMedian, bgLevel < 0.002 {
                         garbageReasons.append(.noisePeaks)

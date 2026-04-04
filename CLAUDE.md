@@ -334,7 +334,8 @@ PrefetchCache:
 - PSF Flux column in file list (hideable, formatted as K/M suffixes)
 
 ### Dome/Dark Frame Detection (v5.11.0)
-- Rule 0b: stars ≥ 10000 (absolute ceiling) or stars ≥ 5000 + noiseMedian < 0.003
+- Rule 0b: stars ≥ 10000 + NOT(FWHM>3 AND bg≥0.002), or stars ≥ FL-threshold + noiseMedian < 0.002
+  - FWHM + background cross-check prevents false positives on bright nebulae (M42 H-alpha: 14800+ real stars)
 - Dark frames excluded from group statistics (medians, z-scores) in pre-pass
 - Stage 1 garbage excluded from session sanity P10/P90 benchmarks
 - Session sanity requires ≥2 distinct nights (single-night multi-filter is optics, not bad night)

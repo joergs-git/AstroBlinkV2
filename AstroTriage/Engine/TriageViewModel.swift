@@ -1593,10 +1593,18 @@ class TriageViewModel: ObservableObject {
                         self.images[index].pixelSizeMicrons = val
                     }
                     // Plate-solved center coordinates for pointing offset detection
+                    // CRVAL1/CRVAL2 = plate-solved WCS center (primary)
+                    // RA/DEC = NINA writes target coords in decimal degrees (fallback)
                     if let ra = headers["CRVAL1"], let val = Double(ra) {
+                        self.images[index].solvedRA = val
+                    } else if self.images[index].solvedRA == nil,
+                              let ra = headers["RA"], let val = Double(ra) {
                         self.images[index].solvedRA = val
                     }
                     if let dec = headers["CRVAL2"], let val = Double(dec) {
+                        self.images[index].solvedDec = val
+                    } else if self.images[index].solvedDec == nil,
+                              let dec = headers["DEC"], let val = Double(dec) {
                         self.images[index].solvedDec = val
                     }
                     // Site coordinates for AIsaac location-aware language detection
