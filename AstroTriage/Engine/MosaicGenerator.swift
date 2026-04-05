@@ -11,13 +11,13 @@ import CoreGraphics
 // MARK: - Configuration
 
 struct MosaicConfig {
-    let tileWidth: Int = 320
-    let tileHeight: Int = 240           // 4:3, smaller tiles → more frames per page → AI sees full sequence
+    let tileWidth: Int = 480
+    let tileHeight: Int = 360           // 4:3, 50% larger tiles for better anomaly visibility (ice halos, satellite trails)
     let centerCropFraction: Float = 0.80 // Crop 80% center (removes edge aberrations)
-    let maxTilesPerPage: Int = 80        // 80 tiles at 320x240 = 9x9 grid = 2880x2160 → fits under 5MB at 0.95
+    let maxTilesPerPage: Int = 36        // 36 tiles at 480x360 = 6x6 grid = 2880x2160 → fits under 5MB at 0.95
     let jpegQuality: Float = 0.95        // High quality for display + VLM detection
-    let labelFontSize: CGFloat = 10      // Annotation font size
-    let twilightBarHeight: CGFloat = 3   // Bottom twilight color bar
+    let labelFontSize: CGFloat = 12      // Annotation font size (scaled up for larger tiles)
+    let twilightBarHeight: CGFloat = 4   // Bottom twilight color bar
 }
 
 // MARK: - Tile metadata
@@ -48,6 +48,8 @@ struct MosaicPage {
     let group: GroupKey
     let jpegData: Data
     let nsImage: NSImage?            // For floating preview window
+    let deviationJpegData: Data?     // Deviation map mosaic (bright = different from median)
+    let deviationNsImage: NSImage?   // For preview toggle
     let tiles: [TileMetadata]        // Ordered by capture time
     let gridCols: Int
     let gridRows: Int
@@ -229,6 +231,7 @@ class MosaicGenerator {
         ctx.fill(CGRect(x: 0, y: 0, width: mosaicW, height: mosaicH))
 
         var tiles: [TileMetadata] = []
+        var tileImages: [CGImage] = []  // Keep for deviation computation
 
         for (tileIdx, (entryIdx, entry)) in entries.enumerated() {
             let col = tileIdx % cols
@@ -249,6 +252,8 @@ class MosaicGenerator {
                 rotate180: needsFlip
             ) else { continue }
 
+            tileImages.append(tileImage)
+
             // Draw tile into mosaic
             let tileRect = CGRect(x: tileX, y: tileY, width: config.tileWidth, height: config.tileHeight)
             ctx.draw(tileImage, in: tileRect)
@@ -263,7 +268,7 @@ class MosaicGenerator {
                 twilightPhase: entry.twilightPhase,
                 pierSide: entry.pierSide,
                 needsRotation180: needsFlip,
-                altitude: nil, // TODO: compute from AltAz if needed
+                altitude: nil,
                 fwhm: entry.displayFWHM,
                 starCount: entry.displayStarCount,
                 eccentricity: entry.computedEccentricity,
@@ -279,7 +284,7 @@ class MosaicGenerator {
 
         guard !tiles.isEmpty else { return nil }
 
-        // Export to JPEG
+        // Export original mosaic to JPEG
         guard let mosaicImage = ctx.makeImage() else { return nil }
         let nsImage = NSImage(cgImage: mosaicImage, size: NSSize(width: mosaicW, height: mosaicH))
         let rep = NSBitmapImageRep(cgImage: mosaicImage)
@@ -288,10 +293,18 @@ class MosaicGenerator {
             properties: [.compressionFactor: NSNumber(value: config.jpegQuality)]
         ) else { return nil }
 
+        // Compute deviation mosaic (bright = different from group median)
+        let deviation = computeDeviationMosaic(
+            tileImages: tileImages, tiles: tiles,
+            gridCols: cols, gridRows: rows,
+            tileW: config.tileWidth, tileH: config.tileHeight)
+
         return MosaicPage(
             group: group,
             jpegData: jpegData,
             nsImage: nsImage,
+            deviationJpegData: deviation?.jpegData,
+            deviationNsImage: deviation?.nsImage,
             tiles: tiles,
             gridCols: cols,
             gridRows: rows,
@@ -483,6 +496,181 @@ class MosaicGenerator {
         NSGraphicsContext.current = nsCtx
         str.draw(at: NSPoint(x: pillX + padding, y: y + 1))
         NSGraphicsContext.restoreGraphicsState()
+    }
+
+    // MARK: - Deviation mosaic (bright = tile differs from group median)
+
+    /// Computes a per-pixel deviation map for each tile against the group median.
+    /// The result is a contrast-enhanced grayscale mosaic where bright areas indicate
+    /// pixels that are significantly different from the median — making any anomaly
+    /// (ice shadows, dew, clouds, obstructions) visually obvious.
+    private func computeDeviationMosaic(
+        tileImages: [CGImage], tiles: [TileMetadata],
+        gridCols: Int, gridRows: Int,
+        tileW: Int, tileH: Int
+    ) -> (jpegData: Data, nsImage: NSImage)? {
+
+        let tileCount = tileImages.count
+        guard tileCount >= 4 else { return nil }
+        let pixelCount = tileW * tileH
+
+        // 1) Extract grayscale luminance from each tile
+        let cs = CGColorSpaceCreateDeviceRGB()
+        let bi = CGImageAlphaInfo.premultipliedLast.rawValue
+        var tileLum: [[UInt8]] = []
+        tileLum.reserveCapacity(tileCount)
+
+        for tile in tileImages {
+            var rgba = [UInt8](repeating: 0, count: tileW * tileH * 4)
+            guard let tileCtx = CGContext(
+                data: &rgba, width: tileW, height: tileH,
+                bitsPerComponent: 8, bytesPerRow: tileW * 4,
+                space: cs, bitmapInfo: bi
+            ) else { continue }
+            tileCtx.draw(tile, in: CGRect(x: 0, y: 0, width: tileW, height: tileH))
+
+            // Luminance: 0.299R + 0.587G + 0.114B
+            var lum = [UInt8](repeating: 0, count: pixelCount)
+            for i in 0..<pixelCount {
+                let r = Float(rgba[i * 4])
+                let g = Float(rgba[i * 4 + 1])
+                let b = Float(rgba[i * 4 + 2])
+                lum[i] = UInt8(min(255.0, 0.299 * r + 0.587 * g + 0.114 * b))
+            }
+            tileLum.append(lum)
+        }
+        guard tileLum.count == tileCount else { return nil }
+
+        // 2) Compute per-pixel median across all tiles
+        var medianTile = [UInt8](repeating: 0, count: pixelCount)
+        var sortBuf = [UInt8](repeating: 0, count: tileCount)
+        for px in 0..<pixelCount {
+            for t in 0..<tileCount {
+                sortBuf[t] = tileLum[t][px]
+            }
+            sortBuf.sort()
+            medianTile[px] = sortBuf[tileCount / 2]
+        }
+
+        // 3) Compute per-tile deviation from median
+        var devMaps: [[Float]] = []
+        devMaps.reserveCapacity(tileCount)
+        var globalMax: Float = 1.0
+
+        for t in 0..<tileCount {
+            var devMap = [Float](repeating: 0, count: pixelCount)
+            for px in 0..<pixelCount {
+                let dev = abs(Float(tileLum[t][px]) - Float(medianTile[px]))
+                devMap[px] = dev
+                if dev > globalMax { globalMax = dev }
+            }
+            devMaps.append(devMap)
+        }
+
+        // Use 97th percentile as normalization cap for better contrast
+        var allDevsSorted = [Float]()
+        // Sample instead of full sort for performance (every 8th pixel from every 4th tile)
+        for t in stride(from: 0, to: tileCount, by: max(1, tileCount / 8)) {
+            for px in stride(from: 0, to: pixelCount, by: 8) {
+                allDevsSorted.append(devMaps[t][px])
+            }
+        }
+        allDevsSorted.sort()
+        let p97 = allDevsSorted.isEmpty ? globalMax :
+            allDevsSorted[min(allDevsSorted.count - 1, Int(Float(allDevsSorted.count) * 0.97))]
+        let normMax = max(p97, 1.0)
+
+        // 4) Render deviation mosaic with annotations
+        let mosaicW = gridCols * tileW
+        let mosaicH = gridRows * tileH
+        let outBI = CGImageAlphaInfo.premultipliedLast.rawValue
+        guard let devCtx = CGContext(
+            data: nil, width: mosaicW, height: mosaicH,
+            bitsPerComponent: 8, bytesPerRow: mosaicW * 4,
+            space: cs, bitmapInfo: outBI
+        ) else { return nil }
+
+        // Black background
+        devCtx.setFillColor(NSColor.black.cgColor)
+        devCtx.fill(CGRect(x: 0, y: 0, width: mosaicW, height: mosaicH))
+
+        for (tileIdx, devMap) in devMaps.enumerated() {
+            let col = tileIdx % gridCols
+            let row = gridRows - 1 - (tileIdx / gridCols)
+            let tileX = col * tileW
+            let tileY = row * tileH
+
+            // Create grayscale deviation tile (hot palette: black → orange → white)
+            var tileRGBA = [UInt8](repeating: 0, count: pixelCount * 4)
+            for px in 0..<pixelCount {
+                let normalized = min(1.0, devMap[px] / normMax)
+                // Enhanced contrast: apply gamma 0.5 to boost subtle differences
+                let boosted = sqrt(normalized)
+                let (r, g, b) = deviationColor(boosted)
+                tileRGBA[px * 4]     = r
+                tileRGBA[px * 4 + 1] = g
+                tileRGBA[px * 4 + 2] = b
+                tileRGBA[px * 4 + 3] = 255
+            }
+
+            // Create CGImage from deviation pixels
+            guard let provider = CGDataProvider(data: Data(tileRGBA) as CFData),
+                  let devTileImg = CGImage(
+                    width: tileW, height: tileH,
+                    bitsPerComponent: 8, bitsPerPixel: 32,
+                    bytesPerRow: tileW * 4, space: cs,
+                    bitmapInfo: CGBitmapInfo(rawValue: outBI),
+                    provider: provider, decode: nil,
+                    shouldInterpolate: false, intent: .defaultIntent
+                  ) else { continue }
+
+            let tileRect = CGRect(x: tileX, y: tileY, width: tileW, height: tileH)
+            devCtx.draw(devTileImg, in: tileRect)
+
+            // Burn frame number annotation (same as original)
+            if tileIdx < tiles.count {
+                drawTileAnnotations(ctx: devCtx, rect: tileRect, metadata: tiles[tileIdx])
+            }
+        }
+
+        // Export deviation mosaic
+        guard let devImage = devCtx.makeImage() else { return nil }
+        let devNSImage = NSImage(cgImage: devImage, size: NSSize(width: mosaicW, height: mosaicH))
+        let devRep = NSBitmapImageRep(cgImage: devImage)
+        guard let devJpeg = devRep.representation(
+            using: .jpeg,
+            properties: [.compressionFactor: NSNumber(value: config.jpegQuality)]
+        ) else { return nil }
+
+        return (jpegData: devJpeg, nsImage: devNSImage)
+    }
+
+    /// Hot color palette for deviation map: black → blue → cyan → yellow → red → white
+    private func deviationColor(_ value: Float) -> (UInt8, UInt8, UInt8) {
+        let v = min(1.0, max(0.0, value))
+        let r, g, b: Float
+        if v < 0.2 {
+            // Black to dark blue
+            let t = v / 0.2
+            r = 0; g = 0; b = t * 0.5
+        } else if v < 0.4 {
+            // Dark blue to cyan
+            let t = (v - 0.2) / 0.2
+            r = 0; g = t * 0.8; b = 0.5 + t * 0.5
+        } else if v < 0.6 {
+            // Cyan to yellow
+            let t = (v - 0.4) / 0.2
+            r = t; g = 0.8 + t * 0.2; b = 1.0 - t
+        } else if v < 0.8 {
+            // Yellow to red
+            let t = (v - 0.6) / 0.2
+            r = 1.0; g = 1.0 - t; b = 0
+        } else {
+            // Red to white
+            let t = (v - 0.8) / 0.2
+            r = 1.0; g = t; b = t
+        }
+        return (UInt8(r * 255), UInt8(g * 255), UInt8(b * 255))
     }
 }
 

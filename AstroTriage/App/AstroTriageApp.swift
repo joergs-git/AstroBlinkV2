@@ -872,6 +872,27 @@ struct HelpContentView: View {
 
                 Divider()
 
+                sectionHeader("VLM Check — Visual Anomaly Detection")
+
+                Text("The VLM Check toolbar button generates mosaic wallpapers from your session frames and sends them to Claude Vision AI for visual anomaly detection. It catches problems that metrics alone cannot: ice crystals, dew, clouds, obstructions, focus shifts, and light leaks.")
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                featureRow("VLM Check button", "Generates mosaic from remaining frames, grouped by target+filter")
+                featureRow("Deviation map toggle", "Waveform button shows per-tile deviation from group median")
+                featureRow("Click any tile", "Mark/unmark the corresponding frame (blue overlay)")
+                featureRow("Anomaly list", "Click any flagged anomaly to jump to that frame in the file list")
+                featureRow("Mark Flagged", "Marks all VLM-flagged frames for pre-deletion at once")
+                featureRow("Re-Analyze", "Re-runs VLM analysis on current mosaic pages")
+                featureRow("Free quota", "10 VLM checks/day via Supabase — unlimited with own Claude API key")
+                Text("Satellite trails are handled by the separate trailing metric detector, not VLM. VLM focuses on visual anomalies that are hard to quantify numerically.")
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+                    .italic()
+
+                Divider()
+
                 sectionHeader("Search & Filter")
 
                 Text("The search field in the toolbar filters the file list in real time. Type any text to search across all columns, or use column:value syntax for targeted filtering.")
@@ -1430,6 +1451,48 @@ struct HelpBackgroundView: View {
                     """
                     Preview images from the Digitized Sky Survey (NASA public domain) for \
                     each target, so you know what to expect before imaging.
+                    """)
+
+                Divider()
+
+                // VLM Check
+                faqSection("VLM Check — Visual Anomaly Detection (v5.18.0)",
+                    """
+                    VLM Check uses Claude Vision AI to inspect your session frames for visual anomalies \
+                    that metric-based scoring cannot detect: ice crystals forming on the corrector plate, \
+                    dew buildup, passing clouds, physical obstructions, focus shifts, and light leaks.
+                    """)
+
+                faqItem("How it works",
+                    """
+                    Frames are grouped by target + filter + setup and arranged into a chronological \
+                    mosaic grid (center-cropped tiles with frame number and capture time). The mosaic \
+                    is sent to Claude Vision, which compares tiles against each other to spot anomalies. \
+                    A deviation map (computed locally before sending) highlights tiles that differ from \
+                    the group median — bright areas mean significant deviation.
+                    """)
+
+                faqItem("Why not satellite trails?",
+                    """
+                    Satellite trails are already handled by the star trailing metric detector, which \
+                    measures elongation consensus across multiple stars. VLM focuses on anomalies that \
+                    are visually obvious but hard to capture in a single number: a frost halo forming \
+                    over 3 frames, a tree branch entering the field, or gradual dew accumulation.
+                    """)
+
+                faqItem("Interacting with results",
+                    """
+                    Click any tile in the mosaic to mark/unmark its frame for pre-deletion (blue overlay). \
+                    The anomaly list shows all flagged frames with a description — click to jump to that \
+                    frame in the main file list. Use Mark Flagged to mark all VLM-detected anomalies at once, \
+                    or Unmark to clear marks set by the VLM window.
+                    """)
+
+                faqItem("Usage quota",
+                    """
+                    10 free VLM checks per day via the built-in Supabase edge function — no setup required. \
+                    For unlimited checks, enter your own Claude API key in the app preferences. Each mosaic \
+                    page counts as one check.
                     """)
 
                 Divider()

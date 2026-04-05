@@ -342,6 +342,42 @@
 - **Rule:** GroupKey SHOULD include FL (scoring must not compare different plate scales). But session sanity PoolKey must NOT include FL — session sanity exists specifically to catch uniformly bad groups by cross-comparing against the session's best data, even from different setups. Always run the ScoringRegressionTests (especially testM82_JanuaryTrailingFramesMustBeDetected) before presenting scoring changes.
 - **Applies to:** QualityEstimator GroupKey/PoolKey, any change to group composition logic
 
+## [2026-04-05] — VLM relative comparison fails for majority-affected anomalies
+- **Mistake:** VLM was asked to compare each frame against the "majority" to detect anomalies like ice/dew. When >50% of frames had ice, the iced frames became the baseline and clean frames were flagged as anomalous.
+- **Root cause:** "Compare to majority" assumes the majority is clean. Ice/dew can affect the majority of a session (e.g., dew builds up and stays).
+- **Rule:** Use deviation maps (pixel-by-pixel median comparison) + absolute anomaly checks instead of relative "compare to majority" prompting. Deviation maps surface structural differences regardless of which group is larger.
+- **Applies to:** VisualAnomalyDetector, any VLM-based anomaly detection, any relative comparison approach
+
+## [2026-04-05] — Nebula filaments confused with satellite trails by VLM
+- **Mistake:** Claude Vision mistook emission nebula structure (filaments, bright ridges) for satellite trails, flagging clean narrowband frames as contaminated.
+- **Root cause:** VLM prompt included satellite trail detection. Nebula filaments and satellite trails share visual characteristics (bright linear structures on dark background).
+- **Rule:** Remove satellite detection from VLM entirely — it is already handled by TrailingAnalyzer metrics which use star position analysis, not visual appearance. Add explicit warning in VLM prompt about astronomical object structure (nebula filaments, galaxy arms) not being artifacts.
+- **Applies to:** VisualAnomalyDetector prompt engineering, VLM Edge Function, any visual inspection of astronomical images
+
+## [2026-04-05] — "Flag aggressively" causes VLM over-flagging
+- **Mistake:** VLM prompt instructed "flag aggressively, false positives acceptable" and "flag ALL frames from first ice appearance." Model interpreted this as marking nearly everything suspicious.
+- **Root cause:** Aggressive language in prompts combined with temporal propagation rules ("all frames after first ice") caused the model to cascade flags across the entire session.
+- **Rule:** Instruct VLM to "evaluate EACH tile on its own visual evidence." Never use temporal propagation rules like "flag all after first detection" — ice/dew can come and go (dew heater cycles). Keep prompt language neutral: describe what to look for, not how aggressively to flag.
+- **Applies to:** VisualAnomalyDetector prompt, any VLM prompt for sequential frame analysis
+
+## [2026-04-05] — anthropic-version 2025-04-15 does not exist
+- **Mistake:** Specified `anthropic-version: 2025-04-15` in Supabase Edge Function, assuming a newer API version existed. Request failed.
+- **Root cause:** Assumed API versions follow a predictable date pattern. They don't — only specific published versions exist.
+- **Rule:** Extended thinking works with the standard `2023-06-01` API version. Don't invent API version strings. Always verify against the Anthropic API documentation.
+- **Applies to:** Supabase Edge Functions calling Claude API, any direct Anthropic API integration
+
+## [2026-04-05] — 5MB image limit is per-image, not total
+- **Mistake:** Assumed 5MB base64 limit was shared across all images in a single API call. Halved the budget per image when sending 2 images (reference + candidate), resulting in unnecessary quality loss.
+- **Root cause:** Misread the API documentation. Claude API allows 5MB base64 per individual image, independently.
+- **Rule:** Each image in a Claude API call has its own independent 5MB base64 limit. Don't reduce quality of individual images based on how many images are in the request.
+- **Applies to:** VisualAnomalyDetector image preparation, any multi-image Claude API call
+
+## [2026-04-05] — Heat map colors compress poorly in JPEG
+- **Mistake:** Deviation map heat maps (red/yellow/green gradients) needed aggressive JPEG compression (quality 0.35 or 50% resize) to fit under the 5MB API limit. Initial attempts at moderate quality exceeded the limit.
+- **Root cause:** Colorful images with gradients have high entropy — JPEG compression is far less effective on color heat maps than on grayscale astronomical images.
+- **Rule:** Budget for aggressive compression when sending colorful visualizations (heat maps, deviation maps) to the API. Grayscale compresses ~3-5x better than color at the same quality. Consider 50% resize + quality 0.35 as a starting point for heat maps. Alternatively, consider grayscale encoding if color is not essential for interpretation.
+- **Applies to:** MosaicGenerator deviation maps, any colorful visualization sent to Claude API
+
 ## [2026-04-03] — R0b Path B false positive on low-gain narrowband (L-eXtreme)
 - **Mistake:** R0b Path B (stars >= 5000 AND bg < 0.003) flagged real NGC 7635 frame as "dome/cap". Frame had 5185 real stars with L-eXtreme filter at GAIN 10 on 620mm wide-field.
 - **Root cause:** Low gain (10) + dual-narrowband filter produces very low background (< 0.003 normalized). The 5000-star threshold was calibrated for gain 100+ where background is naturally higher. Wide-field setups also detect more stars than long FL.

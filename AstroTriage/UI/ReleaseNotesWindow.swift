@@ -34,6 +34,14 @@ class ReleaseNotesWindowController {
 // MARK: - Release notes data (shared between view and copy)
 
 private let allReleases: [(version: String, date: String, items: [(ReleaseNotesView.ChangeType, String, String)])] = [
+    ("5.18.0", "April 5, 2026", [
+        (.added, "VLM Check — Visual Anomaly Detection", "Toolbar button generates mosaic wallpapers from session frames grouped by target+filter+setup. Claude Vision AI analyzes for ice crystals, dew, clouds, obstructions, focus shifts, and light leaks — anomalies that metric-based scoring cannot catch."),
+        (.added, "Deviation Map", "Waveform toggle shows per-tile deviation from group median. Bright areas highlight significant differences, making gradual degradation (e.g., slow dew buildup) easy to spot."),
+        (.added, "Interactive Mosaic Tiles", "Click any tile to mark/unmark the corresponding frame for pre-deletion (blue overlay). Anomaly list with jump-to-frame on click."),
+        (.added, "Mark Flagged / Unmark", "One-click marking of all VLM-flagged frames, or clear marks set by the VLM window."),
+        (.added, "Re-Analyze", "Re-run VLM analysis on current mosaic pages after marking/unmarking frames."),
+        (.added, "Free VLM Quota", "10 free VLM checks per day via Supabase edge function. Unlimited with own Claude API key."),
+    ]),
     ("5.15.0", "April 4, 2026", [
         (.added, "Target Catalog Browser", "Browse 533+ deep-sky objects from a Supabase-backed catalog. Search by name, filter by type/constellation/difficulty. Sortable column headers, hover card on target names, azimuth direction arrows, setup-specific integration hours. Detail panel with coordinates, photometry, filter recommendations, scoring weights, and aliases."),
         (.added, "Alt/Az Visibility Chart", "See tonight's altitude curve for any target with moon altitude overlay (dashed). Red dot marks current time. Shows max altitude, transit time, and hours above 30°."),

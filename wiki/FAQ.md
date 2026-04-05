@@ -107,6 +107,29 @@ Integration hours in the Target Catalog are filtered by the currently selected e
 **Q: Can I use the Target Catalog offline?**
 Yes. After the first successful Supabase fetch, the entire catalog is cached as JSON on disk. Subsequent launches load from cache instantly. Only weather and DSS thumbnails require an internet connection — everything else works fully offline.
 
+## VLM Check
+
+**Q: What is VLM Check?**
+VLM Check uses Claude Vision (Opus with extended thinking) to visually analyze your session for anomalies that quantitative metrics miss — ice crystals on the sensor window, progressive dew buildup, passing clouds, obstructions, light leaks, and focus shifts. It generates chronological mosaic wallpapers grouped by target+filter and sends them alongside a deviation map (heat map showing per-pixel deviation from the group median) for AI analysis.
+
+**Q: How do I use VLM Check?**
+Click the "VLM Check" toolbar button (eye icon with exclamation mark). The app generates mosaic wallpapers from your remaining (non-marked) frames and opens a floating window. Click "Analyze" to send the mosaics to Claude Vision. After analysis, flagged tiles get red overlays with anomaly descriptions. Click any tile to manually mark/unmark it, or use "Mark All Flagged" to apply all detections at once.
+
+**Q: What is the deviation map?**
+A companion heat map mosaic generated alongside the normal mosaic. Each tile shows how much it deviates from the group median — bright areas indicate significant differences (anomalies), dark areas match the median (normal). Toggle the deviation map view in the mosaic window to see the evidence. A bright centered blob typically indicates ice/frost on the sensor window.
+
+**Q: Does VLM Check cost anything?**
+VLM Check routes through a Supabase edge function that provides 10 free checks per day per device — no setup required, works out of the box. If you have your own Anthropic API key configured in AIsaac Settings, it serves as a fallback when the free tier is exhausted. With your own key, there is no daily limit — you pay Anthropic directly per check (Claude Opus with extended thinking, approximately $0.10-0.30 per mosaic page depending on tile count).
+
+**Q: Why does VLM Check need 4+ frames per group?**
+The deviation map requires enough frames to compute a meaningful median. With fewer than 4 frames in a group (same target+filter+setup), statistical comparison is unreliable. Groups with fewer than 4 cached frames are skipped.
+
+**Q: Can I manually mark tiles without running the AI analysis?**
+Yes. After mosaic generation, the floating window shows all tiles. Click any tile to toggle a manual mark (blue overlay) — no AI analysis needed. This is useful for quick visual inspection of the chronological sequence without waiting for API responses.
+
+**Q: What model does VLM Check use?**
+Claude Opus with extended thinking (10,000 token thinking budget). The extended thinking allows systematic tile-by-tile analysis of the chronological sequence, catching progressive defects that single-frame analysis would miss.
+
 ## PixInsight Bridge
 
 **Q: How do I use AstroBlink with PixInsight?**

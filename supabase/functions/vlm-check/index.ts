@@ -13,7 +13,8 @@ const SUPABASE_SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 const DEVICE_DAILY_LIMIT = 10;
 const GLOBAL_DAILY_CAP = 500; // Safety cap across all devices
 const MODEL = "claude-opus-4-20250514"; // Opus for best visual anomaly detection accuracy
-const MAX_TOKENS = 4096; // Structured JSON output needs more tokens
+const MAX_TOKENS = 16000; // Extended thinking budget + structured JSON output
+const THINKING_BUDGET = 10000; // Tokens for systematic tile-by-tile analysis
 
 // In-memory rate limiter per device (resets on cold start)
 const deviceLimits = new Map<string, { count: number; resetAt: number }>();
@@ -95,7 +96,7 @@ function maybeNotifyUsage() {
     lastPushoverSummary = now;
     sendPushover(
       `VLM Check: ${globalCount} today`,
-      `${dailyDevices.size} devices, ${globalCount}/${GLOBAL_DAILY_CAP} global cap.\nEstimated cost: ~$${(globalCount * 0.08).toFixed(2)}`
+      `${dailyDevices.size} devices, ${globalCount}/${GLOBAL_DAILY_CAP} global cap.\nEstimated cost: ~$${(globalCount * 0.90).toFixed(2)} (Opus + thinking)`
     );
   }
   // Alert if approaching global cap
@@ -189,9 +190,10 @@ serve(async (req) => {
         body: JSON.stringify({
           model: MODEL,
           max_tokens: MAX_TOKENS,
+          thinking: { type: "enabled", budget_tokens: THINKING_BUDGET },
           system: system || "",
           messages,
-          stream: false, // Non-streaming — structured JSON response
+          stream: false,
         }),
       }
     );
@@ -217,7 +219,10 @@ serve(async (req) => {
     }
 
     const data = await anthropicResponse.json();
-    const text = data.content?.[0]?.text || "[]";
+    // With extended thinking, response has both "thinking" and "text" content blocks.
+    // Extract only the "text" block (contains the JSON result).
+    const textBlock = data.content?.find((b: any) => b.type === "text");
+    const text = textBlock?.text || "[]";
 
     // Track usage for notifications
     maybeNotifyUsage();

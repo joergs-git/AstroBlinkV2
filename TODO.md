@@ -2,7 +2,7 @@
 
 Status: [ ] offen | [~] in Arbeit | [x] fertig
 
-Current version: **v5.17.0** (build 60)
+Current version: **v5.18.0** (build 61)
 
 ---
 
@@ -69,6 +69,7 @@ All original implementation phases are complete:
 - [x] **R0b FWHM Cross-Check** — Bright nebulae (M42 H-alpha) no longer falsely flagged as dome/dark (v5.16.0)
 - [x] **Moon Distance RA/DEC Fallback** — Reads RA/DEC keywords when CRVAL1/CRVAL2 absent (v5.16.0)
 - [x] **Target Catalog Aliases** — 40+ Sharpless, Caldwell, common name aliases added (v5.16.0)
+- [x] **VLM Check** — Visual anomaly detection via Claude Vision API. Deviation map (pixel-by-pixel median comparison) + absolute anomaly checks for ice, dew, condensation, obstruction. Supabase Edge Function for VLM inference. Tile-based evaluation with explicit per-tile visual evidence. Filter-aware (narrowband vs broadband sensitivity) (v5.18.0)
 
 ---
 

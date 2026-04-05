@@ -49,14 +49,15 @@ class VisualAnomalyDetector {
         let systemPrompt = buildSystemPrompt(page: page, pageNumber: pageNumber, totalPages: totalPages)
         let userPrompt = buildUserPrompt()
 
-        // Re-compress JPEG to fit Claude's 5MB image limit (base64).
-        // Display quality stays at 0.85, API gets 0.55 for smaller payload.
-        // Anomaly detection only needs coarse spatial features — fine detail not needed.
-        let apiJpeg = Self.compressForAPI(page: page, maxBase64Bytes: 4_800_000)
+        // Re-compress images to fit Claude's 5MB per-image base64 limit.
+        let maxPerImage = 4_800_000
+        let apiJpeg = Self.compressForAPI(page: page, maxBase64Bytes: maxPerImage)
         let base64 = apiJpeg.base64EncodedString()
-        os_log("API image: %.1f MB raw, %.1f MB base64", log: vlmLog, type: .info,
+        os_log("API original: %.1f MB raw, %.1f MB base64", log: vlmLog, type: .info,
                Double(apiJpeg.count) / 1_048_576.0, Double(base64.count) / 1_048_576.0)
-        let content: [[String: Any]] = [
+
+        var content: [[String: Any]] = [
+            ["type": "text", "text": "IMAGE 1 — ORIGINAL MOSAIC (chronological sequence, top-left to bottom-right):"],
             [
                 "type": "image",
                 "source": [
@@ -64,12 +65,32 @@ class VisualAnomalyDetector {
                     "media_type": "image/jpeg",
                     "data": base64
                 ]
-            ],
-            [
-                "type": "text",
-                "text": userPrompt
             ]
         ]
+
+        // Add deviation map if available — this is the key visual aid
+        if let devData = page.deviationJpegData {
+            let devCompressed = Self.compressDeviationForAPI(devData, maxBase64Bytes: maxPerImage)
+            let devBase64 = devCompressed.base64EncodedString()
+            os_log("API deviation: %.1f MB raw, %.1f MB base64", log: vlmLog, type: .info,
+                   Double(devCompressed.count) / 1_048_576.0, Double(devBase64.count) / 1_048_576.0)
+            content.append(["type": "text", "text":
+                "IMAGE 2 — DEVIATION MAP (same grid layout). Each tile shows how much it " +
+                "differs from the group median. BRIGHT areas = significant deviation from normal. " +
+                "Dark/black = tile matches the median. A bright centered blob = centered optical " +
+                "defect (ice/frost shadow). Bright streaks = transient artifacts. Any bright patch " +
+                "that appears in some tiles but not others = anomaly to investigate."])
+            content.append([
+                "type": "image",
+                "source": [
+                    "type": "base64",
+                    "media_type": "image/jpeg",
+                    "data": devBase64
+                ]
+            ])
+        }
+
+        content.append(["type": "text", "text": userPrompt])
         let messages: [[String: Any]] = [
             ["role": "user", "content": content]
         ]
@@ -158,7 +179,7 @@ class VisualAnomalyDetector {
         request.setValue(MachineInfo.machineHash, forHTTPHeaderField: "x-device-id")
         request.setValue(Self.computeRollingToken(), forHTTPHeaderField: "x-aisaac-token")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.timeoutInterval = 120
+        request.timeoutInterval = 180 // Extended thinking needs more time
 
         let body: [String: Any] = [
             "system": system,
@@ -232,11 +253,12 @@ class VisualAnomalyDetector {
         request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
         request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.timeoutInterval = 120
+        request.timeoutInterval = 180 // Extended thinking needs more time
 
         let body: [String: Any] = [
             "model": "claude-opus-4-20250514",
-            "max_tokens": 4096,
+            "max_tokens": 16000,
+            "thinking": ["type": "enabled", "budget_tokens": 10000],
             "system": system,
             "messages": messages
         ]
@@ -258,7 +280,16 @@ class VisualAnomalyDetector {
             throw DetectorError.parseError("Invalid response structure")
         }
 
-        return content.compactMap { ($0["type"] as? String == "text") ? $0["text"] as? String : nil }.joined()
+        // With extended thinking, response contains both "thinking" and "text" blocks.
+        // Extract only "text" blocks (the JSON result), skip thinking blocks.
+        let textParts = content.compactMap { block -> String? in
+            guard (block["type"] as? String) == "text" else { return nil }
+            return block["text"] as? String
+        }
+        guard !textParts.isEmpty else {
+            throw DetectorError.parseError("No text content in response")
+        }
+        return textParts.joined()
     }
 
     // MARK: - Image compression for API (fit under Claude's 5MB limit)
@@ -287,6 +318,44 @@ class VisualAnomalyDetector {
                                   properties: [.compressionFactor: NSNumber(value: 0.85)]) ?? page.jpegData
     }
 
+    /// Compress deviation map for API. Heat map colors compress worse than grayscale.
+    private static func compressDeviationForAPI(_ data: Data, maxBase64Bytes: Int) -> Data {
+        let base64Size = data.count * 4 / 3
+        if base64Size <= maxBase64Bytes { return data }
+
+        guard let nsImage = NSImage(data: data),
+              let tiff = nsImage.tiffRepresentation,
+              let rep = NSBitmapImageRep(data: tiff) else { return data }
+
+        // Try progressively lower quality until it fits
+        for q: Float in [0.80, 0.65, 0.50, 0.35] {
+            if let jpeg = rep.representation(using: .jpeg,
+                                              properties: [.compressionFactor: NSNumber(value: q)]) {
+                if jpeg.count * 4 / 3 <= maxBase64Bytes { return jpeg }
+            }
+        }
+        // Last resort: scale down to 50%
+        let halfW = Int(nsImage.size.width / 2)
+        let halfH = Int(nsImage.size.height / 2)
+        if let halfRep = NSBitmapImageRep(bitmapDataPlanes: nil,
+                                           pixelsWide: halfW, pixelsHigh: halfH,
+                                           bitsPerSample: 8, samplesPerPixel: 4,
+                                           hasAlpha: true, isPlanar: false,
+                                           colorSpaceName: .deviceRGB,
+                                           bytesPerRow: halfW * 4, bitsPerPixel: 32) {
+            NSGraphicsContext.saveGraphicsState()
+            NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: halfRep)
+            nsImage.draw(in: NSRect(x: 0, y: 0, width: halfW, height: halfH))
+            NSGraphicsContext.restoreGraphicsState()
+            if let jpeg = halfRep.representation(using: .jpeg,
+                                                  properties: [.compressionFactor: NSNumber(value: 0.70)]) {
+                return jpeg
+            }
+        }
+        return rep.representation(using: .jpeg,
+                                  properties: [.compressionFactor: NSNumber(value: 0.30)]) ?? data
+    }
+
     // MARK: - Rolling token (same as AIsaacService)
 
     private static func computeRollingToken() -> String {
@@ -307,10 +376,10 @@ class VisualAnomalyDetector {
             : ""
 
         return """
-        You are analyzing an astrophotography session mosaic for visual anomalies that \
-        quantitative metrics may have missed. Each tile shows the center 80% of an \
-        astronomical exposure, individually auto-stretched for visibility. Tiles are \
-        numbered in the top-left corner.
+        You are an expert astrophotography quality inspector analyzing a session mosaic \
+        for visual anomalies that quantitative metrics may have missed. Each tile shows \
+        the center 80% of an astronomical exposure, individually auto-stretched for \
+        visibility. Tiles are numbered in the top-left corner.
         \(pageInfo)
 
         GRID LAYOUT: \(page.tiles.count) tiles in a \(page.gridCols)x\(page.gridRows) grid, \
@@ -335,45 +404,71 @@ class VisualAnomalyDetector {
         FRAME METRICS (for numeric cross-reference):
         \(page.metricsTable)
 
-        ANOMALY TYPES to detect (ordered by importance):
-        1. ICE_CRYSTAL — THE MOST IMPORTANT anomaly. TWO manifestations:
-           a) DARK SPOT/SHADOW: A dark circular area or shadow in the CENTER of the frame \
-              that is NOT present in clean frames. This is ice/frost on the sensor window \
-              casting a shadow. Compare tiles — if some have a dark blob in the center \
-              that others don't, those are ice-affected.
-           b) STAR HALOS: Bright stars with unusually large, diffuse halos/glows compared \
-              to the same stars in neighboring tiles. Ice creates concentric rings around \
-              bright stars.
-           Look at BOTH center darkness AND star bloating. Either one = ICE_CRYSTAL.
-        2. DEW — Progressive softness/glow across consecutive frames. Stars become bloated \
-           and fuzzy, contrast drops. Usually gradual (worsens over time).
-        3. CLOUD — Uneven illumination, gradient across part of the frame, or \
-           noticeably fewer stars compared to neighbors.
-        4. SATELLITE — Linear bright streak crossing the frame. Very obvious — a bright \
-           line not present in neighbors.
-        5. OBSTRUCTION — Dark shadow, vignetting, or blocked area that appears suddenly \
-           and is NOT present in neighboring tiles. Could be dew shield, cable, etc.
-        6. LIGHT_LEAK — Bright patch or gradient from one edge/corner.
-        7. AMP_GLOW — Warm gradient in corners (thermal noise pattern).
-        8. FOCUS_SHIFT — Stars significantly softer than neighbors (sudden, not gradual).
-        9. UNKNOWN — Any other visual anomaly not in above categories.
+        === THIS IS A CHRONOLOGICAL SEQUENCE ===
+        The tiles are ordered chronologically from top-left to bottom-right. \
+        This is a TIME SERIES of the same object taken over hours. Your primary task: \
+        detect TRANSIENT defects that appear, persist, or worsen over the course of the \
+        sequence. Walk through the tiles in chronological order and note any progressive \
+        or sudden changes.
 
-        CRITICAL GUIDELINES:
-        - ONLY reference frame numbers that appear in the tile labels listed above. \
-          Do NOT invent frame numbers.
-        - Empty/black grid positions at the bottom-right are padding — IGNORE them. \
-          Do NOT flag them as anomalies.
-        - Compare tiles RELATIVE to their neighbors. Most tiles should look similar.
-        - Only flag tiles that are CLEARLY different from the majority.
-        - Each tile is individually auto-stretched — brightness differences between tiles \
-          are expected. Focus on SPATIAL anomalies within each tile (star halos, streaks, \
-          gradients, softness) rather than overall brightness.
-        - For ICE detection: zoom in mentally on the BRIGHTEST STAR in each tile. \
-          If that star has a much larger glow/halo than the same star in other tiles, \
-          flag it as ICE_CRYSTAL.
-        - Progressive softening across many consecutive frames = likely DEW (flag first \
-          frame where it becomes visible).
-        - Sudden change between two consecutive frames = ice/obstruction event.
+        === WHAT IS NORMAL (ignore these) ===
+        - The astronomical object (nebula filaments, galaxy arms, star cluster patterns) \
+          appears in ALL tiles at the same position — it is the TARGET, not an anomaly.
+        - Brightness differences between tiles are expected (individual auto-stretch).
+        - Point stars throughout the frame are normal.
+        - Satellite trails (bright linear streaks) are handled by a separate metric \
+          detector — ignore them completely.
+
+        === WHAT TO LOOK FOR (transient optical defects) ===
+        Focus on artifacts in the OPTICAL PATH that appear at some point in the sequence \
+        and were NOT present in earlier frames. These are physical problems at the \
+        camera-optics interface:
+
+        1. ICE_CRYSTAL (highest priority):
+           A diffuse dark shadow or circular darkening in the IMAGE CENTER that is \
+           NOT part of the astronomical object. Ice/frost on the sensor window casts \
+           a shadow centered on the optical axis. Key diagnostics:
+           - Compare image centers chronologically: do some frames have a clear center \
+             while others show a dark circular blob?
+           - The shadow may appear, persist for a stretch, then DISAPPEAR (dew heater \
+             cycle, temperature change). Evaluate EACH tile on its own visual evidence.
+           - Only flag tiles where you can actually SEE the centered dark shadow or \
+             bloated star halos. Do NOT flag tiles that look clean just because \
+             neighboring tiles have ice.
+           USE THE DEVIATION MAP (Image 2): A bright centered blob in the deviation map \
+           confirms centered optical defects. Tiles that are mostly DARK in the deviation \
+           map = clean, do not flag them.
+
+        2. DEW — Progressive softening: stars become gradually more bloated and fuzzy \
+           across consecutive frames. Contrast drops. Worsens monotonically.
+
+        3. CLOUD — Sudden reduction in visible stars, washed-out background. May come \
+           and go (unlike ice which persists).
+
+        4. OBSTRUCTION — Dark shadow appearing suddenly from one edge (dew shield, cable).
+
+        5. LIGHT_LEAK — Bright patch from edge/corner not present in other tiles.
+
+        6. FOCUS_SHIFT — Stars suddenly much softer (not gradual like dew).
+
+        === DEVIATION MAP GUIDE ===
+        If Image 2 (deviation map) is provided, use it as your primary detection tool:
+        - BRIGHT areas = that tile differs significantly from the group median
+        - DARK areas = tile matches the median (normal)
+        - Bright CENTERED blob = centered optical defect (ice/frost) — flag as ICE_CRYSTAL
+        - Bright STREAK = transient artifact
+        - Uniform brightness across a tile = overall brightness anomaly (cloud/transparency)
+        - If MOST tiles show the same bright pattern, it means the MEDIAN itself is \
+          contaminated — the FEW dark (clean) tiles are the good ones.
+
+        === RULES ===
+        - Only use frame numbers from: \(page.tiles.map { "#\($0.frameIndex)" }.joined(separator: ", "))
+        - Empty grid positions (black padding) are not frames — ignore them.
+        - Do NOT report SATELLITE, AMP_GLOW, or UNKNOWN.
+        - Evaluate EACH tile based on what you actually see — not assumptions about \
+          neighboring tiles. Ice can come and go (dew heater cycles).
+        - Use the deviation map as primary evidence: bright center = flag, dark/uniform = clean.
+        - Only flag tiles where the defect is VISUALLY PRESENT in that specific tile.
         """
     }
 
@@ -381,13 +476,16 @@ class VisualAnomalyDetector {
 
     private func buildUserPrompt() -> String {
         """
-        Analyze this mosaic for visual anomalies. Compare each tile to its neighbors \
-        and the majority. Return a JSON array of flagged frames. If no anomalies found, \
-        return an empty array [].
+        Analyze this chronological sequence for transient optical defects. \
+        Use both the original mosaic (Image 1) and the deviation map (Image 2) if provided. \
+        Flag only tiles where the defect is VISUALLY PRESENT — do not flag clean tiles \
+        just because they are near affected ones. Ice can appear AND disappear.
+
+        Return a JSON array of flagged frames. If no anomalies found, return [].
 
         Format:
         [{"frame": <number>, "type": "<ANOMALY_TYPE>", "confidence": <0.0-1.0>, \
-        "description": "<brief description>", "temporalNote": "<optional: progressive/sudden pattern>"}]
+        "description": "<brief description>", "temporalNote": "<optional: e.g. continues from #N, progressive, sudden>"}]
 
         Return ONLY the JSON array, no other text.
         """

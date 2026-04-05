@@ -13,8 +13,9 @@
 3. **Compare borderlines** — press C on any orange frame to see it side-by-side with the group's best
 4. **Mark the bad ones** — Space to mark, H to hide marked from the list
 5. **Try the Autopilot** — click the auto-mark button (wand icon) in the toolbar for one-click Conservative/Balanced/Aggressive auto-marking. Session Spread stats and convergence guard help you decide when to stop culling.
-6. **Pre-delete** — Cmd+Backspace moves all marked files to _predel/ staging folder. Nothing is permanently deleted. Full undo with Cmd+Z.
-7. **Ask AIsaac** — the collapsible AIsaac window floats on top with preset chips for instant analysis, filter advice, and session planning
+6. **VLM Check** — click the eye icon in the toolbar to generate mosaic wallpapers and run Claude Vision anomaly detection. Catches ice crystals, dew, clouds, and obstructions that metrics miss. Click tiles to mark, or "Mark All Flagged" for batch marking.
+7. **Pre-delete** — Cmd+Backspace moves all marked files to _predel/ staging folder. Nothing is permanently deleted. Full undo with Cmd+Z.
+8. **Ask AIsaac** — the collapsible AIsaac window floats on top with preset chips for instant analysis, filter advice, and session planning
 
 ## AIsaac Quick Start
 

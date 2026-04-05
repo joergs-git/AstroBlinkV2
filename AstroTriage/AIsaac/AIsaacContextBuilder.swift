@@ -810,6 +810,26 @@ struct AIsaacContextBuilder {
         - Multi-select: exports only highlighted rows if selected, otherwise all visible.
         - Save dialog lets you choose destination (sandbox-compatible).
 
+        VLM CHECK — VISUAL ANOMALY DETECTION (v5.18.0):
+        - Toolbar button "VLM Check" (eye.trianglebadge.exclamationmark icon) in the Actions group.
+        - Generates mosaic wallpapers from session frames, grouped by target+filter+setup, sorted chronologically.
+        - Each tile shows center-cropped preview with frame number and capture time annotation.
+        - Claude Vision AI analyzes the mosaic for: ice crystals, dew, clouds, obstructions, \
+        focus shifts, light leaks, and other visual anomalies not caught by metric-based scoring.
+        - NOTE: satellite trails are handled by the separate star trailing metric detector — VLM focuses on \
+        anomalies that are hard to quantify numerically.
+        - Deviation map toggle (waveform button): shows how each tile deviates from the group median. \
+        Bright areas = significant deviation from normal; dark = matches median. Useful for spotting \
+        gradual degradation (e.g., slow dew buildup).
+        - Click any tile in the mosaic to mark/unmark the corresponding frame for pre-deletion (blue overlay).
+        - Anomaly list panel: shows all flagged frames with anomaly type description. Click any anomaly to \
+        jump to that frame in the main file list.
+        - Re-Analyze button: re-runs VLM analysis on current mosaic pages.
+        - Mark Flagged: marks all VLM-flagged frames at once.
+        - Unmark: clears marks set by the VLM window.
+        - Usage quota: 10 free VLM checks per day via Supabase edge function (no setup needed). \
+        Unlimited checks with your own Claude API key (set in app preferences).
+
         USER CONFIDENCE RATING (v5.13.0):
         - Press 1/2/3 on selected frames to assign a personal confidence score (1-3 stars). \
         Same key again clears the rating. Yellow star column in file list.

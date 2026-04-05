@@ -4,6 +4,18 @@ All notable changes to AstroBlink & AIsaac will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [5.18.0] — 2026-04-05
+
+### Added
+- **VLM Check — Claude Vision Anomaly Detection** — New "VLM Check" toolbar button in Actions group generates mosaic wallpapers from cached session frames grouped by target/filter/setup. Claude Vision (Opus with extended thinking) analyzes mosaics for ice crystals, dew, clouds, obstructions, focus shifts, and light leaks
+- **Deviation Map** — Computes per-pixel median across all tiles in a group, displays heat map (black→blue→cyan→yellow→red→white) showing how each tile deviates from the group median. Makes any anomaly visually obvious at a glance. Toggle via waveform button in bottom bar
+- **Click-to-Mark Tiles** — Single-click any tile in the mosaic to toggle mark/unmark on the corresponding frame in the file list. Blue "MARKED" overlay on toggled tiles. Works independently of VLM analysis
+- **Chronological Sequence Analysis** — VLM prompt guides model to walk through tiles in time order, detecting transient defects that appear, persist, or worsen across the session
+- **Mosaic Tile Annotations** — Each 480×360px tile is center-cropped 80% and annotated with frame number, capture time, moon distance, and twilight phase
+- **Supabase Edge Function Routing** — Routes VLM requests through Supabase edge function (`vlm-check`, 10 checks/day rate limit) with fallback to user's own Claude API key
+- **VLM Anomaly Overlay** — Red rectangle border with type/confidence label on flagged tiles (no fill, no cross — tiles stay fully visible)
+- **Floating Validation Window** — Group tabs, zoomable mosaic, scrollable anomaly list with jump-to-frame. Re-analyze button, Mark Flagged, Unmark, and Save mosaic JPEG actions
+
 ## [5.17.0] — 2026-04-04
 
 ### Added

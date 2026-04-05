@@ -120,3 +120,21 @@ The Auto-Mark popover includes a collapsible "Session Spread" section showing:
 - Per-metric distribution (FWHM, Stars, Noise, Trailing) with min/max range and z-score spread
 - Tight/normal/wide labels per metric
 - Overall quality spread percentage with color-coded readiness bar
+
+## VLM Check — Visual Anomaly Detection
+
+SmartCull's 5-stage pipeline catches statistical outliers using quantitative metrics (FWHM, star count, noise, trailing). But some defects are invisible to numbers — ice crystals on the sensor window, progressive dew buildup, passing clouds, or obstructions. VLM Check fills this gap using Claude Vision (Opus with extended thinking) to analyze chronological mosaic wallpapers.
+
+**How it works:** Click the "VLM Check" toolbar button (eye icon) to generate mosaic wallpapers from your remaining (non-marked) frames. Frames are grouped by target+filter+setup, sorted chronologically, and composited into tiled JPEG images with metadata annotations (frame number, capture time, moon distance, twilight phase, pier side). A deviation map is computed alongside each mosaic, showing per-pixel deviation from the group median as a heat map (bright = anomalous, dark = normal).
+
+**What it detects:**
+- **Ice crystals** — Centered dark shadows from frost on the sensor window. Appears/disappears with dew heater cycles.
+- **Dew** — Progressive star softening across consecutive frames as moisture accumulates on optics.
+- **Clouds** — Sudden star count drops and washed-out backgrounds that come and go.
+- **Obstructions** — Dark shadows from cable snags, dew shield shifts, or equipment interference.
+- **Light leaks** — Bright patches from edge/corner not present in other tiles.
+- **Focus shifts** — Sudden star softening (not gradual like dew).
+
+**Interactive curation:** After analysis, flagged tiles are highlighted with red overlays. Click any tile to manually mark/unmark it (blue overlay). Double-click to jump to that frame in the main viewer. "Mark All Flagged" applies all VLM detections at once. Toggle the deviation map view to see the heat map evidence.
+
+For full details, see the dedicated **[VLM Check](VLM-Check)** wiki page.

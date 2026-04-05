@@ -88,6 +88,7 @@ class VisualValidationModel: ObservableObject {
     @Published var analysisProgress: String = ""
     @Published var zoomToFit: Bool = true
     @Published var showOverlay: Bool = true  // Toggle red anomaly overlay on/off
+    @Published var showDeviation: Bool = false // Toggle deviation map view
 
     let onJumpToFrame: (Int) -> Void
     let onMarkFrames: ([Int]) -> Void
@@ -97,7 +98,10 @@ class VisualValidationModel: ObservableObject {
     // Tracks which entry indices were marked by this window (for Unmark)
     @Published var markedEntryIndices: Set<Int> = []
 
-    // Cached annotated images (regenerated when anomalies change)
+    // Manually marked tiles (frame indices marked by clicking tiles in the mosaic)
+    @Published var manuallyMarkedFrames: Set<Int> = []
+
+    // Cached annotated images (regenerated when anomalies or manual marks change)
     @Published var annotatedImages: [Int: NSImage] = [:]  // pageIndex → annotated image
 
     init(pages: [MosaicPage], anomalies: [GroupKey: [AnomalyResult]],
@@ -112,6 +116,40 @@ class VisualValidationModel: ObservableObject {
         self.onAnalyze = onAnalyze
     }
 
+    /// Toggle mark on a tile by clicking it in the mosaic.
+    func toggleTileMark(frameIndex: Int, entryIndex: Int) {
+        if manuallyMarkedFrames.contains(frameIndex) {
+            manuallyMarkedFrames.remove(frameIndex)
+            markedEntryIndices.remove(entryIndex)
+            onUnmarkFrames?([entryIndex])
+        } else {
+            manuallyMarkedFrames.insert(frameIndex)
+            markedEntryIndices.insert(entryIndex)
+            onMarkFrames([entryIndex])
+        }
+        rebuildAnnotatedImages()
+    }
+
+    /// Find which tile was clicked given a point in image coordinates.
+    func tileAt(imagePoint: NSPoint) -> TileMetadata? {
+        guard let page = currentPage else { return nil }
+        let tileW = CGFloat(page.mosaicWidth) / CGFloat(page.gridCols)
+        let tileH = CGFloat(page.mosaicHeight) / CGFloat(page.gridRows)
+
+        // Image coordinates have origin at bottom-left (Core Graphics), but tiles are
+        // laid out top-to-bottom chronologically with row 0 at the TOP.
+        let col = Int(imagePoint.x / tileW)
+        // Flip Y: bottom-left origin → top-left row index
+        let rowFromBottom = Int(imagePoint.y / tileH)
+        let rowFromTop = page.gridRows - 1 - rowFromBottom
+        let tileIdx = rowFromTop * page.gridCols + col
+
+        guard col >= 0, col < page.gridCols,
+              rowFromBottom >= 0, rowFromBottom < page.gridRows,
+              tileIdx >= 0, tileIdx < page.tiles.count else { return nil }
+        return page.tiles[tileIdx]
+    }
+
     var currentPage: MosaicPage? {
         guard pages.indices.contains(selectedPageIndex) else { return nil }
         return pages[selectedPageIndex]
@@ -122,9 +160,12 @@ class VisualValidationModel: ObservableObject {
         return anomalies[page.group] ?? []
     }
 
-    /// The display image: annotated version if overlay enabled and anomalies exist
+    /// The display image: deviation map, annotated version, or original
     var currentDisplayImage: NSImage? {
-        if showOverlay, let annotated = annotatedImages[selectedPageIndex] {
+        if showDeviation, let devImg = currentPage?.deviationNsImage {
+            return devImg
+        }
+        if let annotated = annotatedImages[selectedPageIndex], showOverlay {
             return annotated
         }
         return currentPage?.nsImage
@@ -146,24 +187,28 @@ class VisualValidationModel: ObservableObject {
         return indices
     }
 
-    /// Rebuild annotated mosaic images with red overlays on flagged tiles
+    /// Rebuild annotated mosaic images with red overlays (VLM) and blue overlays (manual marks)
     func rebuildAnnotatedImages() {
         for (idx, page) in pages.enumerated() {
             let pageAnomalies = anomalies[page.group] ?? []
-            if pageAnomalies.isEmpty {
+            let pageManualMarks = manuallyMarkedFrames
+            let hasAny = !pageAnomalies.isEmpty ||
+                page.tiles.contains(where: { pageManualMarks.contains($0.frameIndex) })
+            if !hasAny {
                 annotatedImages.removeValue(forKey: idx)
                 continue
             }
             guard let original = page.nsImage else { continue }
-            annotatedImages[idx] = Self.drawAnomalyOverlay(
-                on: original, page: page, anomalies: pageAnomalies)
+            annotatedImages[idx] = Self.drawOverlays(
+                on: original, page: page, anomalies: pageAnomalies,
+                manualMarks: pageManualMarks)
         }
     }
 
-    /// Draw prominent red overlays on flagged tiles: semi-transparent red wash,
-    /// diagonal cross, bold border, and large type+confidence label.
-    private static func drawAnomalyOverlay(
-        on image: NSImage, page: MosaicPage, anomalies: [AnomalyResult]
+    /// Draw overlays on tiles: red for VLM anomalies, blue for manual marks.
+    private static func drawOverlays(
+        on image: NSImage, page: MosaicPage, anomalies: [AnomalyResult],
+        manualMarks: Set<Int>
     ) -> NSImage {
         let flaggedFrames = Dictionary(grouping: anomalies, by: \.frame)
         let size = image.size
@@ -176,7 +221,9 @@ class VisualValidationModel: ObservableObject {
         let tileH = CGFloat(page.mosaicHeight) / CGFloat(page.gridRows)
 
         for (tileIdx, tile) in page.tiles.enumerated() {
-            guard let anomalyList = flaggedFrames[tile.frameIndex] else { continue }
+            let isVLMFlagged = flaggedFrames[tile.frameIndex] != nil
+            let isManuallyMarked = manualMarks.contains(tile.frameIndex)
+            guard isVLMFlagged || isManuallyMarked else { continue }
 
             let col = tileIdx % page.gridCols
             let row = page.gridRows - 1 - (tileIdx / page.gridCols)
@@ -184,73 +231,82 @@ class VisualValidationModel: ObservableObject {
                                   width: tileW, height: tileH)
             let inset = tileRect.insetBy(dx: 2, dy: 2)
 
-            // 1) Semi-transparent red wash over the whole tile
-            NSColor.red.withAlphaComponent(0.15).setFill()
-            NSBezierPath(rect: tileRect).fill()
+            if isVLMFlagged {
+                // VLM anomaly: red border only (no fill, no cross — keep tiles visible)
+                let anomalyList = flaggedFrames[tile.frameIndex]!
 
-            // 2) Bold red border (5px)
-            NSColor.red.withAlphaComponent(0.9).setStroke()
-            let borderPath = NSBezierPath(rect: inset)
-            borderPath.lineWidth = 5
-            borderPath.stroke()
+                NSColor.red.withAlphaComponent(0.9).setStroke()
+                let borderPath = NSBezierPath(rect: inset)
+                borderPath.lineWidth = 4
+                borderPath.stroke()
 
-            // 3) Diagonal cross (X) across the tile — the clear "rejected" marker
-            let crossColor = NSColor.red.withAlphaComponent(0.5)
-            crossColor.setStroke()
-            let crossPath = NSBezierPath()
-            let margin: CGFloat = 15
-            // Top-left to bottom-right
-            crossPath.move(to: NSPoint(x: inset.minX + margin, y: inset.maxY - margin))
-            crossPath.line(to: NSPoint(x: inset.maxX - margin, y: inset.minY + margin))
-            // Top-right to bottom-left
-            crossPath.move(to: NSPoint(x: inset.maxX - margin, y: inset.maxY - margin))
-            crossPath.line(to: NSPoint(x: inset.minX + margin, y: inset.minY + margin))
-            crossPath.lineWidth = 3
-            crossPath.stroke()
+                // Type + confidence label
+                if let first = anomalyList.first {
+                    let typeShort: String
+                    switch first.type {
+                    case "ICE_CRYSTAL": typeShort = "ICE"
+                    case "DEW":         typeShort = "DEW"
+                    case "CLOUD":       typeShort = "CLD"
+                    case "SATELLITE":   typeShort = "SAT"
+                    case "LIGHT_LEAK":  typeShort = "LEAK"
+                    case "AMP_GLOW":    typeShort = "AMP"
+                    case "FOCUS_SHIFT": typeShort = "FOC"
+                    case "OBSTRUCTION": typeShort = "OBS"
+                    default:            typeShort = "?"
+                    }
 
-            // 4) Large type + confidence label (center of tile)
-            if let first = anomalyList.first {
-                let typeShort: String
-                let emoji: String
-                switch first.type {
-                case "ICE_CRYSTAL": typeShort = "ICE";  emoji = "\u{2744}" // ❄
-                case "DEW":         typeShort = "DEW";  emoji = "\u{1F4A7}" // 💧
-                case "CLOUD":       typeShort = "CLD";  emoji = "\u{2601}" // ☁
-                case "SATELLITE":   typeShort = "SAT";  emoji = "\u{2571}" // ╱
-                case "LIGHT_LEAK":  typeShort = "LEAK"; emoji = "\u{2600}" // ☀
-                case "AMP_GLOW":    typeShort = "AMP";  emoji = "\u{1F321}" // 🌡
-                case "FOCUS_SHIFT": typeShort = "FOC";  emoji = "\u{25EF}" // ◯
-                case "OBSTRUCTION": typeShort = "OBS";  emoji = "\u{25CF}" // ●
-                default:            typeShort = "?";    emoji = "?"
+                    let confidence = String(format: "%.0f%%", first.confidence * 100)
+                    let label = "\(typeShort) \(confidence)"
+
+                    let attrs: [NSAttributedString.Key: Any] = [
+                        .font: NSFont.monospacedSystemFont(ofSize: 16, weight: .heavy),
+                        .foregroundColor: NSColor.white
+                    ]
+                    let str = NSAttributedString(string: label, attributes: attrs)
+                    let strSize = str.size()
+                    let pillW = strSize.width + 16
+                    let pillH = strSize.height + 8
+                    let pillX = tileRect.midX - pillW / 2
+                    let pillY = tileRect.midY - pillH / 2
+
+                    let pillRect = NSRect(x: pillX, y: pillY, width: pillW, height: pillH)
+                    NSColor(red: 0.8, green: 0.0, blue: 0.0, alpha: 0.88).setFill()
+                    NSBezierPath(roundedRect: pillRect, xRadius: 6, yRadius: 6).fill()
+
+                    NSColor.white.withAlphaComponent(0.6).setStroke()
+                    let pillBorder = NSBezierPath(roundedRect: pillRect.insetBy(dx: -1, dy: -1),
+                                                  xRadius: 7, yRadius: 7)
+                    pillBorder.lineWidth = 1
+                    pillBorder.stroke()
+
+                    str.draw(at: NSPoint(x: pillX + 8, y: pillY + 4))
                 }
+            } else if isManuallyMarked {
+                // Manual mark: blue wash + border + checkmark icon
+                NSColor.systemBlue.withAlphaComponent(0.12).setFill()
+                NSBezierPath(rect: tileRect).fill()
 
-                let confidence = String(format: "%.0f%%", first.confidence * 100)
-                let label = "\(typeShort) \(confidence)"
+                NSColor.systemBlue.withAlphaComponent(0.9).setStroke()
+                let borderPath = NSBezierPath(rect: inset)
+                borderPath.lineWidth = 4
+                borderPath.stroke()
 
-                // Big centered label on dark red pill
+                // Blue pill with "MARKED" label in top-right area
                 let attrs: [NSAttributedString.Key: Any] = [
-                    .font: NSFont.monospacedSystemFont(ofSize: 16, weight: .heavy),
+                    .font: NSFont.monospacedSystemFont(ofSize: 13, weight: .bold),
                     .foregroundColor: NSColor.white
                 ]
-                let str = NSAttributedString(string: label, attributes: attrs)
+                let str = NSAttributedString(string: "MARKED", attributes: attrs)
                 let strSize = str.size()
-                let pillW = strSize.width + 16
-                let pillH = strSize.height + 8
-                let pillX = tileRect.midX - pillW / 2
-                let pillY = tileRect.midY - pillH / 2
+                let pillW = strSize.width + 12
+                let pillH = strSize.height + 6
+                let pillX = tileRect.maxX - pillW - 8
+                let pillY = tileRect.maxY - pillH - 8
 
                 let pillRect = NSRect(x: pillX, y: pillY, width: pillW, height: pillH)
-                NSColor(red: 0.8, green: 0.0, blue: 0.0, alpha: 0.88).setFill()
-                NSBezierPath(roundedRect: pillRect, xRadius: 6, yRadius: 6).fill()
-
-                // White border on pill for contrast
-                NSColor.white.withAlphaComponent(0.6).setStroke()
-                let pillBorder = NSBezierPath(roundedRect: pillRect.insetBy(dx: -1, dy: -1),
-                                              xRadius: 7, yRadius: 7)
-                pillBorder.lineWidth = 1
-                pillBorder.stroke()
-
-                str.draw(at: NSPoint(x: pillX + 8, y: pillY + 4))
+                NSColor.systemBlue.withAlphaComponent(0.85).setFill()
+                NSBezierPath(roundedRect: pillRect, xRadius: 5, yRadius: 5).fill()
+                str.draw(at: NSPoint(x: pillX + 6, y: pillY + 3))
             }
         }
 
@@ -264,6 +320,7 @@ class VisualValidationModel: ObservableObject {
 struct ZoomableImageView: NSViewRepresentable {
     let nsImage: NSImage?
     @Binding var zoomToFit: Bool
+    var model: VisualValidationModel?
 
     func makeNSView(context: Context) -> NSScrollView {
         let scrollView = NSScrollView()
@@ -288,6 +345,13 @@ struct ZoomableImageView: NSViewRepresentable {
         doubleClick.numberOfClicksRequired = 2
         scrollView.addGestureRecognizer(doubleClick)
 
+        // Single-click on tile to toggle mark
+        let singleClick = NSClickGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleSingleClick(_:)))
+        singleClick.numberOfClicksRequired = 1
+        singleClick.delaysPrimaryMouseButtonEvents = false
+        doubleClick.delaysPrimaryMouseButtonEvents = false
+        scrollView.addGestureRecognizer(singleClick)
+
         context.coordinator.scrollView = scrollView
 
         return scrollView
@@ -296,6 +360,7 @@ struct ZoomableImageView: NSViewRepresentable {
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         guard let imageView = scrollView.documentView as? NSImageView else { return }
         let coordinator = context.coordinator
+        coordinator.model = model
 
         // Update image if changed
         if let img = nsImage, imageView.image !== img {
@@ -326,6 +391,7 @@ struct ZoomableImageView: NSViewRepresentable {
     class Coordinator {
         let parent: ZoomableImageView
         weak var scrollView: NSScrollView?
+        weak var model: VisualValidationModel?
         var imageSize: NSSize = .zero
         var lastZoomToFit: Bool = true
 
@@ -339,11 +405,29 @@ struct ZoomableImageView: NSViewRepresentable {
             let scaleY = visibleSize.height / imageSize.height
             let fitScale = min(scaleX, scaleY)
             scrollView.magnification = fitScale
-            // Center the image
             scrollView.documentView?.scroll(NSPoint(
                 x: (imageSize.width * fitScale - visibleSize.width) / 2,
                 y: (imageSize.height * fitScale - visibleSize.height) / 2
             ))
+        }
+
+        /// Convert a click in the scroll view to image coordinates, accounting for zoom and scroll.
+        private func imagePoint(from recognizer: NSGestureRecognizer) -> NSPoint? {
+            guard let scrollView = scrollView,
+                  let documentView = scrollView.documentView else { return nil }
+            // Get click in document view coordinates (accounts for scroll + zoom)
+            let pointInDoc = recognizer.location(in: documentView)
+            // Document view frame is the image at actual size
+            guard pointInDoc.x >= 0, pointInDoc.y >= 0,
+                  pointInDoc.x <= imageSize.width, pointInDoc.y <= imageSize.height else { return nil }
+            return pointInDoc
+        }
+
+        @objc func handleSingleClick(_ recognizer: NSGestureRecognizer) {
+            guard let model = model,
+                  let imgPt = imagePoint(from: recognizer),
+                  let tile = model.tileAt(imagePoint: imgPt) else { return }
+            model.toggleTileMark(frameIndex: tile.frameIndex, entryIndex: tile.entryIndex)
         }
 
         @objc func handleDoubleClick(_ recognizer: NSGestureRecognizer) {
@@ -354,12 +438,10 @@ struct ZoomableImageView: NSViewRepresentable {
                                visibleSize.height / imageSize.height)
 
             if abs(scrollView.magnification - fitScale) < 0.01 {
-                // Currently at fit — zoom to 1:1 centered on click point
                 let clickPoint = recognizer.location(in: scrollView)
                 scrollView.setMagnification(1.0, centeredAt: clickPoint)
                 parent.zoomToFit = false
             } else {
-                // Zoom back to fit
                 scrollView.magnification = fitScale
                 parent.zoomToFit = true
             }
@@ -407,9 +489,11 @@ struct VisualValidationContentView: View {
             }
 
             // Zoomable mosaic image via NSScrollView (annotated version when anomalies detected)
+            // Click a tile to toggle mark/unmark on the corresponding frame
             ZoomableImageView(
                 nsImage: model.currentDisplayImage,
-                zoomToFit: $model.zoomToFit
+                zoomToFit: $model.zoomToFit,
+                model: model
             )
 
             // Zoom controls + status bar
@@ -459,8 +543,19 @@ struct VisualValidationContentView: View {
             .buttonStyle(.borderless)
             .help("Fit to window (double-click image to toggle)")
 
+            // Deviation map toggle
+            if model.currentPage?.deviationNsImage != nil {
+                Button(action: { model.showDeviation.toggle() }) {
+                    Image(systemName: model.showDeviation ? "waveform.circle.fill" : "waveform.circle")
+                        .font(.caption)
+                        .foregroundColor(model.showDeviation ? .orange : .secondary)
+                }
+                .buttonStyle(.borderless)
+                .help("Toggle deviation map (bright = differs from median)")
+            }
+
             // Overlay toggle
-            if model.totalAnomalyCount > 0 {
+            if model.totalAnomalyCount > 0 || !model.manuallyMarkedFrames.isEmpty {
                 Button(action: { model.showOverlay.toggle() }) {
                     Image(systemName: model.showOverlay ? "eye.fill" : "eye.slash")
                         .font(.caption)
