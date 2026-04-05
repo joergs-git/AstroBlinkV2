@@ -113,6 +113,10 @@ class TriageViewModel: ObservableObject {
     private var playbackIndices: [Int] = []
     private var playbackPosition: Int = 0
 
+    // Visual Validation (VLM mosaic anomaly detection)
+    @Published var isGeneratingMosaic: Bool = false
+    @Published var mosaicProgress: String = ""
+
     func selectMultipleRows(_ rows: IndexSet) {
         pendingHighlightRows = rows
         needsTableRefresh = true
@@ -2964,6 +2968,132 @@ class TriageViewModel: ObservableObject {
             }
         } else {
             selectImage(at: images.count - 1)
+        }
+    }
+
+    // MARK: - Visual Validation (VLM Mosaic)
+
+    /// Generate mosaic wallpapers from remaining frames and show in floating window.
+    /// Optionally runs Claude Vision anomaly detection if API key is available.
+    func startVisualValidation() {
+        guard !images.isEmpty else { return }
+        isGeneratingMosaic = true
+        mosaicProgress = "Collecting preview textures..."
+
+        // Collect textures from PrefetchCache (we're @MainActor, so this is safe)
+        var textures: [URL: MTLTexture] = [:]
+        for entry in images where !entry.isMarkedForDeletion {
+            if let preview = prefetchCache?.getPreview(for: entry.url) {
+                textures[entry.url] = preview.texture
+            }
+        }
+
+        let cachedCount = textures.count
+        let totalActive = images.filter { !$0.isMarkedForDeletion }.count
+        mosaicProgress = "Generating mosaics (\(cachedCount)/\(totalActive) cached)..."
+
+        // Capture immutable copies for background work
+        let entriesCopy = images
+        let texturesCopy = textures
+        let rotationCheck: (ImageEntry) -> Bool = { [weak self] entry in
+            self?.shouldRotateForMeridian(entry) ?? false
+        }
+
+        // Generate mosaics on background thread (GPU readback is heavy)
+        Task.detached(priority: .userInitiated) { [weak self] in
+            let generator = MosaicGenerator()
+            let pages = generator.generatePages(
+                entries: entriesCopy,
+                textures: texturesCopy,
+                shouldRotate: rotationCheck
+            ) { completed, total in
+                Task { @MainActor [weak self] in
+                    self?.mosaicProgress = "Generating mosaic \(completed)/\(total)..."
+                }
+            }
+
+            await MainActor.run { [weak self] in
+                guard let self = self else { return }
+                self.isGeneratingMosaic = false
+
+                if pages.isEmpty {
+                    self.statusMessage = "Not enough cached frames for mosaic (need ≥4 per group)"
+                    return
+                }
+
+                // Show floating mosaic window
+                let jumpTo: (Int) -> Void = { [weak self] entryIndex in
+                    self?.selectImage(at: entryIndex)
+                }
+                let markFrames: ([Int]) -> Void = { [weak self] entryIndices in
+                    guard let self = self else { return }
+                    for idx in entryIndices where self.images.indices.contains(idx) {
+                        self.images[idx].isMarkedForDeletion = true
+                    }
+                    self.needsTableRefresh = true
+                    let marked = entryIndices.count
+                    self.statusMessage = "Marked \(marked) VLM-flagged frames for deletion"
+                }
+
+                let analyzeCallback: ([MosaicPage]) -> Void = { [weak self] pagesToAnalyze in
+                    self?.runVisualAnalysis(pages: pagesToAnalyze)
+                }
+                let unmarkFrames: ([Int]) -> Void = { [weak self] entryIndices in
+                    guard let self = self else { return }
+                    for idx in entryIndices where self.images.indices.contains(idx) {
+                        self.images[idx].isMarkedForDeletion = false
+                    }
+                    self.needsTableRefresh = true
+                    self.statusMessage = "Unmarked \(entryIndices.count) VLM-flagged frames"
+                }
+
+                VisualValidationWindowController.shared.show(
+                    pages: pages,
+                    onJumpToFrame: jumpTo,
+                    onMarkFrames: markFrames,
+                    onUnmarkFrames: unmarkFrames,
+                    onAnalyze: analyzeCallback
+                )
+
+                let tileCount = pages.reduce(0) { $0 + $1.tiles.count }
+                self.statusMessage = "Mosaic: \(pages.count) group(s), \(tileCount) tiles — click Analyze to run VLM check"
+            }
+        }
+    }
+
+    /// Run Claude Vision anomaly detection on generated mosaics.
+    /// Routes through Supabase edge function (works out of the box, no API key needed).
+    /// Falls back to user's own API key if edge function is unavailable.
+    func runVisualAnalysis(pages: [MosaicPage]) {
+        mosaicProgress = "Analyzing with Claude Vision..."
+        let wc = VisualValidationWindowController.shared
+        wc.updateAnalysisProgress("Sending \(pages.count) mosaic(s) to Claude Vision...")
+
+        Task {
+            let detector = VisualAnomalyDetector()
+            do {
+                let results = try await detector.analyzeAll(
+                    pages: pages
+                ) { completed, total, status in
+                    Task { @MainActor [weak self] in
+                        self?.mosaicProgress = "Analyzing \(completed)/\(total): \(status)"
+                        wc.updateAnalysisProgress("Analyzing \(completed)/\(total): \(status)")
+                    }
+                }
+
+                let totalAnomalies = results.values.reduce(0) { $0 + $1.count }
+                wc.updateAnomalies(results)
+                let remaining = detector.remainingChecks.map { " (\($0) checks remaining today)" } ?? ""
+                statusMessage = "Visual check: \(totalAnomalies) anomalies in \(pages.count) group(s)\(remaining)"
+                mosaicProgress = ""
+                print("[VLM] Analysis complete: \(totalAnomalies) anomalies across \(results.count) groups")
+            } catch {
+                let errMsg = error.localizedDescription
+                statusMessage = "Visual analysis: \(errMsg)"
+                mosaicProgress = ""
+                wc.analysisFinished(error: errMsg)
+                print("[VLM] Analysis error: \(errMsg)")
+            }
         }
     }
 

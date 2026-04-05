@@ -173,6 +173,32 @@ struct ContentView: View {
                     Spacer()
                 }
             }
+
+            // VLM Check: mosaic generation overlay
+            if viewModel.isGeneratingMosaic {
+                VStack(spacing: 16) {
+                    ProgressView()
+                        .controlSize(.large)
+                        .scaleEffect(1.2)
+                    Text("Preparing VLM Check")
+                        .font(.system(size: 18, weight: .semibold, design: .rounded))
+                        .foregroundColor(.white)
+                    Text(viewModel.mosaicProgress)
+                        .font(.system(size: 13, weight: .medium, design: .monospaced))
+                        .foregroundColor(.white.opacity(0.7))
+                    Text("Assembling mosaic wallpaper for AI analysis...")
+                        .font(.system(size: 11))
+                        .foregroundColor(.white.opacity(0.5))
+                }
+                .padding(32)
+                .background(
+                    RoundedRectangle(cornerRadius: 16)
+                        .fill(.ultraThinMaterial)
+                        .shadow(radius: 20)
+                )
+                .transition(.opacity.combined(with: .scale(scale: 0.95)))
+                .animation(.easeInOut(duration: 0.3), value: viewModel.isGeneratingMosaic)
+            }
         }
     }
 
@@ -440,6 +466,10 @@ struct ContentView: View {
 
             // ── Group 2: Actions ──
             autoMarkToolbarButton
+            sfToolbarButton("eye.trianglebadge.exclamationmark", "VLM\nCheck",
+                "Generate mosaic wallpaper from remaining frames.\nRuns VLM anomaly detection (ice, dew, clouds, satellites)\nvia Claude Vision API.") {
+                viewModel.startVisualValidation()
+            }
             aisaacToolbarButton
             sfToolbarButton("square.and.arrow.up", "SSWEIGHT\nExport",
                 "Export quality weights to FITS/XISF headers for WBPP.\nOperates on highlighted files (or all if none selected).\nAlso creates CSV backup.\nUse Batch Rename to remove SSWEIGHT keywords.") {
