@@ -1,4 +1,4 @@
-// v5.18.0
+// v5.19.0
 // VisualAnomalyDetector — Sends mosaic images to Claude Vision for visual anomaly detection.
 // Routes through Supabase edge function first (works out of the box for all users),
 // falls back to user's own Claude API key if set. No setup required.
@@ -369,6 +369,33 @@ class VisualAnomalyDetector {
 
     // MARK: - System prompt
 
+    // v5.18.0 prompt (replaced in v5.19.0 — kept for reference):
+    // The original prompt was highly prescriptive, enumerating 6 specific defect types
+    // (ICE_CRYSTAL, DEW, CLOUD, OBSTRUCTION, LIGHT_LEAK, FOCUS_SHIFT) with detailed
+    // descriptions of how each manifests visually. This led to over-detection (especially
+    // ice crystals) because the model actively hunted for each category even when absent.
+    //
+    // Key sections that were removed:
+    // - "=== WHAT TO LOOK FOR (transient optical defects) ===" with 6 numbered categories
+    //   1. ICE_CRYSTAL — detailed center-shadow, dew heater cycle, deviation map guidance
+    //   2. DEW — progressive star bloating, contrast drop, monotonic worsening
+    //   3. CLOUD — sudden star reduction, washed-out background
+    //   4. OBSTRUCTION — dark shadow from edge (dew shield, cable)
+    //   5. LIGHT_LEAK — bright patch from edge/corner
+    //   6. FOCUS_SHIFT — sudden star softness (not gradual like dew)
+    // - Detailed deviation map interpretation tied to specific defect types
+    //   (e.g. "bright centered blob = ICE_CRYSTAL")
+    // - Rule "Do NOT report SATELLITE, AMP_GLOW, or UNKNOWN"
+    //
+    // v5.19.0 approach: "find what looks different" — too vague, model focused on brightness
+    // differences (twilight) instead of instrumental artifacts.
+    //
+    // v5.19.1 approach: INVARIANCE-BASED detection.
+    // Key insight: instrumental artifacts (ice, dust, moisture) persist at the SAME PIXEL
+    // POSITION across multiple frames. Transient events (satellites, meteors) do not.
+    // The prompt forces the model to first check positional invariance before flagging.
+    // Focus on large-scale morphology (blobs, gradients), ignore point/linear features.
+
     private func buildSystemPrompt(page: MosaicPage, pageNumber: Int = 1, totalPages: Int = 1) -> String {
         let pageInfo = totalPages > 1
             ? "This is PAGE \(pageNumber) of \(totalPages) for this filter group. " +
@@ -376,116 +403,89 @@ class VisualAnomalyDetector {
             : ""
 
         return """
-        You are an expert astrophotography quality inspector analyzing a session mosaic \
-        for visual anomalies that quantitative metrics may have missed. Each tile shows \
-        the center 80% of an astronomical exposure, individually auto-stretched for \
-        visibility. Tiles are numbered in the top-left corner.
+        Analyze a series of astronomical RAW sub-exposures (mosaic). \
+        Each tile shows the center 80% of one exposure, individually auto-stretched. \
+        Goal: identify ONLY systematic instrumental artifacts.
         \(pageInfo)
 
         GRID LAYOUT: \(page.tiles.count) tiles in a \(page.gridCols)x\(page.gridRows) grid, \
-        ordered chronologically left-to-right, top-to-bottom. \
-        The grid has \(page.gridCols * page.gridRows) positions — \
-        \(page.gridCols * page.gridRows - page.tiles.count) position(s) at the bottom-right are EMPTY \
-        (dark/black padding, NOT corrupted frames — ignore them completely).
+        chronological left-to-right, top-to-bottom. \
+        \(page.gridCols * page.gridRows - page.tiles.count) empty position(s) at bottom-right (padding — ignore).
 
-        TILE NUMBERING: Each tile is labeled with its session frame number (e.g. #28, #87), \
-        NOT sequential 1-N. Use ONLY the frame numbers visible in the top-left of each tile. \
-        The tile labels in this mosaic are: \(page.tiles.map { "#\($0.frameIndex)" }.joined(separator: ", "))
+        TILE NUMBERS: \(page.tiles.map { "#\($0.frameIndex)" }.joined(separator: ", "))
 
         SESSION CONTEXT:
         \(page.sessionContext)
 
-        PER-TILE ANNOTATIONS:
-        - Top-left: session frame number (#N) — use this number in your response
-        - Top-right: capture time + moon distance (degrees)
-        - Bottom-left: twilight phase (N=Night, A=Astro, Na=Nautical, C=Civil, D=Day) + pier side (E/W)
-        - Bottom-edge: twilight color bar (blue=astro, orange=civil, red=daylight; none=night)
+        \(page.referenceTileFrameIndex.map { """
+        REFERENCE TILE: #\($0) — cleanest frame (highest star count, closest to group baseline).
+        """ } ?? "")
 
-        FRAME METRICS (for numeric cross-reference):
-        \(page.metricsTable)
+        === MANDATORY PROCEDURE ===
 
-        === THIS IS A CHRONOLOGICAL SEQUENCE ===
-        The tiles are ordered chronologically from top-left to bottom-right. \
-        This is a TIME SERIES of the same object taken over hours. Your primary task: \
-        detect TRANSIENT defects that appear, persist, or worsen over the course of the \
-        sequence. Walk through the tiles in chronological order and note any progressive \
-        or sudden changes.
+        STEP 1 — INVARIANCE CHECK
+        Examine which structures appear at the SAME PIXEL POSITION across many or all frames. \
+        Only position-invariant structures are relevant. \
+        Completely ignore one-time or transient events (satellite trails, meteors, planes, cosmic rays).
 
-        === WHAT IS NORMAL (ignore these) ===
-        - The astronomical object (nebula filaments, galaxy arms, star cluster patterns) \
-          appears in ALL tiles at the same position — it is the TARGET, not an anomaly.
-        - Brightness differences between tiles are expected (individual auto-stretch).
-        - Point stars throughout the frame are normal.
-        - Satellite trails (bright linear streaks) are handled by a separate metric \
-          detector — ignore them completely.
+        STEP 2 — CLASSIFY BY BEHAVIOR
+        For each detected structure, classify strictly by:
+        - Position-stable vs position-variable
+        - Shape-stable vs shape-changing
+        - Intensity-stable vs intensity-variable
 
-        === WHAT TO LOOK FOR (transient optical defects) ===
-        Focus on artifacts in the OPTICAL PATH that appear at some point in the sequence \
-        and were NOT present in earlier frames. These are physical problems at the \
-        camera-optics interface:
+        STEP 3 — MORPHOLOGICAL ASSESSMENT
+        Evaluate ONLY large-scale, soft, or systematic patterns:
+        - Round/diffuse shadows (donuts, blobs, dark spots)
+        - Gradients, vignetting, panel transitions
+        - Fixed shadow structures
+        Ignore point-like or linear single-frame phenomena.
 
-        1. ICE_CRYSTAL (highest priority):
-           A diffuse dark shadow or circular darkening in the IMAGE CENTER that is \
-           NOT part of the astronomical object. Ice/frost on the sensor window casts \
-           a shadow centered on the optical axis. Key diagnostics:
-           - Compare image centers chronologically: do some frames have a clear center \
-             while others show a dark circular blob?
-           - The shadow may appear, persist for a stretch, then DISAPPEAR (dew heater \
-             cycle, temperature change). Evaluate EACH tile on its own visual evidence.
-           - Only flag tiles where you can actually SEE the centered dark shadow or \
-             bloated star halos. Do NOT flag tiles that look clean just because \
-             neighboring tiles have ice.
-           USE THE DEVIATION MAP (Image 2): A bright centered blob in the deviation map \
-           confirms centered optical defects. Tiles that are mostly DARK in the deviation \
-           map = clean, do not flag them.
+        STEP 4 — CAUSAL ATTRIBUTION
+        Derive causes ONLY from invariance + morphology:
+        - Optical path (dust, filter, sensor window, ice/frost)
+        - Flat-field / calibration issues
+        - Moisture / condensation film
+        - Background / gradient errors
+        Mark uncertain attributions as [Inference].
 
-        2. DEW — Progressive softening: stars become gradually more bloated and fuzzy \
-           across consecutive frames. Contrast drops. Worsens monotonically.
+        STEP 5 — PRIORITIZATION
+        List only dominant, recurring artifacts. \
+        No per-frame detail analysis. \
+        No astrophysical interpretation of the target object.
 
-        3. CLOUD — Sudden reduction in visible stars, washed-out background. May come \
-           and go (unlike ice which persists).
+        === DEVIATION MAP (Image 2) ===
+        If provided, bright areas = tile differs from group median. \
+        Use to confirm invariant structures: if a blob appears bright in the deviation map \
+        of MULTIPLE tiles at the same position, it is an instrumental artifact.
 
-        4. OBSTRUCTION — Dark shadow appearing suddenly from one edge (dew shield, cable).
-
-        5. LIGHT_LEAK — Bright patch from edge/corner not present in other tiles.
-
-        6. FOCUS_SHIFT — Stars suddenly much softer (not gradual like dew).
-
-        === DEVIATION MAP GUIDE ===
-        If Image 2 (deviation map) is provided, use it as your primary detection tool:
-        - BRIGHT areas = that tile differs significantly from the group median
-        - DARK areas = tile matches the median (normal)
-        - Bright CENTERED blob = centered optical defect (ice/frost) — flag as ICE_CRYSTAL
-        - Bright STREAK = transient artifact
-        - Uniform brightness across a tile = overall brightness anomaly (cloud/transparency)
-        - If MOST tiles show the same bright pattern, it means the MEDIAN itself is \
-          contaminated — the FEW dark (clean) tiles are the good ones.
-
-        === RULES ===
-        - Only use frame numbers from: \(page.tiles.map { "#\($0.frameIndex)" }.joined(separator: ", "))
-        - Empty grid positions (black padding) are not frames — ignore them.
-        - Do NOT report SATELLITE, AMP_GLOW, or UNKNOWN.
-        - Evaluate EACH tile based on what you actually see — not assumptions about \
-          neighboring tiles. Ice can come and go (dew heater cycles).
-        - Use the deviation map as primary evidence: bright center = flag, dark/uniform = clean.
-        - Only flag tiles where the defect is VISUALLY PRESENT in that specific tile.
+        === FORBIDDEN ===
+        - Discussing one-time trails or transient events
+        - Focusing on individual pixels, stars, or nebula details
+        - Speculation without reference to positional invariance
+        - Flagging brightness differences between tiles (auto-stretch artifact, not real)
         """
     }
 
     // MARK: - User prompt
 
+    // v5.18.0: "Analyze for transient optical defects" — model hunted specific categories.
+    // v5.19.0: "Flag tiles that look different from majority" — model flagged twilight.
+    // v5.19.1: Invariance-based — only flag systematic instrumental artifacts.
+
     private func buildUserPrompt() -> String {
         """
-        Analyze this chronological sequence for transient optical defects. \
-        Use both the original mosaic (Image 1) and the deviation map (Image 2) if provided. \
-        Flag only tiles where the defect is VISUALLY PRESENT — do not flag clean tiles \
-        just because they are near affected ones. Ice can appear AND disappear.
+        Apply the mandatory procedure above. Identify systematic instrumental artifacts \
+        that persist at the same pixel position across multiple frames. \
+        Use both the original mosaic (Image 1) and the deviation map (Image 2) if provided.
 
-        Return a JSON array of flagged frames. If no anomalies found, return [].
+        For each affected frame, return a JSON entry. If no artifacts found, return [].
 
         Format:
-        [{"frame": <number>, "type": "<ANOMALY_TYPE>", "confidence": <0.0-1.0>, \
-        "description": "<brief description>", "temporalNote": "<optional: e.g. continues from #N, progressive, sudden>"}]
+        [{"frame": <number>, "type": "<short label: ICE, DUST, MOISTURE, GRADIENT, SHADOW, or custom>", \
+        "confidence": <0.0-1.0>, \
+        "description": "<what the artifact looks like and where in the tile>", \
+        "temporalNote": "<optional: e.g. present from #N to #M, persistent, intermittent>"}]
 
         Return ONLY the JSON array, no other text.
         """

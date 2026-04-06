@@ -116,6 +116,7 @@ class TriageViewModel: ObservableObject {
     // Visual Validation (VLM mosaic anomaly detection)
     @Published var isGeneratingMosaic: Bool = false
     @Published var mosaicProgress: String = ""
+    private var vlmGenerationTask: Task<Void, Never>?
 
     func selectMultipleRows(_ rows: IndexSet) {
         pendingHighlightRows = rows
@@ -2975,46 +2976,75 @@ class TriageViewModel: ObservableObject {
 
     /// Generate mosaic wallpapers from remaining frames and show in floating window.
     /// Optionally runs Claude Vision anomaly detection if API key is available.
+    /// If files are highlighted (multi-selected), uses those regardless of mark status.
+    /// Otherwise uses all unmarked frames.
     func startVisualValidation() {
         guard !images.isEmpty else { return }
         isGeneratingMosaic = true
         mosaicProgress = "Collecting preview textures..."
 
+        // Determine frame set: highlighted selection (any status) or all unmarked
+        // Require >= 2 highlighted — single selection is just normal navigation focus
+        let highlighted = selectedEntries
+        let useHighlighted = highlighted.count >= 2
+        let highlightedURLs = Set(highlighted.map { $0.url })
+
         // Collect textures from PrefetchCache (we're @MainActor, so this is safe)
         var textures: [URL: MTLTexture] = [:]
-        for entry in images where !entry.isMarkedForDeletion {
+        for entry in images {
+            // If highlighted: only collect those. Otherwise: only unmarked.
+            if useHighlighted {
+                guard highlightedURLs.contains(entry.url) else { continue }
+            } else {
+                guard !entry.isMarkedForDeletion else { continue }
+            }
             if let preview = prefetchCache?.getPreview(for: entry.url) {
                 textures[entry.url] = preview.texture
             }
         }
 
         let cachedCount = textures.count
-        let totalActive = images.filter { !$0.isMarkedForDeletion }.count
-        mosaicProgress = "Generating mosaics (\(cachedCount)/\(totalActive) cached)..."
+        let totalTarget = useHighlighted ? highlighted.count : images.filter { !$0.isMarkedForDeletion }.count
+        let scope = useHighlighted ? "highlighted" : "active"
+        mosaicProgress = "Generating mosaics (\(cachedCount)/\(totalTarget) \(scope) cached)..."
 
         // Capture immutable copies for background work
         let entriesCopy = images
         let texturesCopy = textures
+        let skipDeletionFilter = useHighlighted
         let rotationCheck: (ImageEntry) -> Bool = { [weak self] entry in
             self?.shouldRotateForMeridian(entry) ?? false
         }
 
         // Generate mosaics on background thread (GPU readback is heavy)
-        Task.detached(priority: .userInitiated) { [weak self] in
+        vlmGenerationTask = Task.detached(priority: .userInitiated) { [weak self] in
             let generator = MosaicGenerator()
             let pages = generator.generatePages(
                 entries: entriesCopy,
                 textures: texturesCopy,
-                shouldRotate: rotationCheck
+                shouldRotate: rotationCheck,
+                skipDeletionFilter: skipDeletionFilter
             ) { completed, total in
                 Task { @MainActor [weak self] in
                     self?.mosaicProgress = "Generating mosaic \(completed)/\(total)..."
                 }
             }
 
+            // Check cancellation before presenting results
+            guard !Task.isCancelled else {
+                await MainActor.run { [weak self] in
+                    self?.isGeneratingMosaic = false
+                    self?.mosaicProgress = ""
+                    self?.statusMessage = "VLM Check cancelled"
+                    self?.vlmGenerationTask = nil
+                }
+                return
+            }
+
             await MainActor.run { [weak self] in
                 guard let self = self else { return }
                 self.isGeneratingMosaic = false
+                self.vlmGenerationTask = nil
 
                 if pages.isEmpty {
                     self.statusMessage = "Not enough cached frames for mosaic (need ≥4 per group)"
@@ -3047,7 +3077,8 @@ class TriageViewModel: ObservableObject {
                     self.statusMessage = "Unmarked \(entryIndices.count) VLM-flagged frames"
                 }
 
-                VisualValidationWindowController.shared.show(
+                let wc = VisualValidationWindowController.shared
+                wc.show(
                     pages: pages,
                     onJumpToFrame: jumpTo,
                     onMarkFrames: markFrames,
@@ -3055,10 +3086,32 @@ class TriageViewModel: ObservableObject {
                     onAnalyze: analyzeCallback
                 )
 
+                // Show computational center anomalies immediately (no API call needed)
+                let centerAnomalies = pages.reduce(into: [GroupKey: [AnomalyResult]]()) { dict, page in
+                    if !page.centerAnomalies.isEmpty {
+                        dict[page.group, default: []].append(contentsOf: page.centerAnomalies)
+                    }
+                }
+                if !centerAnomalies.isEmpty {
+                    wc.updateAnomalies(centerAnomalies)
+                }
+
                 let tileCount = pages.reduce(0) { $0 + $1.tiles.count }
-                self.statusMessage = "Mosaic: \(pages.count) group(s), \(tileCount) tiles — click Analyze to run VLM check"
+                let centerCount = centerAnomalies.values.reduce(0) { $0 + $1.count }
+                let scopeLabel = useHighlighted ? " (highlighted)" : ""
+                let centerInfo = centerCount > 0 ? " — \(centerCount) center anomaly detected" : ""
+                self.statusMessage = "Mosaic: \(pages.count) group(s), \(tileCount) tiles\(scopeLabel)\(centerInfo) — click Analyze for VLM check"
             }
         }
+    }
+
+    /// Cancel an in-progress VLM mosaic generation
+    func cancelVisualValidation() {
+        vlmGenerationTask?.cancel()
+        vlmGenerationTask = nil
+        isGeneratingMosaic = false
+        mosaicProgress = ""
+        statusMessage = "VLM Check cancelled"
     }
 
     /// Run Claude Vision anomaly detection on generated mosaics.
@@ -3081,8 +3134,18 @@ class TriageViewModel: ObservableObject {
                     }
                 }
 
-                let totalAnomalies = results.values.reduce(0) { $0 + $1.count }
-                wc.updateAnomalies(results)
+                // Merge VLM results with existing center anomalies (don't replace them)
+                let centerAnomalies = pages.reduce(into: [GroupKey: [AnomalyResult]]()) { dict, page in
+                    if !page.centerAnomalies.isEmpty {
+                        dict[page.group, default: []].append(contentsOf: page.centerAnomalies)
+                    }
+                }
+                var merged = centerAnomalies
+                for (key, vlmResults) in results {
+                    merged[key, default: []].append(contentsOf: vlmResults)
+                }
+                let totalAnomalies = merged.values.reduce(0) { $0 + $1.count }
+                wc.updateAnomalies(merged)
                 let remaining = detector.remainingChecks.map { " (\($0) checks remaining today)" } ?? ""
                 statusMessage = "Visual check: \(totalAnomalies) anomalies in \(pages.count) group(s)\(remaining)"
                 mosaicProgress = ""

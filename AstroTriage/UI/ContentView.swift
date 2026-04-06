@@ -9,6 +9,7 @@ struct ContentView: View {
     @State private var renderer: MetalRenderer?
     @State private var keyboardMonitor: Any?
     @State private var sliderValue: Double = Double(AppSettings.loadFloat(for: .stretchStrength) ?? STFCalculator.defaultTargetBackground)
+    @State private var showVlmAlphaWarning = false
 
     // Night mode colors
     private var nightFg: Color { viewModel.nightMode ? .red : Color(NSColor.labelColor) }
@@ -189,6 +190,12 @@ struct ContentView: View {
                     Text("Assembling mosaic wallpaper for AI analysis...")
                         .font(.system(size: 11))
                         .foregroundColor(.white.opacity(0.5))
+                    Button("Cancel") {
+                        viewModel.cancelVisualValidation()
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .tint(.red)
                 }
                 .padding(32)
                 .background(
@@ -199,6 +206,14 @@ struct ContentView: View {
                 .transition(.opacity.combined(with: .scale(scale: 0.95)))
                 .animation(.easeInOut(duration: 0.3), value: viewModel.isGeneratingMosaic)
             }
+        }
+        .alert("ALPHA — Experimental Feature", isPresented: $showVlmAlphaWarning) {
+            Button("Continue Anyway") {
+                viewModel.startVisualValidation()
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("VLM Check is an experimental thesis test.\n\nCurrent LLM vision models have not yet demonstrated sufficient accuracy for reliable detection of instrumental artifacts like ice, frost, or optical defects in astronomical sub-exposures.\n\nThis feature remains available for experimentation and further testing. Results should not be relied upon for culling decisions.")
         }
     }
 
@@ -467,8 +482,8 @@ struct ContentView: View {
             // ── Group 2: Actions ──
             autoMarkToolbarButton
             sfToolbarButton("eye.trianglebadge.exclamationmark", "VLM\nCheck",
-                "Generate mosaic wallpaper from remaining frames.\nRuns VLM anomaly detection (ice, dew, clouds, satellites)\nvia Claude Vision API.") {
-                viewModel.startVisualValidation()
+                "ALPHA — Generate mosaic for AI anomaly detection.\nHighlighted files: uses selection (any status).\nNo selection: uses all unmarked frames.") {
+                showVlmAlphaWarning = true
             }
             aisaacToolbarButton
             sfToolbarButton("square.and.arrow.up", "SSWEIGHT\nExport",

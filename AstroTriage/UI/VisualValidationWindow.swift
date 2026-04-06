@@ -242,18 +242,9 @@ class VisualValidationModel: ObservableObject {
 
                 // Type + confidence label
                 if let first = anomalyList.first {
-                    let typeShort: String
-                    switch first.type {
-                    case "ICE_CRYSTAL": typeShort = "ICE"
-                    case "DEW":         typeShort = "DEW"
-                    case "CLOUD":       typeShort = "CLD"
-                    case "SATELLITE":   typeShort = "SAT"
-                    case "LIGHT_LEAK":  typeShort = "LEAK"
-                    case "AMP_GLOW":    typeShort = "AMP"
-                    case "FOCUS_SHIFT": typeShort = "FOC"
-                    case "OBSTRUCTION": typeShort = "OBS"
-                    default:            typeShort = "?"
-                    }
+                    // Use the type string directly (VLM returns short labels like ICE, DEW, CLOUD, etc.)
+                    // Truncate to 5 chars max for overlay pill readability
+                    let typeShort = String(first.type.prefix(5))
 
                     let confidence = String(format: "%.0f%%", first.confidence * 100)
                     let label = "\(typeShort) \(confidence)"
@@ -706,16 +697,21 @@ struct VisualValidationContentView: View {
 
     @ViewBuilder
     private func anomalyTypeIcon(_ type: String) -> some View {
-        switch type {
-        case "ICE_CRYSTAL":  Image(systemName: "snowflake").foregroundColor(.cyan)
-        case "DEW":          Image(systemName: "drop.fill").foregroundColor(.blue)
-        case "CLOUD":        Image(systemName: "cloud.fill").foregroundColor(.gray)
-        case "LIGHT_LEAK":   Image(systemName: "light.max").foregroundColor(.yellow)
-        case "SATELLITE":    Image(systemName: "line.diagonal").foregroundColor(.red)
-        case "AMP_GLOW":     Image(systemName: "thermometer.sun.fill").foregroundColor(.orange)
-        case "FOCUS_SHIFT":  Image(systemName: "circle.dashed").foregroundColor(.purple)
-        case "OBSTRUCTION":  Image(systemName: "moon.circle.fill").foregroundColor(.brown)
-        default:             Image(systemName: "questionmark.circle").foregroundColor(.secondary)
+        let key = type.uppercased()
+        if key.contains("ICE") {
+            Image(systemName: "snowflake").foregroundColor(.cyan)
+        } else if key.contains("DEW") {
+            Image(systemName: "drop.fill").foregroundColor(.blue)
+        } else if key.contains("CLOUD") {
+            Image(systemName: "cloud.fill").foregroundColor(.gray)
+        } else if key.contains("LEAK") || key.contains("LIGHT") {
+            Image(systemName: "light.max").foregroundColor(.yellow)
+        } else if key.contains("FOCUS") || key.contains("SOFT") {
+            Image(systemName: "circle.dashed").foregroundColor(.purple)
+        } else if key.contains("OBSTRUCT") {
+            Image(systemName: "moon.circle.fill").foregroundColor(.brown)
+        } else {
+            Image(systemName: "exclamationmark.triangle").foregroundColor(.orange)
         }
     }
 

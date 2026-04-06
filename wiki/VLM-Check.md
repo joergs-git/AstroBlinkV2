@@ -1,18 +1,25 @@
-# VLM Check — Visual Anomaly Detection
+# VLM Check — Visual Anomaly Detection (ALPHA)
 
-VLM Check uses Claude Vision (Opus with extended thinking) to analyze chronological mosaic wallpapers for visual anomalies that quantitative metrics (FWHM, star count, noise, trailing) cannot detect. It catches physical optical defects: ice crystals, dew buildup, passing clouds, obstructions, light leaks, and focus shifts.
+> **Warning:** This feature is an experimental thesis test. Current LLM vision models (Claude, GPT-4V, Gemini, and others) have not yet demonstrated sufficient accuracy for reliable detection of instrumental artifacts like ice, frost, or optical defects in astronomical sub-exposures. The feature remains available for experimentation and further testing. Results should not be relied upon for culling decisions.
+
+VLM Check uses Claude Vision (Opus with extended thinking) to analyze chronological mosaic wallpapers for visual anomalies. It attempts to catch physical optical defects such as ice crystals, dew buildup, passing clouds, obstructions, and focus shifts — however, current LLMs tend to focus on brightness differences (e.g. twilight) rather than subtle instrumental patterns, and struggle when the majority of frames are affected.
 
 ## How It Works
 
 ### 1. Mosaic Generation
 
-Click the **VLM Check** toolbar button (eye icon with exclamation mark). The app:
+Click the **VLM Check** toolbar button (eye icon with exclamation mark). An ALPHA warning dialog appears — click **Continue Anyway** to proceed. The app:
 
-1. Collects preview textures from the cache for all remaining (non-marked) frames
+1. Collects preview textures from the cache
+   - **No selection (< 2 highlighted):** Uses all remaining (non-marked) frames
+   - **2+ highlighted files:** Uses the highlighted selection regardless of mark status
 2. Groups frames by target + filter + setup (ignoring observing night)
 3. Sorts each group chronologically by capture time
 4. Composites center-cropped tiles (80% center, removing edge aberrations) into tiled JPEG mosaics
 5. Generates a **deviation map** alongside each mosaic
+6. Runs **computational anomaly detection** (instant, no API call needed)
+
+The generation can be **cancelled** at any time via the Cancel button on the overlay.
 
 Each tile is annotated with:
 - **Top-left:** Session frame number (#N)
@@ -20,7 +27,7 @@ Each tile is annotated with:
 - **Bottom-left:** Twilight phase (N=Night, A=Astro, Na=Nautical, C=Civil, D=Day) + pier side (E/W)
 - **Bottom-edge:** Twilight color bar (blue=astro, orange=civil, red=daylight; none=night)
 
-Mosaic pages hold up to 36 tiles in a 6x6 grid (480x360 pixels per tile). Groups with more frames are split across multiple pages with cross-page context provided to the AI.
+Mosaic pages hold up to 36 tiles in a 6x6 grid (480x360 pixels per tile). Groups with more frames are split across multiple pages.
 
 ### 2. Deviation Map
 
@@ -28,13 +35,22 @@ Each mosaic page has a companion **deviation map** — a heat map showing per-pi
 
 - **Bright areas** = significant deviation from the group median (anomaly indicator)
 - **Dark/black areas** = tile matches the median (normal)
-- **Bright centered blob** = centered optical defect (ice crystal / frost shadow on sensor window)
-- **Bright streak** = transient artifact
 - **Uniformly bright tile** = overall brightness anomaly (cloud, transparency change)
 
-The deviation map is the primary evidence tool for the AI. Toggle it in the mosaic window to visually inspect the evidence yourself.
+Toggle it in the mosaic window to visually inspect the evidence yourself.
 
-### 3. Claude Vision Analysis
+### 3. Computational Center-Anomaly Detection
+
+Before any AI analysis, the app automatically runs two computational detectors on bin4 (4x4 downsampled) tile data:
+
+1. **Total deviation detector** — flags tiles that deviate significantly from a "clean reference" built from the top 25% tiles by star count. Catches any large-scale anomaly regardless of position.
+2. **Center-vs-edge detector** — flags tiles where the center region deviates much more than the edges (centered optical defects like ice/frost).
+
+These results appear **immediately** in the mosaic window. No API call needed.
+
+> **Known limitation:** Auto-stretch normalizes each tile independently, which can mask the contrast of ice/frost shadows in the post-stretch pixel data. The computational detectors may miss subtle defects when the majority of frames are affected (contaminated median problem). Future versions may add raw-data analysis in the scoring pipeline for more reliable detection.
+
+### 4. Claude Vision Analysis (Optional)
 
 Click **Analyze** in the mosaic window to send the mosaics to Claude Vision. The AI receives:
 
@@ -42,31 +58,19 @@ Click **Analyze** in the mosaic window to send the mosaics to Claude Vision. The
 - The deviation map (heat map evidence)
 - Session context (target, filter, focal length, exposure, time range, twilight breakdown, moon distance)
 - Per-tile numeric metrics (FWHM, star count, eccentricity, noise, trailing score)
+- Reference tile identification (cleanest frame for comparison)
 
-Claude Opus with extended thinking (10,000 token thinking budget) performs systematic tile-by-tile analysis, walking through the chronological sequence to detect progressive or sudden changes.
-
-## Detected Anomaly Types
-
-| Type | Description |
-|------|-------------|
-| **ICE_CRYSTAL** | Centered dark shadow from frost/ice on sensor window. Appears/disappears with dew heater cycles. Highest priority. |
-| **DEW** | Progressive star softening across consecutive frames. Contrast drops monotonically as moisture accumulates. |
-| **CLOUD** | Sudden star count reduction, washed-out background. May come and go (unlike ice which persists). |
-| **OBSTRUCTION** | Dark shadow appearing suddenly from one edge (dew shield shift, cable snag, equipment interference). |
-| **LIGHT_LEAK** | Bright patch from edge/corner not present in other tiles. |
-| **FOCUS_SHIFT** | Stars suddenly much softer (not gradual like dew). Mechanical or thermal focus change. |
-
-Each detection includes a confidence score (0.0-1.0), a description, and an optional temporal note (e.g. "progressive from #34", "sudden at #47", "clears after #52").
+The prompt uses an **invariance-based** approach: the model is instructed to first check for structures that persist at the same pixel position across multiple frames, then classify by behavior (position/shape/intensity stability), and only flag dominant systematic patterns — not transient events or brightness differences.
 
 ## Interactive Curation
 
 The mosaic window supports both AI-driven and manual curation:
 
-- **Red overlay** — Tiles flagged by Claude Vision anomaly detection
+- **Red overlay** — Tiles flagged by anomaly detection (computational or VLM)
 - **Blue overlay** — Tiles manually marked by clicking
 - **Click a tile** — Toggle manual mark on/off (marks the frame for deletion in the main file list)
 - **Double-click a tile** — Jump to that frame in the main viewer for detailed inspection
-- **Mark All Flagged** — Apply all VLM detections as pre-delete marks in one click
+- **Mark All Flagged** — Apply all detections as pre-delete marks in one click
 - **Unmark All** — Remove all marks applied from this window
 - **Toggle Overlay** — Show/hide the red anomaly overlays
 - **Toggle Deviation** — Switch between original mosaic and deviation map view
@@ -86,19 +90,18 @@ VLM Check uses a dual-route architecture:
 - If the Supabase edge function fails or is rate-limited, falls back to the user's own Anthropic API key
 - Configure in AIsaac Settings (key stored in macOS Keychain, never transmitted to our servers)
 - No daily limit — you pay Anthropic directly per check
-- Same model and parameters as the edge function
 - Rate limit errors from the edge function do NOT trigger fallback (prevents bypassing the daily cap)
 
 ## Requirements
 
 - At least **4 cached frames per group** (target+filter+setup) — groups with fewer frames are skipped
 - Frames must have preview textures in the cache (run through the session first)
-- Internet connection required for Claude Vision analysis (mosaic generation works offline)
+- Internet connection required for Claude Vision analysis (mosaic generation and computational detection work offline)
 - Meridian flip orientation is applied automatically per tile
 
 ## Tips
 
-- **Run after SmartCull** — VLM Check works on remaining (non-marked) frames. Let SmartCull remove obvious statistical outliers first, then use VLM Check to catch visual defects the numbers missed.
-- **Check the deviation map first** — Before running the AI analysis, toggle the deviation map view. Bright centered blobs or progressive brightening across tiles often tells you everything you need to know.
-- **Use for ice crystal sessions** — VLM Check excels at detecting the subtle centered shadows that ice/frost deposits on the sensor window. These are nearly invisible in FWHM metrics but clearly visible in the deviation map.
-- **Multi-page groups** — Large filter groups (36+ frames) are split across pages. The AI receives cross-page context so it knows where each page fits in the overall sequence.
+- **Check the deviation map first** — Before running the AI analysis, toggle the deviation map view. Visual inspection of the deviation map is often more reliable than the AI analysis.
+- **Use computational detections** — The instant center/anomaly detections appear as soon as the mosaic is generated. These are free and fast.
+- **Manual click-to-mark** — The most reliable approach: visually inspect the mosaic yourself and click tiles that look wrong.
+- **Don't rely on AI results for culling** — VLM Check is experimental. Use it as a second opinion, not a decision maker.

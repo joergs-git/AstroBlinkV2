@@ -407,3 +407,9 @@
 - **Root cause:** Original logic treated `history == nil` as a gap. But "never imaged" is different from "imaged but imbalanced."
 - **Rule:** Filter gap indicators and the "Has filter gap" toggle should require `history != nil`. A gap means "you started this target but some filters are underserved" — not "you haven't started yet."
 - **Applies to:** TargetDatabaseViewModel, TargetDatabaseWindow filter gap logic
+
+## [2026-04-06] — VLM (LLM Vision) cannot reliably detect instrumental artifacts in astro subs
+- **Mistake:** Assumed Claude Vision and other LLMs could detect ice/frost/dust shadows in auto-stretched astro sub-exposure mosaics. Tried 4+ prompt strategies (prescriptive categories, open-ended comparison, invariance-based analysis) and multiple LLM systems.
+- **Root cause:** (1) Auto-stretch normalizes each tile independently, reducing contrast of ice shadows. (2) LLMs latch onto the most visually obvious difference (e.g. twilight brightness) rather than subtle instrumental patterns. (3) When >50% of frames have a defect, it becomes "normal" to the model. (4) Median-based computational analysis also fails when the median itself is contaminated by the majority of affected frames.
+- **Rule:** VLM-based visual anomaly detection for astronomical sub-exposures is not production-ready. Mark it ALPHA and warn users. For reliable ice/frost detection, analyze raw pixel data in the scoring pipeline (before auto-stretch), not post-stretch mosaic tiles. Star count is the best metadata proxy for optical cleanliness (ice reduces visible stars).
+- **Applies to:** VLM Check feature, any future AI-based visual quality assessment, MosaicGenerator center-detection algorithm

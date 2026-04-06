@@ -1,4 +1,4 @@
-// v5.18.0
+// v5.19.0
 // MosaicGenerator — Assembles tiled mosaics from cached preview textures for VLM anomaly detection.
 // Groups frames by target+filter+setup, sorts chronologically, composites center-cropped tiles
 // with metadata annotations into JPEG images suitable for Claude Vision analysis.
@@ -56,6 +56,12 @@ struct MosaicPage {
     let mosaicWidth: Int
     let mosaicHeight: Int
 
+    // Option A: Computational center-vs-edge anomalies (no VLM needed)
+    let centerAnomalies: [AnomalyResult]
+
+    // Option B: Most median-like tile (lowest total deviation) — used as reference in VLM prompt
+    let referenceTileFrameIndex: Int?
+
     // Pre-built context for the VLM system prompt
     var sessionContext: String {
         guard let first = tiles.first, let last = tiles.last else { return "" }
@@ -112,7 +118,7 @@ struct MosaicPage {
 
 struct AnomalyResult: Codable {
     let frame: Int                   // Frame number (1-based, matches tile annotation)
-    let type: String                 // ICE_CRYSTAL, DEW, CLOUD, LIGHT_LEAK, SATELLITE, AMP_GLOW, FOCUS_SHIFT, UNKNOWN
+    let type: String                 // Short label: ICE, DEW, CLOUD, OBSTRUCTION, SOFT_FOCUS, or custom
     let confidence: Double           // 0.0-1.0
     let description: String
     let temporalNote: String?        // "progressive from #34" or "sudden at #47"
@@ -137,17 +143,20 @@ class MosaicGenerator {
     ///   - textures: Pre-collected preview textures keyed by URL (from PrefetchCache.getPreview)
     ///   - shouldRotate: Closure that checks meridian flip for an entry
     ///   - progress: Called with (completed, total) for UI progress
+    /// - Parameters:
+    ///   - skipDeletionFilter: When true, include marked-for-deletion frames (used for highlighted selection)
     /// - Returns: Array of MosaicPage, one or more per group
     func generatePages(
         entries: [ImageEntry],
         textures: [URL: MTLTexture],
         shouldRotate: (ImageEntry) -> Bool,
+        skipDeletionFilter: Bool = false,
         progress: ((Int, Int) -> Void)? = nil
     ) -> [MosaicPage] {
 
-        // Filter to active (non-marked) frames that have cached textures
+        // Filter to frames that have cached textures (optionally skip deletion filter for highlighted sets)
         let activeEntries = entries.enumerated().compactMap { idx, entry -> (Int, ImageEntry)? in
-            guard !entry.isMarkedForDeletion,
+            guard (skipDeletionFilter || !entry.isMarkedForDeletion),
                   textures[entry.url] != nil else { return nil }
             return (idx, entry)
         }
@@ -309,7 +318,9 @@ class MosaicGenerator {
             gridCols: cols,
             gridRows: rows,
             mosaicWidth: mosaicW,
-            mosaicHeight: mosaicH
+            mosaicHeight: mosaicH,
+            centerAnomalies: deviation?.centerAnomalies ?? [],
+            referenceTileFrameIndex: deviation?.referenceTileFrameIndex
         )
     }
 
@@ -498,17 +509,24 @@ class MosaicGenerator {
         NSGraphicsContext.restoreGraphicsState()
     }
 
+    // MARK: - Deviation analysis result
+
+    struct DeviationAnalysis {
+        let jpegData: Data
+        let nsImage: NSImage
+        let centerAnomalies: [AnomalyResult]   // Tiles with abnormal center-vs-edge darkening
+        let referenceTileFrameIndex: Int?       // Most median-like tile for VLM reference
+    }
+
     // MARK: - Deviation mosaic (bright = tile differs from group median)
 
     /// Computes a per-pixel deviation map for each tile against the group median.
-    /// The result is a contrast-enhanced grayscale mosaic where bright areas indicate
-    /// pixels that are significantly different from the median — making any anomaly
-    /// (ice shadows, dew, clouds, obstructions) visually obvious.
+    /// Also runs center-vs-edge analysis (Option A) and identifies the reference tile (Option B).
     private func computeDeviationMosaic(
         tileImages: [CGImage], tiles: [TileMetadata],
         gridCols: Int, gridRows: Int,
         tileW: Int, tileH: Int
-    ) -> (jpegData: Data, nsImage: NSImage)? {
+    ) -> DeviationAnalysis? {
 
         let tileCount = tileImages.count
         guard tileCount >= 4 else { return nil }
@@ -541,7 +559,35 @@ class MosaicGenerator {
         }
         guard tileLum.count == tileCount else { return nil }
 
-        // 2) Compute per-pixel median across all tiles
+        // 1b) Bin 4x4 for anomaly detection — suppresses fine detail (stars, nebula filaments),
+        // amplifies large-scale features (ice blobs, obstructions, gradients).
+        // Full-res tileLum is kept for the deviation map rendering.
+        let binFactor = 4
+        let binW = tileW / binFactor
+        let binH = tileH / binFactor
+        let binPixelCount = binW * binH
+        var tileLumBinned: [[Float]] = []
+        tileLumBinned.reserveCapacity(tileCount)
+
+        for t in 0..<tileCount {
+            var binned = [Float](repeating: 0, count: binPixelCount)
+            for by in 0..<binH {
+                for bx in 0..<binW {
+                    var sum: Float = 0
+                    for dy in 0..<binFactor {
+                        for dx in 0..<binFactor {
+                            let sx = bx * binFactor + dx
+                            let sy = by * binFactor + dy
+                            sum += Float(tileLum[t][sy * tileW + sx])
+                        }
+                    }
+                    binned[by * binW + bx] = sum / Float(binFactor * binFactor)
+                }
+            }
+            tileLumBinned.append(binned)
+        }
+
+        // 2) Pass 1: Compute per-pixel median across ALL tiles (for deviation map rendering)
         var medianTile = [UInt8](repeating: 0, count: pixelCount)
         var sortBuf = [UInt8](repeating: 0, count: tileCount)
         for px in 0..<pixelCount {
@@ -552,7 +598,45 @@ class MosaicGenerator {
             medianTile[px] = sortBuf[tileCount / 2]
         }
 
-        // 3) Compute per-tile deviation from median
+        // 2b) Identify clean reference tiles using STAR COUNT from metadata.
+        // Ice/frost obscures stars → tiles with MOST stars are cleanest.
+        let cleanCount = max(2, tileCount / 4)  // Top 25%, at least 2
+
+        let tilesWithStars = tiles.enumerated().filter { $0.element.starCount != nil }
+        let cleanTileIndices: [Int]
+
+        if tilesWithStars.count >= cleanCount {
+            cleanTileIndices = tilesWithStars
+                .sorted { ($0.element.starCount ?? 0) > ($1.element.starCount ?? 0) }
+                .prefix(cleanCount)
+                .map { $0.offset }
+        } else {
+            // Fallback: use binned luminance uniformity (low variance = clean)
+            var tileBlockVariances: [(Int, Float)] = []
+            for t in 0..<tileCount {
+                let mean = tileLumBinned[t].reduce(Float(0), +) / Float(binPixelCount)
+                let variance = tileLumBinned[t].reduce(Float(0)) { $0 + ($1 - mean) * ($1 - mean) }
+                    / Float(binPixelCount)
+                tileBlockVariances.append((t, variance))
+            }
+            cleanTileIndices = tileBlockVariances
+                .sorted { $0.1 < $1.1 }
+                .prefix(cleanCount)
+                .map { $0.0 }
+        }
+
+        // 2c) Build BINNED clean reference — per-pixel median from clean tiles only
+        var cleanRefBinned = [Float](repeating: 0, count: binPixelCount)
+        var cleanSortBufF = [Float](repeating: 0, count: cleanTileIndices.count)
+        for px in 0..<binPixelCount {
+            for (idx, t) in cleanTileIndices.enumerated() {
+                cleanSortBufF[idx] = tileLumBinned[t][px]
+            }
+            cleanSortBufF[0..<cleanTileIndices.count].sort()
+            cleanRefBinned[px] = cleanSortBufF[cleanTileIndices.count / 2]
+        }
+
+        // 3) Compute per-tile deviation from GLOBAL median (full-res, for rendering)
         var devMaps: [[Float]] = []
         devMaps.reserveCapacity(tileCount)
         var globalMax: Float = 1.0
@@ -569,7 +653,6 @@ class MosaicGenerator {
 
         // Use 97th percentile as normalization cap for better contrast
         var allDevsSorted = [Float]()
-        // Sample instead of full sort for performance (every 8th pixel from every 4th tile)
         for t in stride(from: 0, to: tileCount, by: max(1, tileCount / 8)) {
             for px in stride(from: 0, to: pixelCount, by: 8) {
                 allDevsSorted.append(devMaps[t][px])
@@ -579,6 +662,114 @@ class MosaicGenerator {
         let p97 = allDevsSorted.isEmpty ? globalMax :
             allDevsSorted[min(allDevsSorted.count - 1, Int(Float(allDevsSorted.count) * 0.97))]
         let normMax = max(p97, 1.0)
+
+        // 3b) Option A: Anomaly detection on BINNED data (bin4 = 120x90)
+        // Binning suppresses fine detail (stars, nebula filaments) and amplifies
+        // large-scale features (ice blobs, obstructions, gradients).
+        // Two detectors:
+        //   1. Total deviation from clean reference (any localized anomaly)
+        //   2. Center-vs-edge ratio (centered optical defects)
+        var totalBinnedDevs: [Float] = []
+        totalBinnedDevs.reserveCapacity(tileCount)
+
+        let binMarginX = Int(Float(binW) * 0.275)  // ~20% center area on binned
+        let binMarginY = Int(Float(binH) * 0.275)
+        var centerRatios: [Float] = []
+        centerRatios.reserveCapacity(tileCount)
+
+        for t in 0..<tileCount {
+            var totalDev: Float = 0
+            var centerSum: Float = 0
+            var centerCount: Int = 0
+            var edgeSum: Float = 0
+            var edgeCount: Int = 0
+
+            for y in 0..<binH {
+                for x in 0..<binW {
+                    let px = y * binW + x
+                    let dev = abs(tileLumBinned[t][px] - cleanRefBinned[px])
+                    totalDev += dev
+
+                    let inCenter = x >= binMarginX && x < (binW - binMarginX) &&
+                                   y >= binMarginY && y < (binH - binMarginY)
+                    if inCenter {
+                        centerSum += dev
+                        centerCount += 1
+                    } else {
+                        edgeSum += dev
+                        edgeCount += 1
+                    }
+                }
+            }
+
+            totalBinnedDevs.append(totalDev)
+            let cMean = centerCount > 0 ? centerSum / Float(centerCount) : 0
+            let eMean = edgeCount > 0 ? edgeSum / Float(edgeCount) : 0
+            centerRatios.append(eMean > 0.1 ? cMean / eMean : 0)
+        }
+
+        // Flag anomalies
+        var centerAnomalies: [AnomalyResult] = []
+        var flaggedFrames = Set<Int>()
+
+        if tileCount >= 4 {
+            // Detector 1: Total binned deviation from clean reference
+            // Catches ANY large-scale anomaly (dark blobs, obstructions) regardless of position
+            let sortedTotalDevs = totalBinnedDevs.sorted()
+            let medianTotalDev = sortedTotalDevs[tileCount / 2]
+            let totalDevAbsDevs = totalBinnedDevs.map { abs($0 - medianTotalDev) }
+            let sortedAbsDevs = totalDevAbsDevs.sorted()
+            let totalDevMAD = sortedAbsDevs[tileCount / 2] * 1.4826
+
+            for t in 0..<tileCount where t < tiles.count {
+                let frameIdx = tiles[t].frameIndex
+                let dev = totalBinnedDevs[t]
+                let zScore = totalDevMAD > 0.01 ? (dev - medianTotalDev) / totalDevMAD : 0
+                if zScore > 2.0 && dev > medianTotalDev * 1.3 {
+                    let confidence = min(1.0, Double(zScore) / 5.0)
+                    centerAnomalies.append(AnomalyResult(
+                        frame: frameIdx,
+                        type: "ANOMALY",
+                        confidence: confidence,
+                        description: String(format: "Large-scale deviation from clean reference (%.1fσ)", zScore),
+                        temporalNote: nil
+                    ))
+                    flaggedFrames.insert(frameIdx)
+                }
+            }
+
+            // Detector 2: Center-vs-edge ratio on binned data (centered defects)
+            let sortedRatios = centerRatios.sorted()
+            let medianRatio = sortedRatios[tileCount / 2]
+            let ratioAbsDevs = centerRatios.map { abs($0 - medianRatio) }
+            let sortedRatioDevs = ratioAbsDevs.sorted()
+            let ratioMAD = sortedRatioDevs[tileCount / 2] * 1.4826
+
+            for t in 0..<tileCount where t < tiles.count {
+                let frameIdx = tiles[t].frameIndex
+                guard !flaggedFrames.contains(frameIdx) else { continue }
+                let ratio = centerRatios[t]
+                let zScore = ratioMAD > 0.01 ? (ratio - medianRatio) / ratioMAD : 0
+                if zScore > 2.5 && ratio > 1.3 {
+                    let confidence = min(1.0, Double(zScore) / 5.0)
+                    centerAnomalies.append(AnomalyResult(
+                        frame: frameIdx,
+                        type: "CENTER",
+                        confidence: confidence,
+                        description: String(format: "Center deviates %.1f× more than edges (%.1fσ)", ratio, zScore),
+                        temporalNote: nil
+                    ))
+                    flaggedFrames.insert(frameIdx)
+                }
+            }
+        }
+
+        // 3c) Option B: Reference tile — clean tile with lowest binned deviation
+        var referenceTileFrameIndex: Int? = nil
+        if let bestIdx = cleanTileIndices.min(by: { totalBinnedDevs[$0] < totalBinnedDevs[$1] }),
+           bestIdx < tiles.count {
+            referenceTileFrameIndex = tiles[bestIdx].frameIndex
+        }
 
         // 4) Render deviation mosaic with annotations
         let mosaicW = gridCols * tileW
@@ -642,7 +833,12 @@ class MosaicGenerator {
             properties: [.compressionFactor: NSNumber(value: config.jpegQuality)]
         ) else { return nil }
 
-        return (jpegData: devJpeg, nsImage: devNSImage)
+        return DeviationAnalysis(
+            jpegData: devJpeg,
+            nsImage: devNSImage,
+            centerAnomalies: centerAnomalies,
+            referenceTileFrameIndex: referenceTileFrameIndex
+        )
     }
 
     /// Hot color palette for deviation map: black → blue → cyan → yellow → red → white
