@@ -2,7 +2,7 @@
 
 Status: [ ] offen | [~] in Arbeit | [x] fertig
 
-Current version: **v5.18.0** (build 61)
+Current version: **v5.19.1** (build 63)
 
 ---
 
@@ -184,10 +184,14 @@ All original implementation phases are complete:
 - [ ] **Phase 3: Contextual Priors** — future (empirical Bayesian metric weights)
 
 ### Onboarding / Welcome Screen
-- [ ] First-launch onboarding flow — guided walkthrough of key features (SmartCull, AIsaac, shortcuts)
+- [x] First-launch onboarding splash — 4 marketing pillars (Speed Demon, Data Nerd, Community Learner, Power User) with hover details (v5.19.1)
+- [x] Accessible via About menu, non-dismissable on first launch, "Don't show on startup" checkbox (v5.19.1)
 - [ ] Interactive tutorial: "Open a folder → review quality → mark bad frames → pre-delete"
 - [ ] Equipment profile setup (telescope, camera, focal length) during onboarding for immediate calibration
-- [ ] Option to show on first launch only, with "Show again" in Help menu
+
+### Community Calibration — Site-Aware Comparison
+- [ ] **Location/Bortle metadata** — Store observing site Bortle class, lat/lon, altitude alongside calibration data. Setup fingerprint stays equipment-only, but comparisons can be filtered by observing conditions.
+- [ ] **Raw-data ice/frost detection** — Radial brightness profile analysis in the scoring pipeline (before auto-stretch). Far more reliable than post-stretch VLM/mosaic analysis. Star count is the best metadata proxy for optical cleanliness.
 
 ### PixInsight Integration Plugin
 - [x] **PJSR Bridge Script** — imports triage results (separate repo, shipped)

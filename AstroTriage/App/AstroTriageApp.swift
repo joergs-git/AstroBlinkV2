@@ -240,8 +240,11 @@ class AstroBlinkV2AppDelegate: NSObject, NSApplicationDelegate {
             _ = FrameHistoryDatabase.shared
         }
 
-        if AppSettings.loadBool(for: .hideSplash) != true {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            if AppSettings.loadBool(for: .hasSeenOnboarding) != true {
+                // First launch: show onboarding (non-dismissable until user clicks Get Started)
+                AboutWindowController.shared.showOnboarding()
+            } else if AppSettings.loadBool(for: .hideSplash) != true {
                 AboutWindowController.shared.show(asSplash: true)
             }
         }
@@ -350,7 +353,7 @@ class AstroBlinkV2AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     static func showAboutPanel() {
-        AboutWindowController.shared.show(asSplash: false)
+        AboutWindowController.shared.showOnboarding()
     }
 
     /// Check for incomplete archive scans and offer to resume.
@@ -474,6 +477,293 @@ class AboutWindowController {
         }
         window?.close()
     }
+
+    /// Show the first-launch onboarding with 4 marketing pillars.
+    /// Non-dismissable — user must click "Get Started".
+    func showOnboarding() {
+        if let w = window, w.isVisible {
+            w.makeKeyAndOrderFront(nil)
+            return
+        }
+
+        let hostingView = NSHostingView(rootView: OnboardingView(
+            dismissAction: { [weak self] in
+                AppSettings.saveBool(true, for: .hasSeenOnboarding)
+                self?.close()
+            }
+        ))
+        let win = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 820, height: 640),
+            styleMask: [.titled],
+            backing: .buffered,
+            defer: false
+        )
+        win.title = "Welcome to AstroBlink"
+        win.contentView = hostingView
+        win.center()
+        win.isReleasedWhenClosed = false
+        win.isMovableByWindowBackground = true
+        win.makeKeyAndOrderFront(nil)
+        self.window = win
+    }
+}
+
+// MARK: - Onboarding View (First Launch)
+
+struct OnboardingView: View {
+    var dismissAction: () -> Void
+    @State private var hoveredCard: Int? = nil
+    @State private var hideSplash: Bool = AppSettings.loadBool(for: .hideSplash) ?? false
+
+    private var version: String {
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
+    }
+    private var build: String {
+        Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?"
+    }
+
+    private struct Pillar {
+        let icon: String
+        let title: String
+        let subtitle: String
+        let description: String
+        let detail: String    // Extra text shown on hover
+        let color: Color
+    }
+
+    private let pillars: [Pillar] = [
+        Pillar(
+            icon: "bolt.fill",
+            title: "Speed Demon",
+            subtitle: "Blink. Mark. Done.",
+            description: "Fastest sub-exposure culling on macOS. GPU-stretched preview in milliseconds. Keyboard-driven workflow that leaves PixInsight Blink in the dust.",
+            detail: "No more waiting for WBPP to load 500 subs just to check which ones are bad. Open a folder and start culling in under 2 seconds.",
+            color: .orange
+        ),
+        Pillar(
+            icon: "chart.xyaxis.line",
+            title: "Data Nerd",
+            subtitle: "Your Imaging History",
+            description: "Track every frame you ever shot. Per-setup quality trends, cross-session statistics, convergence analysis. Frame History DB with interactive charts.",
+            detail: "Finally see how your imaging improved over months. Compare setups, find your best nights, and know exactly when you have enough integration time.",
+            color: .cyan
+        ),
+        Pillar(
+            icon: "person.3.fill",
+            title: "Community Learner",
+            subtitle: "Learn Together",
+            description: "Anonymized quality baselines from the community. See how your setup compares. Calibration improves with every session — yours and everyone's.",
+            detail: "Your RASA at f/2.2 produces different metrics than an RC at f/8. Community baselines mean the app learns what's normal for YOUR exact setup.",
+            color: .green
+        ),
+        Pillar(
+            icon: "gearshape.2.fill",
+            title: "Power User",
+            subtitle: "The Full Toolbox",
+            description: "SmartCull 5-stage scoring, LightspeedStacker, Color Combine, AIsaac AI assistant, SSWEIGHT export, VIIRS Bortle mapping, and more.",
+            detail: "From quick-stack previews in the field to full SHO color combines at home. One app replaces half your processing pipeline.",
+            color: .purple
+        )
+    ]
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // Header
+            VStack(spacing: 6) {
+                HStack(spacing: 12) {
+                    if let icon = NSApp.applicationIconImage {
+                        Image(nsImage: icon)
+                            .resizable()
+                            .frame(width: 56, height: 56)
+                    }
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("AstroBlink & AIsaac")
+                            .font(.system(size: 24, weight: .bold))
+                        Text("Fast visual culling for astrophotography sessions")
+                            .font(.system(size: 13))
+                            .foregroundColor(.secondary)
+                    }
+                }
+                Text("v\(version) (Build \(build))")
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary.opacity(0.7))
+            }
+            .padding(.top, 20)
+            .padding(.bottom, 12)
+
+            // Section headline
+            Text("4 reasons to use AstroBlink")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundColor(.secondary)
+                .padding(.bottom, 10)
+
+            // 4 pillar cards
+            HStack(spacing: 14) {
+                ForEach(Array(pillars.enumerated()), id: \.offset) { index, pillar in
+                    pillarCard(pillar, index: index)
+                }
+            }
+            .padding(.horizontal, 24)
+
+            Spacer()
+                .frame(height: 16)
+
+            // Divider
+            Divider()
+                .padding(.horizontal, 40)
+
+            // Bottom section: author, links, buttons (from About view)
+            VStack(spacing: 8) {
+                // Author + tagline
+                HStack(spacing: 6) {
+                    Text("by joergsflow")
+                        .font(.system(size: 11, weight: .medium))
+                    Text("·")
+                        .foregroundColor(.secondary)
+                    Text("Inspired by PixInsight's Blink & SubframeSelector")
+                        .font(.system(size: 11).italic())
+                        .foregroundColor(.secondary)
+                }
+
+                // Links
+                HStack(spacing: 16) {
+                    linkButton("GitHub", url: "https://github.com/joergs-git/AstroBlinkV2")
+                    linkButton("Instagram", url: "https://www.instagram.com/joergsflow/")
+                    linkButton("AstroBin", url: "https://app.astrobin.com/u/joergsflow#gallery")
+                }
+                .font(.system(size: 11))
+
+                // Action buttons row
+                HStack(spacing: 12) {
+                    Button(action: shareApp) {
+                        Label("Tell a Friend", systemImage: "square.and.arrow.up")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+
+                    Button(action: {
+                        ReleaseNotesWindowController.shared.show()
+                    }) {
+                        Label("What's New", systemImage: "sparkles")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+
+                    Button(action: {
+                        if let url = URL(string: appStoreURL) {
+                            NSWorkspace.shared.open(url)
+                        }
+                    }) {
+                        Label("App Store", systemImage: "arrow.down.app")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
+                .font(.system(size: 11))
+            }
+            .padding(.top, 10)
+
+            Spacer()
+                .frame(height: 12)
+
+            // Get Started + checkbox
+            VStack(spacing: 8) {
+                Button(action: dismissAction) {
+                    Text("Get Started")
+                        .font(.system(size: 14, weight: .semibold))
+                        .frame(width: 200, height: 36)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+
+                Toggle("Don't show on startup", isOn: $hideSplash)
+                    .toggleStyle(.checkbox)
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+                    .onChange(of: hideSplash) { newValue in
+                        AppSettings.saveBool(newValue, for: .hideSplash)
+                    }
+            }
+            .padding(.bottom, 16)
+        }
+        .frame(width: 820, height: 640)
+    }
+
+    private func pillarCard(_ pillar: Pillar, index: Int) -> some View {
+        let isHovered = hoveredCard == index
+        return VStack(spacing: 10) {
+            Image(systemName: pillar.icon)
+                .font(.system(size: 32))
+                .foregroundColor(pillar.color)
+                .frame(height: 40)
+
+            Text(pillar.title)
+                .font(.system(size: 15, weight: .bold))
+                .multilineTextAlignment(.center)
+
+            Text(pillar.subtitle)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundColor(pillar.color)
+                .multilineTextAlignment(.center)
+
+            Text(pillar.description)
+                .font(.system(size: 11))
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+                .lineLimit(nil)
+                .fixedSize(horizontal: false, vertical: true)
+
+            // Detail text revealed on hover
+            if isHovered {
+                Text(pillar.detail)
+                    .font(.system(size: 10, weight: .medium).italic())
+                    .foregroundColor(pillar.color.opacity(0.9))
+                    .multilineTextAlignment(.center)
+                    .lineLimit(nil)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+                    .padding(.top, 2)
+            }
+        }
+        .padding(.vertical, 18)
+        .padding(.horizontal, 12)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(isHovered
+                    ? pillar.color.opacity(0.08)
+                    : Color(NSColor.controlBackgroundColor))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(isHovered ? pillar.color.opacity(0.4) : Color.clear, lineWidth: 1.5)
+        )
+        .scaleEffect(isHovered ? 1.03 : 1.0)
+        .shadow(color: isHovered ? pillar.color.opacity(0.2) : .clear, radius: 8, y: 4)
+        .animation(.easeOut(duration: 0.2), value: isHovered)
+        .onHover { hovering in
+            hoveredCard = hovering ? index : nil
+        }
+    }
+
+    private func linkButton(_ title: String, url: String) -> some View {
+        Button(title) {
+            if let link = URL(string: url) {
+                NSWorkspace.shared.open(link)
+            }
+        }
+        .buttonStyle(.link)
+    }
+
+    private func shareApp() {
+        let shareText = "Check out AstroBlink — a fast astrophotography image triage & stacking tool for macOS with GPU-accelerated auto-stretch, quality scoring, and LightspeedStacker!\n\n\(appStoreURL)"
+        let url = URL(string: appStoreURL)!
+        let picker = NSSharingServicePicker(items: [shareText, url])
+        if let contentView = NSApp.keyWindow?.contentView {
+            let rect = NSRect(x: contentView.bounds.midX, y: contentView.bounds.midY, width: 1, height: 1)
+            picker.show(relativeTo: rect, of: contentView, preferredEdge: .minY)
+        }
+    }
 }
 
 // MARK: - About View (SwiftUI)
@@ -508,7 +798,7 @@ struct AboutView: View {
                 .foregroundColor(.secondary)
 
             // Tagline
-            Text("Enhanced and Inspired by PixInsight's Blink Tool")
+            Text("Inspired by PixInsight's Blink & SubframeSelector")
                 .font(.system(size: 11).italic())
                 .foregroundColor(.secondary)
 
@@ -708,7 +998,7 @@ struct HelpContentView: View {
                     Text("Fast Visual Culling & AI-Powered Session Analysis")
                         .font(.system(size: 14))
                         .foregroundColor(.secondary)
-                    Text("Enhanced and Inspired by PixInsight's Blink Tool")
+                    Text("Inspired by PixInsight's Blink & SubframeSelector")
                         .font(.system(size: 12))
                         .foregroundColor(.secondary)
                         .italic()

@@ -34,6 +34,15 @@ class ReleaseNotesWindowController {
 // MARK: - Release notes data (shared between view and copy)
 
 private let allReleases: [(version: String, date: String, items: [(ReleaseNotesView.ChangeType, String, String)])] = [
+    ("5.19.1", "April 6, 2026", [
+        (.added, "Welcome Screen", "New first-launch onboarding with 4 marketing pillars: Speed Demon, Data Nerd, Community Learner, Power User. Hover cards reveal additional details. Replaces old About dialog. Accessible via About menu anytime."),
+        (.changed, "VLM Check — Marked ALPHA", "LLM vision models cannot reliably detect instrumental artifacts (ice, frost, dust) in auto-stretched sub-exposures. Tested 4+ prompt strategies across multiple LLM systems. Warning dialog shown before use. Feature remains for experimentation."),
+        (.added, "Cancellable VLM Mosaic", "Cancel button on the mosaic generation overlay lets you abort if clicked accidentally."),
+        (.added, "Highlighted Selection for VLM", "Select 2+ files in the file list, then click VLM Check to analyze only those frames regardless of mark status."),
+        (.added, "Computational Anomaly Detection", "Bin4 center-vs-edge and total deviation detectors run instantly on mosaic generation — no API call needed. Star-count-based clean tile selection."),
+        (.changed, "VLM Prompt: Invariance-Based", "Prompt instructs AI to check positional invariance across frames first, classify by stability, evaluate only large-scale morphology. Forbids transient events and brightness differences."),
+        (.fixed, "SPM Resource Bundle Signing", "GRDB_GRDB.bundle now properly signed for App Store Connect distribution."),
+    ]),
     ("5.18.0", "April 5, 2026", [
         (.added, "VLM Check — Visual Anomaly Detection", "Toolbar button generates mosaic wallpapers from session frames grouped by target+filter+setup. Claude Vision AI analyzes for ice crystals, dew, clouds, obstructions, focus shifts, and light leaks — anomalies that metric-based scoring cannot catch."),
         (.added, "Deviation Map", "Waveform toggle shows per-tile deviation from group median. Bright areas highlight significant differences, making gradual degradation (e.g., slow dew buildup) easy to spot."),

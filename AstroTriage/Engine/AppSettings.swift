@@ -55,6 +55,7 @@ struct AppSettings {
         case autoMeridian         // Bool — auto-rotate images across meridian flip
         case sessionCount         // Int — number of sessions opened (for App Store review prompt)
         case hideSplash           // Bool — never show splash screen on launch
+        case hasSeenOnboarding    // Bool — true after user dismissed the first-launch onboarding
         case communityLearning    // Bool — opt-in to community detection learning (default: off)
         case fontScale            // Float — UI font scale factor (1.0 = default)
         case dismissedMessageIDs  // [String] — UUIDs of permanently dismissed in-app messages
