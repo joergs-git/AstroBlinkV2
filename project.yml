@@ -70,10 +70,18 @@ targets:
     postBuildScripts:
       - name: "Sign SPM Resource Bundles"
         script: |
-          # SPM resource bundles (e.g. GRDB_GRDB.bundle) are not automatically signed.
-          # App Store Connect rejects unsigned bundles inside the app.
+          # SPM resource bundles (e.g. GRDB_GRDB.bundle) are not automatically signed
+          # by the export step. App Store Connect requires them to be signed with the
+          # same distribution certificate as the main app (ITMS-90284).
+          # For archive builds, use the distribution cert directly since the export
+          # step re-signs the main app but skips resource bundles.
+          if [ "${CONFIGURATION}" = "Release" ]; then
+            SIGN_IDENTITY="Apple Distribution: Joerg Klaas (FDSVBU33S8)"
+          else
+            SIGN_IDENTITY="${EXPANDED_CODE_SIGN_IDENTITY}"
+          fi
           find "${CODESIGNING_FOLDER_PATH}/Contents/Resources" -name "*.bundle" -print0 | while IFS= read -r -d '' bundle; do
-            codesign --force --sign "${EXPANDED_CODE_SIGN_IDENTITY}" --generate-entitlement-der "$bundle"
+            codesign --force --sign "${SIGN_IDENTITY}" --generate-entitlement-der "$bundle"
           done
 
   AstroTriageQuickLookThumbnail:
