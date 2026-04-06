@@ -3,8 +3,89 @@ import SwiftUI
 
 // MARK: - Main View
 
+// Monitors NSScrollView scroll position and actively pins the viewport when
+// the user scrolls up during streaming (prevents SwiftUI auto-scroll).
+private struct ScrollPositionDetector: NSViewRepresentable {
+    @Binding var isNearBottom: Bool
+    @Binding var pinScroll: Bool  // true = user scrolled up during stream, pin position
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        DispatchQueue.main.async {
+            guard let scrollView = view.enclosingScrollView else { return }
+            context.coordinator.scrollView = scrollView
+            scrollView.contentView.postsBoundsChangedNotifications = true
+            // Monitor scroll position changes (user scroll + programmatic)
+            NotificationCenter.default.addObserver(
+                context.coordinator, selector: #selector(Coordinator.boundsChanged(_:)),
+                name: NSView.boundsDidChangeNotification, object: scrollView.contentView
+            )
+            // Monitor content size changes to restore pinned position
+            NotificationCenter.default.addObserver(
+                context.coordinator, selector: #selector(Coordinator.frameChanged(_:)),
+                name: NSView.frameDidChangeNotification, object: scrollView.documentView
+            )
+            scrollView.documentView?.postsFrameChangedNotifications = true
+        }
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        context.coordinator.pinScroll = pinScroll
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator(isNearBottom: $isNearBottom) }
+
+    class Coordinator: NSObject {
+        var isNearBottom: Binding<Bool>
+        weak var scrollView: NSScrollView?
+        var pinScroll: Bool = false
+        private var pinnedOffset: CGFloat?  // saved scroll offset when pinning
+
+        init(isNearBottom: Binding<Bool>) { self.isNearBottom = isNearBottom }
+
+        @objc func boundsChanged(_ notification: Notification) {
+            guard let clipView = notification.object as? NSClipView,
+                  let scrollView = clipView.enclosingScrollView else { return }
+            let contentHeight = scrollView.documentView?.frame.height ?? 0
+            let viewportHeight = clipView.bounds.height
+            let scrollOffset = clipView.bounds.origin.y
+            let nearBottom = scrollOffset + viewportHeight >= contentHeight - 40
+
+            DispatchQueue.main.async {
+                self.isNearBottom.wrappedValue = nearBottom
+            }
+
+            // Save the pinned offset when user scrolls up during streaming
+            if pinScroll && !nearBottom {
+                pinnedOffset = scrollOffset
+            }
+            // Clear pin when user manually scrolls back to bottom
+            if pinScroll && nearBottom {
+                pinnedOffset = nil
+            }
+        }
+
+        @objc func frameChanged(_ notification: Notification) {
+            // Content grew (new streaming text). Restore pinned scroll position.
+            // Dispatch async so this runs AFTER SwiftUI's layout pass completes.
+            guard pinScroll, let offset = pinnedOffset, let scrollView = scrollView else { return }
+            DispatchQueue.main.async { [weak scrollView] in
+                guard let scrollView = scrollView else { return }
+                let clipView = scrollView.contentView
+                if abs(clipView.bounds.origin.y - offset) > 2 {
+                    clipView.setBoundsOrigin(NSPoint(x: 0, y: offset))
+                    scrollView.reflectScrolledClipView(clipView)
+                }
+            }
+        }
+    }
+}
+
 struct AIsaacView: View {
     @ObservedObject var model: AIsaacModel
+    @State private var isNearBottom: Bool = true
+    @State private var userScrolledUpDuringStream: Bool = false
 
     // Purple theme colors
     private var bgGradient: LinearGradient {
@@ -169,7 +250,16 @@ struct AIsaacView: View {
                     }
                     .padding(16)
                 }
+                .background(ScrollPositionDetector(isNearBottom: $isNearBottom, pinScroll: $userScrolledUpDuringStream))
+                .onChange(of: isNearBottom) { nearBottom in
+                    // User scrolled away from bottom during streaming — lock scroll position
+                    if !nearBottom && model.isStreaming {
+                        userScrolledUpDuringStream = true
+                    }
+                }
                 .onChange(of: model.messages.count) { _ in
+                    // New message added (user sent or response finalized) — reset and scroll
+                    userScrolledUpDuringStream = false
                     withAnimation(.easeOut(duration: 0.3)) {
                         if model.isThinking {
                             proxy.scrollTo("thinking", anchor: .bottom)
@@ -180,16 +270,20 @@ struct AIsaacView: View {
                 }
                 .onChange(of: model.isThinking) { thinking in
                     if thinking {
+                        userScrolledUpDuringStream = false
                         withAnimation(.easeOut(duration: 0.3)) {
                             proxy.scrollTo("thinking", anchor: .bottom)
                         }
                     }
                 }
                 .onChange(of: model.streamingText) { _ in
-                    // Auto-scroll as streaming text grows
-                    withAnimation(.easeOut(duration: 0.1)) {
-                        proxy.scrollTo("streaming", anchor: .bottom)
-                    }
+                    // Auto-scroll handled by AppKit-level pinning in ScrollPositionDetector.
+                    // When not pinned, SwiftUI naturally keeps bottom content visible.
+                    // When pinned, the frameChanged handler restores the saved offset.
+                }
+                .onChange(of: model.isStreaming) { streaming in
+                    // Reset when streaming ends
+                    if !streaming { userScrolledUpDuringStream = false }
                 }
             }
 

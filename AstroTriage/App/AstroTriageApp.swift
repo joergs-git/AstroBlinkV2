@@ -241,11 +241,8 @@ class AstroBlinkV2AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-            if AppSettings.loadBool(for: .hasSeenOnboarding) != true {
-                // First launch: show onboarding (non-dismissable until user clicks Get Started)
+            if AppSettings.loadBool(for: .hideSplash) != true {
                 AboutWindowController.shared.showOnboarding()
-            } else if AppSettings.loadBool(for: .hideSplash) != true {
-                AboutWindowController.shared.show(asSplash: true)
             }
         }
 
