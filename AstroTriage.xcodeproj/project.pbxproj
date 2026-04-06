@@ -708,7 +708,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "# SPM resource bundles (e.g. GRDB_GRDB.bundle) are not automatically signed.\n# App Store Connect rejects unsigned bundles inside the app.\nfind \"${CODESIGNING_FOLDER_PATH}/Contents/Resources\" -name \"*.bundle\" -print0 | while IFS= read -r -d '' bundle; do\n  codesign --force --sign \"${EXPANDED_CODE_SIGN_IDENTITY}\" --timestamp=none --generate-entitlement-der \"$bundle\"\ndone\n";
+			shellScript = "# SPM resource bundles (e.g. GRDB_GRDB.bundle) are not automatically signed.\n# App Store Connect rejects unsigned bundles inside the app.\nfind \"${CODESIGNING_FOLDER_PATH}/Contents/Resources\" -name \"*.bundle\" -print0 | while IFS= read -r -d '' bundle; do\n  codesign --force --sign \"${EXPANDED_CODE_SIGN_IDENTITY}\" --generate-entitlement-der \"$bundle\"\ndone\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
