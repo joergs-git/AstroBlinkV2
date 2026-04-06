@@ -474,7 +474,17 @@ class AIsaacModel: ObservableObject {
 
         messages.append(AIsaacMessage(role: .user, text: text))
         showPresets = false
+        streamingText = ""
+        isStreaming = true
         isThinking = true
+
+        // Wire streaming callback for incremental display
+        AIsaacService.shared.onStreamChunk = { [weak self] chunk in
+            DispatchQueue.main.async {
+                self?.isThinking = false  // stop dots after first chunk
+                self?.streamingText += chunk
+            }
+        }
 
         Task {
             // Always fetch weather — AIsaac should factor in conditions for any advice
@@ -488,11 +498,15 @@ class AIsaacModel: ObservableObject {
                 context: sessionContext,
                 history: messages
             )
+            AIsaacService.shared.onStreamChunk = nil
             isThinking = false
-            // Strip command blocks from displayed text
-            let displayText = Self.stripCommandBlocks(response)
+            isStreaming = false
+            // Use streamed text if available, otherwise full response
+            let fullText = streamingText.isEmpty ? response : streamingText
+            streamingText = ""
+            let displayText = Self.stripCommandBlocks(fullText)
             messages.append(AIsaacMessage(role: .assistant, text: displayText))
-            parseAndExecuteCommands(response)
+            parseAndExecuteCommands(fullText)
             if voiceEnabled { speechManager.speak(displayText) }
             updateQuickReplies(for: displayText)
             showPresets = true
@@ -571,7 +585,17 @@ class AIsaacModel: ObservableObject {
         let text = "Please switch to \(detectedLanguage) and repeat your last answer."
         messages.append(AIsaacMessage(role: .user, text: text))
         showPresets = false
+        streamingText = ""
+        isStreaming = true
         isThinking = true
+
+        // Wire streaming callback for incremental display
+        AIsaacService.shared.onStreamChunk = { [weak self] chunk in
+            DispatchQueue.main.async {
+                self?.isThinking = false
+                self?.streamingText += chunk
+            }
+        }
 
         Task {
             let response = await AIsaacService.shared.ask(
@@ -580,11 +604,14 @@ class AIsaacModel: ObservableObject {
                 context: sessionContext,
                 history: messages
             )
+            AIsaacService.shared.onStreamChunk = nil
             isThinking = false
-            // Strip command blocks from displayed text
-            let displayText = Self.stripCommandBlocks(response)
+            isStreaming = false
+            let fullText = streamingText.isEmpty ? response : streamingText
+            streamingText = ""
+            let displayText = Self.stripCommandBlocks(fullText)
             messages.append(AIsaacMessage(role: .assistant, text: displayText))
-            parseAndExecuteCommands(response)
+            parseAndExecuteCommands(fullText)
             if voiceEnabled { speechManager.speak(displayText) }
             updateQuickReplies(for: displayText)
             showPresets = true
