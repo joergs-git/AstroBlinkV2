@@ -67,6 +67,14 @@ targets:
         SWIFT_OBJC_INTEROP_MODE: objcxx
         OTHER_LDFLAGS:
           - "-lz"
+    postBuildScripts:
+      - name: "Sign SPM Resource Bundles"
+        script: |
+          # SPM resource bundles (e.g. GRDB_GRDB.bundle) are not automatically signed.
+          # App Store Connect rejects unsigned bundles inside the app.
+          find "${CODESIGNING_FOLDER_PATH}/Contents/Resources" -name "*.bundle" -print0 | while IFS= read -r -d '' bundle; do
+            codesign --force --sign "${EXPANDED_CODE_SIGN_IDENTITY}" --timestamp=none --generate-entitlement-der "$bundle"
+          done
 
   AstroTriageQuickLookThumbnail:
     type: app-extension
