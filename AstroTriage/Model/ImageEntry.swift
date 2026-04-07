@@ -115,6 +115,10 @@ struct ImageEntry: Identifiable, Hashable {
     // Canonical target name (normalized for grouping: "NGC 7000" = "NGC7000", "Orion Nebula" = "M42")
     var canonicalTarget: String?
 
+    // Major (parent) target for sub-target association: "MEL15" → majorTarget "IC1805" (Heart Nebula)
+    // nil when canonicalTarget IS the major target (most common case)
+    var majorTarget: String?
+
     // Pixel scale for display (computed from focal length + pixel size)
     var arcsecPerPixel: Double? {
         guard let fl = focalLength, fl > 0, let px = pixelSizeMicrons, px > 0 else { return nil }

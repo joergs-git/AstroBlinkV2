@@ -174,6 +174,10 @@ struct AIsaacContextBuilder {
         guard summary.totalFrames >= 30 else { return nil }
 
         var lines = ["HISTORICAL DATA (Frame History Database — all previous sessions with this setup):"]
+        // Include setup nickname if available
+        if let nick = FrameHistoryDatabase.shared.nickname(for: setupHash), !nick.isEmpty {
+            lines.append("- Setup nickname: \(nick)")
+        }
         lines.append("- Total frames analyzed: \(summary.totalFrames) across \(summary.sessionCount) sessions")
         if let first = summary.firstNight, let last = summary.lastNight {
             lines.append("- Date range: \(first) to \(last)")
@@ -183,7 +187,8 @@ struct AIsaacContextBuilder {
         lines.append("- Historical median noise: \(String(format: "%.4f", summary.medianNoise))")
         lines.append("- Trash rate: \(String(format: "%.0f", summary.trashRate * 100))%")
         if !summary.targets.isEmpty {
-            lines.append("- Targets imaged: \(summary.targets.joined(separator: ", "))")
+            let targetDisplay = summary.targets.map { TargetCatalog.displayName($0) }
+            lines.append("- Targets imaged: \(targetDisplay.joined(separator: ", "))")
         }
         lines.append("Use this to compare tonight's performance against the user's historical norm.")
         lines.append("If metrics deviate significantly, mention possible causes (seeing, focus drift, moon, clouds).")
@@ -371,7 +376,10 @@ struct AIsaacContextBuilder {
             var detail = "- \(night): \(totalFrames) frames"
             if let fwhm = avgFWHM { detail += String(format: ", FWHM %.1fpx", fwhm) }
             detail += String(format: ", %.0f%% kept", retention)
-            if !targets.isEmpty { detail += " [\(targets.sorted().joined(separator: ", "))]" }
+            if !targets.isEmpty {
+                let targetDisplay = targets.sorted().map { TargetCatalog.displayName($0) }
+                detail += " [\(targetDisplay.joined(separator: ", "))]"
+            }
             if !filters.isEmpty { detail += " (\(filters.sorted().joined(separator: "/")))" }
             lines.append(detail)
         }
@@ -428,8 +436,9 @@ struct AIsaacContextBuilder {
             lines.append("- Session date: \(date)")
         }
 
-        // Targets and filters
-        lines.append("- Targets: \(ctx.objects.joined(separator: ", "))")
+        // Targets and filters (with common names for context)
+        let targetDisplay = ctx.objects.map { TargetCatalog.displayName($0) }
+        lines.append("- Targets: \(targetDisplay.joined(separator: ", "))")
         lines.append("- Filters: \(ctx.filters.joined(separator: ", "))")
         lines.append("- Total frames: \(ctx.totalFrames)")
         lines.append("- Marked for deletion: \(ctx.markedCount)")

@@ -65,7 +65,8 @@ enum CompareWindowController {
     /// Open a comparison window: best image (left) vs selected image (right)
     static func open(selectedEntry: ImageEntry, bestEntry: ImageEntry,
                      device: MTLDevice, nightMode: Bool, debayerEnabled: Bool,
-                     rotateSelected: Bool = false, rotateBest: Bool = false) {
+                     rotateSelected: Bool = false, rotateBest: Bool = false,
+                     fallbackReason: String? = nil) {
         let selectedURL = selectedEntry.decodingURL
         let bestURL = bestEntry.decodingURL
         let bayerSel = debayerEnabled ? selectedEntry.bayerPattern : nil
@@ -117,7 +118,8 @@ enum CompareWindowController {
             // Build labels with date/time info
             let bestDateTime = [bestEntry.date, bestEntry.time].compactMap { $0 }.joined(separator: " ")
             let selDateTime = [selectedEntry.date, selectedEntry.time].compactMap { $0 }.joined(separator: " ")
-            let bestLabel = "Best — \(bestEntry.filename)\n\(bestDateTime)"
+            let bestPrefix = fallbackReason != nil ? "Best (\(fallbackReason!))" : "Best"
+            let bestLabel = "\(bestPrefix) — \(bestEntry.filename)\n\(bestDateTime)"
             let selLabel = "Selected — \(selectedEntry.filename)\n\(selDateTime)"
             let whyWorse = buildWhyWorse(selected: selectedEntry, best: bestEntry)
 

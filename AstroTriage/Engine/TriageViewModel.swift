@@ -567,14 +567,14 @@ class TriageViewModel: ObservableObject {
               let tier = entry.qualityTier, tier != .excellent,
               let device = renderer?.device else { return }
 
-        let targetKey = (entry.target ?? "").trimmingCharacters(in: .whitespaces)
+        let targetKey = entry.canonicalTarget ?? TargetCatalog.canonicalName(entry.target ?? "")
         let filterKey = (entry.filter ?? "").uppercased().trimmingCharacters(in: .whitespaces)
         let expKey = entry.exposure.map { Int($0.rounded()) } ?? 0
         // Focal length bucket — RASA 620mm and RC12 1964mm must never compare
         let flKey = entry.focalLength.map { Int(($0 / 50).rounded()) * 50 } ?? 0
 
         let groupImages = images.filter { img in
-            let t = (img.target ?? "").trimmingCharacters(in: .whitespaces)
+            let t = img.canonicalTarget ?? TargetCatalog.canonicalName(img.target ?? "")
             let f = (img.filter ?? "").uppercased().trimmingCharacters(in: .whitespaces)
             let e = img.exposure.map { Int($0.rounded()) } ?? 0
             let fl = img.focalLength.map { Int(($0 / 50).rounded()) * 50 } ?? 0
@@ -597,7 +597,7 @@ class TriageViewModel: ObservableObject {
         // Fallback 1: same filter + same setup, any exposure (e.g., Ha 300s best is garbage → try Ha 180s)
         if best == nil || (best!.qualityTier != .excellent && best!.qualityTier != .good) {
             let sameFilterAnyExp = images.filter { img in
-                let t = (img.target ?? "").trimmingCharacters(in: .whitespaces)
+                let t = img.canonicalTarget ?? TargetCatalog.canonicalName(img.target ?? "")
                 let f = (img.filter ?? "").uppercased().trimmingCharacters(in: .whitespaces)
                 let fl = img.focalLength.map { Int(($0 / 50).rounded()) * 50 } ?? 0
                 return t == targetKey && f == filterKey && fl == flKey && img.url != entry.url
@@ -616,7 +616,7 @@ class TriageViewModel: ObservableObject {
         if best == nil || (best!.qualityTier != .excellent && best!.qualityTier != .good) {
             let selectedIsNarrowband = QualityEstimator.narrowbandCanonical.contains(selectedCanonical)
             let sameClass = images.filter { img in
-                let t = (img.target ?? "").trimmingCharacters(in: .whitespaces)
+                let t = img.canonicalTarget ?? TargetCatalog.canonicalName(img.target ?? "")
                 let f = ColorCombineEngine.canonicalFilterName((img.filter ?? "").uppercased().trimmingCharacters(in: .whitespaces))
                 let isNB = QualityEstimator.narrowbandCanonical.contains(f)
                 let fl = img.focalLength.map { Int(($0 / 50).rounded()) * 50 } ?? 0
@@ -629,6 +629,18 @@ class TriageViewModel: ObservableObject {
         }
 
         guard let best = best, best.url != entry.url else { return }
+
+        // Determine fallback reason for display in compare window
+        let bestFilter = (best.filter ?? "").uppercased().trimmingCharacters(in: .whitespaces)
+        let bestExp = best.exposure.map { Int($0.rounded()) } ?? 0
+        let fallbackReason: String?
+        if bestFilter == filterKey && bestExp == expKey {
+            fallbackReason = nil  // exact group match
+        } else if bestFilter == filterKey {
+            fallbackReason = "\(bestExp)s exposure"
+        } else {
+            fallbackReason = "\(bestFilter.isEmpty ? "?" : bestFilter) filter"
+        }
 
         // Show loading indicator while compare images are decoded and stretched
         statusMessage = "Preparing Compare..."
@@ -670,7 +682,8 @@ class TriageViewModel: ObservableObject {
             selectedEntry: entry, bestEntry: best,
             device: device, nightMode: nightMode, debayerEnabled: debayerEnabled,
             rotateSelected: shouldRotateForMeridian(entry),
-            rotateBest: shouldRotateForMeridian(best)
+            rotateBest: shouldRotateForMeridian(best),
+            fallbackReason: fallbackReason
         )
     }
 
@@ -1938,6 +1951,10 @@ class TriageViewModel: ObservableObject {
             // Canonical target name (normalized for grouping across sessions)
             if images[index].canonicalTarget == nil, let target = images[index].target {
                 images[index].canonicalTarget = TargetCatalog.canonicalName(target)
+            }
+            // Major (parent) target for sub-target association
+            if images[index].majorTarget == nil, let canonical = images[index].canonicalTarget {
+                images[index].majorTarget = TargetCatalog.majorTarget(canonical)
             }
         }
     }

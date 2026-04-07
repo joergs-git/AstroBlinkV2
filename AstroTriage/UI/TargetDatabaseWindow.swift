@@ -587,9 +587,48 @@ struct TargetDatabaseContentView: View {
                         .foregroundColor(filterSetColor(primary.set, nightMode: nightMode))
                 }
             }
+
+            // Aliases / alternate catalog names
+            if let aliases = target.aliases, !aliases.isEmpty {
+                HStack(spacing: 4) {
+                    Text("Also:")
+                        .font(.system(size: (fs - 1) * fontScale, weight: .medium))
+                        .foregroundColor(.secondary)
+                    Text(aliases.joined(separator: ", "))
+                        .font(.system(size: (fs - 2) * fontScale, design: .monospaced))
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                }
+            }
+
+            // Parent complex
+            if let parent = TargetCatalog.majorTarget(target.canonicalName) {
+                HStack(spacing: 4) {
+                    Image(systemName: "arrow.up.right.circle.fill")
+                        .font(.system(size: (fs - 1) * fontScale))
+                        .foregroundColor(.blue.opacity(0.7))
+                    Text("Part of \(TargetCatalog.displayName(parent))")
+                        .font(.system(size: (fs - 1) * fontScale, weight: .medium))
+                        .foregroundColor(.blue)
+                }
+            }
+
+            // Sub-targets
+            let children = TargetCatalog.subTargets(of: target.canonicalName)
+            if !children.isEmpty {
+                HStack(spacing: 4) {
+                    Image(systemName: "arrow.down.right.circle.fill")
+                        .font(.system(size: (fs - 1) * fontScale))
+                        .foregroundColor(.orange.opacity(0.7))
+                    Text("\(children.count) sub-target\(children.count == 1 ? "" : "s"): \(children.prefix(5).map(\.canonical).joined(separator: ", "))\(children.count > 5 ? "..." : "")")
+                        .font(.system(size: (fs - 2) * fontScale, design: .monospaced))
+                        .foregroundColor(.orange)
+                        .lineLimit(1)
+                }
+            }
         }
         .padding(10)
-        .frame(width: 340)
+        .frame(width: 380)
         .background(.ultraThinMaterial)
         .cornerRadius(10)
         .shadow(color: .black.opacity(0.2), radius: 8, x: 0, y: 4)
@@ -676,14 +715,29 @@ struct TargetDatabaseContentView: View {
                 .help(target.typeDisplayName)
 
             // Name + common name (single line) — hover here triggers info card
-            HStack(spacing: 4) {
-                Text(target.canonicalName)
-                    .font(.system(size: fs * fontScale, weight: .semibold, design: .monospaced))
-                    .foregroundColor(AppColors.fg(nightMode))
-                if let common = target.commonName {
-                    Text(common)
-                        .font(.system(size: (fs - 2) * fontScale))
-                        .foregroundColor(AppColors.fgDim(nightMode))
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(spacing: 4) {
+                    Text(target.canonicalName)
+                        .font(.system(size: fs * fontScale, weight: .semibold, design: .monospaced))
+                        .foregroundColor(AppColors.fg(nightMode))
+                    if let common = target.commonName {
+                        Text(common)
+                            .font(.system(size: (fs - 2) * fontScale))
+                            .foregroundColor(AppColors.fgDim(nightMode))
+                    }
+                }
+                // Show parent complex or sub-target count in the row
+                if let parent = TargetCatalog.majorTarget(target.canonicalName) {
+                    Text("↳ \(TargetCatalog.displayName(parent))")
+                        .font(.system(size: (fs - 3) * fontScale))
+                        .foregroundColor(.blue.opacity(0.7))
+                } else {
+                    let childCount = TargetCatalog.subTargets(of: target.canonicalName).count
+                    if childCount > 0 {
+                        Text("⤷ \(childCount) sub-target\(childCount == 1 ? "" : "s")")
+                            .font(.system(size: (fs - 3) * fontScale))
+                            .foregroundColor(.orange.opacity(0.7))
+                    }
                 }
             }
             .lineLimit(1)
@@ -944,6 +998,15 @@ struct TargetDetailView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             headerSection
+            // "Part of" — show parent complex if this is a sub-target
+            if let parent = TargetCatalog.majorTarget(target.canonicalName) {
+                partOfSection(parent: parent)
+            }
+            // "Sub-targets" — show children if this target has known sub-targets
+            let children = TargetCatalog.subTargets(of: target.canonicalName)
+            if !children.isEmpty {
+                subTargetsSection(children: children)
+            }
             Divider().background(AppColors.divider(nightMode))
             coordinatesSection
             Divider().background(AppColors.divider(nightMode))
@@ -1464,6 +1527,66 @@ struct TargetDetailView: View {
             Text(text)
                 .font(.system(size: 11 * fontScale))
                 .foregroundColor(AppColors.fgDim(nightMode))
+        }
+    }
+
+    // MARK: - Part of (Parent Complex)
+
+    private func partOfSection(parent: String) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: "arrow.up.right.circle.fill")
+                .font(.system(size: 11 * fontScale))
+                .foregroundColor(.blue.opacity(0.7))
+            Text("Part of")
+                .font(.system(size: 10 * fontScale, weight: .medium))
+                .foregroundColor(AppColors.fgDim(nightMode))
+            Text(TargetCatalog.displayName(parent))
+                .font(.system(size: 11 * fontScale, weight: .semibold, design: .monospaced))
+                .foregroundColor(.blue)
+                .underline()
+                .onTapGesture { navigateToTarget(parent) }
+        }
+        .padding(.vertical, 2)
+    }
+
+    /// Navigate to a target by canonical name — finds it in the catalog list and selects it.
+    private func navigateToTarget(_ canonicalName: String) {
+        let normalized = TargetCatalog.canonicalName(canonicalName)
+        // Search in all targets (not just filtered) — match by canonical name or common name
+        if let match = viewModel.allTargets.first(where: {
+            TargetCatalog.canonicalName($0.canonicalName) == normalized
+        }) {
+            viewModel.selectedTarget = match
+        }
+    }
+
+    // MARK: - Sub-targets (Children)
+
+    private func subTargetsSection(children: [(canonical: String, display: String)]) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 4) {
+                Image(systemName: "arrow.down.right.circle.fill")
+                    .font(.system(size: 11 * fontScale))
+                    .foregroundColor(.orange.opacity(0.7))
+                Text("Sub-targets (\(children.count))")
+                    .font(.system(size: 10 * fontScale, weight: .medium))
+                    .foregroundColor(AppColors.fgDim(nightMode))
+            }
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 4) {
+                    ForEach(children, id: \.canonical) { child in
+                        Text(child.display)
+                            .font(.system(size: 10 * fontScale, design: .monospaced))
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Color.orange.opacity(0.12))
+                            .foregroundColor(AppColors.fg(nightMode))
+                            .cornerRadius(4)
+                            .onTapGesture { navigateToTarget(child.canonical) }
+                            .help("Click to view \(child.display)")
+                    }
+                }
+            }
         }
     }
 

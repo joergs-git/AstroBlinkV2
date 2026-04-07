@@ -213,18 +213,39 @@ class FrameHistoryModel: ObservableObject {
             let sessions = try FrameHistoryDatabase.shared.sessions()
             let nicknames = FrameHistoryDatabase.shared.allNicknames()
             var seen: Set<String> = []
-            var setups: [(hash: String, label: String)] = []
+            var rawSetups: [(hash: String, equipment: String, nickname: String?)] = []
             for session in sessions {
                 guard let hash = session.setupHash, !seen.contains(hash) else { continue }
                 seen.insert(hash)
                 let equipment = [session.telescope, session.camera].compactMap { $0 }.joined(separator: " + ")
+                rawSetups.append((hash: hash, equipment: equipment, nickname: nicknames[hash]))
+            }
+
+            // Detect duplicate equipment labels (same mount+camera but different FL → different hash)
+            var equipmentCount: [String: Int] = [:]
+            for s in rawSetups where s.nickname == nil {
+                let key = s.equipment.lowercased().trimmingCharacters(in: .whitespaces)
+                equipmentCount[key, default: 0] += 1
+            }
+
+            // Build final labels: append FL for duplicates, use nickname when available
+            var setups: [(hash: String, label: String)] = []
+            for s in rawSetups {
                 let label: String
-                if let nickname = nicknames[hash] {
-                    label = nickname + (equipment.isEmpty ? "" : " (\(equipment))")
+                if let nickname = s.nickname, !nickname.isEmpty {
+                    label = nickname
+                } else if s.equipment.isEmpty {
+                    label = String(s.hash.prefix(8))
                 } else {
-                    label = equipment.isEmpty ? hash.prefix(8).description : equipment
+                    let key = s.equipment.lowercased().trimmingCharacters(in: .whitespaces)
+                    if (equipmentCount[key] ?? 0) > 1,
+                       let fl = FrameHistoryDatabase.shared.primaryFocalLength(for: s.hash), fl > 0 {
+                        label = "\(s.equipment) (\(fl)mm)"
+                    } else {
+                        label = s.equipment
+                    }
                 }
-                setups.append((hash: hash, label: label))
+                setups.append((hash: s.hash, label: label))
             }
             availableSetups = setups
 
@@ -494,7 +515,7 @@ class FrameHistoryModel: ObservableObject {
         var id: String { night }  // Stable ID
         let date: Date
         let night: String
-        let score: Double       // 0-100 composite score
+        let score: Double       // 0-100 composite score (median when monthly)
         let retentionRate: Double  // % kept
         let fwhmNormalized: Double // relative to setup median (1.0 = average, <1 = better)
         let frameCount: Int
@@ -503,77 +524,80 @@ class FrameHistoryModel: ObservableObject {
         let filters: [String]
         let avgFWHM: Double?
         let moonPct: Double?
+        let nightCount: Int?    // Number of nights in this month (nil for daily view)
     }
 
-    /// Compute per-night (or per-month) Session Score. Combines retention rate (40%),
-    /// FWHM quality (30%), trailing absence (20%), and background stability (10%).
+    /// Compute per-night composite score for a set of summaries sharing the same night key.
+    private func nightCompositeScore(summaries: [NightSummary], baselineFWHM: Double) -> (score: Double, frames: Int, retention: Double, fwhmRatio: Double, fwhm: Double?, moonPct: Double?, targets: [String], filters: [String]) {
+        var frames = 0, kept = 0
+        var fwhm: Double? = nil, trailing: Double? = nil
+        for s in summaries {
+            frames += s.frameCount
+            kept += s.goodCount + s.excellentCount + s.borderlineCount
+            if let f = s.medianFWHM { fwhm = max(fwhm ?? 0, f) }
+            if let t = s.medianTrailing { trailing = max(trailing ?? 0, t) }
+        }
+        let retention = frames > 0 ? Double(kept) / Double(frames) : 0
+        let fwhmRatio = (fwhm ?? baselineFWHM) / baselineFWHM
+        let fwhmScore = max(0, min(1, 1.0 - (fwhmRatio - 1.0) / 2.0))
+        let trailingScore = max(0, 1.0 - (trailing ?? 0) * 2.0)
+        let composite = retention * 40 + fwhmScore * 30 + trailingScore * 20 + 10 // noiseScore = 1.0
+        let targets = Array(Set(summaries.compactMap { $0.target.map { TargetCatalog.canonicalName($0) } })).sorted()
+        let filters = Array(Set(summaries.compactMap { $0.filter.map { FrameHistoryModel.normalizeFilterForChart($0) } })).sorted()
+        let moons = summaries.compactMap(\.medianMoonIllumination)
+        let moonPct = moons.isEmpty ? nil : (moons.reduce(0, +) / Double(moons.count)) * 100
+        return (min(100, composite), frames, retention, fwhmRatio, fwhm, moonPct, targets, filters)
+    }
+
+    /// Compute per-night Session Score. Always returns nightly data (never monthly aggregation).
+    /// Combines retention rate (40%), FWHM quality (30%), trailing absence (20%), stability (10%).
     var sessionScores: [SessionScorePoint] {
-        let monthly = useMonthlyAggregation
-        // Get setup baseline FWHM for normalization
         let allFWHMs = filteredSummaries.compactMap(\.medianFWHM)
         let baselineFWHM = allFWHMs.isEmpty ? 5.0 : allFWHMs.sorted()[allFWHMs.count / 2]
 
-        // Aggregate by night or month (across filters)
-        var byKey: [String: (frames: Int, kept: Int, fwhm: Double?, trailing: Double?, noise: Double?)] = [:]
+        var byKey: [String: [NightSummary]] = [:]
         for s in filteredSummaries {
-            let key: String
-            if monthly, let date = Self.nightDateFormatter.date(from: s.night) {
-                key = Self.monthKey(from: date)
-            } else {
-                key = s.night
-            }
-            var v = byKey[key] ?? (0, 0, nil, nil, nil)
-            v.frames += s.frameCount
-            v.kept += s.goodCount + s.excellentCount + s.borderlineCount
-            // Use the worst (highest) FWHM across filters for this period
-            if let f = s.medianFWHM { v.fwhm = max(v.fwhm ?? 0, f) }
-            if let t = s.medianTrailing { v.trailing = max(v.trailing ?? 0, t) }
-            if let n = s.medianNoise { v.noise = v.noise.map { ($0 + n) / 2 } ?? n }
-            byKey[key] = v
+            byKey[s.night, default: []].append(s)
         }
 
-        return byKey.compactMap { key, v in
-            let date: Date?
-            if monthly {
-                date = Self.dateFromMonthKey(key)
-            } else {
-                date = Self.nightDateFormatter.date(from: key)
-            }
-            guard let date, v.frames > 0 else { return nil }
-            let retention = Double(v.kept) / Double(v.frames)
-
-            // FWHM score: 1.0 when at baseline, 0.0 when 3x worse
-            let fwhmRatio = (v.fwhm ?? baselineFWHM) / baselineFWHM
-            let fwhmScore = max(0, min(1, 1.0 - (fwhmRatio - 1.0) / 2.0))
-
-            // Trailing score: 1.0 = no trailing, 0.0 = severe
-            let trailingScore = max(0, 1.0 - (v.trailing ?? 0) * 2.0)
-
-            // Background stability: 1.0 = stable, lower = noisy (inverse of noise variance)
-            let noiseScore = 1.0  // Simplified — would need variance across frames
-
-            // Composite: retention 40%, FWHM 30%, trailing 20%, background 10%
-            let composite = retention * 40 + fwhmScore * 30 + trailingScore * 20 + noiseScore * 10
-
-            // Context from summaries for this period
-            let periodSummaries: [NightSummary]
-            if monthly {
-                periodSummaries = filteredSummaries.filter { s in
-                    guard let d = Self.nightDateFormatter.date(from: s.night) else { return false }
-                    return Self.monthKey(from: d) == key
-                }
-            } else {
-                periodSummaries = filteredSummaries.filter { $0.night == key }
-            }
-            let targets = Array(Set(periodSummaries.compactMap { $0.target.map { TargetCatalog.canonicalName($0) } })).sorted()
-            let filters = Array(Set(periodSummaries.compactMap { $0.filter.map { FrameHistoryModel.normalizeFilterForChart($0) } })).sorted()
-            let moons = periodSummaries.compactMap(\.medianMoonIllumination)
-            let moonPct = moons.isEmpty ? nil : (moons.reduce(0, +) / Double(moons.count)) * 100
+        return byKey.compactMap { key, summaries in
+            guard let date = Self.nightDateFormatter.date(from: key) else { return nil }
+            let result = nightCompositeScore(summaries: summaries, baselineFWHM: baselineFWHM)
+            guard result.frames > 0 else { return nil }
 
             return SessionScorePoint(
-                date: date, night: key, score: min(100, composite),
-                retentionRate: retention, fwhmNormalized: fwhmRatio, frameCount: v.frames,
-                targets: targets, filters: filters, avgFWHM: v.fwhm, moonPct: moonPct
+                date: date, night: key, score: result.score,
+                retentionRate: result.retention, fwhmNormalized: result.fwhmRatio,
+                frameCount: result.frames,
+                targets: result.targets, filters: result.filters,
+                avgFWHM: result.fwhm, moonPct: result.moonPct,
+                nightCount: nil
+            )
+        }.sorted { $0.date < $1.date }
+    }
+
+    /// Monthly median trend line data. Overlaid on the nightly bars when >6 months of data.
+    /// Groups nightly scores by month and takes the median per month.
+    var monthlyMedianScores: [SessionScorePoint] {
+        guard useMonthlyAggregation else { return [] }
+        let nightlyScores = sessionScores
+        guard !nightlyScores.isEmpty else { return [] }
+
+        var byMonth: [String: [Double]] = [:]
+        for ns in nightlyScores {
+            let mk = Self.monthKey(from: ns.date)
+            byMonth[mk, default: []].append(ns.score)
+        }
+
+        return byMonth.compactMap { month, scores in
+            guard let date = Self.dateFromMonthKey(month), !scores.isEmpty else { return nil }
+            let sorted = scores.sorted()
+            let median = sorted[sorted.count / 2]
+            return SessionScorePoint(
+                date: date, night: month, score: median,
+                retentionRate: 0, fwhmNormalized: 1.0, frameCount: 0,
+                targets: [], filters: [], avgFWHM: nil, moonPct: nil,
+                nightCount: scores.count
             )
         }.sorted { $0.date < $1.date }
     }

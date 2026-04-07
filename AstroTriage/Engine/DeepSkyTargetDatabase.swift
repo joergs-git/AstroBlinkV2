@@ -1155,10 +1155,11 @@ enum DeepSkyTargetDatabase {
           aliases: ["NGC6992", "NGC6995", "NGC6979", "Caldwell 33", "Caldwell 34", "Witch's Broom"]),
 
         // NGC 7000 — North America Nebula
+        // IC5070 (Pelican) is a sub-target — has own entry + parentTargetMap
         t("NGC7000", "North America Nebula", .emissionNebula,
           ra: 314.667, dec: 44.333, major: 120.0, minor: 100.0,
           mag: 4.0, sb: 15.0, con: "Cyg",
-          filters: shoDefault, aliases: ["IC5070", "Caldwell 20", "SH2-117"]),
+          filters: shoDefault, aliases: ["Caldwell 20", "SH2-117"]),
 
         // NGC 7023 — Iris Nebula
         t("NGC7023", "Iris Nebula", .reflectionNebula,
@@ -1252,12 +1253,14 @@ enum DeepSkyTargetDatabase {
           con: "Aur", filters: shoDefault),
 
         // IC 434 — Horsehead Nebula (dark against emission)
-        t("IC434", "Horsehead Nebula", .darkNebula,
+        // IC434 = emission nebula ridge; B33 = dark horsehead silhouette on it. Merged as one target.
+        t("IC434", "Horsehead Nebula", .emissionNebula,
           ra: 85.250, dec: -2.450, major: 60.0, minor: 10.0,
           con: "Ori",
           filters: FilterRecommendation(.sho(ha: 6, oiii: 2, sii: 2),
               secondary: .lrgb(l: 6, r: 2, g: 2, b: 2),
-              notes: "Ha dominant — horsehead is dark silhouette against IC434 emission")),
+              notes: "Ha dominant — horsehead is dark silhouette against IC434 emission"),
+          aliases: ["B33", "Barnard 33"]),
 
         // IC 443 — Jellyfish Nebula
         t("IC443", "Jellyfish Nebula", .supernovaRemnant,
@@ -1294,10 +1297,11 @@ enum DeepSkyTargetDatabase {
           con: "Cas", filters: shoDefault),
 
         // IC 1805 — Heart Nebula
+        // IC1795 (Fish Head) is a sub-target, not alias — has own entry + parentTargetMap
         t("IC1805", "Heart Nebula", .emissionNebula,
           ra: 38.175, dec: 61.467, major: 60.0, minor: 60.0,
           mag: 6.5, sb: 14.0, con: "Cas",
-          filters: shoDefault, aliases: ["IC1795"]),
+          filters: shoDefault),
 
         // IC 1848 — Soul Nebula
         t("IC1848", "Soul Nebula", .emissionNebula,
@@ -1448,7 +1452,8 @@ enum DeepSkyTargetDatabase {
         // Abell 21 — Medusa Nebula
         t("ABELL21", "Medusa Nebula", .planetaryNebula,
           ra: 110.833, dec: 13.250, major: 10.0, minor: 8.0,
-          mag: 10.0, con: "Gem", filters: hooPN),
+          mag: 10.0, con: "Gem", filters: hooPN,
+          aliases: ["SH2-274"]),
 
         // Abell 31 — Large planetary nebula
         t("ABELL31", nil, .planetaryNebula,
@@ -1487,13 +1492,7 @@ enum DeepSkyTargetDatabase {
 
     static let barnardTargets: [DeepSkyTarget] = [
         // B33 — Horsehead (see IC 434 for emission background)
-        t("B33", "Horsehead Nebula", .darkNebula,
-          ra: 85.242, dec: -2.458, major: 6.0, minor: 4.0,
-          con: "Ori",
-          filters: FilterRecommendation(.sho(ha: 6, oiii: 2, sii: 2),
-              secondary: .lrgb(l: 6, r: 2, g: 2, b: 2),
-              notes: "Dark silhouette against IC434 Ha emission"),
-          aliases: ["IC434", "Barnard 33"]),
+        // B33 merged into IC434 entry above (same object — horsehead + emission ridge)
 
         // B72 — Snake Nebula
         t("B72", "Snake Nebula", .darkNebula,
@@ -1556,9 +1555,11 @@ enum DeepSkyTargetDatabase {
               notes: "Dark globule rim — Ha + LRGB for dust structure")),
 
         // Cederblad 214 — Emission nebula in Cepheus
-        t("CED214", nil, .emissionNebula,
+        // NGC7822 — emission nebula complex; CED214 is its brightest sub-region
+        t("NGC7822", nil, .emissionNebula,
           ra: 345.083, dec: 67.867, major: 40.0, minor: 30.0,
-          con: "Cep", filters: shoDefault),
+          con: "Cep", filters: shoDefault,
+          aliases: ["CED214", "Cederblad 214"]),
 
         // OU4 — Giant Squid Nebula (inside SH2-129)
         t("OU4", "Giant Squid Nebula", .planetaryNebula,
@@ -1587,10 +1588,10 @@ enum DeepSkyTargetDatabase {
           filters: lrgbDefault, aliases: ["NGC7317", "NGC7318", "NGC7319", "NGC7320"]),
 
         // Leo Triplet (M65 + M66 + NGC 3628)
+        // Members (M65, M66, NGC3628) have standalone entries — linked via parentTargetMap
         t("LEOTRIPLET", "Leo Triplet", .galaxyGroup,
           ra: 169.900, dec: 13.100, major: 30.0, minor: 15.0,
-          con: "Leo", filters: lrgbDefault,
-          aliases: ["M65", "M66", "NGC3628", "NGC3623", "NGC3627"]),
+          con: "Leo", filters: lrgbDefault),
 
         // Markarian's Chain (Virgo Cluster)
         t("MARKARIANSCHAIN", "Markarian's Chain", .galaxyGroup,

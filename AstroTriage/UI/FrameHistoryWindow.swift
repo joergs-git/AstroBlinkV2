@@ -266,6 +266,8 @@ struct FrameHistoryContentView: View {
     // KPI 1: Session Score — composite quality score per night
     private var sessionScoreChart: some View {
         let scores = model.sessionScores
+        let medians = model.monthlyMedianScores
+        let showTrend = !medians.isEmpty
         return VStack(alignment: .leading, spacing: 4) {
             Text("Session Score by Night")
                 .font(.system(size: fs(13), weight: .semibold))
@@ -274,18 +276,41 @@ struct FrameHistoryContentView: View {
             if scores.isEmpty {
                 noDataView
             } else {
-                Chart(scores) { point in
-                    BarMark(
-                        x: .value("Night", point.date, unit: .day),
-                        y: .value("Score", point.score)
-                    )
-                    .foregroundStyle(
-                        point.score >= 75 ? Color.green :
-                        point.score >= 50 ? Color.yellow :
-                        point.score >= 25 ? Color.orange : Color.red
-                    )
-                    if let hd = hoveredDate, Calendar.current.isDate(hd, inSameDayAs: point.date) {
-                        RuleMark(x: .value("Hover", point.date, unit: .day))
+                Chart {
+                    // Always show nightly bars
+                    ForEach(scores) { point in
+                        BarMark(
+                            x: .value("Night", point.date, unit: .day),
+                            y: .value("Score", point.score)
+                        )
+                        .foregroundStyle(
+                            point.score >= 75 ? Color.green :
+                            point.score >= 50 ? Color.yellow :
+                            point.score >= 25 ? Color.orange : Color.red
+                        )
+                    }
+                    // Overlay monthly median trend line when >6 months
+                    if showTrend {
+                        ForEach(medians) { point in
+                            LineMark(
+                                x: .value("Month", point.date, unit: .month),
+                                y: .value("Median", point.score),
+                                series: .value("Trend", "median")
+                            )
+                            .foregroundStyle(Color.primary.opacity(0.7))
+                            .lineStyle(StrokeStyle(lineWidth: 2.5))
+                            .interpolationMethod(.catmullRom)
+                            PointMark(
+                                x: .value("Month", point.date, unit: .month),
+                                y: .value("Median", point.score)
+                            )
+                            .foregroundStyle(Color.primary.opacity(0.8))
+                            .symbolSize(30)
+                        }
+                    }
+                    // Hover rule
+                    if let hd = hoveredDate {
+                        RuleMark(x: .value("Hover", hd, unit: .day))
                             .foregroundStyle(fg.opacity(0.3))
                             .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 3]))
                     }
@@ -333,6 +358,12 @@ struct FrameHistoryContentView: View {
                     HStack(spacing: 3) { Circle().fill(.yellow).frame(width: 6); Text("50-74").font(.system(size: fs(9))).foregroundColor(fgDim) }
                     HStack(spacing: 3) { Circle().fill(.orange).frame(width: 6); Text("25-49").font(.system(size: fs(9))).foregroundColor(fgDim) }
                     HStack(spacing: 3) { Circle().fill(.red).frame(width: 6); Text("<25").font(.system(size: fs(9))).foregroundColor(fgDim) }
+                    if showTrend {
+                        HStack(spacing: 3) {
+                            RoundedRectangle(cornerRadius: 1).fill(Color.primary.opacity(0.7)).frame(width: 14, height: 2)
+                            Text("Median").font(.system(size: fs(9))).foregroundColor(fgDim)
+                        }
+                    }
                     Spacer()
                     let avg = scores.map(\.score).reduce(0, +) / Double(scores.count)
                     Text("Avg: \(String(format: "%.0f", avg))")
@@ -344,7 +375,7 @@ struct FrameHistoryContentView: View {
                             .foregroundColor(fgDim)
                     }
                 }
-                Text("Score = 40% retention + 30% FWHM quality + 20% trailing + 10% stability")
+                Text("Score = 40% retention + 30% FWHM quality + 20% trailing + 10% stability\(showTrend ? " · White line = monthly median" : "")")
                     .font(.system(size: fs(9)))
                     .foregroundColor(fgDim)
             }

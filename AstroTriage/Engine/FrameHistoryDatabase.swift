@@ -242,6 +242,23 @@ final class FrameHistoryDatabase {
             try db.execute(sql: "ALTER TABLE frame_record ADD COLUMN userConfidence INTEGER NOT NULL DEFAULT 0")
         }
 
+        // Add majorTarget column for sub-target → parent association
+        migrator.registerMigration("v8_major_target") { db in
+            try db.alter(table: "frame_record") { t in
+                t.add(column: "majorTarget", .text)
+            }
+            // Backfill major target for existing records that have a canonical target
+            let rows = try Row.fetchAll(db, sql: "SELECT fileHash, canonicalTarget FROM frame_record WHERE canonicalTarget IS NOT NULL")
+            for row in rows {
+                let hash: String = row["fileHash"]
+                let canonical: String = row["canonicalTarget"]
+                if let major = TargetCatalog.majorTarget(canonical) {
+                    try db.execute(sql: "UPDATE frame_record SET majorTarget = ? WHERE fileHash = ?",
+                                  arguments: [major, hash])
+                }
+            }
+        }
+
         try migrator.migrate(db)
     }
 
@@ -375,7 +392,9 @@ final class FrameHistoryDatabase {
             var args: [DatabaseValueConvertible] = [setupHash]
 
             if let target {
-                sql += " AND COALESCE(canonicalTarget, target) = ?"
+                // Match canonical target OR major target (sub-targets roll up to parent)
+                sql += " AND (COALESCE(canonicalTarget, target) = ? OR majorTarget = ?)"
+                args.append(target)
                 args.append(target)
             }
 
@@ -433,7 +452,9 @@ final class FrameHistoryDatabase {
             var args: [DatabaseValueConvertible] = []
 
             if let target {
-                sql += " AND COALESCE(canonicalTarget, target) = ?"
+                // Match canonical target OR major target (sub-targets roll up to parent)
+                sql += " AND (COALESCE(canonicalTarget, target) = ? OR majorTarget = ?)"
+                args.append(target)
                 args.append(target)
             }
 
@@ -602,7 +623,8 @@ final class FrameHistoryDatabase {
             var sql = "SELECT COUNT(*) as total, SUM(CASE WHEN wasDeleted = 1 THEN 1 ELSE 0 END) as deleted FROM frame_record WHERE 1=1"
             var args: [DatabaseValueConvertible] = []
             if let target {
-                sql += " AND COALESCE(canonicalTarget, target) = ?"
+                sql += " AND (COALESCE(canonicalTarget, target) = ? OR majorTarget = ?)"
+                args.append(target)
                 args.append(target)
             }
             if let setupHash {
@@ -855,6 +877,28 @@ final class FrameHistoryDatabase {
             }
             return result
         }) ?? [:]
+    }
+
+    /// Returns the most common focal length for a setup hash (mode), or nil if unknown.
+    func primaryFocalLength(for setupHash: String) -> Int? {
+        try? dbQueue.read { db in
+            let row = try Row.fetchOne(db, sql: """
+                SELECT CAST(ROUND(focalLength) AS INTEGER) as fl, COUNT(*) as cnt
+                FROM frame_record WHERE setupHash = ? AND focalLength IS NOT NULL
+                GROUP BY fl ORDER BY cnt DESC LIMIT 1
+                """, arguments: [setupHash])
+            return row?["fl"] as Int?
+        }
+    }
+
+    /// Returns the display name for a setup: nickname if set, otherwise "telescope + camera".
+    /// Used across the app wherever setup names appear (AIsaac, session overview, compare window).
+    func setupDisplayName(telescope: String?, camera: String?, focalLength: Double? = nil, pixelSizeMicrons: Double? = nil) -> String {
+        let fp = SetupFingerprint(telescope: telescope, camera: camera, focalLength: focalLength, pixelSizeMicrons: pixelSizeMicrons)
+        if let nick = nickname(for: fp.hash), !nick.isEmpty {
+            return nick
+        }
+        return [telescope, camera].compactMap { $0 }.joined(separator: " + ")
     }
 
     // MARK: - Session Queries (for Archive Scanner scoring)

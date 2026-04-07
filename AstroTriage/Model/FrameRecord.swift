@@ -85,6 +85,7 @@ struct FrameRecord: Codable, FetchableRecord, PersistableRecord {
     // Light pollution + target clustering
     var bortleClass: Double?        // Bortle 1.0-9.0 fractional from BortleEstimator
     var canonicalTarget: String?    // Normalized target name for grouping
+    var majorTarget: String?        // Parent target for sub-targets (e.g., "IC1805" for "MEL15")
 
     var userConfidence: Int          // 0 = unrated, 1-3 = star rating
     var wasDeleted: Int             // 0 or 1
@@ -183,6 +184,7 @@ extension FrameRecord {
             filterTrailingMultiplier: entry.qualityBreakdown?.filterTrailingMultiplier,
             bortleClass: entry.bortleClass,
             canonicalTarget: entry.canonicalTarget,
+            majorTarget: entry.majorTarget,
             userConfidence: entry.userConfidence,
             wasDeleted: entry.isMarkedForDeletion ? 1 : 0,
             algorithmVersion: kAlgorithmVersion,

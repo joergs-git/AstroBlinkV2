@@ -19,7 +19,7 @@ enum TargetCatalog {
     ///   "Elephant's Trunk Nebula" → "IC1396A"
     ///   "NGC 281W" → "NGC281"
     ///   "FlatWizard" → "FLATWIZARD" (non-astro, kept as-is)
-    static func canonicalName(_ raw: String) -> String {
+    static func canonicalName(_ raw: String, isRecursive: Bool = false) -> String {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return "" }
 
@@ -34,6 +34,51 @@ enum TargetCatalog {
                                    .replacingOccurrences(of: "-", with: " ")
         if let alias = commonNameAliases[strippedLower] {
             return alias
+        }
+
+        // Step 1.3: Suffix normalization for typos — "Bode Galaxcie" → "bode" → try "bode galaxy"
+        // Strip misspelled object-type suffixes and try canonical variants against alias table
+        let typeSuffixes = ["nebula", "nebulae", "neubla", "nebual",
+                            "galaxy", "galaxie", "galaxcy", "galaxcie",
+                            "cluster", "cluser", "clutser"]
+        let canonicalTypes = ["nebula", "galaxy", "cluster"]
+        for suffix in typeSuffixes {
+            if strippedLower.hasSuffix(suffix) || strippedLower.hasSuffix(suffix + "s") {
+                let root = strippedLower
+                    .replacingOccurrences(of: suffix + "s", with: "")
+                    .replacingOccurrences(of: suffix, with: "")
+                    .trimmingCharacters(in: .whitespaces)
+                guard !root.isEmpty else { continue }
+                // Try root + each canonical suffix
+                for canonical in canonicalTypes {
+                    if let alias = commonNameAliases[root + " " + canonical] {
+                        return alias
+                    }
+                }
+                // Try root alone (e.g., "bode" → not in aliases, but covers some)
+                if let alias = commonNameAliases[root] {
+                    return alias
+                }
+            }
+        }
+
+        // Step 1.5: Compound name splitting — "M81-Bode", "M81 Bode Galaxy"
+        // Split on delimiters, try each part. First catalog ID match wins.
+        if !isRecursive {
+            let delimiters = CharacterSet(charactersIn: "- _")
+            let parts = trimmed.components(separatedBy: delimiters)
+                .map { $0.trimmingCharacters(in: .whitespaces) }
+                .filter { !$0.isEmpty }
+            if parts.count >= 2 {
+                for part in parts {
+                    let candidate = canonicalName(part, isRecursive: true)
+                    // If it resolved to something different than just uppercased input,
+                    // it matched a known catalog entry or alias
+                    if candidate != part.uppercased() {
+                        return candidate
+                    }
+                }
+            }
         }
 
         // Step 2: Normalize catalog prefixes — handles ALL separator variants:
@@ -107,6 +152,307 @@ enum TargetCatalog {
         }
         return clean.trimmingCharacters(in: .whitespaces)
     }
+
+    // MARK: - Major/Minor Target (sub-target → parent association)
+
+    /// Returns the parent (major) target for a sub-target, or nil if canonical IS the major target.
+    /// Unlike catalogAliases (which overwrites canonical), this preserves the sub-target identity.
+    /// "MEL15" → "IC1805" (Melotte 15 is inside Heart Nebula)
+    /// Normalizes input through canonicalName() so "IC 1805", "Heart Nebula", etc. all work.
+    static func majorTarget(_ raw: String) -> String? {
+        let normalized = canonicalName(raw)
+        return parentTargetMap[normalized.uppercased()]
+    }
+
+    /// Returns all known sub-targets for a given parent target.
+    /// "IC1805", "IC 1805", "Heart Nebula" → [("MEL15", "MEL15 (Melotte 15)"), ...]
+    /// Normalizes input through canonicalName() for flexible matching.
+    static func subTargets(of raw: String) -> [(canonical: String, display: String)] {
+        let normalized = canonicalName(raw).uppercased()
+        return parentTargetMap
+            .filter { $0.value.uppercased() == normalized }
+            .map { (canonical: $0.key, display: displayName($0.key)) }
+            .sorted { $0.canonical < $1.canonical }
+    }
+
+    /// Returns a display name with major > minor formatting when applicable.
+    /// "MEL15" with major IC1805 → "Heart Nebula > Melotte 15"
+    static func displayNameWithParent(_ canonical: String, majorTarget: String?) -> String {
+        if let major = majorTarget {
+            let majorDisplay = displayName(major)
+            let minorDisplay = displayName(canonical)
+            return "\(majorDisplay) > \(minorDisplay)"
+        }
+        return displayName(canonical)
+    }
+
+    /// Maps sub-targets to their parent (major) target.
+    /// These are distinct from catalogAliases: the sub-target keeps its own canonical name,
+    /// but is associated with the parent for grouping/statistics purposes.
+    /// Comprehensive list for amateur astrophotography — helps beginners understand
+    /// that the specific object they aimed at is part of a larger well-known complex.
+    private static let parentTargetMap: [String: String] = [
+
+        // ═══════════════════════════════════════════════════════════
+        // ORION MOLECULAR CLOUD COMPLEX (parent: M42)
+        // ═══════════════════════════════════════════════════════════
+        "M43": "M42",               // De Mairan's Nebula — attached to Great Orion Nebula
+        "NGC1977": "M42",           // Running Man Nebula — reflection nebula north of M42
+        "NGC1980": "M42",           // Iota Orionis association — below M42
+        "NGC1981": "M42",           // Open cluster above Running Man
+        "NGC1999": "M42",           // Reflection nebula south of M42 (T Tauri region)
+        "NGC2024": "M42",           // Flame Nebula — near Alnitak, Orion belt region
+        "IC434": "M42",             // Horsehead Nebula — near Alnitak, Orion belt region
+        "M78": "M42",              // Reflection nebula — north of Orion belt
+        "NGC2071": "M42",           // Reflection nebula near M78
+        "SH2-276": "M42",           // Barnard's Loop — giant arc around entire Orion complex
+
+        // ═══════════════════════════════════════════════════════════
+        // HEART & SOUL NEBULAE (parent: IC1805)
+        // ═══════════════════════════════════════════════════════════
+        "MEL15": "IC1805",          // Melotte 15 — central star cluster of Heart Nebula
+        "NGC1027": "IC1805",        // Open cluster in Heart region
+        "NGC896": "IC1805",         // Bright extension of Heart Nebula (sometimes shot separately)
+        "IC1795": "IC1805",         // Fish Head Nebula — NW extension of Heart
+        "IC1848": "IC1805",         // Soul Nebula — paired with Heart (Heart & Soul complex)
+
+        // ═══════════════════════════════════════════════════════════
+        // NORTH AMERICA / PELICAN COMPLEX (parent: NGC7000)
+        // ═══════════════════════════════════════════════════════════
+        "IC5070": "NGC7000",        // Pelican Nebula — separated from NA by dark lane
+        // IC5067 omitted — catalogAlias redirects IC5067→IC5070, then IC5070→NGC7000 via this map
+        "CYGNUSWALL": "NGC7000",    // Cygnus Wall — sub-region of North America Nebula
+        // "Cygnus Wall" is a sub-region of NGC7000 itself (no separate catalog entry)
+
+        // ═══════════════════════════════════════════════════════════
+        // VEIL NEBULA / CYGNUS LOOP (parent: NGC6960)
+        // ═══════════════════════════════════════════════════════════
+        "NGC6992": "NGC6960",       // Eastern Veil (Network Nebula)
+        "NGC6995": "NGC6960",       // Eastern Veil extension
+        "NGC6979": "NGC6960",       // Pickering's Triangle — faint filament
+        "IC1340": "NGC6960",        // Southern extension of Eastern Veil
+        "PICKERINGSTRIANGLE": "NGC6960", // Pickering's Triangle — faint filament in Veil complex
+
+        // ═══════════════════════════════════════════════════════════
+        // ROSETTE NEBULA (parent: NGC2237)
+        // ═══════════════════════════════════════════════════════════
+        "NGC2244": "NGC2237",       // Rosette Cluster — central open cluster
+        "NGC2246": "NGC2237",       // Part of Rosette Nebula
+
+        // ═══════════════════════════════════════════════════════════
+        // CARINA NEBULA COMPLEX (parent: NGC3372)
+        // ═══════════════════════════════════════════════════════════
+        "NGC3324": "NGC3372",       // Gabriela Mistral Nebula — NW of Carina
+        "NGC3293": "NGC3372",       // Open cluster in Carina region
+        "IC2599": "NGC3372",        // Nebulosity around Carina
+        "NGC3532": "NGC3372",       // Wishing Well Cluster — near Carina
+        "TR14": "NGC3372",          // Trumpler 14 — young cluster in Carina
+        "TR16": "NGC3372",          // Trumpler 16 — contains Eta Carinae star
+
+        // ═══════════════════════════════════════════════════════════
+        // LAGOON / TRIFID REGION (parent: M8)
+        // ═══════════════════════════════════════════════════════════
+        "NGC6530": "M8",            // Open cluster embedded in Lagoon Nebula
+        "M20": "M8",               // Trifid Nebula — nearby, often imaged together
+        // NGC6514 omitted — catalogAlias redirects NGC6514→M20, then M20→M8 via parentTargetMap
+        "M21": "M8",               // Open cluster near Trifid, same FOV
+
+        // ═══════════════════════════════════════════════════════════
+        // EAGLE NEBULA (parent: M16)
+        // ═══════════════════════════════════════════════════════════
+        "NGC6611": "M16",           // Open cluster in Eagle Nebula
+        "IC4703": "M16",            // Nebulosity of Eagle (Pillars of Creation region)
+
+        // ═══════════════════════════════════════════════════════════
+        // CYGNUS / SADR REGION (parent: IC1318)
+        // ═══════════════════════════════════════════════════════════
+        "NGC6888": "IC1318",        // Crescent Nebula — embedded in Sadr/Butterfly region
+        "NGC6914": "IC1318",        // Reflection nebula in Cygnus, near Sadr
+        // Note: IC1318 (Butterfly/Sadr) is the parent complex here
+
+        // ═══════════════════════════════════════════════════════════
+        // IC1396 COMPLEX — Elephant's Trunk (parent: IC1396)
+        // ═══════════════════════════════════════════════════════════
+        "IC1396A": "IC1396",        // Elephant's Trunk — dark globule, popular long-FL target
+        "TR37": "IC1396",           // Trumpler 37 — central cluster of IC1396
+
+        // ═══════════════════════════════════════════════════════════
+        // RHO OPHIUCHI CLOUD COMPLEX (parent: RHOOPH — DB uses this canonical ID)
+        // ═══════════════════════════════════════════════════════════
+        "IC4603": "RHOOPH",         // Blue reflection nebula near Rho Oph
+        "IC4604": "RHOOPH",         // Primary reflection nebula (IC4604 = Rho Oph in some catalogs)
+        "IC4605": "RHOOPH",         // Reflection nebula near Rho Oph
+        "IC4606": "RHOOPH",         // Nebulosity near Antares
+        "SH2-9": "RHOOPH",          // Antares nebula — part of Rho Oph complex
+
+        // ═══════════════════════════════════════════════════════════
+        // ANDROMEDA GROUP (parent: M31)
+        // ═══════════════════════════════════════════════════════════
+        "M32": "M31",              // Compact elliptical satellite of Andromeda
+        "M110": "M31",             // Dwarf elliptical satellite of Andromeda
+        "NGC206": "M31",            // Giant star cloud in M31's spiral arm (long-FL target)
+
+        // ═══════════════════════════════════════════════════════════
+        // M81 / M82 GROUP (parent: M81)
+        // ═══════════════════════════════════════════════════════════
+        "M82": "M81",              // Cigar Galaxy — interacting pair with Bode's
+        "NGC3077": "M81",           // Irregular galaxy in M81 group (IFN region)
+
+        // ═══════════════════════════════════════════════════════════
+        // LEO TRIPLET (parent: LEOTRIPLET — group entry in DeepSkyTargetDatabase)
+        // ═══════════════════════════════════════════════════════════
+        "M65": "LEOTRIPLET",       // Leo Triplet — spiral galaxy
+        "M66": "LEOTRIPLET",       // Leo Triplet — spiral galaxy
+        "NGC3628": "LEOTRIPLET",   // Hamburger Galaxy — Leo Triplet member
+
+        // ═══════════════════════════════════════════════════════════
+        // DEER LICK GROUP (parent: NGC7331)
+        // ═══════════════════════════════════════════════════════════
+        "NGC7335": "NGC7331",       // Deer Lick Group member
+        "NGC7336": "NGC7331",       // Deer Lick Group member
+        "NGC7337": "NGC7331",       // Deer Lick Group member
+        "NGC7340": "NGC7331",       // Deer Lick Group member
+
+        // ═══════════════════════════════════════════════════════════
+        // STEPHAN'S QUINTET (parent: STEPHANSQUINTET — group entry)
+        // ═══════════════════════════════════════════════════════════
+        "NGC7317": "STEPHANSQUINTET", // Stephan's Quintet member
+        "NGC7318": "STEPHANSQUINTET", // Stephan's Quintet (A+B pair)
+        "NGC7319": "STEPHANSQUINTET", // Stephan's Quintet member
+        "NGC7320": "STEPHANSQUINTET", // Stephan's Quintet foreground galaxy
+
+        // ═══════════════════════════════════════════════════════════
+        // MARKARIAN'S CHAIN / VIRGO CLUSTER (parent: MARKARIANSCHAIN — group entry)
+        // ═══════════════════════════════════════════════════════════
+        "M84": "MARKARIANSCHAIN",   // Markarian's Chain — lenticular galaxy
+        "M86": "MARKARIANSCHAIN",   // Markarian's Chain — elliptical galaxy
+        "NGC4435": "MARKARIANSCHAIN", // The Eyes (pair with NGC4438)
+        "NGC4438": "MARKARIANSCHAIN", // The Eyes — interacting pair
+        "NGC4461": "MARKARIANSCHAIN", // Part of the chain
+        "NGC4473": "MARKARIANSCHAIN", // Chain member
+        "NGC4477": "MARKARIANSCHAIN", // Chain member
+        // Siamese Twins (nearby in Virgo Cluster)
+        "NGC4567": "MARKARIANSCHAIN", // Siamese Twins — butterfly galaxies
+        "NGC4568": "MARKARIANSCHAIN", // Siamese Twins — butterfly galaxies
+
+        // ═══════════════════════════════════════════════════════════
+        // MONOCEROS / CONE REGION (parent: NGC2264)
+        // ═══════════════════════════════════════════════════════════
+        // NGC2264 includes: Cone Nebula, Christmas Tree Cluster, Fox Fur Nebula
+        // All are part of the same HII region, different sub-regions
+        "NGC2261": "NGC2264",       // Hubble's Variable Nebula — nearby in Monoceros
+
+        // ═══════════════════════════════════════════════════════════
+        // AURIGA STAR-FORMING REGION (parent: IC405)
+        // ═══════════════════════════════════════════════════════════
+        "IC410": "IC405",           // Tadpole Nebula — near Flaming Star in Auriga
+        "IC417": "IC405",           // Spider Nebula — Auriga cluster region
+        "NGC1931": "IC405",         // Small emission nebula near IC405
+
+        // ═══════════════════════════════════════════════════════════
+        // SCORPIUS / CAT'S PAW REGION (parent: NGC6334)
+        // ═══════════════════════════════════════════════════════════
+        "NGC6357": "NGC6334",       // Lobster / War & Peace Nebula — adjacent to Cat's Paw
+
+        // ═══════════════════════════════════════════════════════════
+        // LARGE MAGELLANIC CLOUD (parent: LMC — use NGC2070 as parent)
+        // ═══════════════════════════════════════════════════════════
+        "NGC2014": "NGC2070",       // Emission nebula in LMC near Tarantula
+        "NGC2074": "NGC2070",       // Seahorse Nebula — near Tarantula
+        "NGC1850": "NGC2070",       // Double cluster in LMC
+        "NGC1818": "NGC2070",       // Young cluster in LMC
+
+        // ═══════════════════════════════════════════════════════════
+        // PERSEUS MOLECULAR CLOUD (parent: NGC1333)
+        // ═══════════════════════════════════════════════════════════
+        "IC348": "NGC1333",         // Young cluster in Perseus cloud
+
+        // ═══════════════════════════════════════════════════════════
+        // CEPHEUS FLARE / REGION (parent: SH2-155)
+        // ═══════════════════════════════════════════════════════════
+        "NGC7129": "SH2-155",       // Reflection nebula in Cepheus (near Cave Nebula)
+        "NGC7142": "SH2-155",       // Open cluster near Cave Nebula
+        "VDB152": "SH2-155",        // Wolf's Cave — dark/reflection nebula in Cepheus
+
+        // ═══════════════════════════════════════════════════════════
+        // CASSIOPEIA REGION (parent: NGC869 — Double Cluster)
+        // ═══════════════════════════════════════════════════════════
+        "NGC884": "NGC869",         // Double Cluster — h Persei paired with Chi Persei
+
+        // ═══════════════════════════════════════════════════════════
+        // WHALE / HOCKEY STICK GALAXY PAIR (parent: NGC4631)
+        // ═══════════════════════════════════════════════════════════
+        "NGC4627": "NGC4631",       // Small companion above Whale Galaxy
+        "NGC4656": "NGC4631",       // Hockey Stick Galaxy — interacting neighbor
+        "NGC4657": "NGC4631",       // Extension of Hockey Stick
+
+        // ═══════════════════════════════════════════════════════════
+        // ANTENNAE GALAXIES (parent: NGC4038)
+        // ═══════════════════════════════════════════════════════════
+        "NGC4039": "NGC4038",       // Antennae pair — merging galaxies
+
+        // ═══════════════════════════════════════════════════════════
+        // FLYING BAT / SQUID (parent: SH2-129)
+        // ═══════════════════════════════════════════════════════════
+        "OU4": "SH2-129",           // Giant Squid Nebula — inside Flying Bat Nebula
+
+        // ═══════════════════════════════════════════════════════════
+        // SPAGHETTI NEBULA (parent: SH2-240)
+        // ═══════════════════════════════════════════════════════════
+        "SIMEIS147": "SH2-240",     // Simeis 147 = SH2-240 (same object, different catalogs)
+
+        // ═══════════════════════════════════════════════════════════
+        // WESTERN GRAZING GALAXIES / NGC891 AREA
+        // ═══════════════════════════════════════════════════════════
+        "ABELL347": "NGC891",       // Galaxy cluster near Silver Sliver (same FOV wide-field)
+
+        // ═══════════════════════════════════════════════════════════
+        // FLAMING STAR / IC405 AREA — ADDITIONAL
+        // ═══════════════════════════════════════════════════════════
+        "NGC1893": "IC405",         // Open cluster near Spider/Tadpole region
+
+        // ═══════════════════════════════════════════════════════════
+        // MISCELLANEOUS PAIRS & GROUPS
+        // ═══════════════════════════════════════════════════════════
+        // M51 + companion
+        "NGC5195": "M51",           // Companion galaxy to Whirlpool
+
+        // NGC253 Sculptor group
+        "NGC247": "NGC253",         // Sculptor group member (same wide-field)
+
+        // M87 / Virgo A jet
+        "NGC4486": "M87",          // NGC designation for M87 (same object alias coverage)
+
+        // Pleiades sub-nebulae
+        "IC349": "M45",             // Barnard's Merope Nebula — reflection in Pleiades
+        "VDB23": "M45",             // Merope reflection nebula in Pleiades
+
+        // ═══════════════════════════════════════════════════════════
+        // ADDITIONAL COMPLEXES (from comprehensive research)
+        // ═══════════════════════════════════════════════════════════
+
+        // Seagull Nebula Complex (parent: IC2177)
+        "NGC2327": "IC2177",        // Head of the Seagull
+        "NGC2335": "IC2177",        // Open cluster in Seagull
+        "SH2-292": "IC2177",        // Sharpless component of Seagull
+
+        // NGC7822 / CED214 merged — CED214 is alias on NGC7822 DB entry
+
+        // NGC6820 / NGC6823 (cluster powers the nebula)
+        "NGC6823": "NGC6820",       // Open cluster powering NGC6820 nebulosity
+
+        // Monkey Head region
+        "NGC2175": "NGC2174",       // Cluster in Monkey Head Nebula
+
+        // Boogeyman / Orion outskirts
+        "LDN1622": "M42",           // Boogeyman Nebula — Orion complex outskirts
+        "B33": "IC434",             // Horsehead dark silhouette — on IC434 emission
+
+        // Crescent region
+        "WR134": "NGC6888",         // WR 134 Ring Nebula — near Crescent
+
+        // (NGC884, NGC4627, NGC4657 already in main sections above)
+    ]
 
     // MARK: - Display Name (catalog → "M42 (Orion Nebula)")
 
@@ -517,7 +863,7 @@ enum TargetCatalog {
         "IC1396A": "IC1396",    // Elephant's Trunk → IC1396
         "IC5067": "IC5070",     // Pelican Nebula spine → Pelican
         "NGC896": "IC1805",     // Heart extension → Heart
-        "IC1795": "IC1805",     // Fish Head → Heart region
+        // IC1795 (Fish Head) kept as standalone — linked via parentTargetMap, not alias
         // NGC → Messier cross-references
         "NGC1952": "M1",   "NGC1976": "M42",  "NGC1982": "M43",
         "NGC224":  "M31",  "NGC221":  "M32",  "NGC598":  "M33",
@@ -560,7 +906,6 @@ enum TargetCatalog {
         "NGC6853": "M27",
         // Spaghetti Nebula
         "SIMEIS147": "SH2-240", "SH2-245": "SH2-240",
-        // Medusa aliases
-        "ABELL21": "SH2-274",
+        // Medusa: ABELL21 is the canonical entry (SH2-274 added as alias on DB entry)
     ]
 }
