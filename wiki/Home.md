@@ -19,6 +19,7 @@ AIsaac is your built-in AI astrophotography assistant, named after **Isaac Newto
 - **[AIsaac Guide](AIsaac-Guide)** — How to use the AI assistant, all presets, voice, Opus upgrade
 - **[Keyboard Shortcuts](Keyboard-Shortcuts)** — Complete keyboard reference
 - **[FAQ](FAQ)** — Frequently asked questions
+- **[Competitive Comparison](Competitive-Comparison)** — AstroBlink vs PixInsight vs Siril vs APP
 
 ## Screenshots
 
