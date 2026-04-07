@@ -14,6 +14,10 @@ class FrameHistoryModel: ObservableObject {
     @Published var nightlySummaries: [NightSummary] = []
     @Published var availableSetups: [(hash: String, label: String)] = []
     @Published var availableTargets: [String] = []
+
+    /// Maps a primary setup hash to all merged hashes (same scope, FL within tolerance).
+    /// When a setup is selected, ALL merged hashes are queried together.
+    private(set) var mergedSetupHashes: [String: [String]] = [:]
     @Published var stats: (frameCount: Int, sessionCount: Int, firstNight: String?, lastNight: String?)?
 
     // MARK: - Chart Configuration
@@ -213,43 +217,108 @@ class FrameHistoryModel: ObservableObject {
             let sessions = try FrameHistoryDatabase.shared.sessions()
             let nicknames = FrameHistoryDatabase.shared.allNicknames()
             var seen: Set<String> = []
-            var rawSetups: [(hash: String, equipment: String, nickname: String?)] = []
+            var rawSetups: [(hash: String, equipment: String, nickname: String?, fl: Int?)] = []
             for session in sessions {
                 guard let hash = session.setupHash, !seen.contains(hash) else { continue }
                 seen.insert(hash)
                 let equipment = [session.telescope, session.camera].compactMap { $0 }.joined(separator: " + ")
-                rawSetups.append((hash: hash, equipment: equipment, nickname: nicknames[hash]))
+                let fl = FrameHistoryDatabase.shared.primaryFocalLength(for: hash)
+                rawSetups.append((hash: hash, equipment: equipment, nickname: nicknames[hash], fl: fl))
             }
 
-            // Detect duplicate equipment labels (same mount+camera but different FL → different hash)
-            var equipmentCount: [String: Int] = [:]
-            for s in rawSetups where s.nickname == nil {
-                let key = s.equipment.lowercased().trimmingCharacters(in: .whitespaces)
-                equipmentCount[key, default: 0] += 1
-            }
+            // Merge setups with same telescope+camera and FL within 3% tolerance.
+            // Minor plate-solve variations (903/904/905mm) are the same physical scope.
+            var merged: [String: [String]] = [:]  // primaryHash → [all hashes in cluster]
+            var primaryForHash: [String: String] = [:]  // hash → its primary hash
 
-            // Build final labels: append FL for duplicates, use nickname when available
-            var setups: [(hash: String, label: String)] = []
+            // Group by normalized equipment string (ignore nicknames for grouping)
+            var equipmentGroups: [String: [(hash: String, equipment: String, nickname: String?, fl: Int?)]] = [:]
             for s in rawSetups {
-                let label: String
-                if let nickname = s.nickname, !nickname.isEmpty {
-                    label = nickname
-                } else if s.equipment.isEmpty {
-                    label = String(s.hash.prefix(8))
-                } else {
-                    let key = s.equipment.lowercased().trimmingCharacters(in: .whitespaces)
-                    if (equipmentCount[key] ?? 0) > 1,
-                       let fl = FrameHistoryDatabase.shared.primaryFocalLength(for: s.hash), fl > 0 {
-                        label = "\(s.equipment) (\(fl)mm)"
-                    } else {
-                        label = s.equipment
+                let key = s.equipment.lowercased().trimmingCharacters(in: .whitespaces)
+                equipmentGroups[key, default: []].append(s)
+            }
+
+            for (_, group) in equipmentGroups {
+                // Cluster FLs within 3% tolerance using single-linkage clustering
+                var clusters: [[(hash: String, equipment: String, nickname: String?, fl: Int?)]] = []
+                for setup in group {
+                    // Setups with nicknames stay standalone (user intentionally differentiated them)
+                    if setup.nickname != nil && !setup.nickname!.isEmpty {
+                        clusters.append([setup])
+                        continue
+                    }
+                    var placed = false
+                    for i in clusters.indices {
+                        // Skip nickname clusters
+                        if clusters[i].count == 1, let n = clusters[i][0].nickname, !n.isEmpty { continue }
+                        // Check FL tolerance against any member of the cluster
+                        if let existingFL = clusters[i].first(where: { $0.fl != nil })?.fl,
+                           let newFL = setup.fl, existingFL > 0, newFL > 0 {
+                            let tolerance = Double(max(existingFL, newFL)) * 0.03
+                            if abs(Double(existingFL - newFL)) <= tolerance {
+                                clusters[i].append(setup)
+                                placed = true
+                                break
+                            }
+                        } else if setup.fl == nil || setup.fl == 0 {
+                            // No FL data — check if this is the only entry without FL in this equipment group
+                            // Don't auto-merge unknown FL with known FL setups
+                            continue
+                        }
+                    }
+                    if !placed {
+                        clusters.append([setup])
                     }
                 }
-                setups.append((hash: s.hash, label: label))
-            }
-            availableSetups = setups
 
-            // Default: "All Setups" (nil) — shows consolidated view
+                // For each cluster, pick the hash with most frames as primary
+                for cluster in clusters {
+                    if cluster.count == 1 {
+                        merged[cluster[0].hash] = [cluster[0].hash]
+                        primaryForHash[cluster[0].hash] = cluster[0].hash
+                    } else {
+                        // Primary = hash with most frames (via primaryFocalLength query pattern)
+                        let sorted = cluster.sorted { a, b in
+                            let countA = (try? FrameHistoryDatabase.shared.frameCount(setupHash: a.hash)) ?? 0
+                            let countB = (try? FrameHistoryDatabase.shared.frameCount(setupHash: b.hash)) ?? 0
+                            return countA > countB
+                        }
+                        let primary = sorted[0].hash
+                        let allHashes = sorted.map(\.hash)
+                        merged[primary] = allHashes
+                        for s in sorted {
+                            primaryForHash[s.hash] = primary
+                        }
+                    }
+                }
+            }
+
+            mergedSetupHashes = merged
+
+            // Build final labels: always show FL when available
+            var setups: [(hash: String, label: String)] = []
+            for (primary, hashes) in merged {
+                guard let firstSetup = rawSetups.first(where: { $0.hash == primary }) else { continue }
+                let label: String
+                if let nickname = firstSetup.nickname, !nickname.isEmpty {
+                    label = nickname
+                } else if firstSetup.equipment.isEmpty {
+                    label = String(primary.prefix(8))
+                } else {
+                    // Use the mode FL across all merged hashes
+                    let modeFL = FrameHistoryDatabase.shared.primaryFocalLength(for: hashes)
+                    if let fl = modeFL, fl > 0 {
+                        label = "\(firstSetup.equipment) (\(fl)mm)"
+                    } else {
+                        label = firstSetup.equipment
+                    }
+                }
+                setups.append((hash: primary, label: label))
+            }
+
+            // Sort: alphabetically by label for consistent ordering
+            availableSetups = setups.sorted { $0.label.localizedCaseInsensitiveCompare($1.label) == .orderedAscending }
+
         } catch {
             print("FrameHistoryModel: loadAvailableSetups failed: \(error)")
         }
@@ -258,10 +327,19 @@ class FrameHistoryModel: ObservableObject {
     func loadNightlyTrend() {
         do {
             if let setupHash = selectedSetupHash {
-                nightlySummaries = try FrameHistoryDatabase.shared.nightlyTrend(
-                    setupHash: setupHash,
-                    target: selectedTarget
-                )
+                // Query all merged hashes for this setup (e.g., 903mm + 904mm + 905mm)
+                let hashes = mergedSetupHashes[setupHash] ?? [setupHash]
+                if hashes.count == 1 {
+                    nightlySummaries = try FrameHistoryDatabase.shared.nightlyTrend(
+                        setupHash: hashes[0],
+                        target: selectedTarget
+                    )
+                } else {
+                    nightlySummaries = try FrameHistoryDatabase.shared.nightlyTrend(
+                        setupHashes: hashes,
+                        target: selectedTarget
+                    )
+                }
             } else {
                 // "All Setups" — query across all setups
                 nightlySummaries = try FrameHistoryDatabase.shared.nightlyTrendAll(
@@ -864,7 +942,8 @@ class FrameHistoryModel: ObservableObject {
 
     func setupComparisonPoints(for metric: MetricType) -> [SetupMetric] {
         availableSetups.compactMap { setup in
-            guard let summary = try? FrameHistoryDatabase.shared.setupSummary(setupHash: setup.hash) else {
+            let hashes = mergedSetupHashes[setup.hash] ?? [setup.hash]
+            guard let summary = try? FrameHistoryDatabase.shared.setupSummary(setupHashes: hashes) else {
                 return nil
             }
             let value: Double

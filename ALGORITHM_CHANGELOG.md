@@ -12,6 +12,37 @@ Records with `algorithmVersion < kAlgorithmVersion` are candidates for re-analys
 
 ---
 
+## Version 15 — v5.20.1 (2026-04-07)
+
+**Star detection sharpness filter, narrowband false positive reduction, setup merging.**
+
+### Changes
+
+1. **Star Detector Sharpness Check** — Added concentration ratio filter in `StarDetector.swift`:
+   peak pixel must be ≥1.2x brighter than the average of its 8 neighbors (above background).
+   Rejects smooth nebulosity peaks that pass the 5-sigma + local-max test, especially in
+   H-alpha narrowband data where bright emission regions create false star detections.
+
+2. **Shape Measurement Concentration Check** — Added in `StarMetricsCalculator.computeShape()`:
+   peak brightness must be ≥2x the average within the measurement aperture. Prevents computing
+   eccentricity/PA on diffuse nebulosity patches that survived earlier filtering.
+
+3. **Setup FL Merging** — `FrameHistoryModel.loadAvailableSetups()` now clusters setups with
+   identical telescope+camera and focal lengths within 3% tolerance. Minor plate-solve
+   variations (903/904/905mm from the same scope) are merged into one entry. All merged
+   hashes are queried together for charts and statistics.
+
+4. **Always Show FL** — Setup labels now always include focal length when available, not only
+   when duplicate equipment strings exist. Fixes RC12red08 missing FL display.
+
+### Impact
+- Star detection: fewer false positives on narrowband, slightly fewer detected stars overall
+  (rejected candidates are nebulosity peaks, not real stars)
+- Setup merging: cosmetic change, does not affect scoring or calibration database
+- All existing v14 frame records should be re-scored for improved star metrics
+
+---
+
 ## Version 14 — v5.14.0 (2026-04-03)
 
 **Target-aware quality scoring, practical significance MAD floor, planet exclusion.**

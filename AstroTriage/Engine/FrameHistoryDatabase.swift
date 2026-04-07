@@ -488,7 +488,14 @@ final class FrameHistoryDatabase {
 
     /// Aggregate setup summary for AIsaac context.
     func setupSummary(setupHash: String) throws -> SetupHistorySummary? {
-        try dbQueue.read { db in
+        try setupSummary(setupHashes: [setupHash])
+    }
+
+    /// Summary across multiple setup hashes (for merged setups with similar FL).
+    func setupSummary(setupHashes: [String]) throws -> SetupHistorySummary? {
+        guard !setupHashes.isEmpty else { return nil }
+        let placeholders = setupHashes.map { _ in "?" }.joined(separator: ",")
+        return try dbQueue.read { db in
             let row = try Row.fetchOne(db, sql: """
                 SELECT COUNT(*) as total,
                     AVG(computedFWHM) as avgFWHM,
@@ -498,19 +505,19 @@ final class FrameHistoryDatabase {
                     SUM(CASE WHEN qualityTier = 0 THEN 1 ELSE 0 END) as trashCount,
                     MIN(observingNight) as firstNight,
                     MAX(observingNight) as lastNight
-                FROM frame_record WHERE setupHash = ?
-                """, arguments: [setupHash])
+                FROM frame_record WHERE setupHash IN (\(placeholders))
+                """, arguments: StatementArguments(setupHashes))
 
             guard let row, let total: Int = row["total"], total > 0 else { return nil }
 
             let sessionCount = try Int.fetchOne(db, sql: """
-                SELECT COUNT(DISTINCT sessionId) FROM frame_record WHERE setupHash = ?
-                """, arguments: [setupHash]) ?? 0
+                SELECT COUNT(DISTINCT sessionId) FROM frame_record WHERE setupHash IN (\(placeholders))
+                """, arguments: StatementArguments(setupHashes)) ?? 0
 
             let targets = try String.fetchAll(db, sql: """
                 SELECT DISTINCT target FROM frame_record
-                WHERE setupHash = ? AND target IS NOT NULL
-                """, arguments: [setupHash])
+                WHERE setupHash IN (\(placeholders)) AND target IS NOT NULL
+                """, arguments: StatementArguments(setupHashes))
 
             return SetupHistorySummary(
                 totalFrames: total,
@@ -888,6 +895,92 @@ final class FrameHistoryDatabase {
                 GROUP BY fl ORDER BY cnt DESC LIMIT 1
                 """, arguments: [setupHash])
             return row?["fl"] as Int?
+        }
+    }
+
+    /// Returns the most common focal length across multiple setup hashes (for merged setups).
+    func primaryFocalLength(for setupHashes: [String]) -> Int? {
+        guard !setupHashes.isEmpty else { return nil }
+        if setupHashes.count == 1 { return primaryFocalLength(for: setupHashes[0]) }
+        let placeholders = setupHashes.map { _ in "?" }.joined(separator: ",")
+        return try? dbQueue.read { db in
+            let row = try Row.fetchOne(db, sql: """
+                SELECT CAST(ROUND(focalLength) AS INTEGER) as fl, COUNT(*) as cnt
+                FROM frame_record WHERE setupHash IN (\(placeholders)) AND focalLength IS NOT NULL
+                GROUP BY fl ORDER BY cnt DESC LIMIT 1
+                """, arguments: StatementArguments(setupHashes))
+            return row?["fl"] as Int?
+        }
+    }
+
+    /// Returns the total frame count for a setup hash.
+    func frameCount(setupHash: String) throws -> Int {
+        try dbQueue.read { db in
+            try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM frame_record WHERE setupHash = ?",
+                             arguments: [setupHash]) ?? 0
+        }
+    }
+
+    /// Per-night quality summary for multiple merged setup hashes.
+    func nightlyTrend(setupHashes: [String], target: String? = nil) throws -> [NightSummary] {
+        guard !setupHashes.isEmpty else { return [] }
+        if setupHashes.count == 1 { return try nightlyTrend(setupHash: setupHashes[0], target: target) }
+
+        let placeholders = setupHashes.map { _ in "?" }.joined(separator: ",")
+        return try dbQueue.read { db in
+            var sql = """
+                SELECT observingNight, COALESCE(canonicalTarget, target) as cTarget, filter,
+                    COUNT(*) as cnt,
+                    SUM(CASE WHEN qualityTier = 0 THEN 1 ELSE 0 END) as trash,
+                    SUM(CASE WHEN qualityTier = 2 THEN 1 ELSE 0 END) as good,
+                    SUM(CASE WHEN qualityTier = 3 THEN 1 ELSE 0 END) as excellent,
+                    SUM(CASE WHEN qualityTier = 1 OR qualityTier = 4 THEN 1 ELSE 0 END) as borderline,
+                    AVG(computedFWHM) as avgFWHM,
+                    AVG(computedHFR) as avgHFR,
+                    AVG(CAST(computedStarCount AS REAL)) as avgStars,
+                    AVG(noiseMAD) as avgNoise,
+                    AVG(trailingScore) as avgTrailing,
+                    AVG(moonIllumination) as avgMoon,
+                    AVG(moonDistance) as avgMoonDist,
+                    AVG(exposure) as avgExposure,
+                    AVG(ambientTemp) as avgTemp,
+                    AVG(bortleClass) as avgBortle
+                FROM frame_record
+                WHERE setupHash IN (\(placeholders)) AND observingNight IS NOT NULL
+                """
+            var args: [DatabaseValueConvertible] = setupHashes
+
+            if let target {
+                sql += " AND (COALESCE(canonicalTarget, target) = ? OR majorTarget = ?)"
+                args.append(target)
+                args.append(target)
+            }
+
+            sql += " GROUP BY observingNight, filter ORDER BY observingNight ASC"
+
+            let rows = try Row.fetchAll(db, sql: sql, arguments: StatementArguments(args))
+            return rows.map { row in
+                NightSummary(
+                    night: row["observingNight"] ?? "",
+                    target: row["cTarget"],
+                    filter: row["filter"],
+                    frameCount: row["cnt"] ?? 0,
+                    trashCount: row["trash"] ?? 0,
+                    goodCount: row["good"] ?? 0,
+                    excellentCount: row["excellent"] ?? 0,
+                    borderlineCount: row["borderline"] ?? 0,
+                    medianFWHM: row["avgFWHM"],
+                    medianHFR: row["avgHFR"],
+                    medianStarCount: row["avgStars"],
+                    medianNoise: row["avgNoise"],
+                    medianTrailing: row["avgTrailing"],
+                    medianMoonIllumination: row["avgMoon"],
+                    medianMoonDistance: row["avgMoonDist"],
+                    medianExposure: row["avgExposure"],
+                    medianAmbientTemp: row["avgTemp"],
+                    medianBortle: row["avgBortle"]
+                )
+            }
         }
     }
 

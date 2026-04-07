@@ -872,6 +872,33 @@ enum StarMetricsCalculator {
         }
         guard peakValue > 30 else { return nil }  // Lower SNR threshold than before (was 50)
 
+        // Concentration check: verify this is a compact point source, not diffuse nebulosity.
+        // Compare peak brightness to average within the aperture — stars are concentrated,
+        // nebulosity is flat. A real star's peak should be at least 3x the aperture average.
+        var apertureSum: Float = 0
+        var apertureCount: Float = 0
+        let checkR = min(fitR, 5)
+        for dy in -checkR...checkR {
+            for dx in -checkR...checkR {
+                let distSq = Float(dx * dx + dy * dy)
+                if distSq > Float(checkR * checkR) { continue }
+                let px = intCx + dx
+                let py = intCy + dy
+                // Caller bounds-checked: center is safeR pixels from all edges
+                guard px >= 0, px < width else { continue }
+                let val = Float(ptr[channelOffset + py * width + px]) - background
+                if val > 0 {
+                    apertureSum += val
+                    apertureCount += 1
+                }
+            }
+        }
+        if apertureCount > 0 {
+            let avgInAperture = apertureSum / apertureCount
+            // Stars: peak >> average (concentrated). Nebulosity: peak ≈ average (flat).
+            if avgInAperture > 0 && peakValue / avgInAperture < 2.0 { return nil }
+        }
+
         // Use 5% of peak as threshold (was 10%) to capture more of the PSF wings
         let threshold = peakValue * 0.05
 

@@ -1074,11 +1074,14 @@ struct FrameHistoryContentView: View {
 
         if alert.runModal() == .alertFirstButtonReturn {
             let nickname = input.stringValue.trimmingCharacters(in: .whitespaces)
-            if nickname.isEmpty {
-                // Clear nickname — use raw equipment name
-                try? FrameHistoryDatabase.shared.setNickname("", for: hash)
-            } else {
-                try? FrameHistoryDatabase.shared.setNickname(nickname, for: hash)
+            // Apply nickname to all merged hashes (e.g., same scope at 903/904/905mm)
+            let allHashes = model.mergedSetupHashes[hash] ?? [hash]
+            for h in allHashes {
+                if nickname.isEmpty {
+                    try? FrameHistoryDatabase.shared.setNickname("", for: h)
+                } else {
+                    try? FrameHistoryDatabase.shared.setNickname(nickname, for: h)
+                }
             }
             model.loadData()  // Refresh setup labels
         }

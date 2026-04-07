@@ -109,6 +109,27 @@ enum StarDetector {
                 }
                 guard isMax else { continue }
 
+                // Sharpness check: reject extended nebulosity peaks.
+                // A real star concentrates flux in the center — the peak pixel should be
+                // significantly brighter than the average of its 8 neighbors.
+                // Nebulosity varies smoothly, so peak ≈ neighbors (low sharpness ratio).
+                var neighborSum: Float = 0
+                var neighborCount: Float = 0
+                for dy in -1...1 {
+                    for dx in -1...1 {
+                        if dx == 0 && dy == 0 { continue }
+                        neighborSum += subData[(sy + dy) * subW + (sx + dx)]
+                        neighborCount += 1
+                    }
+                }
+                let neighborMean = neighborSum / neighborCount
+                let peakAboveBg = val - median
+                let neighborAboveBg = neighborMean - median
+                // Sharpness ratio: how much brighter is the peak vs its ring?
+                // Stars: ratio > 1.3 (concentrated). Nebulosity: ratio ≈ 1.0 (smooth).
+                // Use 1.2 threshold to be conservative (don't lose faint wide stars).
+                if neighborAboveBg > 0 && peakAboveBg / neighborAboveBg < 1.2 { continue }
+
                 // Weighted centroid in 3x3 neighborhood for sub-pixel accuracy
                 var sumX: Float = 0, sumY: Float = 0, sumW: Float = 0
                 for dy in -1...1 {
