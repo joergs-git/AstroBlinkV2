@@ -4,6 +4,24 @@ All notable changes to AstroBlink & AIsaac will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [5.20.0] — 2026-04-07
+
+### Added
+- **Meteoblue Weather Forecast** — Replaced 7Timer + Open-Meteo with Meteoblue via Supabase Edge Function. 1-hourly cloud layers (low/mid/high), visibility (km), fog probability, wind, humidity, pressure for 7 days. Past hours greyed out, bold NOW marker on current hour, future bars in color. Hover any bar for rich detail card (cloud breakdown, seeing estimate, temp, humidity, wind, fog, rain). "powered by meteoblue" attribution
+- **Target Hierarchy (Industry First)** — 120+ parent/child mappings across 30+ deep-sky complexes (Orion, Heart & Soul, Veil, Carina, Rho Oph, Virgo, etc.). Sub-targets show "Part of [parent]" in catalog detail and list rows. Parents show clickable sub-target pills. Hover tooltip shows hierarchy. Frame History rolls up sub-target integration time to parent. `majorTarget` field on ImageEntry + FrameRecord with DB migration
+- **Fuzzy Target Name Matching** — Compound name splitting ("M81-Bode" → "M81"), suffix typo normalization ("Bode Galaxcie" → "M81"). All compare and grouping paths use canonical target names
+- **Compare Fallback Label** — Shows reason when cross-filter or cross-exposure fallback is used ("Best (R filter)", "Best (180s exposure)")
+- **Setup Dedup** — Frame History dropdown disambiguates duplicate mount+camera labels by appending focal length (e.g., "ZWO AM5 + ZWO ASI6200MM Pro (620mm)")
+- **Setup Nicknames Everywhere** — `setupDisplayName()` helper, nickname in AIsaac historical context
+- **Common Names Everywhere** — AIsaac context shows "M81 (Bode's Galaxy)" format for all targets
+
+### Changed
+- **Monthly Trend Line** — Session Score chart always shows nightly bars + monthly median trend line (white/dark adaptive) when >6 months of data. Median computed from per-night scores, not aggregated metrics
+- **Seeing Estimation** — Multi-factor heuristic using visibility (primary), high clouds, wind speed, humidity instead of simplistic 7Timer scale
+
+### Fixed
+- **Database Audit** — IC434/B33 duplicate merged (fixed type to emissionNebula), ABELL21/SH2-274 orphan resolved, LEOTRIPLET aliases removed (M65/M66/NGC3628 keep standalone entries), IC1805 alias IC1795 removed (Fish Head is sub-target), NGC7000 alias IC5070 removed (Pelican is sub-target), IC4604→RHOOPH parent references fixed, NGC7822 added to DB, unreachable parentTargetMap entries cleaned, added CYGNUSWALL→NGC7000 and PICKERINGSTRIANGLE→NGC6960
+
 ## [5.18.0] — 2026-04-05
 
 ### Added

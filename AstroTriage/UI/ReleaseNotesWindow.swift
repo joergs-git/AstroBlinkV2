@@ -34,6 +34,16 @@ class ReleaseNotesWindowController {
 // MARK: - Release notes data (shared between view and copy)
 
 private let allReleases: [(version: String, date: String, items: [(ReleaseNotesView.ChangeType, String, String)])] = [
+    ("5.20.0", "April 7, 2026", [
+        (.added, "Meteoblue Weather", "Replaced 7Timer + Open-Meteo with Meteoblue via Supabase Edge Function. Cloud layers (low/mid/high), visibility, fog probability, 7-day hourly forecast. Hover any bar for detailed card. Past hours greyed, NOW marker, future in color."),
+        (.added, "Target Hierarchy", "120+ parent/child mappings across 30+ deep-sky complexes. Sub-targets show 'Part of' parent, parents show clickable sub-target pills. Hover tooltip includes hierarchy. Unique feature — no other astro tool has this."),
+        (.added, "Fuzzy Target Matching", "Compound names ('M81-Bode'), typo tolerance ('Bode Galaxcie'), and suffix normalization all resolve correctly. All grouping paths use canonical target names."),
+        (.added, "Compare Fallback Label", "Compare with Best shows reason when cross-filter or cross-exposure fallback is used (e.g., 'Best (R filter)')."),
+        (.added, "Setup Dedup", "Frame History dropdown disambiguates identical mount+camera labels by appending focal length (e.g., '620mm' vs '2423mm')."),
+        (.changed, "Monthly Trend Line", "Session Score chart always shows nightly bars + white monthly median trend line overlay when >6 months of data."),
+        (.changed, "Common Names Everywhere", "AIsaac context, history, and catalog all show 'M81 (Bode\\'s Galaxy)' format."),
+        (.fixed, "Database Audit", "IC434/B33 duplicate merged, ABELL21/SH2-274 orphan fixed, LEOTRIPLET/IC1805/NGC7000 aliases cleaned, IC4604→RHOOPH, NGC7822 added, unreachable parent maps removed."),
+    ]),
     ("5.19.1", "April 6, 2026", [
         (.added, "Welcome Screen", "New first-launch onboarding with 4 marketing pillars: Speed Demon, Data Nerd, Community Learner, Power User. Hover cards reveal additional details. Replaces old About dialog. Accessible via About menu anytime."),
         (.changed, "VLM Check — Marked ALPHA", "LLM vision models cannot reliably detect instrumental artifacts (ice, frost, dust) in auto-stretched sub-exposures. Tested 4+ prompt strategies across multiple LLM systems. Warning dialog shown before use. Feature remains for experimentation."),

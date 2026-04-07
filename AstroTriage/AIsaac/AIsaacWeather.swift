@@ -1,6 +1,6 @@
-// AIsaac — Astronomy weather and seeing forecast
-// Uses 7Timer (free, no API key) for seeing/transparency/cloud cover
-// and Open-Meteo (free, no API key) for general weather
+// AIsaac — Astronomy weather forecast via Meteoblue
+// Proxied through Supabase Edge Function (weather-forecast) with caching + rate limiting.
+// Provides 1-hourly cloud layers, visibility, temp, humidity, wind, fog for 7 days.
 import Foundation
 
 @MainActor
@@ -15,28 +15,89 @@ class AIsaacWeatherService {
 
     struct AstroForecast {
         let hours: [HourlyForecast]
-        let hourlyCloud: [HourlyCloud]  // 1-hourly cloud cover from Open-Meteo
         let fetchTime: Date
-
-        struct HourlyCloud {
-            let time: Date
-            let cloudCover: Int  // 0-100%
-        }
 
         struct HourlyForecast {
             let time: Date
-            let cloudCover: Int          // % (0=clear, 100=overcast)
-            let seeing: Int              // 7Timer scale: 1=<0.5" (superb) to 8=>2" (bad)
-            let transparency: Int        // 7Timer scale: 1=<0.3 (superb) to 8=>1 (bad)
-            let windSpeed: Double?       // km/h
-            let temperature: Double?     // celsius
-            let humidity: Int?           // %
-            let dewPoint: Double?        // celsius
+            let cloudCover: Int          // % total (0=clear, 100=overcast)
+            let lowClouds: Int           // % low cloud layer
+            let midClouds: Int           // % mid cloud layer
+            let highClouds: Int          // % high cloud layer
+            let visibility: Int          // meters (>20000 = excellent transparency)
+            let temperature: Double      // celsius
+            let feltTemperature: Double  // celsius (wind chill)
+            let humidity: Int            // %
+            let windSpeed: Double        // m/s (display as km/h: ×3.6)
+            let windDirection: Int       // degrees
+            let fogProbability: Int      // %
+            let precipProbability: Int   // %
+            let isDaylight: Bool
+            let pressure: Double         // hPa
+
+            // Derived: wind speed in km/h
+            var windSpeedKmh: Double { windSpeed * 3.6 }
+
+            // Derived: dew point approximation (Magnus formula)
+            var dewPoint: Double {
+                let a = 17.27, b = 237.7
+                let alpha = (a * temperature) / (b + temperature) + log(Double(humidity) / 100.0)
+                return (b * alpha) / (a - alpha)
+            }
+
+            // Derived: transparency quality from visibility
+            var transparencyQuality: String {
+                switch visibility {
+                case 30_000...: return "Superb"
+                case 20_000..<30_000: return "Excellent"
+                case 15_000..<20_000: return "Good"
+                case 10_000..<15_000: return "Average"
+                case 5_000..<10_000: return "Below avg"
+                default: return "Poor"
+                }
+            }
+
+            // Derived: seeing estimate from visibility + high clouds + wind + humidity
+            // Meteoblue doesn't provide actual seeing — this is a multi-factor heuristic.
+            // Visibility is the strongest proxy (low vis = moisture/aerosols = bad seeing).
+            var seeingEstimate: String {
+                // Cloudy conditions: don't estimate seeing, it's irrelevant
+                if cloudCover > 70 { return "Cloudy" }
+                // Visibility is the primary driver (atmospheric transparency correlates with seeing)
+                if visibility < 5_000 { return "Very poor (>3\")" }
+                if visibility < 10_000 { return "Poor (2-3\")" }
+                // High clouds + jet stream wind = upper atmosphere turbulence
+                let windKmh = windSpeed * 3.6
+                if visibility < 15_000 || (highClouds > 30 && windKmh > 25) { return "Below avg (1.5-2\")" }
+                if highClouds > 20 || windKmh > 30 { return "Below avg (1.5-2\")" }
+                // High humidity degrades seeing even without clouds
+                if humidity > 85 && visibility < 20_000 { return "Below avg (1.5-2\")" }
+                // Good conditions require clear air
+                if visibility > 30_000 && highClouds < 5 && windKmh < 15 { return "Very good (<1\")" }
+                if visibility > 20_000 && highClouds < 10 && windKmh < 20 { return "Good (1-1.5\")" }
+                return "Average (~1.5\")"
+            }
+
+            // Numeric seeing score 1-8 (1=superb, 8=terrible) for sorting/comparison
+            var seeingScore: Int {
+                if cloudCover > 70 { return 8 }
+                if visibility < 5_000 { return 8 }
+                if visibility < 10_000 { return 7 }
+                if visibility < 15_000 { return 6 }
+                let windKmh = windSpeed * 3.6
+                if highClouds > 20 || windKmh > 30 { return 6 }
+                if humidity > 85 && visibility < 20_000 { return 5 }
+                if visibility > 30_000 && highClouds < 5 && windKmh < 15 { return 2 }
+                if visibility > 20_000 && highClouds < 10 && windKmh < 20 { return 3 }
+                return 4
+            }
         }
+
+        // Convenience: hourly cloud data for the 1h bar chart (backward compatible)
+        var hourlyCloud: [HourlyForecast] { hours }
 
         // Human-readable summary for AIsaac context
         func contextSummary(timezone: TimeZone) -> String {
-            var lines: [String] = ["TONIGHT'S WEATHER FORECAST (from 7Timer + Open-Meteo):"]
+            var lines: [String] = ["TONIGHT'S WEATHER FORECAST (Meteoblue):"]
 
             let df = DateFormatter()
             df.dateFormat = "HH:mm"
@@ -58,62 +119,37 @@ class AIsaacWeatherService {
             for hour in nightHours.prefix(12) {
                 let time = df.string(from: hour.time)
                 let cloud = hour.cloudCover
-                let seeingStr = seeingDescription(hour.seeing)
-                let transStr = transparencyDescription(hour.transparency)
-                var line = "  \(time): cloud \(cloud)%, seeing \(seeingStr), transparency \(transStr)"
-                if let wind = hour.windSpeed { line += ", wind \(Int(wind))km/h" }
-                if let temp = hour.temperature { line += ", \(Int(temp))°C" }
-                if let hum = hour.humidity { line += ", humidity \(hum)%" }
+                let vis = hour.transparencyQuality
+                let seeing = hour.seeingEstimate
+                var line = "  \(time): cloud \(cloud)% (hi:\(hour.highClouds)% mid:\(hour.midClouds)% lo:\(hour.lowClouds)%)"
+                line += ", vis \(vis), seeing \(seeing)"
+                line += ", wind \(Int(hour.windSpeedKmh))km/h, \(Int(hour.temperature))°C, humidity \(hour.humidity)%"
+                if hour.fogProbability > 10 { line += ", fog \(hour.fogProbability)%" }
                 lines.append(line)
             }
 
             // Overall assessment
             let avgCloud = nightHours.prefix(8).map { $0.cloudCover }.reduce(0, +) / max(1, min(8, nightHours.count))
-            let avgSeeing = nightHours.prefix(8).map { $0.seeing }.reduce(0, +) / max(1, min(8, nightHours.count))
+            let avgHigh = nightHours.prefix(8).map { $0.highClouds }.reduce(0, +) / max(1, min(8, nightHours.count))
+            let avgVis = nightHours.prefix(8).map { $0.visibility }.reduce(0, +) / max(1, min(8, nightHours.count))
 
             if avgCloud > 70 {
                 lines.append("  VERDICT: Mostly cloudy tonight — not ideal for imaging.")
             } else if avgCloud > 40 {
                 lines.append("  VERDICT: Partly cloudy — gaps may allow narrowband imaging.")
-            } else if avgSeeing > 5 {
-                lines.append("  VERDICT: Clear but poor seeing — favor short focal lengths or lucky imaging.")
+            } else if avgHigh > 30 {
+                lines.append("  VERDICT: High clouds present — seeing may be poor, favor short FL.")
+            } else if avgVis < 10000 {
+                lines.append("  VERDICT: Low transparency — narrowband preferred over broadband.")
             } else {
                 lines.append("  VERDICT: Good conditions for imaging tonight!")
             }
 
             return lines.joined(separator: "\n")
         }
-
-        private func seeingDescription(_ value: Int) -> String {
-            switch value {
-            case 1: return "<0.5\" superb"
-            case 2: return "0.5-0.75\" excellent"
-            case 3: return "0.75-1\" good"
-            case 4: return "1-1.25\" average"
-            case 5: return "1.25-1.5\" below avg"
-            case 6: return "1.5-2\" poor"
-            case 7: return "2-2.5\" bad"
-            case 8: return ">2.5\" terrible"
-            default: return "unknown"
-            }
-        }
-
-        private func transparencyDescription(_ value: Int) -> String {
-            switch value {
-            case 1: return "<0.3mag superb"
-            case 2: return "0.3-0.4mag excellent"
-            case 3: return "0.4-0.5mag good"
-            case 4: return "0.5-0.6mag average"
-            case 5: return "0.6-0.7mag below avg"
-            case 6: return "0.7-0.85mag poor"
-            case 7: return "0.85-1mag bad"
-            case 8: return ">1mag terrible"
-            default: return "unknown"
-            }
-        }
     }
 
-    // Fetch forecast for given coordinates (cached for 1 hour)
+    // Fetch forecast via Supabase Edge Function (cached for 1 hour)
     func getForecast(lat: Double, lon: Double) async -> AstroForecast? {
         // Return cache if fresh and same location
         if let cached = cachedForecast, let cacheTime = cacheTime,
@@ -122,42 +158,10 @@ class AIsaacWeatherService {
             return cached
         }
 
-        // Fetch from both APIs in parallel
-        async let sevenTimer = fetch7Timer(lat: lat, lon: lon)
-        async let openMeteo = fetchOpenMeteo(lat: lat, lon: lon)
-
-        let seeing = await sevenTimer
-        let weather = await openMeteo
-
-        guard !seeing.isEmpty || !weather.isEmpty else { return nil }
-
-        // Merge: 7Timer has seeing/transparency/cloud, Open-Meteo has wind/temp/humidity
-        var hours: [AstroForecast.HourlyForecast] = []
-
-        for s in seeing {
-            let sTime = s.time
-            let matching = weather.first { (entry: OpenMeteoEntry) -> Bool in
-                Swift.abs(entry.time.timeIntervalSince(sTime)) < 5400
-            }
-            hours.append(AstroForecast.HourlyForecast(
-                time: s.time,
-                cloudCover: s.cloudCover,
-                seeing: s.seeing,
-                transparency: s.transparency,
-                windSpeed: matching?.windSpeed,
-                temperature: matching?.temperature,
-                humidity: matching?.humidity,
-                dewPoint: matching?.dewPoint
-            ))
+        guard let forecast = await fetchMeteoblue(lat: lat, lon: lon) else {
+            return nil
         }
 
-        // Build 1-hourly cloud cover array from Open-Meteo data
-        let hourlyCloud = weather.compactMap { entry -> AstroForecast.HourlyCloud? in
-            guard let cloud = entry.cloudCover else { return nil }
-            return AstroForecast.HourlyCloud(time: entry.time, cloudCover: cloud)
-        }
-
-        let forecast = AstroForecast(hours: hours, hourlyCloud: hourlyCloud, fetchTime: Date())
         cachedForecast = forecast
         cacheTime = Date()
         cachedLat = lat
@@ -165,101 +169,92 @@ class AIsaacWeatherService {
         return forecast
     }
 
-    // MARK: - 7Timer API (seeing, transparency, cloud cover)
+    // MARK: - Meteoblue via Supabase Edge Function
 
-    private struct SevenTimerEntry {
-        let time: Date
-        let cloudCover: Int
-        let seeing: Int
-        let transparency: Int
-    }
-
-    private func fetch7Timer(lat: Double, lon: Double) async -> [SevenTimerEntry] {
-        let urlStr = "https://www.7timer.info/bin/api.pl?lon=\(lon)&lat=\(lat)&product=astro&output=json"
-        guard let url = URL(string: urlStr) else { return [] }
-
-        do {
-            let (data, _) = try await URLSession.shared.data(from: url)
-            guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let initStr = json["init"] as? String,
-                  let dataseries = json["dataseries"] as? [[String: Any]] else { return [] }
-
-            // Parse init time: "2026032006" → 2026-03-20 06:00 UTC
-            let df = DateFormatter()
-            df.dateFormat = "yyyyMMddHH"
-            df.timeZone = TimeZone(identifier: "UTC")
-            guard let initTime = df.date(from: initStr) else { return [] }
-
-            var entries: [SevenTimerEntry] = []
-            for point in dataseries {
-                guard let timepoint = point["timepoint"] as? Int,
-                      let cloudcover = point["cloudcover"] as? Int,
-                      let seeing = point["seeing"] as? Int,
-                      let transparency = point["transparency"] as? Int else { continue }
-
-                let time = initTime.addingTimeInterval(Double(timepoint) * 3600)
-                // 7Timer cloudcover: 1-9 scale → convert to percentage
-                let cloudPct = min(100, max(0, (cloudcover - 1) * 12))
-
-                entries.append(SevenTimerEntry(
-                    time: time, cloudCover: cloudPct,
-                    seeing: seeing, transparency: transparency
-                ))
-            }
-            return entries
-        } catch {
-            print("[AIsaac Weather] 7Timer error: \(error)")
-            return []
+    private func fetchMeteoblue(lat: Double, lon: Double) async -> AstroForecast? {
+        guard BenchmarkConfig.isConfigured else {
+            print("[AIsaac Weather] Supabase not configured")
+            return nil
         }
-    }
 
-    // MARK: - Open-Meteo API (wind, temperature, humidity, dew point)
+        let urlStr = "\(BenchmarkConfig.supabaseURL)/functions/v1/weather-forecast"
+        guard let url = URL(string: urlStr) else { return nil }
 
-    private struct OpenMeteoEntry {
-        let time: Date
-        let cloudCover: Int?
-        let windSpeed: Double?
-        let temperature: Double?
-        let humidity: Int?
-        let dewPoint: Double?
-    }
+        let deviceId = MachineInfo.machineHash
 
-    private func fetchOpenMeteo(lat: Double, lon: Double) async -> [OpenMeteoEntry] {
-        let urlStr = "https://api.open-meteo.com/v1/forecast?latitude=\(lat)&longitude=\(lon)&hourly=cloud_cover,temperature_2m,relative_humidity_2m,wind_speed_10m,dew_point_2m&forecast_days=2&timezone=auto"
-        guard let url = URL(string: urlStr) else { return [] }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("Bearer \(BenchmarkConfig.supabaseAnonKey)", forHTTPHeaderField: "Authorization")
+
+        let body: [String: Any] = ["lat": lat, "lon": lon, "deviceId": deviceId]
+        request.httpBody = try? JSONSerialization.data(withJSONObject: body)
 
         do {
-            let (data, _) = try await URLSession.shared.data(from: url)
+            let (data, response) = try await URLSession.shared.data(for: request)
+
+            if let httpResp = response as? HTTPURLResponse, httpResp.statusCode == 429 {
+                print("[AIsaac Weather] Rate limited by Supabase Edge Function")
+                return nil
+            }
+
             guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let hourly = json["hourly"] as? [String: Any],
-                  let times = hourly["time"] as? [String] else { return [] }
+                  let data1h = json["data_1h"] as? [String: Any],
+                  let metadata = json["metadata"] as? [String: Any],
+                  let times = data1h["time"] as? [String] else {
+                print("[AIsaac Weather] Invalid Meteoblue response")
+                return nil
+            }
 
-            let clouds = hourly["cloud_cover"] as? [Int?]
-            let temps = hourly["temperature_2m"] as? [Double?]
-            let humidity = hourly["relative_humidity_2m"] as? [Int?]
-            let wind = hourly["wind_speed_10m"] as? [Double?]
-            let dew = hourly["dew_point_2m"] as? [Double?]
+            // Parse timezone offset for time conversion
+            let utcOffset = metadata["utc_timeoffset"] as? Double ?? 0
 
+            let totalCloud = data1h["totalcloudcover"] as? [Int] ?? []
+            let lowCloud = data1h["lowclouds"] as? [Int] ?? []
+            let midCloud = data1h["midclouds"] as? [Int] ?? []
+            let highCloud = data1h["highclouds"] as? [Int] ?? []
+            let visibility = data1h["visibility"] as? [Int] ?? []
+            let temperature = data1h["temperature"] as? [Double] ?? []
+            let feltTemp = data1h["felttemperature"] as? [Double] ?? []
+            let humidity = data1h["relativehumidity"] as? [Int] ?? []
+            let windSpeed = data1h["windspeed"] as? [Double] ?? []
+            let windDir = data1h["winddirection"] as? [Int] ?? []
+            let fog = data1h["fog_probability"] as? [Int] ?? []
+            let precip = data1h["precipitation_probability"] as? [Int] ?? []
+            let daylight = data1h["isdaylight"] as? [Int] ?? []
+            let pressure = data1h["sealevelpressure"] as? [Double] ?? []
+
+            // Parse time strings: "2026-04-07 00:00" (local time at utcOffset)
             let df = DateFormatter()
-            df.dateFormat = "yyyy-MM-dd'T'HH:mm"
-            df.timeZone = TimeZone(identifier: "UTC")
+            df.dateFormat = "yyyy-MM-dd HH:mm"
+            df.timeZone = TimeZone(secondsFromGMT: Int(utcOffset * 3600))
 
-            var entries: [OpenMeteoEntry] = []
+            var hours: [AstroForecast.HourlyForecast] = []
             for (i, timeStr) in times.enumerated() {
                 guard let time = df.date(from: timeStr) else { continue }
-                entries.append(OpenMeteoEntry(
+                hours.append(AstroForecast.HourlyForecast(
                     time: time,
-                    cloudCover: clouds?[safe: i] ?? nil,
-                    windSpeed: wind?[safe: i] ?? nil,
-                    temperature: temps?[safe: i] ?? nil,
-                    humidity: humidity?[safe: i] ?? nil,
-                    dewPoint: dew?[safe: i] ?? nil
+                    cloudCover: totalCloud[safe: i] ?? 0,
+                    lowClouds: lowCloud[safe: i] ?? 0,
+                    midClouds: midCloud[safe: i] ?? 0,
+                    highClouds: highCloud[safe: i] ?? 0,
+                    visibility: visibility[safe: i] ?? 10000,
+                    temperature: temperature[safe: i] ?? 0,
+                    feltTemperature: feltTemp[safe: i] ?? 0,
+                    humidity: humidity[safe: i] ?? 0,
+                    windSpeed: windSpeed[safe: i] ?? 0,
+                    windDirection: windDir[safe: i] ?? 0,
+                    fogProbability: fog[safe: i] ?? 0,
+                    precipProbability: precip[safe: i] ?? 0,
+                    isDaylight: (daylight[safe: i] ?? 1) == 1,
+                    pressure: pressure[safe: i] ?? 1013
                 ))
             }
-            return entries
+
+            return AstroForecast(hours: hours, fetchTime: Date())
         } catch {
-            print("[AIsaac Weather] Open-Meteo error: \(error)")
-            return []
+            print("[AIsaac Weather] Meteoblue fetch error: \(error)")
+            return nil
         }
     }
 }

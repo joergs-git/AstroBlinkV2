@@ -501,7 +501,7 @@ class TargetDatabaseViewModel: ObservableObject {
     }
 
     /// Tonight's summary: avg cloud, seeing (location-relative), temperature, humidity, wind
-    var weatherSummary: (cloud: Int, seeing: String, seeingQuality: String, temp: Int?, humidity: Int?, wind: Int?)? {
+    var weatherSummary: (cloud: Int, seeing: String, seeingQuality: String, temp: Int?, humidity: Int?, wind: Int?, visibility: Int?, fogPct: Int?, highCloud: Int?)? {
         guard let forecast = weatherForecast else { return nil }
         let tz = TimeZone.current
         let cal = Calendar.current
@@ -513,51 +513,35 @@ class TargetDatabaseViewModel: ObservableObject {
         guard !nightHours.isEmpty else { return nil }
         let n = min(8, nightHours.count)
         let avgCloud = nightHours.prefix(n).map { $0.cloudCover }.reduce(0, +) / n
-        let avgSeeing = nightHours.prefix(n).map { $0.seeing }.reduce(0, +) / n
+        let avgHighCloud = nightHours.prefix(n).map { $0.highClouds }.reduce(0, +) / n
+        let avgVis = nightHours.prefix(n).map { $0.visibility }.reduce(0, +) / n
+        let avgFog = nightHours.prefix(n).map { $0.fogProbability }.reduce(0, +) / n
 
-        // Absolute seeing description
-        let seeingArcsec: String
-        switch avgSeeing {
-        case 1: seeingArcsec = "<0.5\""
-        case 2: seeingArcsec = "0.5-0.75\""
-        case 3: seeingArcsec = "0.75-1\""
-        case 4: seeingArcsec = "1-1.25\""
-        case 5: seeingArcsec = "1.25-1.5\""
-        case 6: seeingArcsec = "1.5-2\""
-        case 7: seeingArcsec = "2-2.5\""
-        case 8: seeingArcsec = ">2.5\""
-        default: seeingArcsec = "?"
+        // Seeing: use per-hour seeingEstimate, take the most common quality for summary
+        let avgWind = nightHours.prefix(n).map { $0.windSpeed }.reduce(0, +) / Double(n)
+        let avgSeeingScore = nightHours.prefix(n).map { $0.seeingScore }.reduce(0, +) / n
+        let seeingStr: String
+        let seeingQuality: String
+        switch avgSeeingScore {
+        case 1...2: seeingStr = "<1\""; seeingQuality = "Very good"
+        case 3: seeingStr = "1-1.5\""; seeingQuality = "Good"
+        case 4: seeingStr = "~1.5\""; seeingQuality = "Average"
+        case 5: seeingStr = "1.5-2\""; seeingQuality = "Below average"
+        case 6: seeingStr = "2-2.5\""; seeingQuality = "Poor"
+        case 7: seeingStr = "2-3\""; seeingQuality = "Bad"
+        default: seeingStr = ">3\""; seeingQuality = "Very poor"
         }
 
-        // Location-relative seeing quality
-        // Typical seeing baseline by latitude (rough but practical):
-        // - Equatorial/subtropical high-altitude observatories (Chile, Hawaii, Canary Islands): 0.5-1.0"
-        // - Mediterranean/subtropical (SW USA, S Europe): 1.0-1.5"
-        // - Temperate (Central Europe, Northern US, 40-55°N): 1.5-2.5"
-        // - High latitude (Scandinavia, UK): 2.0-3.0"
-        let lat = Swift.abs(observerLocation?.lat ?? 50)
-        let baselineSeeing: Int  // 7Timer scale baseline for this latitude
-        if lat < 30 { baselineSeeing = 3 }       // ~1" typical
-        else if lat < 40 { baselineSeeing = 4 }   // ~1.25" typical
-        else if lat < 55 { baselineSeeing = 5 }   // ~1.5" typical (Central Europe)
-        else { baselineSeeing = 6 }                // ~2" typical (Northern Europe)
+        let temps = nightHours.prefix(n).map { $0.temperature }
+        let avgTemp = Int(temps.reduce(0, +) / Double(temps.count))
+        let humids = nightHours.prefix(n).map { $0.humidity }
+        let avgHumidity = humids.reduce(0, +) / humids.count
+        let windKmh = Int(avgWind * 3.6)
 
-        let seeingQuality: String
-        if avgSeeing <= baselineSeeing - 2 { seeingQuality = "Exceptional" }
-        else if avgSeeing <= baselineSeeing - 1 { seeingQuality = "Very good" }
-        else if avgSeeing <= baselineSeeing { seeingQuality = "Good" }
-        else if avgSeeing <= baselineSeeing + 1 { seeingQuality = "Average" }
-        else { seeingQuality = "Below average" }
-
-        let temps = nightHours.prefix(n).compactMap { $0.temperature }
-        let avgTemp = temps.isEmpty ? nil : Int(temps.reduce(0, +) / Double(temps.count))
-        let humids = nightHours.prefix(n).compactMap { $0.humidity }
-        let avgHumidity = humids.isEmpty ? nil : humids.reduce(0, +) / humids.count
-        let winds = nightHours.prefix(n).compactMap { $0.windSpeed }
-        let avgWind = winds.isEmpty ? nil : Int(winds.reduce(0, +) / Double(winds.count))
-
-        return (cloud: avgCloud, seeing: seeingArcsec, seeingQuality: seeingQuality,
-                temp: avgTemp, humidity: avgHumidity, wind: avgWind)
+        return (cloud: avgCloud, seeing: seeingStr, seeingQuality: seeingQuality,
+                temp: avgTemp, humidity: avgHumidity, wind: windKmh,
+                visibility: avgVis, fogPct: avgFog > 5 ? avgFog : nil,
+                highCloud: avgHighCloud)
     }
 
     // MARK: - Filter Gap Analysis

@@ -185,24 +185,40 @@ Shows how this target type affects SmartCull's quality scoring:
 
 Each shown as a horizontal bar with the multiplier value.
 
-## Weather Forecast Bar
+## Weather Forecast Bar (Meteoblue)
 
-The weather bar appears below the location picker and shows tonight's conditions:
+The weather bar appears below the location picker and shows tonight's conditions, powered by [Meteoblue](https://www.meteoblue.com/) via a Supabase Edge Function with caching and rate limiting:
 
-- **Cloud cover** — percentage with color coding (green < 30%, orange < 60%, red > 60%)
-- **Seeing** — absolute value in arcseconds from the 7Timer API, plus a location-relative quality assessment:
-  - Latitude < 30 degrees: baseline ~1 arcsec (equatorial/subtropical)
-  - Latitude 30-40 degrees: baseline ~1.25 arcsec (Mediterranean/SW USA)
-  - Latitude 40-55 degrees: baseline ~1.5 arcsec (Central Europe)
-  - Latitude > 55 degrees: baseline ~2 arcsec (Northern Europe)
-  - Quality labels: Exceptional, Very Good, Good, Average, Below Average
-- **Temperature, Humidity, Wind** — averaged over the first 8 nighttime hours
+- **Cloud cover** — total percentage with color coding (green < 30%, orange < 60%, red > 60%). High cloud percentage shown when > 10% (critical for seeing)
+- **Seeing estimate** — derived from visibility, high clouds, wind speed, and humidity. Multi-factor heuristic: visibility is the primary driver (low vis = moisture/aerosols = bad seeing)
+- **Visibility** — atmospheric transparency in km. Color: green > 20km, orange 10-20km, red < 10km
+- **Temperature, Humidity, Wind** — averaged over the first 8 nighttime hours. Humidity turns red > 85% (dew risk). Wind turns red > 30 km/h (mount stability)
+- **Fog probability** — shown when > 5% (red warning)
 - **Moon illumination** — percentage with color coding
-- **1-hourly cloud cover bars** — bar chart with one bar per hour for the nighttime window (18:00-06:00). A visual gap at midnight separates the evening and morning halves. The current hour is highlighted with a bright border for quick orientation. Bars are colored green/orange/red by cloud percentage.
+- **Hourly cloud cover bars** — 1-hourly bar chart for the nighttime window (18:00-06:00):
+  - **Past hours** — greyed out (already happened)
+  - **Current hour** — bold **NOW** marker with accent border
+  - **Future hours** — normal color bars (forecast)
+  - Night boundaries shown with thick separator lines between dates
+  - **Hover tooltip** — float your mouse over any bar to see a detailed card with:
+    - Full date/time + "past" or "forecast" badge
+    - Cloud breakdown: low / mid / high cloud layers
+    - Visibility (km) + seeing estimate
+    - Temperature + humidity + wind speed
+    - Fog risk and rain probability if applicable
 
-Weather data comes from two sources:
-- [7Timer](http://www.7timer.info/) — astronomically-focused seeing and transparency forecasts
-- [Open-Meteo](https://open-meteo.com/) — high-resolution temperature, humidity, wind, cloud cover
+## Target Hierarchy (Major/Minor Targets)
+
+A unique feature not found in any other astrophotography tool. When you select a target in the catalog:
+
+- **Sub-targets show "Part of"** — e.g., Melotte 15 shows "Part of IC1805 (Heart Nebula)". Clickable to navigate to parent.
+- **Parents show "Sub-targets"** — e.g., M42 shows 11 sub-targets (M43, NGC1977, NGC2024, IC434, M78, etc.) as clickable pills.
+- **List rows** show hierarchy indicators: blue "Part of" text for sub-targets, orange "N sub-targets" for parents.
+- **Hover tooltip** includes aliases, parent/child relationships for quick reference.
+
+This helps beginners understand that, for example, Melotte 15 is the central star cluster of the Heart Nebula, or that the Horsehead (IC434) is part of the Orion complex. 120+ mappings across 30+ complexes including Orion, Heart & Soul, Veil, Carina, Rho Ophiuchi, Andromeda, Leo Triplet, Virgo/Markarian's Chain, Stephan's Quintet, and more.
+
+In the Frame History database, sub-target integration time rolls up to the parent — when you select "IC1805" in the target dropdown, you see all frames including those specifically targeting Melotte 15 or the Fish Head Nebula.
 
 ## Location & Setup Picker
 

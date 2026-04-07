@@ -870,7 +870,7 @@ struct AIsaacContextBuilder {
         - Alt/Az VISIBILITY CHART: tonight's altitude curve for any target. Moon altitude dashed overlay. \
         Red dot at current time. Shows transit time, max altitude, hours above 30°.
         - WEATHER BAR: tonight's cloud %, seeing (location-relative quality), temperature, humidity, wind. \
-        Hourly cloud mini-chart with current hour highlighted. Data from 7Timer + Open-Meteo (free, no API key).
+        Hourly cloud mini-chart with current hour (NOW marker), past hours greyed out, future in color. Hover shows detail card with cloud layers, visibility, seeing, temp, humidity, wind, fog. Data from Meteoblue via Supabase Edge Function.
         - FOV SIMULATION: proportional target-in-sensor rectangle using your equipment profile. \
         Shows plate scale and fill ratio.
         - FILTER GAP ANALYSIS: compares target's recommended filter ratios vs your actual integration hours \

@@ -59,6 +59,7 @@ struct TargetDatabaseContentView: View {
     @Environment(\.fontScale) private var fontScale
     @State private var hoveredTarget: TargetCatalogService.CatalogTarget?
     @State private var hoverPoint: CGPoint = .zero  // mouse position in list coordinate space
+    @State private var weatherHoveredHourIdx: Int?  // hovered bar in weather hourly chart
 
     var body: some View {
         HSplitView {
@@ -204,21 +205,39 @@ struct TargetDatabaseContentView: View {
                     .font(.system(size: 12 * fontScale, weight: .semibold))
                     .foregroundColor(AppColors.fg(nightMode))
 
-                Label("Cloud \(w.cloud)%", systemImage: "cloud")
-                    .font(.system(size: 12 * fontScale, weight: .medium))
-                    .foregroundColor(w.cloud < 30 ? AppColors.green(nightMode) :
-                                    w.cloud < 60 ? AppColors.orange(nightMode) :
-                                    .red)
+                // Cloud cover with high cloud detail
+                VStack(alignment: .leading, spacing: 0) {
+                    Label("Cloud \(w.cloud)%", systemImage: "cloud")
+                        .font(.system(size: 12 * fontScale, weight: .medium))
+                        .foregroundColor(w.cloud < 30 ? AppColors.green(nightMode) :
+                                        w.cloud < 60 ? AppColors.orange(nightMode) :
+                                        .red)
+                    if let hi = w.highCloud, hi > 10 {
+                        Text("Hi \(hi)%")
+                            .font(.system(size: 9 * fontScale))
+                            .foregroundColor(hi > 30 ? .red.opacity(0.8) : AppColors.fgDim(nightMode))
+                    }
+                }
 
-                // Seeing: absolute value + location-relative quality
+                // Seeing estimate (from visibility + wind + high clouds)
                 VStack(alignment: .leading, spacing: 0) {
                     Label("Seeing \(w.seeing)", systemImage: "eye")
                         .font(.system(size: 12 * fontScale, weight: .medium))
-                    Text(w.seeingQuality + " for your location")
+                    Text(w.seeingQuality)
                         .font(.system(size: 9 * fontScale))
                         .foregroundColor(AppColors.fgDim(nightMode))
                 }
                 .foregroundColor(AppColors.fg(nightMode))
+
+                // Visibility / transparency
+                if let vis = w.visibility {
+                    let visKm = Double(vis) / 1000.0
+                    Label(String(format: "%.0f km", visKm), systemImage: "eye.trianglebadge.exclamationmark")
+                        .font(.system(size: 12 * fontScale))
+                        .foregroundColor(vis > 20000 ? AppColors.green(nightMode) :
+                                        vis > 10000 ? AppColors.orange(nightMode) :
+                                        .red.opacity(0.8))
+                }
 
                 if let temp = w.temp {
                     Label("\(temp)°C", systemImage: "thermometer.medium")
@@ -229,13 +248,20 @@ struct TargetDatabaseContentView: View {
                 if let hum = w.humidity {
                     Label("\(hum)%", systemImage: "humidity")
                         .font(.system(size: 12 * fontScale))
-                        .foregroundColor(AppColors.fgDim(nightMode))
+                        .foregroundColor(hum > 85 ? .red.opacity(0.8) : AppColors.fgDim(nightMode))
                 }
 
                 if let wind = w.wind {
                     Label("\(wind) km/h", systemImage: "wind")
                         .font(.system(size: 12 * fontScale))
-                        .foregroundColor(AppColors.fgDim(nightMode))
+                        .foregroundColor(wind > 30 ? .red.opacity(0.8) : AppColors.fgDim(nightMode))
+                }
+
+                // Fog warning
+                if let fog = w.fogPct {
+                    Label("Fog \(fog)%", systemImage: "cloud.fog")
+                        .font(.system(size: 12 * fontScale))
+                        .foregroundColor(.red.opacity(0.8))
                 }
 
                 // Moon info
@@ -250,11 +276,10 @@ struct TargetDatabaseContentView: View {
             Spacer()
         }
 
-        // Hourly cloud cover mini-chart (nighttime hours only)
+        // Hourly cloud cover chart — past (grey), current (NOW marker), future (full color)
         if let forecast = viewModel.weatherForecast {
             let tz = TimeZone.current
             let cal = Calendar.current
-            // Use Open-Meteo 1-hourly cloud data, filtered to nighttime
             let nightCloud = forecast.hourlyCloud.filter { entry in
                 let comps = cal.dateComponents(in: tz, from: entry.time)
                 let h = comps.hour ?? 12
@@ -263,67 +288,158 @@ struct TargetDatabaseContentView: View {
 
             if !nightCloud.isEmpty {
                 let now = Date()
-                // Only highlight current hour if it's actually nighttime right now
-                let nowComps = cal.dateComponents(in: tz, from: now)
-                let nowH = nowComps.hour ?? 12
-                let isNightNow = nowH >= 18 || nowH <= 6
-                let currentHourIdx: Int? = isNightNow ? nightCloud.enumerated().min(by: {
+                let currentHourIdx: Int? = nightCloud.enumerated().min(by: {
                     Swift.abs($0.element.time.timeIntervalSince(now)) < Swift.abs($1.element.time.timeIntervalSince(now))
-                })?.offset : nil
+                })?.offset
 
-                HStack(spacing: 1) {
-                    ForEach(Array(nightCloud.enumerated()), id: \.offset) { idx, hour in
-                        let df = DateFormatter()
-                        let _ = df.dateFormat = "HH"
-                        let _ = df.timeZone = tz
-                        let isCurrent = idx == currentHourIdx
-                        let hourComps = cal.dateComponents(in: tz, from: hour.time)
-                        let isGap = (hourComps.hour ?? 0) == 0  // midnight gap indicator
+                VStack(spacing: 0) {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 1) {
+                        ForEach(Array(nightCloud.enumerated()), id: \.offset) { idx, hour in
+                            let df = DateFormatter()
+                            let _ = df.dateFormat = "HH"
+                            let _ = df.timeZone = tz
+                            let isCurrent = idx == currentHourIdx
+                            let isPast = hour.time < now && !isCurrent
+                            let hourComps = cal.dateComponents(in: tz, from: hour.time)
+                            let hourVal = hourComps.hour ?? 0
+                            let isNightStart = hourVal == 18 && idx > 0
 
-                        HStack(spacing: 0) {
-                            // Gap between evening and morning
-                            if isGap && idx > 0 {
-                                Rectangle()
-                                    .fill(AppColors.divider(nightMode))
-                                    .frame(width: 1, height: 32)
-                                    .padding(.horizontal, 2)
-                            }
-
-                            VStack(spacing: 0) {
-                                // Bar with % label floating on top
-                                let barH = CGFloat(max(hour.cloudCover, 4)) / 100 * 24
-                                ZStack(alignment: .top) {
-                                    VStack(spacing: 0) {
-                                        Spacer(minLength: 0)
-                                        RoundedRectangle(cornerRadius: 1.5)
-                                            .fill(hour.cloudCover < 30 ? AppColors.green(nightMode) :
-                                                  hour.cloudCover < 60 ? AppColors.orange(nightMode) :
-                                                  Color.red.opacity(0.6))
-                                            .frame(width: 20, height: barH)
-                                            .overlay(
-                                                isCurrent ? RoundedRectangle(cornerRadius: 1.5)
-                                                    .stroke(AppColors.accent(nightMode), lineWidth: 2) : nil
-                                            )
-                                    }
-                                    .frame(height: 24)
-
-                                    // % label floats above bar
-                                    Text("\(hour.cloudCover)")
-                                        .font(.system(size: 7 * fontScale, weight: isCurrent ? .bold : .regular))
-                                        .foregroundColor(isCurrent ? AppColors.accent(nightMode) : AppColors.fgVeryDim(nightMode))
-                                        .offset(y: -10)
+                            HStack(spacing: 0) {
+                                // Night boundary separator
+                                if isNightStart {
+                                    Rectangle()
+                                        .fill(AppColors.fg(nightMode).opacity(0.6))
+                                        .frame(width: 3, height: 58)
+                                        .padding(.horizontal, 6)
                                 }
-                                .frame(height: 28)
 
-                                // Hour label
-                                Text(df.string(from: hour.time))
-                                    .font(.system(size: 7 * fontScale, weight: isCurrent ? .bold : .regular))
-                                    .foregroundColor(isCurrent ? AppColors.accent(nightMode) : AppColors.fgDim(nightMode))
+                                VStack(spacing: 1) {
+                                    let barH = CGFloat(max(hour.cloudCover, 3)) / 100 * 36
+                                    // Colors: past = greyed out, current = full vivid, future = normal
+                                    let baseColor: Color = hour.cloudCover < 30 ? .green :
+                                                           hour.cloudCover < 60 ? .orange :
+                                                           .red
+                                    let barColor: Color = isPast ? .gray.opacity(0.3) :
+                                                          isCurrent ? baseColor :
+                                                          baseColor.opacity(0.75)
+
+                                    ZStack(alignment: .top) {
+                                        VStack(spacing: 0) {
+                                            Spacer(minLength: 0)
+                                            RoundedRectangle(cornerRadius: 2)
+                                                .fill(barColor)
+                                                .frame(width: 22, height: barH)
+                                                .overlay(
+                                                    isCurrent ? RoundedRectangle(cornerRadius: 2)
+                                                        .stroke(Color.accentColor, lineWidth: 3) : nil
+                                                )
+                                        }
+                                        .frame(height: 36)
+
+                                        // Cloud % label
+                                        Text("\(hour.cloudCover)")
+                                            .font(.system(size: 8 * fontScale, weight: .medium, design: .monospaced))
+                                            .foregroundColor(isPast ? .gray.opacity(0.4) : AppColors.fg(nightMode))
+                                            .offset(y: -11)
+                                    }
+                                    .frame(height: 40)
+
+                                    // "NOW" marker or hour label
+                                    if isCurrent {
+                                        Text("NOW")
+                                            .font(.system(size: 8 * fontScale, weight: .black, design: .monospaced))
+                                            .foregroundColor(.accentColor)
+                                    } else {
+                                        Text(df.string(from: hour.time))
+                                            .font(.system(size: 8 * fontScale, weight: .medium, design: .monospaced))
+                                            .foregroundColor(isPast ? .gray.opacity(0.35) : AppColors.fgDim(nightMode))
+                                    }
+                                }
+                                .onHover { hovering in
+                                    weatherHoveredHourIdx = hovering ? idx : nil
+                                }
                             }
                         }
                     }
+                    .padding(.top, 2)
+                    }
+
+                    // Attribution
+                    Text("powered by meteoblue")
+                        .font(.system(size: 8 * fontScale))
+                        .foregroundColor(AppColors.fgVeryDim(nightMode))
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                        .padding(.top, 2)
                 }
-                .padding(.top, 2)
+            }
+        }
+
+        // Weather hover tooltip — rendered at weatherBar level to avoid clipping
+        if let forecast = viewModel.weatherForecast, let hIdx = weatherHoveredHourIdx {
+            let tz = TimeZone.current
+            let cal = Calendar.current
+            let nightCloud = forecast.hourlyCloud.filter { entry in
+                let comps = cal.dateComponents(in: tz, from: entry.time)
+                let h = comps.hour ?? 12
+                return h >= 18 || h <= 6
+            }
+            if hIdx < nightCloud.count {
+                let h = nightCloud[hIdx]
+                let now = Date()
+                let isPastH = h.time < now
+                let hdf = DateFormatter()
+                let _ = hdf.dateFormat = "EEE dd MMM, HH:mm"
+                let _ = hdf.timeZone = tz
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Text(hdf.string(from: h.time))
+                            .font(.system(size: 12 * fontScale, weight: .bold, design: .monospaced))
+                        if isPastH {
+                            Text("past").font(.system(size: 9 * fontScale)).foregroundColor(.secondary)
+                                .padding(.horizontal, 4).padding(.vertical, 1)
+                                .background(Color.secondary.opacity(0.15)).cornerRadius(3)
+                        } else {
+                            Text("forecast").font(.system(size: 9 * fontScale)).foregroundColor(.accentColor)
+                                .padding(.horizontal, 4).padding(.vertical, 1)
+                                .background(Color.accentColor.opacity(0.1)).cornerRadius(3)
+                        }
+                    }
+                    Divider()
+                    HStack(spacing: 12) {
+                        Label("\(h.cloudCover)%", systemImage: "cloud.fill")
+                            .foregroundColor(h.cloudCover < 30 ? .green : h.cloudCover < 60 ? .orange : .red)
+                        Text("Lo \(h.lowClouds)%  Mid \(h.midClouds)%  Hi \(h.highClouds)%")
+                            .foregroundColor(.secondary)
+                    }
+                    .font(.system(size: 11 * fontScale))
+                    HStack(spacing: 12) {
+                        Label(String(format: "%.0f km", Double(h.visibility) / 1000), systemImage: "eye")
+                        Label(h.seeingEstimate, systemImage: "sparkles")
+                    }
+                    .font(.system(size: 11 * fontScale))
+                    HStack(spacing: 12) {
+                        Label(String(format: "%.0f°C", h.temperature), systemImage: "thermometer.medium")
+                        Label("\(h.humidity)%", systemImage: "humidity")
+                            .foregroundColor(h.humidity > 85 ? .red : .primary)
+                        Label(String(format: "%.0f km/h", h.windSpeedKmh), systemImage: "wind")
+                    }
+                    .font(.system(size: 11 * fontScale))
+                    if h.fogProbability > 5 {
+                        Label("Fog risk \(h.fogProbability)%", systemImage: "cloud.fog")
+                            .font(.system(size: 11 * fontScale)).foregroundColor(.red)
+                    }
+                    if h.precipProbability > 10 {
+                        Label("Rain \(h.precipProbability)%", systemImage: "cloud.rain")
+                            .font(.system(size: 11 * fontScale)).foregroundColor(.blue)
+                    }
+                }
+                .padding(12)
+                .frame(width: 320)
+                .background(.regularMaterial)
+                .cornerRadius(10)
+                .shadow(color: .black.opacity(0.25), radius: 10, x: 0, y: 5)
+                .transition(.opacity.animation(.easeInOut(duration: 0.15)))
             }
         }
         }
