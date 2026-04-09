@@ -161,6 +161,11 @@ struct MetadataExtractor {
             entry.ambientTemp = val
         }
 
+        // Focuser position (for autofocus event detection in Session Metrics chart)
+        if let focPos = headers["FOCPOS"] ?? headers["FOCUSPOS"], let val = Double(focPos) {
+            entry.focusPosition = val
+        }
+
         // Mount (NINA writes various keywords)
         if let mount = headers["MOUNT"] ?? headers["MOUNTNAME"] ?? headers["MNTSNAME"], !mount.isEmpty {
             entry.mount = mount

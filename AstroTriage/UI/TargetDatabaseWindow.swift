@@ -365,6 +365,72 @@ struct TargetDatabaseContentView: View {
                     .padding(.top, 2)
                     }
 
+                    // Rain probability bars — only shown when any hour has precipitation
+                    if nightCloud.contains(where: { $0.precipProbability > 0 }) {
+                        HStack(spacing: 0) {
+                            // Rain label
+                            Text("Rain")
+                                .font(.system(size: 8 * fontScale, weight: .medium, design: .monospaced))
+                                .foregroundColor(AppColors.fgDim(nightMode))
+                                .frame(width: 30, alignment: .trailing)
+                                .padding(.trailing, 4)
+
+                            ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 1) {
+                                ForEach(Array(nightCloud.enumerated()), id: \.offset) { idx, hour in
+                                    let isCurrent = idx == currentHourIdx
+                                    let isPast = hour.time < now && !isCurrent
+                                    let hourComps = cal.dateComponents(in: tz, from: hour.time)
+                                    let hourVal = hourComps.hour ?? 0
+                                    let isNightStart = hourVal == 18 && idx > 0
+
+                                    HStack(spacing: 0) {
+                                        // Night boundary separator (match cloud chart)
+                                        if isNightStart {
+                                            Color.clear.frame(width: 3 + 12, height: 24)
+                                        }
+
+                                        VStack(spacing: 0) {
+                                            let barH = CGFloat(max(hour.precipProbability, 3)) / 100 * 20
+                                            let baseColor: Color = hour.precipProbability < 20 ? .cyan :
+                                                                   hour.precipProbability < 50 ? .blue :
+                                                                   .indigo
+                                            let barColor: Color = isPast ? .gray.opacity(0.2) :
+                                                                  isCurrent ? baseColor :
+                                                                  baseColor.opacity(0.75)
+
+                                            ZStack(alignment: .top) {
+                                                VStack(spacing: 0) {
+                                                    Spacer(minLength: 0)
+                                                    RoundedRectangle(cornerRadius: 1.5)
+                                                        .fill(hour.precipProbability > 0 ? barColor : .clear)
+                                                        .frame(width: 22, height: barH)
+                                                        .overlay(
+                                                            isCurrent && hour.precipProbability > 0
+                                                                ? RoundedRectangle(cornerRadius: 1.5)
+                                                                    .stroke(Color.accentColor, lineWidth: 2) : nil
+                                                        )
+                                                }
+                                                .frame(height: 20)
+
+                                                // Rain % label (only show when > 0)
+                                                if hour.precipProbability > 0 {
+                                                    Text("\(hour.precipProbability)")
+                                                        .font(.system(size: 7 * fontScale, weight: .medium, design: .monospaced))
+                                                        .foregroundColor(isPast ? .gray.opacity(0.3) : AppColors.fg(nightMode))
+                                                        .offset(y: -8)
+                                                }
+                                            }
+                                            .frame(height: 24)
+                                        }
+                                    }
+                                }
+                            }
+                            }
+                        }
+                        .padding(.top, 2)
+                    }
+
                     // Attribution
                     Text("powered by meteoblue")
                         .font(.system(size: 8 * fontScale))

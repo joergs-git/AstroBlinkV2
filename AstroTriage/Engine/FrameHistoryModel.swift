@@ -41,10 +41,109 @@ class FrameHistoryModel: ObservableObject {
         case conditions = "Conditions"
         case progress = "Progress"
         case setups = "Setups"
+        case metrics = "Metrics"
         var id: String { rawValue }
     }
 
     @Published var selectedChart: ChartType = .sessionScore
+
+    // MARK: - Metrics Chart State
+
+    /// Selected night for per-frame detail view (nil = all nights longterm using nightly medians)
+    @Published var selectedMetricsNight: String?
+    @Published var metricsFilterScope: MetricsFilterScope = .all
+    @Published var showMetricsTemperature: Bool = true
+    @Published var showMeridianFlipMarkers: Bool = false  // Off by default — too noisy on longterm view
+    @Published private(set) var metricsNights: [String] = []
+    @Published private(set) var metricsFrameData: [MetricsFramePoint] = []
+    @Published private(set) var metricsEvents: [MetricsEvent] = []
+
+    /// True when showing nightly medians (All Nights), false when showing per-frame (single night)
+    var isMetricsLongtermView: Bool { selectedMetricsNight == nil }
+
+    enum MetricsFilterScope: Hashable {
+        case all
+        case narrowband
+        case broadband
+        case specific(String)
+    }
+
+    /// Per-frame data point for the metrics chart
+    struct MetricsFramePoint: Identifiable {
+        let id: String       // fileHash
+        let date: Date
+        let hfr: Double?
+        let ambientTemp: Double?
+        let filter: String
+        let filename: String
+        let qualityTier: Int?
+        let pierSide: String?
+    }
+
+    /// AF/MF event marker
+    struct MetricsEvent: Identifiable {
+        let id = UUID()
+        let date: Date
+        let type: MetricsEventType
+    }
+    enum MetricsEventType { case meridianFlip }
+
+    /// Available filters in current metrics data
+    var metricsAvailableFilters: [String] {
+        let unique = Set(metricsFrameData.map { $0.filter }).subtracting(["Unknown", ""])
+        return FrameHistoryModel.sortedFilters(Array(unique))
+    }
+
+    /// Filtered metrics points based on current filter scope
+    var filteredMetricsPoints: [MetricsFramePoint] {
+        switch metricsFilterScope {
+        case .all:
+            return metricsFrameData
+        case .narrowband:
+            return metricsFrameData.filter { QualityEstimator.narrowbandCanonical.contains($0.filter) }
+        case .broadband:
+            let broad = Set(["L", "R", "G", "B"])
+            return metricsFrameData.filter { broad.contains($0.filter) }
+        case .specific(let name):
+            return metricsFrameData.filter { $0.filter == name }
+        }
+    }
+
+    var metricsHFRPoints: [MetricsFramePoint] { filteredMetricsPoints.filter { $0.hfr != nil } }
+    var metricsTempPoints: [MetricsFramePoint] { filteredMetricsPoints.filter { $0.ambientTemp != nil } }
+    var hasMetricsHFR: Bool { !metricsHFRPoints.isEmpty }
+    var hasMetricsTemp: Bool { !metricsTempPoints.isEmpty }
+
+    /// Points that have BOTH HFR and temperature (for scatter plot)
+    var metricsTempHFRPoints: [MetricsFramePoint] {
+        filteredMetricsPoints.filter { $0.hfr != nil && $0.ambientTemp != nil }
+    }
+
+    /// Rolling average trend line: bin by 1°C temperature buckets, average HFR within each bin
+    struct TrendPoint: Identifiable {
+        let id = UUID()
+        let temp: Double
+        let hfr: Double
+    }
+
+    var metricsTrendLine: [TrendPoint] {
+        let points = metricsTempHFRPoints
+        guard points.count >= 3 else { return [] }
+
+        // Bin by 1°C buckets
+        var bins: [Int: [Double]] = [:]  // temp_rounded → [hfr values]
+        for p in points {
+            let bucket = Int(round(p.ambientTemp!))
+            bins[bucket, default: []].append(p.hfr!)
+        }
+
+        // Only emit bins with data, sorted by temperature
+        return bins.keys.sorted().compactMap { bucket in
+            guard let values = bins[bucket], !values.isEmpty else { return nil }
+            let avgHFR = values.reduce(0, +) / Double(values.count)
+            return TrendPoint(temp: Double(bucket), hfr: avgHFR)
+        }
+    }
 
     // Time range filter
     enum TimeRange: String, CaseIterable, Identifiable {
@@ -199,6 +298,9 @@ class FrameHistoryModel: ObservableObject {
     // MARK: - Load Data
 
     func loadData() {
+        // Clean orphaned session records (leftover from merge/delete operations)
+        try? FrameHistoryDatabase.shared.cleanOrphanedSessions()
+
         // Get database stats
         stats = try? FrameHistoryDatabase.shared.databaseStats()
 
@@ -317,7 +419,13 @@ class FrameHistoryModel: ObservableObject {
             }
 
             // Sort: alphabetically by label for consistent ordering
-            availableSetups = setups.sorted { $0.label.localizedCaseInsensitiveCompare($1.label) == .orderedAscending }
+            // Filter out setups with 0 frames (orphaned after merge/delete)
+            let nonEmpty = setups.filter { setup in
+                let hashes = merged[setup.hash] ?? [setup.hash]
+                let total = hashes.compactMap { try? FrameHistoryDatabase.shared.frameCount(setupHash: $0) }.reduce(0, +)
+                return total > 0
+            }
+            availableSetups = nonEmpty.sorted { $0.label.localizedCaseInsensitiveCompare($1.label) == .orderedAscending }
 
         } catch {
             print("FrameHistoryModel: loadAvailableSetups failed: \(error)")
@@ -353,6 +461,179 @@ class FrameHistoryModel: ObservableObject {
         } catch {
             print("FrameHistoryModel: loadNightlyTrend failed: \(error)")
         }
+    }
+
+    // MARK: - Metrics Data Loading
+
+    func loadMetricsData() {
+        do {
+            // Determine setup hashes
+            let hashes: [String]?
+            if let setupHash = selectedSetupHash {
+                hashes = mergedSetupHashes[setupHash] ?? [setupHash]
+            } else {
+                hashes = nil
+            }
+
+            // Load available nights
+            metricsNights = try FrameHistoryDatabase.shared.availableNights(
+                setupHashes: hashes, target: selectedTarget
+            )
+
+            if let night = selectedMetricsNight {
+                // Single night selected → per-frame detail view
+                loadMetricsPerFrame(night: night, setupHashes: hashes)
+            } else {
+                // All Nights → nightly medians from NightSummary (much less data)
+                loadMetricsNightlyMedians()
+            }
+        } catch {
+            print("FrameHistoryModel: loadMetricsData failed: \(error)")
+            metricsFrameData = []
+            metricsEvents = []
+        }
+    }
+
+    /// Longterm view: one point per night per filter from NightSummary medians.
+    /// Each NightSummary already has per-filter data, so we keep separate lines per filter.
+    /// Temperature is attached to each point (same value per night across filters).
+    private func loadMetricsNightlyMedians() {
+        let summaries = filteredSummaries
+        var points: [MetricsFramePoint] = []
+
+        // First, collect nightly temperature (average across filter entries for the same night)
+        var nightTemp: [String: Double] = [:]
+        for s in summaries {
+            if let temp = s.medianAmbientTemp {
+                if let existing = nightTemp[s.night] {
+                    nightTemp[s.night] = (existing + temp) / 2
+                } else {
+                    nightTemp[s.night] = temp
+                }
+            }
+        }
+
+        // Create one point per NightSummary entry (per night per filter)
+        for s in summaries {
+            guard let date = Self.nightDateFormatter.date(from: s.night) else { continue }
+            guard s.medianHFR != nil || nightTemp[s.night] != nil else { continue }
+
+            let filter = s.filter.map { Self.normalizeFilterForChart($0) } ?? "Unknown"
+
+            points.append(MetricsFramePoint(
+                id: "\(s.night)-\(filter)",
+                date: date,
+                hfr: s.medianHFR,
+                ambientTemp: nightTemp[s.night],
+                filter: filter,
+                filename: "\(s.night) \(filter)",
+                qualityTier: nil,
+                pierSide: nil
+            ))
+        }
+
+        points.sort { $0.date < $1.date }
+        metricsFrameData = points
+        metricsEvents = []
+    }
+
+    /// Single night view: per-frame detail from FrameRecord
+    private func loadMetricsPerFrame(night: String, setupHashes: [String]?) {
+        let dtFormatter = DateFormatter()
+        dtFormatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+        dtFormatter.locale = Locale(identifier: "en_US_POSIX")
+
+        do {
+            let frames = try FrameHistoryDatabase.shared.metricsFrames(
+                night: night,
+                setupHashes: setupHashes,
+                target: selectedTarget
+            )
+
+            var points: [MetricsFramePoint] = []
+            for f in frames {
+                let dateStr: String
+                if let d = f.captureDate, let t = f.captureTime {
+                    dateStr = "\(d) \(t)"
+                } else if let d = f.captureDate {
+                    dateStr = "\(d) 00:00:00"
+                } else {
+                    continue
+                }
+                guard let date = dtFormatter.date(from: dateStr) else { continue }
+
+                let canonical = f.filter.map { ColorCombineEngine.canonicalFilterName($0) } ?? "Unknown"
+
+                points.append(MetricsFramePoint(
+                    id: f.fileHash,
+                    date: date,
+                    hfr: f.computedHFR,
+                    ambientTemp: f.ambientTemp,
+                    filter: canonical,
+                    filename: f.filename ?? "unknown",
+                    qualityTier: f.qualityTier,
+                    pierSide: f.pierSide
+                ))
+            }
+            points.sort { $0.date < $1.date }
+            metricsFrameData = points
+
+            // Detect meridian flip events (pierSide changes between consecutive frames)
+            var events: [MetricsEvent] = []
+            if points.count >= 2 {
+                for i in 1..<points.count {
+                    if let prevSide = points[i-1].pierSide, let currSide = points[i].pierSide,
+                       !prevSide.isEmpty, !currSide.isEmpty, prevSide != currSide {
+                        events.append(MetricsEvent(date: points[i].date, type: .meridianFlip))
+                    }
+                }
+            }
+            metricsEvents = events
+        } catch {
+            print("FrameHistoryModel: loadMetricsPerFrame failed: \(error)")
+            metricsFrameData = []
+            metricsEvents = []
+        }
+    }
+
+    // MARK: - Metrics Axis Ranges
+
+    /// HFR Y-axis: P2-P98 with padding
+    var metricsHFRRange: ClosedRange<Double> {
+        let values = metricsHFRPoints.compactMap { $0.hfr }
+        guard values.count >= 2 else {
+            let v = values.first ?? 1.5
+            return (v - 0.5)...(v + 0.5)
+        }
+        let sorted = values.sorted()
+        let p2 = sorted[max(0, Int(Double(sorted.count) * 0.02))]
+        let p98 = sorted[min(sorted.count - 1, Int(Double(sorted.count) * 0.98))]
+        let padding = max((p98 - p2) * 0.1, 0.1)
+        return (p2 - padding)...(p98 + padding)
+    }
+
+    /// Temperature Y-axis: P2-P98 with padding
+    var metricsTempRange: ClosedRange<Double> {
+        let values = metricsTempPoints.compactMap { $0.ambientTemp }
+        guard values.count >= 2 else {
+            let v = values.first ?? 15.0
+            return (v - 5)...(v + 5)
+        }
+        let sorted = values.sorted()
+        let p2 = sorted[max(0, Int(Double(sorted.count) * 0.02))]
+        let p98 = sorted[min(sorted.count - 1, Int(Double(sorted.count) * 0.98))]
+        let padding = max((p98 - p2) * 0.15, 1.0)
+        return (p2 - padding)...(p98 + padding)
+    }
+
+    /// X-axis time range
+    var metricsTimeRange: ClosedRange<Date> {
+        guard let first = metricsFrameData.first?.date, let last = metricsFrameData.last?.date else {
+            let now = Date()
+            return now...now.addingTimeInterval(3600)
+        }
+        let padding = max(last.timeIntervalSince(first) * 0.02, 60)
+        return first.addingTimeInterval(-padding)...last.addingTimeInterval(padding)
     }
 
     // MARK: - Time-Filtered Summaries
@@ -908,6 +1189,39 @@ class FrameHistoryModel: ObservableObject {
             avgTrashRate: trashRate,
             totalTargets: targets.count
         )
+    }
+
+    // MARK: - Chart Context Stats (shown in tooltips for comparison)
+
+    /// Overall score stats for the filtered data
+    var scoreChartStats: (avg: Double, median: Double)? {
+        let scores = sessionScores.map(\.score)
+        guard !scores.isEmpty else { return nil }
+        let avg = scores.reduce(0, +) / Double(scores.count)
+        let sorted = scores.sorted()
+        let median = sorted[sorted.count / 2]
+        return (avg, median)
+    }
+
+    /// Overall efficiency stats
+    var efficiencyChartStats: (avg: Double, median: Double)? {
+        let vals = efficiencyData.map(\.retentionPct)
+        guard !vals.isEmpty else { return nil }
+        let avg = vals.reduce(0, +) / Double(vals.count)
+        let sorted = vals.sorted()
+        let median = sorted[sorted.count / 2]
+        return (avg, median)
+    }
+
+    /// Overall FWHM stats
+    var fwhmChartStats: (avg: Double, median: Double, mad: Double)? {
+        let vals = equipmentHealthData.map(\.rawFWHM)
+        guard vals.count >= 2 else { return nil }
+        let avg = vals.reduce(0, +) / Double(vals.count)
+        let sorted = vals.sorted()
+        let median = sorted[sorted.count / 2]
+        let mad = 1.4826 * sorted.map { abs($0 - median) }.sorted()[sorted.count / 2]
+        return (avg, median, mad)
     }
 
     // MARK: - Percentile Clamping

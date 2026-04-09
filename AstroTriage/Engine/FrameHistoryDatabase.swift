@@ -886,6 +886,54 @@ final class FrameHistoryDatabase {
         }) ?? [:]
     }
 
+    // MARK: - Setup Management (merge, delete, fix FL)
+
+    /// Delete all frame records for a setup hash. Used to remove bad/duplicate setups.
+    /// Also cleans session_record and setup_nickname entries.
+    func deleteSetup(setupHash: String) throws {
+        try dbQueue.write { db in
+            try db.execute(sql: "DELETE FROM frame_record WHERE setupHash = ?", arguments: [setupHash])
+            try db.execute(sql: "DELETE FROM session_record WHERE setupHash = ?", arguments: [setupHash])
+            try db.execute(sql: "DELETE FROM setup_nickname WHERE setupHash = ?", arguments: [setupHash])
+        }
+    }
+
+    /// Merge setup B into setup A: reassign all frames from sourceHash to targetHash.
+    /// After merge, source setup disappears and all its frames belong to target.
+    /// Also cleans up session_record and nickname for the source.
+    func mergeSetups(from sourceHash: String, into targetHash: String) throws {
+        try dbQueue.write { db in
+            try db.execute(
+                sql: "UPDATE frame_record SET setupHash = ? WHERE setupHash = ?",
+                arguments: [targetHash, sourceHash]
+            )
+            // Clean up orphaned source entries
+            try db.execute(sql: "DELETE FROM session_record WHERE setupHash = ?", arguments: [sourceHash])
+            try db.execute(sql: "DELETE FROM setup_nickname WHERE setupHash = ?", arguments: [sourceHash])
+        }
+    }
+
+    /// Remove orphaned session records that have no matching frames.
+    func cleanOrphanedSessions() throws {
+        try dbQueue.write { db in
+            try db.execute(sql: """
+                DELETE FROM session_record WHERE setupHash NOT IN (
+                    SELECT DISTINCT setupHash FROM frame_record WHERE setupHash IS NOT NULL
+                )
+            """)
+        }
+    }
+
+    /// Override focal length for all frames in a setup. Fixes bad plate-solve FL values.
+    func updateFocalLength(setupHash: String, newFL: Double) throws {
+        try dbQueue.write { db in
+            try db.execute(
+                sql: "UPDATE frame_record SET focalLength = ? WHERE setupHash = ?",
+                arguments: [newFL, setupHash]
+            )
+        }
+    }
+
     /// Returns the most common focal length for a setup hash (mode), or nil if unknown.
     func primaryFocalLength(for setupHash: String) -> Int? {
         try? dbQueue.read { db in
@@ -994,6 +1042,65 @@ final class FrameHistoryDatabase {
         return [telescope, camera].compactMap { $0 }.joined(separator: " + ")
     }
 
+    // MARK: - Per-Frame Metrics Queries (for Session Metrics chart)
+
+    /// Fetch per-frame records for the metrics chart, ordered by capture time.
+    /// - night: if nil, fetches all frames (longterm view); if set, fetches frames for that night
+    /// - setupHashes: if provided, restricts to these setups
+    /// - target: if provided, restricts to this target
+    func metricsFrames(
+        night: String? = nil,
+        setupHashes: [String]? = nil,
+        target: String? = nil
+    ) throws -> [FrameRecord] {
+        try dbQueue.read { db in
+            var sql = "SELECT * FROM frame_record WHERE 1=1"
+            var args: [DatabaseValueConvertible] = []
+
+            if let night {
+                sql += " AND observingNight = ?"
+                args.append(night)
+            }
+            if let setupHashes, !setupHashes.isEmpty {
+                let placeholders = setupHashes.map { _ in "?" }.joined(separator: ",")
+                sql += " AND setupHash IN (\(placeholders))"
+                args.append(contentsOf: setupHashes)
+            }
+            if let target, !target.isEmpty {
+                sql += " AND (canonicalTarget = ? OR target = ?)"
+                args.append(target)
+                args.append(target)
+            }
+
+            sql += " ORDER BY captureDate ASC, captureTime ASC"
+
+            return try FrameRecord.fetchAll(db, sql: sql, arguments: StatementArguments(args))
+        }
+    }
+
+    /// Get distinct observing nights, most recent first.
+    func availableNights(setupHashes: [String]? = nil, target: String? = nil) throws -> [String] {
+        try dbQueue.read { db in
+            var sql = "SELECT DISTINCT observingNight FROM frame_record WHERE observingNight IS NOT NULL"
+            var args: [DatabaseValueConvertible] = []
+
+            if let setupHashes, !setupHashes.isEmpty {
+                let placeholders = setupHashes.map { _ in "?" }.joined(separator: ",")
+                sql += " AND setupHash IN (\(placeholders))"
+                args.append(contentsOf: setupHashes)
+            }
+            if let target, !target.isEmpty {
+                sql += " AND (canonicalTarget = ? OR target = ?)"
+                args.append(target)
+                args.append(target)
+            }
+
+            sql += " ORDER BY observingNight DESC"
+
+            return try String.fetchAll(db, sql: sql, arguments: StatementArguments(args))
+        }
+    }
+
     // MARK: - Session Queries (for Archive Scanner scoring)
 
     /// Fetch all frame records for a specific scan session.
@@ -1086,5 +1193,32 @@ final class FrameHistoryDatabase {
     func resetDatabase() throws {
         try dbQueue.erase()
         try Self.migrate(dbQueue)
+    }
+
+    /// Destroy ALL data: local DB + iCloud backup + calibration files.
+    func destroyAllData() throws {
+        // 1. Erase local database
+        try dbQueue.erase()
+        try Self.migrate(dbQueue)
+
+        // 2. Delete iCloud backups
+        if let iDir = _iCloudDirectory {
+            let fm = FileManager.default
+            if let files = try? fm.contentsOfDirectory(at: iDir, includingPropertiesForKeys: nil) {
+                for file in files {
+                    try? fm.removeItem(at: file)
+                }
+            }
+        }
+
+        // 3. Delete calibration database files
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+        if let calibDir = appSupport?.appendingPathComponent("AstroBlinkV2/Calibration") {
+            try? FileManager.default.removeItem(at: calibDir)
+            try? FileManager.default.createDirectory(at: calibDir, withIntermediateDirectories: true)
+        }
+
+        // 4. Delete setup nicknames (already erased with DB, but explicit for clarity)
+        print("FrameHistoryDatabase: ALL data destroyed (local + iCloud + calibration)")
     }
 }

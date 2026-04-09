@@ -229,6 +229,53 @@ Layer 4: Filter-Aware Penalty (QualityEstimator.swift, v5.2.0)
 
 ---
 
+## Session Metrics & History Improvements (v5.20.5)
+
+### Temperature vs HFR Scatter Plot (Metrics Tab)
+- New "Metrics" tab in Frame History window
+- X-axis: ambient temperature (°C), Y-axis: HFR (px)
+- Per-filter colored scatter points with 1°C-binned rolling average trend line
+- Night picker: "All Nights" (nightly medians) or specific night (per-frame detail)
+- Filter scope: All / Narrowband / Broadband / per-filter
+- Shows focus drift correlation with temperature changes
+
+### Rain Forecast in Target Catalog
+- Hourly precipitation probability bars below cloud cover chart
+- Blue/cyan/indigo color scale, same past/current/future styling as cloud bars
+- Only shown when any hour has precipitation > 0%
+
+### Setup Management (Gear Icon)
+- Rename (nickname), fix focal length (override bad plate-solve values)
+- Merge Into: combine one setup into another (fixes duplicates)
+- Delete Setup: permanently remove bad entries with confirmation
+- Orphaned sessions auto-cleaned on History window load
+
+### Destroy All DB Data (Advanced Menu)
+- Window → Advanced → Destroy All DB Data
+- Two safety confirmations before execution
+- Destroys: local SQLite, iCloud backups, calibration files
+
+### History Chart Improvements
+- Removed X-axis scrollbars from Score, Efficiency, Performance charts (fit to window)
+- Educational tooltip text on all 6 chart types explaining metrics and caveats
+- Overall average/median/MAD stats shown in tooltips for numerical comparison
+- Tooltips flip to left side when cursor near right window edge
+- Tooltip font scaled 1.2x for readability
+- Rolling average options: 5/10/20/50/100 (was 5/10/20)
+- Fuzzy hover detection: nearest-point within 30 days (was exact day match)
+
+### FOCPOS Header Extraction
+- `focusPosition: Double?` extracted from FOCPOS/FOCUSPOS FITS header
+- Stored on ImageEntry for autofocus event detection
+
+### Key Files
+- `AstroTriage/Engine/FrameHistoryModel.swift` — Metrics data, trend line, chart stats
+- `AstroTriage/UI/FrameHistoryWindow.swift` — Scatter chart, setup management, tooltip improvements
+- `AstroTriage/UI/TargetDatabaseWindow.swift` — Rain forecast bars
+- `AstroTriage/Engine/FrameHistoryDatabase.swift` — Setup merge/delete/fix FL, destroy all data
+
+---
+
 ## Pre-Caching Pipeline Optimization (v4.5.0)
 
 ### Dual-Queue Architecture

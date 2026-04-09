@@ -4,6 +4,32 @@ All notable changes to AstroBlink & AIsaac will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [5.20.5] — 2026-04-09
+
+### Added
+- **Temperature vs HFR Metrics Tab** — New "Metrics" tab in Frame History window. Scatter plot: X=ambient temperature, Y=HFR, colored by filter. 1°C-binned rolling average trend line shows focus drift correlation. Night picker for single-night per-frame detail or all-nights nightly medians longterm view. Filter scope: All/Narrowband/Broadband/per-filter.
+- **Rain Forecast in Target Catalog** — Hourly precipitation probability bars below cloud cover chart. Blue/cyan/indigo color scale, past/current/future styling. Only shown when precipitation > 0%.
+- **Setup Management** — Gear icon next to Setup picker opens management dialog: rename (nickname), fix focal length (override bad plate-solve values), merge into another setup, delete setup. Orphaned sessions auto-cleaned on load.
+- **Destroy All DB Data** — Window > Advanced > Destroy All DB Data. Two safety confirmations. Destroys local SQLite, iCloud backups, and calibration files.
+- **FOCPOS Header Extraction** — Focuser position from FOCPOS/FOCUSPOS FITS header extracted to ImageEntry for autofocus event detection.
+- **Educational Tooltips** — All 6 History chart types now include explanatory text about what the metric means, why it matters, and what to look out for.
+- **Overall Stats in Tooltips** — Score (avg/median), Efficiency (avg/median), Performance (avg/median/MAD), Metrics (avg HFR/temp) shown in hover tooltips for numerical comparison.
+- **Rolling Average 50/100** — Performance chart rolling window options expanded from 5/10/20 to 5/10/20/50/100.
+
+### Changed
+- **No More X-Axis Scrollbars** — Score, Efficiency, and Performance charts now always fit to window width instead of horizontal scrolling.
+- **Tooltip Flip** — Tooltips automatically flip to left side of cursor when near right window edge.
+- **Tooltip Readability** — Font scaled 1.2x, max width constrained to 380px.
+- **Fuzzy Hover Detection** — Bar charts use nearest-point matching within 30 days instead of exact day match.
+
+### Fixed
+- **Empty Setups Filtered** — Setups with 0 frames (orphaned after merge/delete) no longer appear in dropdown.
+- **Merge/Delete Cleanup** — Setup merge and delete operations now also clean session_record table.
+- **Metrics Tab Data Loading** — Fixed: metricsFrameData, metricsNights, metricsEvents now @Published for immediate view updates.
+- **Crash on M Key** — Fixed range crash (1..<0) when pressing M key with no session loaded.
+
+---
+
 ## [5.20.0] — 2026-04-07
 
 ### Added

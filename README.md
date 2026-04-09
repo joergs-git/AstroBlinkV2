@@ -57,6 +57,9 @@ AIsaac knows your equipment, remembers your imaging history, understands light p
 - **Native FITS/XISF QuickLook** — Finder thumbnails and spacebar previews with debayer support for color cameras.
 - **Bortle Sky Quality (VIIRS 2024)** — real satellite-measured light pollution for every frame. Fractional Bortle (e.g. B4.8) from NOAA VIIRS 2024 annual composite via Supabase lookup. Computed from SITELAT/SITELONG FITS headers. Offline fallback via embedded Falchi 2015 atlas.
 - **Frame History Database** — persistent SQLite tracking all per-frame quality metrics across sessions. Cross-session scoring, global frame IDs, iCloud backup, archive NAS scanning.
+- **Temperature vs HFR Metrics** — scatter plot correlating ambient temperature with focus quality (HFR). Per-filter colored dots, 1°C-binned rolling average trend line. Night picker for single-night detail or all-nights longterm view.
+- **Rain Forecast** — hourly precipitation probability bars in the Target Catalog weather section, alongside cloud cover.
+- **Setup Management** — rename, merge, delete, and fix focal length for equipment setups. Clean up duplicate entries from plate-solve variations.
 - **In-App Messaging** — server-driven announcements, feedback collection, email signup without app updates. Rich actions, user targeting, feature unlocking.
 - **iCloud Settings Sync** — all preferences and calibration data sync across Macs. Frame History DB with automatic sync and conflict detection.
 - **Zoom Controls** — Cmd+0 fit to view, Cmd+1 actual pixels (100%), Cmd+2 double (200%), Cmd+/- 25% step zoom. Option+drag to pan. True pixel zoom % overlay.

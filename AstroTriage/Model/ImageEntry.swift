@@ -43,6 +43,7 @@ struct ImageEntry: Identifiable, Hashable {
     var frameType: String?     // LIGHT, FLAT, DARK, BIAS
     var focuserTemp: Double?
     var ambientTemp: Double?   // Ambient/environment temperature from AMBTEMP header
+    var focusPosition: Double? // Focuser position from FOCPOS header (steps, for AF event detection)
     var mount: String?
     var bayerPattern: String?  // CFA pattern from BAYERPAT header (RGGB, GRBG, GBRG, BGGR)
     var pierSide: String?      // Pier side from PIERSIDE header (EAST or WEST)

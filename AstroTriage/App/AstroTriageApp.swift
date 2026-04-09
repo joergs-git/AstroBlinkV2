@@ -146,12 +146,16 @@ struct AstroBlinkV2App: App {
                 }
             }
 
-            // Advanced menu (hidden safety net for Frame History Database)
+            // Advanced menu (safety net for Frame History Database)
             CommandGroup(after: .windowList) {
                 Divider()
                 Menu("Advanced") {
                     Button("Reset Frame History Database...") {
                         NotificationCenter.default.post(name: .resetFrameHistory, object: nil)
+                    }
+                    Divider()
+                    Button("Destroy All DB Data...") {
+                        NotificationCenter.default.post(name: .destroyAllData, object: nil)
                     }
                 }
             }
@@ -901,6 +905,7 @@ extension Notification.Name {
     static let fontScaleDecrease = Notification.Name("fontScaleDecrease")
     static let fontScaleReset = Notification.Name("fontScaleReset")
     static let resetFrameHistory = Notification.Name("resetFrameHistory")
+    static let destroyAllData = Notification.Name("destroyAllData")
     static let checkAppMessages = Notification.Name("checkAppMessages")
     static let frameHistoryDidImport = Notification.Name("frameHistoryDidImport")
     static let zoomInStep = Notification.Name("zoomInStep")

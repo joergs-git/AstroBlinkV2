@@ -1298,6 +1298,32 @@ struct ContentViewModifiers2: ViewModifier {
                     viewModel.statusMessage = "Frame History Database reset"
                 }
             }
+            .onReceive(NotificationCenter.default.publisher(for: .destroyAllData)) { _ in
+                // First confirmation
+                let alert1 = NSAlert()
+                alert1.alertStyle = .critical
+                alert1.messageText = "Destroy All Database Data?"
+                if let stats = try? FrameHistoryDatabase.shared.databaseStats() {
+                    alert1.informativeText = "This will permanently destroy:\n\n• \(stats.frameCount) frame records from \(stats.sessionCount) sessions\n• All iCloud backups\n• All calibration data\n• All setup nicknames\n\nThis cannot be undone."
+                } else {
+                    alert1.informativeText = "This will permanently destroy all local data, iCloud backups, and calibration files.\n\nThis cannot be undone."
+                }
+                alert1.addButton(withTitle: "Destroy Everything")
+                alert1.addButton(withTitle: "Cancel")
+                guard alert1.runModal() == .alertFirstButtonReturn else { return }
+
+                // Second confirmation
+                let alert2 = NSAlert()
+                alert2.alertStyle = .critical
+                alert2.messageText = "Are you really sure?"
+                alert2.informativeText = "All historical frame data, quality scores, calibration baselines, and iCloud backups will be permanently deleted.\n\nYou will need to re-scan all sessions to rebuild."
+                alert2.addButton(withTitle: "Yes, Destroy All Data")
+                alert2.addButton(withTitle: "Cancel")
+                guard alert2.runModal() == .alertFirstButtonReturn else { return }
+
+                try? FrameHistoryDatabase.shared.destroyAllData()
+                viewModel.statusMessage = "All database data destroyed"
+            }
             .modifier(AIsaacStateObserver(viewModel: viewModel))
             .onReceive(NotificationCenter.default.publisher(for: .fontScaleIncrease)) { _ in
                 viewModel.fontScale = min(1.5, viewModel.fontScale + 0.1)

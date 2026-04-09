@@ -1,5 +1,21 @@
 # AstroBlinkV2 — Task Tracker
 
+## v5.20.1 — Setup Merging + Narrowband Star Fix (COMPLETE 2026-04-07)
+
+### Setup FL Merging ✅
+- [x] Merge setups with same telescope+camera and FL within 3% tolerance
+- [x] Always show FL in setup labels (fixes RC12red08 missing FL)
+- [x] Multi-hash queries for nightlyTrend, setupSummary, setupComparison
+- [x] Nicknames apply to all merged hashes
+
+### Narrowband Star Detection Fix ✅
+- [x] StarDetector sharpness check: peak vs neighbor ring ratio ≥1.2
+- [x] StarMetricsCalculator concentration check: peak vs aperture avg ≥2.0
+- [x] Fixes false star circles on H-alpha nebulosity in Compare window
+- [x] Algorithm version bumped to 15
+
+---
+
 ## v2.0.0 — Performance Optimization (COMPLETE)
 - [x] Phase 1: cfitsio concurrent decode (_REENTRANT, remove mutex)
 - [x] Phase 2: Zero-copy decode (posix_memalign + bytesNoCopy)

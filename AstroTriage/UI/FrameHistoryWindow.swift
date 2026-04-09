@@ -159,8 +159,11 @@ struct FrameHistoryContentView: View {
             }
         }
         .background(bg)
-        .onChange(of: model.selectedSetupHash) { _, _ in model.loadNightlyTrend() }
-        .onChange(of: model.selectedTarget) { _, _ in model.loadNightlyTrend() }
+        .onChange(of: model.selectedSetupHash) { _, _ in model.loadNightlyTrend(); model.loadMetricsData() }
+        .onChange(of: model.selectedTarget) { _, _ in model.loadNightlyTrend(); model.loadMetricsData() }
+        .onChange(of: model.selectedChart) { _, newChart in
+            if newChart == .metrics { model.loadMetricsData() }
+        }
     }
 
     // MARK: - Header
@@ -196,12 +199,12 @@ struct FrameHistoryContentView: View {
             }
             .frame(maxWidth: 250)
 
-            // Edit nickname button (only when a specific setup is selected)
+            // Setup management button (rename, merge, delete, fix FL)
             if model.selectedSetupHash != nil {
-                Button(action: { showNicknameDialog() }) {
-                    Image(systemName: "pencil")
+                Button(action: { showSetupManagement() }) {
+                    Image(systemName: "gearshape")
                 }
-                .help("Set nickname for this setup")
+                .help("Manage setup: rename, merge, delete, fix focal length")
             }
 
             // Target picker (always visible, enriched with common names)
@@ -260,6 +263,8 @@ struct FrameHistoryContentView: View {
             targetProgressChart
         case .setups:
             setupComparisonChart
+        case .metrics:
+            metricsChart
         }
     }
 
@@ -317,15 +322,13 @@ struct FrameHistoryContentView: View {
                 }
                 .chartYScale(domain: 0...100)
                 .chartYAxisLabel("Score (0-100)")
-                .chartScrollableAxes(.horizontal)
-                .chartXVisibleDomain(length: Self.scrollVisibleDomain)
-                .chartScrollPosition(initialX: scores.last?.date.addingTimeInterval(-Self.scrollVisibleDomain) ?? Date())
                 .chartPlotStyle { plot in plot.background(chartBg).clipped() }
                 .chartOverlay { proxy in chartHoverTracker(proxy: proxy) }
                 .frame(minHeight: 300)
                 .overlay(alignment: .topLeading) {
                     if let hd = hoveredDate,
-                       let point = scores.first(where: { Calendar.current.isDate($0.date, inSameDayAs: hd) }) {
+                       let point = scores.min(by: { abs($0.date.timeIntervalSince(hd)) < abs($1.date.timeIntervalSince(hd)) }),
+                       abs(point.date.timeIntervalSince(hd)) < 30 * 86400 {
                         chartTooltip {
                             Text(point.night).font(.system(size: fs(10), weight: .bold))
                             Text(String(format: "Score: %.0f — %d frames, %.0f%% kept", point.score, point.frameCount, point.retentionRate * 100))
@@ -347,8 +350,18 @@ struct FrameHistoryContentView: View {
                                 }
                             }
                             .foregroundColor(fgDim)
+                            Divider().frame(height: 1)
+                            if let s = model.scoreChartStats {
+                                Text(String(format: "Overall: avg %.0f, median %.0f", s.avg, s.median))
+                                    .font(.system(size: fs(9), design: .monospaced))
+                                    .foregroundColor(fgDim)
+                            }
+                            Text("Composite score: FWHM, retention, seeing.\nHigher = better. Watch for seasonal patterns.")
+                                .font(.system(size: fs(8)))
+                                .foregroundColor(fgDim.opacity(0.7))
+                                .lineLimit(3)
                         }
-                        .offset(x: hoverLocation.x + 12, y: max(0, hoverLocation.y - 40))
+                        .offset(tooltipOffset(x: hoverLocation.x, y: hoverLocation.y))
                     }
                 }
 
@@ -403,7 +416,7 @@ struct FrameHistoryContentView: View {
                         point.retentionPct >= 60 ? Color.yellow :
                         point.retentionPct >= 40 ? Color.orange : Color.red
                     )
-                    if let hd = hoveredDate, Calendar.current.isDate(hd, inSameDayAs: point.date) {
+                    if let hd = hoveredDate, abs(point.date.timeIntervalSince(hd)) < 30 * 86400 {
                         RuleMark(x: .value("Hover", point.date, unit: .day))
                             .foregroundStyle(fg.opacity(0.3))
                             .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 3]))
@@ -411,15 +424,13 @@ struct FrameHistoryContentView: View {
                 }
                 .chartYScale(domain: 0...100)
                 .chartYAxisLabel("Frames Kept %")
-                .chartScrollableAxes(.horizontal)
-                .chartXVisibleDomain(length: Self.scrollVisibleDomain)
-                .chartScrollPosition(initialX: data.last?.date.addingTimeInterval(-Self.scrollVisibleDomain) ?? Date())
                 .chartPlotStyle { plot in plot.background(chartBg).clipped() }
                 .chartOverlay { proxy in chartHoverTracker(proxy: proxy) }
                 .frame(minHeight: 300)
                 .overlay(alignment: .topLeading) {
                     if let hd = hoveredDate,
-                       let point = data.first(where: { Calendar.current.isDate($0.date, inSameDayAs: hd) }) {
+                       let point = data.min(by: { abs($0.date.timeIntervalSince(hd)) < abs($1.date.timeIntervalSince(hd)) }),
+                       abs(point.date.timeIntervalSince(hd)) < 30 * 86400 {
                         chartTooltip {
                             Text(point.night).font(.system(size: fs(10), weight: .bold))
                             Text(String(format: "%.0f%% kept — %d frames", point.retentionPct, point.total))
@@ -453,8 +464,18 @@ struct FrameHistoryContentView: View {
                                         .foregroundColor(.orange)
                                 }
                             }
+                            Divider().frame(height: 1)
+                            if let s = model.efficiencyChartStats {
+                                Text(String(format: "Overall: avg %.0f%%, median %.0f%%", s.avg, s.median))
+                                    .font(.system(size: fs(9), design: .monospaced))
+                                    .foregroundColor(fgDim)
+                            }
+                            Text("Retention = usable frames kept after culling.\n<50% often means clouds, wind, or equipment issues.")
+                                .font(.system(size: fs(8)))
+                                .foregroundColor(fgDim.opacity(0.7))
+                                .lineLimit(3)
                         }
-                        .offset(x: hoverLocation.x + 12, y: max(0, hoverLocation.y - 40))
+                        .offset(tooltipOffset(x: hoverLocation.x, y: hoverLocation.y))
                     }
                 }
 
@@ -502,6 +523,8 @@ struct FrameHistoryContentView: View {
                     Text("5").tag(5)
                     Text("10").tag(10)
                     Text("20").tag(20)
+                    Text("50").tag(50)
+                    Text("100").tag(100)
                 }
                 .pickerStyle(.segmented)
                 .frame(width: 100)
@@ -549,9 +572,6 @@ struct FrameHistoryContentView: View {
                 }
                 .chartYAxisLabel("FWHM (px)")
                 .modifier(PercentileYScale(values: data.map(\.rawFWHM)))
-                .chartScrollableAxes(.horizontal)
-                .chartXVisibleDomain(length: Self.scrollVisibleDomain)
-                .chartScrollPosition(initialX: data.last?.date.addingTimeInterval(-Self.scrollVisibleDomain) ?? Date())
                 .chartPlotStyle { plot in plot.background(chartBg).clipped() }
                 .chartOverlay { proxy in chartHoverTracker(proxy: proxy) }
                 .frame(minHeight: 300)
@@ -580,8 +600,18 @@ struct FrameHistoryContentView: View {
                                     }
                                 }
                             }
+                            Divider().frame(height: 1)
+                            if let s = model.fwhmChartStats {
+                                Text(String(format: "Overall: avg %.2f, median %.2f, MAD %.2f px", s.avg, s.median, s.mad))
+                                    .font(.system(size: fs(9), design: .monospaced))
+                                    .foregroundColor(fgDim)
+                            }
+                            Text("FWHM = star width in pixels. Lower = sharper.\nRising trend → collimation drift, tilt, or dew.")
+                                .font(.system(size: fs(8)))
+                                .foregroundColor(fgDim.opacity(0.7))
+                                .lineLimit(3)
                         }
-                        .offset(x: hoverLocation.x + 12, y: max(0, hoverLocation.y - 40))
+                        .offset(tooltipOffset(x: hoverLocation.x, y: hoverLocation.y))
                     }
                 }
 
@@ -715,8 +745,13 @@ struct FrameHistoryContentView: View {
                             if let t = point.ambientTemp { Text(String(format: "Temp: %.0f°C", t)).font(.system(size: fs(9))).foregroundColor(fgDim) }
                             if let b = point.bortle { Text(String(format: "Bortle: %.1f", b)).font(.system(size: fs(9))).foregroundColor(b > 6 ? .orange : fgDim) }
                             Text(String(format: "Background: %.5f", point.background)).font(.system(size: fs(9), design: .monospaced)).foregroundColor(fgDim)
+                            Divider().frame(height: 1)
+                            Text("Background level = sky brightness. Higher = light pollution/moon.\nNarrowband is less affected than broadband by moonlight.")
+                                .font(.system(size: fs(8)))
+                                .foregroundColor(fgDim.opacity(0.7))
+                                .lineLimit(3)
                         }
-                        .offset(x: hoverLocation.x + 12, y: max(0, hoverLocation.y - 40))
+                        .offset(tooltipOffset(x: hoverLocation.x, y: hoverLocation.y))
                     }
                 }
 
@@ -978,11 +1013,254 @@ struct FrameHistoryContentView: View {
                                     .font(.system(size: fs(9))).foregroundColor(fgDim)
                                     .lineLimit(2)
                             }
+                            Divider().frame(height: 1)
+                            Text("Compare setups side by side. Note: seeing conditions\nvary across nights — compare with matching date ranges.")
+                                .font(.system(size: fs(8)))
+                                .foregroundColor(fgDim.opacity(0.7))
+                                .lineLimit(3)
                         }
-                        .offset(x: hoverLocation.x + 12, y: max(0, hoverLocation.y - 40))
+                        .offset(tooltipOffset(x: hoverLocation.x, y: hoverLocation.y))
                     }
                 }
             }
+        }
+    }
+
+    // MARK: - Metrics Chart (Temperature vs HFR scatter plot)
+
+    @State private var hoveredMetricsPoint: FrameHistoryModel.MetricsFramePoint?
+    @State private var metricsHoverLocation: CGPoint = .zero
+
+    private var metricsChart: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            // Controls bar
+            HStack(spacing: 12) {
+                Text("Temperature vs HFR")
+                    .font(.system(size: fs(13), weight: .semibold))
+                    .foregroundColor(fg)
+
+                // Night picker
+                Picker("Night", selection: $model.selectedMetricsNight) {
+                    Text("All Nights").tag(String?.none)
+                    ForEach(model.metricsNights, id: \.self) { night in
+                        Text(night).tag(Optional(night))
+                    }
+                }
+                .frame(maxWidth: 180)
+
+                // Filter scope picker
+                if model.metricsAvailableFilters.count > 1 {
+                    Picker("Filter", selection: $model.metricsFilterScope) {
+                        Text("All").tag(FrameHistoryModel.MetricsFilterScope.all)
+                        Text("Narrowband").tag(FrameHistoryModel.MetricsFilterScope.narrowband)
+                        Text("Broadband").tag(FrameHistoryModel.MetricsFilterScope.broadband)
+                        Divider()
+                        ForEach(model.metricsAvailableFilters, id: \.self) { f in
+                            Text(f).tag(FrameHistoryModel.MetricsFilterScope.specific(f))
+                        }
+                    }
+                    .frame(maxWidth: 130)
+                }
+
+                Spacer()
+
+                let label = model.isMetricsLongtermView ? "nights" : "frames"
+                Text("\(model.metricsTempHFRPoints.count) \(label)")
+                    .font(.system(size: fs(10), design: .monospaced))
+                    .foregroundColor(fgDim)
+            }
+
+            if model.metricsTempHFRPoints.isEmpty {
+                VStack {
+                    Spacer()
+                    Image(systemName: "chart.dots.scatter")
+                        .font(.system(size: 40))
+                        .foregroundColor(fgDim)
+                    Text("No data with both HFR and temperature.\nNeed AMBTEMP header in FITS/XISF files.")
+                        .font(.system(size: fs(13)))
+                        .foregroundColor(fgDim)
+                        .multilineTextAlignment(.center)
+                    Spacer()
+                }
+                .frame(minHeight: 250)
+            } else {
+                // Scatter plot: X=Temperature, Y=HFR
+                Chart {
+                    // Scatter points colored by filter
+                    ForEach(model.metricsTempHFRPoints) { point in
+                        PointMark(
+                            x: .value("Temp (°C)", point.ambientTemp!),
+                            y: .value("HFR (px)", point.hfr!)
+                        )
+                        .foregroundStyle(Self.filterColor(for: point.filter).opacity(0.6))
+                        .symbolSize(model.isMetricsLongtermView ? 30 : 16)
+                    }
+
+                    // Rolling average trend line (sorted by temp, windowed)
+                    ForEach(model.metricsTrendLine) { pt in
+                        LineMark(
+                            x: .value("Temp (°C)", pt.temp),
+                            y: .value("HFR (px)", pt.hfr)
+                        )
+                        .foregroundStyle(AppColors.accent(nightMode).opacity(0.9))
+                        .lineStyle(StrokeStyle(lineWidth: 2.5))
+                        .interpolationMethod(.catmullRom)
+                    }
+                }
+                .chartXAxisLabel(position: .bottom) {
+                    Text("Ambient Temperature (°C)")
+                        .font(.system(size: fs(10)))
+                        .foregroundColor(fgDim)
+                }
+                .chartYAxisLabel(position: .leading) {
+                    Text("HFR (px)")
+                        .font(.system(size: fs(10)))
+                        .foregroundColor(fg)
+                }
+                .chartXAxis {
+                    AxisMarks { value in
+                        AxisGridLine(stroke: StrokeStyle(lineWidth: 0.3))
+                            .foregroundStyle(fgDim.opacity(0.3))
+                        AxisValueLabel {
+                            if let v = value.as(Double.self) {
+                                Text(String(format: "%.0f°", v))
+                                    .font(.system(size: fs(9), design: .monospaced))
+                                    .foregroundColor(fgDim)
+                            }
+                        }
+                    }
+                }
+                .chartYAxis {
+                    AxisMarks(position: .leading) { value in
+                        AxisGridLine(stroke: StrokeStyle(lineWidth: 0.3))
+                            .foregroundStyle(fgDim.opacity(0.2))
+                        AxisValueLabel {
+                            if let v = value.as(Double.self) {
+                                Text(String(format: "%.1f", v))
+                                    .font(.system(size: fs(9), design: .monospaced))
+                                    .foregroundColor(fg)
+                            }
+                        }
+                    }
+                }
+                .chartLegend(.hidden)
+                .chartPlotStyle { plot in
+                    plot.background(chartBg)
+                        .border(AppColors.divider(nightMode), width: 0.5)
+                }
+                .chartOverlay { proxy in
+                    GeometryReader { geo in
+                        Rectangle().fill(Color.clear).contentShape(Rectangle())
+                            .onAppear { chartPlotWidth = geo.size.width }
+                            .onContinuousHover { phase in
+                                switch phase {
+                                case .active(let location):
+                                    chartPlotWidth = geo.size.width
+                                    metricsHoverLocation = location
+                                    hoveredMetricsPoint = findNearestMetricsScatter(at: location, proxy: proxy)
+                                case .ended:
+                                    hoveredMetricsPoint = nil
+                                }
+                            }
+                    }
+                }
+                .frame(minHeight: 300)
+                .overlay(alignment: .topLeading) {
+                    if let pt = hoveredMetricsPoint {
+                        metricsTooltip(for: pt)
+                            .offset(tooltipOffset(x: metricsHoverLocation.x, y: metricsHoverLocation.y, yOffset: -60))
+                    }
+                }
+
+                // Legend + trend info
+                HStack(spacing: 16) {
+                    ForEach(model.metricsAvailableFilters, id: \.self) { filter in
+                        if model.metricsTempHFRPoints.contains(where: { $0.filter == filter }) {
+                            HStack(spacing: 4) {
+                                Circle().fill(Self.filterColor(for: filter)).frame(width: 8, height: 8)
+                                Text(filter).font(.system(size: fs(9))).foregroundColor(fgDim)
+                            }
+                        }
+                    }
+                    HStack(spacing: 4) {
+                        RoundedRectangle(cornerRadius: 1)
+                            .fill(AppColors.accent(nightMode))
+                            .frame(width: 14, height: 2.5)
+                        Text("Trend (avg)")
+                            .font(.system(size: fs(9)))
+                            .foregroundColor(fgDim)
+                    }
+                    Spacer()
+                }
+                .padding(.top, 4)
+            }
+        }
+        .onAppear { model.loadMetricsData() }
+        .onChange(of: model.selectedMetricsNight) { _, _ in model.loadMetricsData() }
+    }
+
+    // Find nearest scatter point by normalized Euclidean distance
+    private func findNearestMetricsScatter(at location: CGPoint, proxy: ChartProxy) -> FrameHistoryModel.MetricsFramePoint? {
+        guard let temp: Double = proxy.value(atX: location.x),
+              let hfr: Double = proxy.value(atY: location.y) else { return nil }
+        let points = model.metricsTempHFRPoints
+        guard !points.isEmpty else { return nil }
+
+        let temps = points.compactMap { $0.ambientTemp }
+        let hfrs = points.compactMap { $0.hfr }
+        let tScale = max((temps.max() ?? 1) - (temps.min() ?? 0), 1)
+        let hScale = max((hfrs.max() ?? 1) - (hfrs.min() ?? 0), 0.1)
+
+        var nearest: FrameHistoryModel.MetricsFramePoint?
+        var minDist = Double.infinity
+        for p in points {
+            let dt = (p.ambientTemp! - temp) / tScale
+            let dh = (p.hfr! - hfr) / hScale
+            let dist = dt * dt + dh * dh
+            if dist < minDist { minDist = dist; nearest = p }
+        }
+        return minDist < 0.05 ? nearest : nil
+    }
+
+    // Metrics tooltip
+    private func metricsTooltip(for point: FrameHistoryModel.MetricsFramePoint) -> some View {
+        chartTooltip {
+            Text(point.filename)
+                .font(.system(size: fs(10), weight: .semibold, design: .monospaced))
+                .lineLimit(1)
+            HStack(spacing: 4) {
+                Circle().fill(Self.filterColor(for: point.filter)).frame(width: 6, height: 6)
+                Text(String(format: "HFR: %.2f px  (%@)", point.hfr ?? 0, point.filter))
+                    .font(.system(size: fs(9), design: .monospaced))
+            }
+            HStack(spacing: 4) {
+                Image(systemName: "thermometer.medium").font(.system(size: 8)).foregroundColor(.orange)
+                Text(String(format: "Temp: %.1f°C", point.ambientTemp ?? 0))
+                    .font(.system(size: fs(9), design: .monospaced))
+                    .foregroundColor(.orange)
+            }
+            if let tier = point.qualityTier {
+                let tierName = tier == 3 ? "Excellent" : tier == 2 ? "Good" : tier == 1 ? "Borderline" : tier == 0 ? "Trash" : "Uncertain"
+                let tierColor: Color = tier == 3 ? .green : tier == 2 ? Color(red: 0.5, green: 0.8, blue: 0.3) : tier == 1 ? .orange : tier == 0 ? .red : .blue
+                Text(tierName).font(.system(size: fs(8), weight: .medium)).foregroundColor(tierColor)
+            }
+            Divider().frame(height: 1)
+            // Overall stats for context
+            let pts = model.metricsTempHFRPoints
+            let hfrs = pts.compactMap { $0.hfr }
+            let temps = pts.compactMap { $0.ambientTemp }
+            if !hfrs.isEmpty {
+                let avgH = hfrs.reduce(0, +) / Double(hfrs.count)
+                let medH = hfrs.sorted()[hfrs.count / 2]
+                let avgT = temps.isEmpty ? 0 : temps.reduce(0, +) / Double(temps.count)
+                Text(String(format: "Overall: HFR avg %.2f, median %.2f (%d pts)\nTemp avg %.1f°C", avgH, medH, pts.count, avgT))
+                    .font(.system(size: fs(9), design: .monospaced))
+                    .foregroundColor(fgDim)
+            }
+            Text("Temp vs HFR: focus drift correlation.\nSteep slope → shorten AF interval.")
+                .font(.system(size: fs(8)))
+                .foregroundColor(fgDim.opacity(0.7))
+                .lineLimit(3)
         }
     }
 
@@ -1054,36 +1332,133 @@ struct FrameHistoryContentView: View {
         .frame(minHeight: 200)
     }
 
-    // MARK: - Setup Nickname
+    // MARK: - Setup Management (rename, merge, delete, fix FL)
 
-    private func showNicknameDialog() {
+    private func showSetupManagement() {
         guard let hash = model.selectedSetupHash else { return }
-        let current = FrameHistoryDatabase.shared.nickname(for: hash) ?? ""
+        let allHashes = model.mergedSetupHashes[hash] ?? [hash]
+        let currentNickname = FrameHistoryDatabase.shared.nickname(for: hash) ?? ""
+        let currentFL = FrameHistoryDatabase.shared.primaryFocalLength(for: allHashes)
+        let frameCount = allHashes.compactMap { try? FrameHistoryDatabase.shared.frameCount(setupHash: $0) }.reduce(0, +)
+        let setupLabel = model.availableSetups.first(where: { $0.hash == hash })?.label ?? hash
 
         let alert = NSAlert()
-        alert.messageText = "Setup Nickname"
-        alert.informativeText = "Enter a name for this setup (e.g. \"Big Rig\", \"Travel Scope\")"
+        alert.messageText = "Manage Setup"
+        alert.informativeText = "\(setupLabel)\n\(frameCount) frames, FL: \(currentFL ?? 0)mm"
         alert.addButton(withTitle: "Save")
         alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: "Merge Into…")
+        alert.addButton(withTitle: "Delete Setup")
 
-        let input = NSTextField(frame: NSRect(x: 0, y: 0, width: 250, height: 24))
-        input.stringValue = current
-        input.placeholderString = "e.g. Big Rig"
-        alert.accessoryView = input
-        alert.window.initialFirstResponder = input
+        // Accessory view with nickname + FL override
+        let container = NSStackView(frame: NSRect(x: 0, y: 0, width: 340, height: 70))
+        container.orientation = .vertical
+        container.alignment = .leading
+        container.spacing = 8
 
-        if alert.runModal() == .alertFirstButtonReturn {
-            let nickname = input.stringValue.trimmingCharacters(in: .whitespaces)
-            // Apply nickname to all merged hashes (e.g., same scope at 903/904/905mm)
-            let allHashes = model.mergedSetupHashes[hash] ?? [hash]
+        // Nickname row
+        let nameRow = NSStackView()
+        nameRow.orientation = .horizontal
+        nameRow.spacing = 8
+        let nameLabel = NSTextField(labelWithString: "Nickname:")
+        let nameInput = NSTextField(frame: NSRect(x: 0, y: 0, width: 240, height: 24))
+        nameInput.stringValue = currentNickname
+        nameInput.placeholderString = "e.g. Big Rig, Travel Scope"
+        nameRow.addArrangedSubview(nameLabel)
+        nameRow.addArrangedSubview(nameInput)
+        container.addArrangedSubview(nameRow)
+
+        // FL override row
+        let flRow = NSStackView()
+        flRow.orientation = .horizontal
+        flRow.spacing = 8
+        let flLabel = NSTextField(labelWithString: "Focal Length:")
+        let flInput = NSTextField(frame: NSRect(x: 0, y: 0, width: 80, height: 24))
+        flInput.stringValue = currentFL.map { "\($0)" } ?? ""
+        flInput.placeholderString = "mm"
+        let flHint = NSTextField(labelWithString: "mm (fix bad plate-solve values)")
+        flHint.textColor = .secondaryLabelColor
+        flHint.font = .systemFont(ofSize: 10)
+        flRow.addArrangedSubview(flLabel)
+        flRow.addArrangedSubview(flInput)
+        flRow.addArrangedSubview(flHint)
+        container.addArrangedSubview(flRow)
+
+        alert.accessoryView = container
+        alert.window.initialFirstResponder = nameInput
+
+        let response = alert.runModal()
+
+        switch response {
+        case .alertFirstButtonReturn:
+            // Save nickname + FL override
+            let nickname = nameInput.stringValue.trimmingCharacters(in: .whitespaces)
             for h in allHashes {
-                if nickname.isEmpty {
-                    try? FrameHistoryDatabase.shared.setNickname("", for: h)
-                } else {
-                    try? FrameHistoryDatabase.shared.setNickname(nickname, for: h)
+                try? FrameHistoryDatabase.shared.setNickname(nickname.isEmpty ? "" : nickname, for: h)
+            }
+            if let newFL = Double(flInput.stringValue.trimmingCharacters(in: .whitespaces)),
+               newFL > 0, newFL != Double(currentFL ?? 0) {
+                for h in allHashes {
+                    try? FrameHistoryDatabase.shared.updateFocalLength(setupHash: h, newFL: newFL)
                 }
             }
-            model.loadData()  // Refresh setup labels
+            model.loadData()
+
+        case .alertThirdButtonReturn:
+            // Merge Into — show picker for target setup
+            showMergeDialog(sourceHash: hash, sourceLabel: setupLabel)
+
+        case NSApplication.ModalResponse(rawValue: NSApplication.ModalResponse.alertThirdButtonReturn.rawValue + 1):
+            // Delete Setup
+            let confirm = NSAlert()
+            confirm.messageText = "Delete Setup?"
+            confirm.informativeText = "Permanently delete \(frameCount) frame records for \(setupLabel).\n\nThis cannot be undone."
+            confirm.alertStyle = .critical
+            confirm.addButton(withTitle: "Delete")
+            confirm.addButton(withTitle: "Cancel")
+            if confirm.runModal() == .alertFirstButtonReturn {
+                for h in allHashes {
+                    try? FrameHistoryDatabase.shared.deleteSetup(setupHash: h)
+                }
+                model.selectedSetupHash = nil
+                model.loadData()
+            }
+
+        default:
+            break
+        }
+    }
+
+    private func showMergeDialog(sourceHash: String, sourceLabel: String) {
+        let targets = model.availableSetups.filter { $0.hash != sourceHash }
+        guard !targets.isEmpty else {
+            let a = NSAlert()
+            a.messageText = "No other setup to merge into."
+            a.runModal()
+            return
+        }
+
+        let alert = NSAlert()
+        alert.messageText = "Merge Setup"
+        alert.informativeText = "Merge all frames from \"\(sourceLabel)\" into another setup.\nThe source setup will disappear."
+        alert.addButton(withTitle: "Merge")
+        alert.addButton(withTitle: "Cancel")
+
+        let popup = NSPopUpButton(frame: NSRect(x: 0, y: 0, width: 300, height: 28))
+        for target in targets {
+            popup.addItem(withTitle: target.label)
+            popup.lastItem?.representedObject = target.hash as NSString
+        }
+        alert.accessoryView = popup
+
+        if alert.runModal() == .alertFirstButtonReturn,
+           let targetHash = popup.selectedItem?.representedObject as? String {
+            let allSourceHashes = model.mergedSetupHashes[sourceHash] ?? [sourceHash]
+            for h in allSourceHashes {
+                try? FrameHistoryDatabase.shared.mergeSetups(from: h, into: targetHash)
+            }
+            model.selectedSetupHash = nil
+            model.loadData()
         }
     }
 
@@ -1179,10 +1554,6 @@ struct FrameHistoryContentView: View {
 
     // MARK: - Chart Scroll/Zoom Helpers
 
-    /// Visible window for scrollable date-axis charts (90 days in seconds).
-    /// Charts with date > 90 days can be scrolled horizontally to see older data.
-    private static let scrollVisibleDomain: TimeInterval = 90 * 24 * 3600
-
     // MARK: - Chart Hover Tooltip Helpers
 
     /// Transparent overlay that tracks mouse position and resolves to nearest date.
@@ -1191,6 +1562,8 @@ struct FrameHistoryContentView: View {
             Rectangle()
                 .fill(Color.clear)
                 .contentShape(Rectangle())
+                .onAppear { chartPlotWidth = geo.size.width }
+                .onChange(of: geo.size.width) { _, w in chartPlotWidth = w }
                 .onContinuousHover { phase in
                     switch phase {
                     case .active(let location):
@@ -1203,12 +1576,24 @@ struct FrameHistoryContentView: View {
         }
     }
 
-    /// Tooltip container with consistent styling.
+    /// Tooltip offset that flips to left side when cursor is near right edge.
+    /// Uses hoverLocation.x relative to chart overlay — flips at 55% of chart width.
+    @State private var chartPlotWidth: CGFloat = 800
+
+    private func tooltipOffset(x: CGFloat, y: CGFloat, yOffset: CGFloat = -40) -> CGSize {
+        let flipsLeft = x > chartPlotWidth * 0.55
+        let xOff = flipsLeft ? x - 340 : x + 16
+        return CGSize(width: xOff, height: max(0, y + yOffset))
+    }
+
+    /// Tooltip container with consistent styling. Font scale doubled for readability.
     private func chartTooltip<Content: View>(@ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: 3) {
             content()
         }
-        .padding(6)
+        .padding(8)
+        .frame(maxWidth: 380, alignment: .leading)
+        .scaleEffect(1.2, anchor: .topLeading)
         .background(
             RoundedRectangle(cornerRadius: 6)
                 .fill(AppColors.bgControl(nightMode).opacity(0.95))

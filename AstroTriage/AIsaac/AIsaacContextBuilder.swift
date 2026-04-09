@@ -764,22 +764,27 @@ struct AIsaacContextBuilder {
         - Speed: ~3 seconds per file over NAS (decode + GPU analysis), faster on SSD.
 
         HISTORY CHARTS (Window menu → Frame History):
-        - 6 KPI charts, selectable via segmented picker:
+        - 7 KPI charts, selectable via segmented picker:
           * Score: composite 0-100 session score per night (retention 40%, FWHM 30%, trailing 20%, stability 10%).
           * Efficiency: frames kept % per night. Color-coded by retention tier.
-          * Performance: FWHM rolling average trend with configurable window (5/10/20 sessions).
+          * Performance: FWHM rolling average trend with configurable window (5/10/20/50/100 sessions).
           * Conditions: environmental impact on background noise. Toggleable X-axis: Moon / FWHM / Temp / Bortle. \
           Scatter plot with broadband (blue) vs narrowband (orange) separation.
           * Progress: integration hours per target with per-filter stacked bars. Sortable. Hover for filter breakdown.
           * Setups: equipment comparison on selectable metric (FWHM, HFR, Stars, Noise, Trailing).
-        - ALL charts have rich hover tooltips showing targets, filters, FWHM, moon %, and cause analysis.
+          * Metrics: Temperature vs HFR scatter plot showing focus drift correlation with temperature. \
+          Per-filter colored dots + 1°C-binned rolling average trend line. Night picker for single-night \
+          detail (per-frame) or all-nights longterm view (nightly medians). Filter scope picker.
+        - ALL charts have rich hover tooltips showing targets, filters, FWHM, moon %, cause analysis, \
+        and overall stats (avg/median/MAD) for numerical comparison. Educational text explains each metric.
+        - Tooltips flip to left side when cursor near right window edge.
         - Time range filter: All / 3M / 6M / 9M / 12M / 24M / 36M.
         - Setup picker: "All Setups" (consolidated) or specific telescope+camera combo.
-        - Target picker: filter charts by specific target.
+        - Setup management (gear icon): rename, merge, delete setups, fix bad focal length values.
         - Target picker: filter by canonical target name (normalized: "NGC 7000" = "NGC7000", "Orion Nebula" = "M42").
         - Filter color convention: R=red, G=green, B=blue, L=grey, Ha=orange, OIII=teal, SII=yellow, Hbeta=cyan.
-        - Date-axis charts support horizontal scroll + pinch zoom (90-day window). \
-        Auto-aggregates to monthly bars when date range exceeds 6 months.
+        - Auto-aggregates to monthly bars when date range exceeds 6 months. All charts fit to window width.
+        - Advanced → Destroy All DB Data: nuclear option to wipe local + iCloud + calibration (two confirmations).
 
         BORTLE SKY QUALITY:
         - Bortle column (B1-B9, fractional like B4.8) in file list. Computed from SITELAT/SITELONG coordinates.

@@ -1,5 +1,17 @@
 # Lessons Learned
 
+## [2026-04-07] — Star detector false positives on narrowband (H-alpha) nebulosity
+- **Mistake:** Star detector's 5-sigma + 3x3 local maximum check had no sharpness/concentration filter. Bright nebulosity in H-alpha data creates smooth intensity peaks that pass both checks, resulting in star circles drawn on empty nebula regions in Compare window.
+- **Root cause:** Local maximum detection only checks if a pixel is brighter than its 8 neighbors — true for any smooth gradient peak. No verification that the detection is actually a compact point source (star) rather than extended emission.
+- **Rule:** Always add a concentration/sharpness check when detecting point sources in astronomical images. Stars concentrate flux (peak >> neighbors), nebulosity is smooth (peak ≈ neighbors). Use peak-to-ring ratio ≥1.2 in detector and peak-to-aperture-average ratio ≥2.0 in shape measurement.
+- **Applies to:** StarDetector.swift, StarMetricsCalculator.computeShape(), any future point source detection
+
+## [2026-04-07] — SetupFingerprint FL rounding too precise (1mm) creates duplicates
+- **Mistake:** `SetupFingerprint` rounded focal length to nearest 1mm, so the same physical scope at 903/904/905mm (plate-solve variations) created 3 different SHA256 hashes → 3 separate setup entries in History window.
+- **Root cause:** Plate solving reports slightly different FL each session due to temperature, collimation, alignment. 1mm precision is meaningless — these are the same telescope.
+- **Rule:** For display/grouping purposes, merge setups with same telescope+camera and FL within 3% tolerance. The CalibrationDatabase fingerprint hash stays at 1mm precision (don't break existing data), but the History window clusters them visually. Also always show FL in setup labels — don't hide it just because only one setup uses that equipment.
+- **Applies to:** FrameHistoryModel.loadAvailableSetups(), any future setup display/grouping
+
 ## [2026-03-28] — iCloud container access blocks main thread for 10-30s
 - **Mistake:** `FrameHistoryDatabase.init()` called `FileManager.url(forUbiquityContainerIdentifier:)` synchronously. App hung with spinning beachball on launch and during tests.
 - **Root cause:** Apple's iCloud container resolution can take 10-30+ seconds on first call, especially if iCloud Drive is syncing or has connectivity issues. Same issue existed in CalibrationDatabase but was masked by lazy singleton init.
@@ -407,6 +419,30 @@
 - **Root cause:** Original logic treated `history == nil` as a gap. But "never imaged" is different from "imaged but imbalanced."
 - **Rule:** Filter gap indicators and the "Has filter gap" toggle should require `history != nil`. A gap means "you started this target but some filters are underserved" — not "you haven't started yet."
 - **Applies to:** TargetDatabaseViewModel, TargetDatabaseWindow filter gap logic
+
+## [2026-04-09] — SwiftUI Charts: BarMark width + unit combo causes runtime crash
+- **Mistake:** Added explicit `width: .fixed(...)` to BarMark that already used `unit: .day/.month` on x-axis. App crashed on History window open (no compile error, runtime only).
+- **Root cause:** SwiftUI Charts BarMark with both `unit:` parameter on the x PlottableValue AND explicit `width:` parameter creates an internal layout conflict that crashes at render time.
+- **Rule:** Never combine `BarMark(x: .value(..., unit:), width: .fixed(...))`. Use either `unit:` for auto-sizing OR explicit `width:` but not both.
+- **Applies to:** All SwiftUI Charts BarMark usage in FrameHistoryWindow.swift
+
+## [2026-04-09] — Private(set) var on ObservableObject doesn't trigger view updates
+- **Mistake:** MetricsFrameData, metricsNights, metricsEvents were `private(set) var` (not @Published). Metrics tab showed no data on first open — only rendered after touching another @Published property (setup picker).
+- **Root cause:** SwiftUI only re-renders when @Published properties change. Non-published properties can change silently without triggering objectWillChange.
+- **Rule:** Any ObservableObject property that drives UI rendering MUST be @Published. Use `@Published private(set) var` for read-only-from-view properties.
+- **Applies to:** All FrameHistoryModel, SessionMetricsModel, any ObservableObject ViewModel
+
+## [2026-04-09] — Range crash with empty arrays: `1..<0` is fatal in Swift
+- **Mistake:** `for i in 1..<sorted.count` crashes when sorted is empty (count=0) because `1..<0` is invalid.
+- **Root cause:** Swift Range requires lowerBound <= upperBound. Unlike some languages, this is a fatal error not an empty range.
+- **Rule:** Always guard `array.count >= 2` before `for i in 1..<array.count`. Or use `if count >= 2 { for i in ... }`.
+- **Applies to:** Any consecutive-pair iteration pattern
+
+## [2026-04-09] — Setup merge/delete leaves orphaned session_record entries
+- **Mistake:** mergeSetups() only updated frame_record.setupHash but not session_record. Old setup still appeared in dropdown with 0 frames.
+- **Root cause:** Session_record is a separate table from frame_record. Operations on one don't cascade to the other.
+- **Rule:** When modifying setupHash in frame_record, also clean session_record and setup_nickname. Add cleanOrphanedSessions() to loadData().
+- **Applies to:** FrameHistoryDatabase merge/delete operations
 
 ## [2026-04-06] — VLM (LLM Vision) cannot reliably detect instrumental artifacts in astro subs
 - **Mistake:** Assumed Claude Vision and other LLMs could detect ice/frost/dust shadows in auto-stretched astro sub-exposure mosaics. Tried 4+ prompt strategies (prescriptive categories, open-ended comparison, invariance-based analysis) and multiple LLM systems.
