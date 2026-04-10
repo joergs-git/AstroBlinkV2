@@ -299,11 +299,13 @@ final class ScoringValidationTests: XCTestCase {
 
     func testR9_Guard_BelowThreshold() {
         var entries = makeBaselineGroup(setup: Self.rc12, count: 10)
-        entries[0].starChainFraction = 0.20
+        // Threshold lowered to 0.08 in v5.21.0 — even 8% directional chains indicate
+        // tracking failure when consensus is high (R > 0.35 in detectStarChains)
+        entries[0].starChainFraction = 0.05
 
         let scores = score(entries: entries)
         XCTAssertFalse(reasons(for: 0, in: entries, scores: scores).contains(.trackingHop),
-            "starChainFraction=0.20 must NOT trigger R9")
+            "starChainFraction=0.05 must NOT trigger R9 (threshold 0.08)")
     }
 
     // MARK: R10 — Twilight

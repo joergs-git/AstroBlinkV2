@@ -1067,12 +1067,16 @@ final class QualityEstimatorTests: XCTestCase {
     /// Good L-filter group + bad B-filter group (same target/exposure).
     /// The bad B frames should be demoted by session-wide cross-group comparison.
     func testSessionSanityCheck_demotesBadCrossGroup() {
+        // Fixed jitter values for deterministic testing (was random, causing flaky failures)
+        let fwhmJitter = [-0.15, -0.10, -0.05, 0.0, 0.02, 0.05, 0.08, 0.10, 0.12, 0.15]
+        let starJitter = [-150, -100, -50, 0, 20, 50, 80, 100, 120, 150]
+
         // 10 good L frames (night 1): FWHM 3.0, SNR 50 (med 0.05, mad 0.001)
         let goodL: [ImageEntry] = (0..<10).map { i in
             var e = makeEntry(index: i, filter: "L", target: "M82", exposure: 180,
                       noiseMAD: 0.001, noiseMedian: 0.05,
-                      computedFWHM: 3.0 + Double.random(in: -0.2...0.2),
-                      computedStarCount: 3000 + Int.random(in: -200...200),
+                      computedFWHM: 3.0 + fwhmJitter[i],
+                      computedStarCount: 3000 + starJitter[i],
                       computedEccentricity: 0.35)
             e.date = "2026-03-15"; e.time = "22:00:00"
             return e
@@ -1082,8 +1086,8 @@ final class QualityEstimatorTests: XCTestCase {
         let badB: [ImageEntry] = (0..<8).map { i in
             var e = makeEntry(index: 100 + i, filter: "B", target: "M82", exposure: 180,
                       noiseMAD: 0.006, noiseMedian: 0.05,
-                      computedFWHM: 10.0 + Double.random(in: -0.3...0.3),
-                      computedStarCount: 2400 + Int.random(in: -200...200),
+                      computedFWHM: 10.0 + fwhmJitter[i],
+                      computedStarCount: 2400 + starJitter[i],
                       computedEccentricity: 0.65)
             e.date = "2026-01-20"; e.time = "22:00:00"
             return e

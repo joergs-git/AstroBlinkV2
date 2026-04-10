@@ -84,6 +84,13 @@ struct QualityBreakdown: Hashable {
     var historicalZScore: Double?       // Combined z-score against historical baselines
     var historicalPercentile: Double?   // 0-100, where in historical distribution this frame falls
 
+    // Historical baseline check (Stage 1.5b) — flags frames far above learned setup baselines
+    var historicalBaselineReasons: [String] = []
+
+    // Low confidence scoring warning — true when no historical reference data available
+    // and session has only 1 distinct night (all-bad groups can't be detected)
+    var lowConfidenceScoring: Bool = false
+
     // Smart recommendation label based on per-metric analysis
     // Smart recommendation based on per-metric analysis and eccentricity.
     // Research shows: round stars = always keep (even with worse FWHM/noise).
@@ -718,8 +725,12 @@ struct QualityEstimator {
                     }
                 }
 
-                // Rule 9: Star chain detection — tracking hops
-                if let chainFrac = entry.starChainFraction, chainFrac > 0.25 {
+                // Rule 9: Star chain detection — tracking hops (mount jumps/PE)
+                // Even 8% of stars forming directional chains is a clear tracking failure.
+                // The directional consensus (R > 0.35) in detectStarChains ensures these
+                // are systematic patterns, not random star clustering. Mount jumps create
+                // discrete star copies that trailing/eccentricity can't detect.
+                if let chainFrac = entry.starChainFraction, chainFrac > 0.08 {
                     garbageReasons.append(.trackingHop)
                 }
 
@@ -951,6 +962,34 @@ struct QualityEstimator {
         // Only demotes — never promotes. isLockedKeep/community frames are immune.
         sessionSanityCheck(entries: entries, result: &result)
 
+        // ── Stage 1.5b: Historical baseline check ──
+        // Uses FrameHistoryDatabase/CalibrationDatabase learned baselines to detect frames
+        // far above the setup's historical norms. Catches uniformly-bad sessions where
+        // cross-group comparison (Stage 1.5) can't help because all groups are equally bad.
+        // Uses combined FWHM+trailing deviation scoring for mount jump frames where neither
+        // metric alone reaches the individual threshold.
+        historicalBaselineCheck(
+            entries: entries, result: &result,
+            calibrationDB: calibrationDB, fingerprint: fingerprint
+        )
+
+        // ── Low-confidence scoring detection ──
+        // Flag frames in setups with no historical baseline AND single-night data.
+        // Users need to know when scoring accuracy is limited.
+        if let fp = fingerprint {
+            let profile = calibrationDB?.profile(for: fp)
+            let hasBaseline = profile?.hasLearned ?? false
+            let distinctNights = Set(entries.compactMap { $0.observingNight })
+            if !hasBaseline && distinctNights.count <= 1 {
+                for entry in entries {
+                    if var bd = result[entry.url] {
+                        bd.lowConfidenceScoring = true
+                        result[entry.url] = bd
+                    }
+                }
+            }
+        }
+
         // ── Stage 4: FWHM sanity check for z-score trash ──
         // Z-score trash frames (not Stage 1 garbage) may have FWHM comparable to
         // GOOD frames. This happens when a peak-quality block in the session pulls
@@ -1088,6 +1127,293 @@ struct QualityEstimator {
         return 0.5 * (1.0 + sign * y)
     }
 
+    // MARK: - Historical Baseline Check (Stage 1.5b)
+
+    /// Compare frames against per-setup historical baselines from CalibrationDatabase.
+    /// Catches uniformly-bad sessions where cross-group comparison (Stage 1.5) can't help
+    /// because all groups in the current session are equally bad.
+    /// Requires ≥30 historical frames (hasLearned) for reliable baselines.
+    private static func historicalBaselineCheck(
+        entries: [ImageEntry],
+        result: inout [URL: QualityBreakdown],
+        calibrationDB: CalibrationDatabase?,
+        fingerprint: SetupFingerprint?
+    ) {
+        // Diagnostic logger — writes to Application Support/AstroBlinkV2/stage15b_diag.txt
+        let diagLog = { (msg: String) in
+            let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+                .appendingPathComponent("AstroBlinkV2")
+            try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            let path = dir.appendingPathComponent("stage15b_diag.txt").path
+            let line = msg + "\n"
+            if let fh = FileHandle(forWritingAtPath: path) {
+                fh.seekToEndOfFile(); fh.write(line.data(using: .utf8)!); fh.closeFile()
+            } else {
+                FileManager.default.createFile(atPath: path, contents: line.data(using: .utf8))
+            }
+        }
+        diagLog("=== Stage 1.5b: \(entries.count) entries, fp=\(fingerprint?.telescope ?? "nil")+\(fingerprint?.camera ?? "nil") ===")
+
+        // Build baselines from TWO sources:
+        // 1. FrameHistoryDatabase (populated by Archive Scanner — always available after scan)
+        // 2. CalibrationDatabase (populated by PRE-DELETE confirmation — learns over time)
+        // Use whichever has data. FrameHistoryDB is primary (scan fills it).
+
+        var baselineFWHM: Double?
+        var baselineFWHMStdDev: Double?
+        var baselineTrailing: Double?
+        var baselineTrailingStdDev: Double?
+        var baselineFrameCount = 0
+        var isEquipmentWide = false  // true when no same-target data available
+
+        // Source 1: FrameHistoryDatabase (direct SQL query for per-setup stats)
+        // CRITICAL: exclude currently loaded frames to avoid self-contamination.
+        // If January garbage frames were scanned, they'd be in the DB — including them
+        // in the baseline would normalize the bad metrics and defeat the purpose.
+        let currentNights = Set(entries.compactMap { $0.observingNight })
+        let currentHashes = Set(entries.compactMap { $0.fileHash })
+
+        if let fp = fingerprint {
+            diagLog("fingerprint: telescope='\(fp.telescope)' camera='\(fp.camera)' hash=\(fp.hash.prefix(8))")
+            diagLog("currentNights=\(currentNights) currentHashes=\(currentHashes.count)")
+
+            // Query by telescope+camera (equipment match) instead of exact setupHash,
+            // because plate-solve FL variations create different hashes for the same scope.
+            if let allRecords = try? FrameHistoryDatabase.shared.historicalFramesByEquipment(
+                telescope: fp.telescope, camera: fp.camera
+            ) {
+                // Exclude current session's nights + only use GOOD frames (tier >= 2)
+                // to build a clean baseline. Bad historical frames would contaminate it.
+                let records = allRecords.filter { record in
+                    if let night = record.observingNight, currentNights.contains(night) { return false }
+                    if currentHashes.contains(record.fileHash) { return false }
+                    // Only use good/excellent frames for baseline (tier 2=good, 3=excellent)
+                    guard let tier = record.qualityTier, tier >= 2 else { return false }
+                    return true
+                }
+
+                // Prefer same-target baseline, fall back to all-target if not enough data
+                // Normalize target names: strip spaces, lowercase for robust matching
+                let targetRecords: [FrameRecord]
+                let currentCanonical = entries.first(where: { $0.target != nil })
+                    .map { TargetCatalog.canonicalName($0.target ?? "") } ?? ""
+                let normalizedTarget = currentCanonical.lowercased().replacingOccurrences(of: " ", with: "")
+                diagLog("currentTarget='\(currentCanonical)' normalized='\(normalizedTarget)'")
+                if !normalizedTarget.isEmpty {
+                    let sameTarget = records.filter { record in
+                        // Use canonicalTarget if non-empty, else target
+                        let raw = record.canonicalTarget?.isEmpty == false ? record.canonicalTarget! : (record.target ?? "")
+                        let recTarget = raw.lowercased().replacingOccurrences(of: " ", with: "")
+                        return !recTarget.isEmpty && (
+                            recTarget == normalizedTarget ||
+                            recTarget.contains(normalizedTarget) ||
+                            normalizedTarget.contains(recTarget)
+                        )
+                    }
+                    diagLog("same-target matches: \(sameTarget.count)")
+                    if sameTarget.count >= 20 {
+                        targetRecords = sameTarget
+                    } else {
+                        targetRecords = records
+                        isEquipmentWide = true
+                    }
+                } else {
+                    targetRecords = records
+                    isEquipmentWide = true
+                }
+
+                diagLog("DB: \(allRecords.count) total → \(records.count) good (tier≥2, excl nights) → \(targetRecords.count) for baseline")
+
+                let fwhms = targetRecords.compactMap { $0.computedFWHM }.filter { $0 > 0 && $0 < 50 }.sorted()
+                let trails = targetRecords.compactMap { $0.trailingScore }.filter { $0 >= 0 }.sorted()
+
+                if fwhms.count >= 20 {
+                    // Use P25 (25th percentile) as baseline instead of mean.
+                    // Mean is dragged up by mediocre nights. P25 represents "what good
+                    // looks like" — frames clearly above P25 + margin are suspect.
+                    let p25 = fwhms[fwhms.count / 4]
+                    let median = fwhms[fwhms.count / 2]
+                    // MAD computed around median (robust spread estimate)
+                    let mad = fwhms.map { abs($0 - median) }.sorted()[fwhms.count / 2] * 1.4826
+                    baselineFWHM = p25
+                    baselineFWHMStdDev = max(mad, 0.3)
+                    baselineFrameCount = fwhms.count
+                    diagLog("FWHM P25=\(String(format: "%.2f", p25)) median=\(String(format: "%.2f", median)) MAD=\(String(format: "%.2f", mad))")
+                }
+                if trails.count >= 20 {
+                    let p25 = trails[trails.count / 4]
+                    let median = trails[trails.count / 2]
+                    let mad = trails.map { abs($0 - median) }.sorted()[trails.count / 2] * 1.4826
+                    baselineTrailing = p25
+                    baselineTrailingStdDev = max(mad, 0.02)
+                    diagLog("Trail P25=\(String(format: "%.3f", p25)) median=\(String(format: "%.3f", median)) MAD=\(String(format: "%.3f", mad))")
+                }
+                diagLog("FWHM baseline: \(baselineFWHM.map { String(format: "%.2f ± %.2f", $0, baselineFWHMStdDev ?? 0) } ?? "nil") from \(fwhms.count) values")
+                diagLog("Trail baseline: \(baselineTrailing.map { String(format: "%.3f ± %.3f", $0, baselineTrailingStdDev ?? 0) } ?? "nil") from \(trails.count) values")
+            } else {
+                diagLog("DB query returned nil")
+            }
+        } else {
+            diagLog("fingerprint is nil — skipping")
+        }
+
+        // Source 1b: Cross-equipment same-target query (trailing/ecc only)
+        // When same-equipment same-target data is insufficient (isEquipmentWide), try
+        // finding good frames for the SAME TARGET from ANY equipment. Trailing score and
+        // eccentricity are FL-normalized → comparable across equipment.
+        // A tighter same-target trailing baseline catches frames that slip through the
+        // noisy equipment-wide baseline.
+        if isEquipmentWide, let normalizedTarget = {
+            let ct = entries.first(where: { $0.target != nil })
+                .map { TargetCatalog.canonicalName($0.target ?? "") } ?? ""
+            return ct.isEmpty ? nil : ct
+        }() {
+            if let crossRecords = try? FrameHistoryDatabase.shared.historicalFramesByTarget(
+                canonicalTarget: normalizedTarget
+            ) {
+                let goodCross = crossRecords.filter { record in
+                    if let night = record.observingNight, currentNights.contains(night) { return false }
+                    if currentHashes.contains(record.fileHash) { return false }
+                    guard let tier = record.qualityTier, tier >= 2 else { return false }
+                    return true
+                }
+                diagLog("Cross-equipment '\(normalizedTarget)': \(crossRecords.count) total → \(goodCross.count) good")
+                let crossTrails = goodCross.compactMap { $0.trailingScore }.filter { $0 >= 0 }.sorted()
+                if crossTrails.count >= 10 {
+                    let p25 = crossTrails[crossTrails.count / 4]
+                    let median = crossTrails[crossTrails.count / 2]
+                    let mad = crossTrails.map { abs($0 - median) }.sorted()[crossTrails.count / 2] * 1.4826
+                    // Replace equipment-wide trailing baseline with tighter same-target data
+                    baselineTrailing = p25
+                    baselineTrailingStdDev = max(mad, 0.02)
+                    diagLog("Cross-equipment trail baseline: P25=\(String(format: "%.3f", p25)) MAD=\(String(format: "%.3f", mad)) from \(crossTrails.count) frames (replaces equipment-wide)")
+                }
+            }
+        }
+
+        // Source 2: CalibrationDatabase fallback (if FrameHistoryDB didn't have enough data)
+        if baselineFWHM == nil, let db = calibrationDB, let fp = fingerprint {
+            let profile = db.profile(for: fp)
+            if profile.hasLearned && profile.globalFWHM.count >= 30 && profile.globalFWHM.runningMAD > 0 {
+                baselineFWHM = profile.globalFWHM.mean
+                baselineFWHMStdDev = max(profile.globalFWHM.runningMAD, 0.3)
+                baselineFrameCount = profile.globalFWHM.count
+            }
+            if baselineTrailing == nil && profile.globalTrailing.count >= 30 && profile.globalTrailing.runningMAD > 0 {
+                baselineTrailing = profile.globalTrailing.mean
+                baselineTrailingStdDev = max(profile.globalTrailing.runningMAD, 0.02)
+            }
+        }
+
+        // Need at least FWHM baseline with ≥20 frames
+        guard let refFWHM = baselineFWHM, let refFWHMDev = baselineFWHMStdDev,
+              baselineFrameCount >= 20 else { return }
+
+        diagLog("--- Per-frame evaluation (equipmentWide=\(isEquipmentWide), refFWHM=\(String(format: "%.2f±%.2f", refFWHM, refFWHMDev))) ---")
+
+        var demotedCount = 0
+
+        for entry in entries {
+            guard var bd = result[entry.url] else { continue }
+            if !bd.garbageReasons.isEmpty || bd.isLockedKeep || bd.isCommunityFloorLocked { continue }
+
+            // Compute deviation from baseline for each metric
+            var fwhmDev = 0.0
+            var trailDev = 0.0
+            let ecc = entry.computedEccentricity ?? 0
+            var flags: [String] = []
+
+            if let fwhm = entry.computedFWHM ?? entry.fwhm {
+                fwhmDev = max(0, (fwhm - refFWHM) / refFWHMDev)
+                if fwhmDev > 3.0 {
+                    flags.append(String(format: "FWHM %.1f far above historical %.1f (%.1f MADs)",
+                                       fwhm, refFWHM, fwhmDev))
+                }
+            }
+
+            if let trail = entry.trailingScore,
+               let refTrail = baselineTrailing, let refTrailDev = baselineTrailingStdDev {
+                trailDev = max(0, (trail - refTrail) / refTrailDev)
+                if trailDev > 3.0 {
+                    flags.append(String(format: "trailing %.2f far above historical %.2f (%.1f MADs)",
+                                       trail, refTrail, trailDev))
+                }
+            }
+
+            // Combined deviation: catches frames where FWHM + trailing are both
+            // moderately elevated but neither alone reaches 3 MADs. Mount jump frames
+            // typically show both degraded FWHM AND trailing — the combination is
+            // distinctive even when individual metrics stay below the single-metric threshold.
+            // Threshold is 3.5 with both > 1.0 to avoid false positives on frames
+            // that are merely below-average on one metric.
+            let combinedDev = fwhmDev + trailDev
+            if combinedDev > 3.5 && fwhmDev > 1.0 && trailDev > 1.0 {
+                flags.append(String(format: "combined FWHM+trailing deviation %.1f (FWHM %.1f + trail %.1f MADs)",
+                                   combinedDev, fwhmDev, trailDev))
+            }
+
+            // Eccentricity as evidence amplifier: high elongation combined with
+            // ANY elevated metric is a strong tracking failure signal. Ecc > 0.5 with
+            // either FWHM or trailing > 1.5 MADs = mount issue, not optics.
+            if ecc > 0.5 && (fwhmDev > 1.5 || trailDev > 1.5) {
+                flags.append(String(format: "eccentricity %.2f + elevated metrics (tracking failure)", ecc))
+            }
+
+            // Per-frame diagnostic: log all non-garbage frames with any deviation > 1.0
+            if fwhmDev > 1.0 || trailDev > 1.0 || ecc > 0.4 {
+                let fname = entry.url.lastPathComponent
+                diagLog(String(format: "  %@ fwhmDev=%.2f trailDev=%.2f ecc=%.2f combined=%.2f flags=%d chain=%.2f",
+                               fname, fwhmDev, trailDev, ecc, combinedDev,
+                               flags.count, entry.starChainFraction ?? -1))
+            }
+
+            guard !flags.isEmpty else { continue }
+
+            // Severe = any single metric >5 MADs above baseline
+            let isSevere = fwhmDev > 5.0 || trailDev > 5.0
+
+            // Very high eccentricity (>0.7) is auto-sufficient: normal optics produce
+            // ecc 0.3-0.5 max (RASA f/2.2 at field edges), normal seeing < 0.3.
+            // Only tracking failures reach 0.7+. Combined with any metric elevation
+            // (already guaranteed by the ecc flag check above: fwhmDev>1.5 or trailDev>1.5),
+            // this is unambiguous — no second flag needed.
+            let highEccAutoSufficient = ecc > 0.7 && flags.contains(where: { $0.contains("eccentricity") })
+
+            // Demotion criteria:
+            // 1) Two+ independent flags (any combination)
+            // 2) Single severe flag (>5 MADs on one metric)
+            // 3) Very high eccentricity (>0.7) with elevated FWHM/trailing
+            // The combined deviation flag counts as a flag on its own since it
+            // represents clear multi-metric degradation.
+            guard flags.count >= 2 || isSevere || highEccAutoSufficient else {
+                bd.historicalBaselineReasons = flags
+                result[entry.url] = bd
+                continue
+            }
+
+            // Demote to trash (skip frames already trash)
+            guard bd.tier != .trash else { continue }
+
+            var demoted = QualityBreakdown(
+                tier: .trash,
+                combinedZScore: bd.combinedZScore,
+                starsZ: bd.starsZ, fwhmZ: bd.fwhmZ, hfrZ: bd.hfrZ,
+                noiseZ: bd.noiseZ, trailingZ: bd.trailingZ,
+                psfFluxZ: bd.psfFluxZ,
+                snrContribution: nil,
+                snrSquared: bd.snrSquared,
+                garbageReasons: [],
+                isLockedKeep: false,
+                reasoningText: "Historical baseline: \(flags.joined(separator: ", "))",
+                filterTrailingMultiplier: bd.filterTrailingMultiplier
+            )
+            demoted.historicalBaselineReasons = flags
+            result[entry.url] = demoted
+            demotedCount += 1
+        }
+        diagLog("Stage 1.5b: demoted \(demotedCount)/\(entries.count) frames")
+    }
+
     // MARK: - Session-Wide Sanity Check (Stage 1.5)
 
     /// Cross-group comparison: demote frames that are dramatically worse than the
@@ -1135,6 +1461,7 @@ struct QualityEstimator {
             var snrs: [Double] = []
             var stars: [Double] = []
             var eccs: [Double] = []
+            var trails: [Double] = []
 
             for i in indices {
                 let e = entries[i]
@@ -1148,20 +1475,22 @@ struct QualityEstimator {
                 }
                 if let v = e.computedStarCount { stars.append(Double(v)) }
                 if let v = e.computedEccentricity { eccs.append(v) }
+                if let v = e.trailingScore { trails.append(v) }
             }
 
             // Need enough data points for reliable medians
             guard fwhms.count >= 6 else { continue }
 
-            fwhms.sort(); snrs.sort(); stars.sort(); eccs.sort()
+            fwhms.sort(); snrs.sort(); stars.sort(); eccs.sort(); trails.sort()
             // Use best-decile benchmarks instead of median to resist contamination
             // from uniformly-bad nights. The best 10% defines what "good" looks like.
-            // FWHM/Ecc: lower is better → use 10th percentile (P10)
+            // FWHM/Ecc/Trailing: lower is better → use 10th percentile (P10)
             // SNR/Stars: higher is better → use 90th percentile (P90)
             let fwhmP10 = fwhms[max(0, fwhms.count / 10)]                         // Best 10% FWHM
             let snrP90 = snrs.isEmpty ? 0 : snrs[min(snrs.count - 1, snrs.count * 9 / 10)]  // Best 10% SNR
             let starsP90 = stars.isEmpty ? 0 : stars[min(stars.count - 1, stars.count * 9 / 10)]
             let eccP10 = eccs.isEmpty ? 0 : eccs[max(0, eccs.count / 10)]         // Best 10% Ecc
+            let trailP10 = trails.isEmpty ? 0 : trails[max(0, trails.count / 10)] // Best 10% trailing
 
             // Target-type-aware FWHM threshold scaling.
             // Emission nebulae and IFN are diffuse — FWHM differences matter less.
@@ -1211,6 +1540,12 @@ struct QualityEstimator {
                 }
                 if let ecc = entry.computedEccentricity, eccP10 > 0.1 {
                     if ecc > eccP10 * 1.5 { flags.append("eccentricity far above session norm") }
+                }
+                // Trailing: frame significantly above session's best-decile → tracking error
+                if let trail = entry.trailingScore, trailP10 >= 0 {
+                    if trail > max(trailP10 * 2.0, trailP10 + 0.15) {
+                        flags.append("trailing far above session norm")
+                    }
                 }
 
                 // Severe single-metric outlier: FWHM so far above session P10 that

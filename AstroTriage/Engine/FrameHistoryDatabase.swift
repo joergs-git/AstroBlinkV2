@@ -1042,6 +1042,34 @@ final class FrameHistoryDatabase {
         return [telescope, camera].compactMap { $0 }.joined(separator: " + ")
     }
 
+    /// Fetch all frames for a telescope+camera combo (equipment match, ignores FL hash differences).
+    /// Used by Stage 1.5b historical baseline check — plate-solve FL variations must not
+    /// prevent finding historical reference data from the same physical equipment.
+    func historicalFramesByEquipment(telescope: String, camera: String) throws -> [FrameRecord] {
+        try dbQueue.read { db in
+            try FrameRecord.fetchAll(db, sql: """
+                SELECT * FROM frame_record
+                WHERE LOWER(COALESCE(telescope,'')) = LOWER(?)
+                  AND LOWER(COALESCE(camera,'')) = LOWER(?)
+                ORDER BY observingNight ASC, captureTime ASC
+                """, arguments: [telescope, camera])
+        }
+    }
+
+    /// Fetch all frames for a target across ALL equipment (cross-equipment comparison).
+    /// Used by Stage 1.5b when same-equipment same-target data is insufficient —
+    /// trailing score and eccentricity are FL-normalized and comparable across equipment.
+    func historicalFramesByTarget(canonicalTarget: String) throws -> [FrameRecord] {
+        try dbQueue.read { db in
+            try FrameRecord.fetchAll(db, sql: """
+                SELECT * FROM frame_record
+                WHERE (LOWER(COALESCE(canonicalTarget,'')) = LOWER(?)
+                   OR LOWER(COALESCE(target,'')) = LOWER(?))
+                ORDER BY observingNight ASC, captureTime ASC
+                """, arguments: [canonicalTarget, canonicalTarget])
+        }
+    }
+
     // MARK: - Per-Frame Metrics Queries (for Session Metrics chart)
 
     /// Fetch per-frame records for the metrics chart, ordered by capture time.

@@ -184,6 +184,19 @@ class HeaderInspectorModel: ObservableObject {
         if let why = bd.reasoningText {
             metrics.append(("Why", why))
         }
+        if !bd.historicalBaselineReasons.isEmpty {
+            for reason in bd.historicalBaselineReasons {
+                metrics.append(("Baseline", reason))
+            }
+        }
+        if !bd.sessionSanityReasons.isEmpty {
+            for reason in bd.sessionSanityReasons {
+                metrics.append(("Sanity", reason))
+            }
+        }
+        if bd.lowConfidenceScoring {
+            metrics.append(("Warning", "Low confidence — no historical baseline for this setup. Load more sessions or scan archive for better accuracy."))
+        }
         // Twilight phase with filter-aware note (shown for all frames, not just garbage)
         if let phase = entry?.twilightPhase {
             var twilightText = phase.rawValue
