@@ -449,3 +449,27 @@
 - **Root cause:** (1) Auto-stretch normalizes each tile independently, reducing contrast of ice shadows. (2) LLMs latch onto the most visually obvious difference (e.g. twilight brightness) rather than subtle instrumental patterns. (3) When >50% of frames have a defect, it becomes "normal" to the model. (4) Median-based computational analysis also fails when the median itself is contaminated by the majority of affected frames.
 - **Rule:** VLM-based visual anomaly detection for astronomical sub-exposures is not production-ready. Mark it ALPHA and warn users. For reliable ice/frost detection, analyze raw pixel data in the scoring pipeline (before auto-stretch), not post-stretch mosaic tiles. Star count is the best metadata proxy for optical cleanliness (ice reduces visible stars).
 - **Applies to:** VLM Check feature, any future AI-based visual quality assessment, MosaicGenerator center-detection algorithm
+
+## [2026-04-10] — computeShape() concentration fallback needs medianFWHM guard for narrowband
+- **Mistake:** Added gradient-based second chance to computeShape() when concentration ratio < 2.0. First guard (aperture >= maxEccAperture) was too loose — triggered at FWHM >= 6px, letting IC443/NGC7000 H-alpha filaments through. Second iteration (medianFWHM >= 8px) is correct.
+- **Root cause:** PE arc stars have FWHM ~10px (long FL tracking error). Narrowband nebula filaments have sharp edges with high gradients (indistinguishable from PE arcs by gradient alone). Only the FWHM magnitude discriminates them: >= 8px is exclusively PE territory.
+- **Rule:** The gradient rescue must only activate when medianFWHM >= 8px (passed as parameter to computeShape). Three-layer guard: (1) medianFWHM >= 8, (2) concentration floor 1.3, (3) gradient threshold 0.08. Always try the simplest discriminator first before complex multi-condition heuristics.
+- **Applies to:** StarMetricsCalculator.computeShape(), any future relaxation of concentration/sharpness checks
+
+## [2026-04-10] — Stacking target validation must use plate-solved coordinates, not just OBJCTRA/OBJCTDEC
+- **Mistake:** validateSameTarget() only checked OBJCTRA/OBJCTDEC header strings for coordinate proximity. These are often nil/empty. M81 + M82 frames (same FOV, ~0.6° apart) were rejected because coordinate fallback never ran.
+- **Root cause:** NINA writes CRVAL1/CRVAL2 (plate-solved, always present after solve) but OBJCTRA/OBJCTDEC are optional and frequently absent. The coordinate check dead-ended on nil strings.
+- **Rule:** Always prefer solvedRA/solvedDec (CRVAL1/CRVAL2) as primary coordinate source. Fall back to OBJCTRA/OBJCTDEC only when plate-solved coords are unavailable.
+- **Applies to:** validateSameTarget(), any coordinate-based proximity check, MoonCalculator distance
+
+## [2026-04-11] — Clouded frame detection: FWHM nil is the simplest reliable indicator
+- **Mistake:** Tried multiple approaches to detect clouded-out frames: absolute star floor (<10), P90 star count comparison, multi-condition Rule 0 checks. None worked because the star detector finds noise peaks even in completely cloudy frames, and group statistics are contaminated when many frames are bad.
+- **Root cause:** Over-engineered the detection when the simplest indicator was staring at us: if computedFWHM is nil (Gaussian fit failed on all star candidates), there are no real stars with measurable PSFs. The frame is unusable.
+- **Rule:** Always try the simplest observable difference first. "No FWHM = trash" is one line and catches all clouded/dark/fog frames reliably. Complex heuristics are fine as backup but should never be the first approach.
+- **Applies to:** QualityEstimator Rule 0, any future garbage detection logic
+
+## [2026-04-11] — Stage 1.5b must be filter-aware (thresholds AND trailing scaling)
+- **Mistake:** Stage 1.5b historical baseline used fixed thresholds (3 MADs) for all filters. Narrowband frames (NGC7000 H-alpha) with FWHM 9px vs historical 4.8px were flagged as trash even though the frames were visually fine. Also, trailing deviations were compared against a baseline dominated by broadband data, where narrowband naturally has higher trailing scores.
+- **Root cause:** Narrowband PSFs are inherently bloated, trailing measurement is noisier (fewer well-resolved stars), and historical baselines mix all filters. A "3 MADs" threshold that works for luminance is too strict for narrowband.
+- **Rule:** Stage 1.5b must (1) double thresholds for narrowband (FWHM 6, combined 7, eccentricity 0.7, severe 10 MADs), and (2) scale trailing deviation by filterTrailingMultiplier before comparing to threshold. Same principle as the existing filter-aware trailing penalty in Stage 2.
+- **Applies to:** QualityEstimator.historicalBaselineCheck(), any future cross-session comparison

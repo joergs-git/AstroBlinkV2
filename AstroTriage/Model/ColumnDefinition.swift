@@ -52,6 +52,7 @@ struct ColumnDefinition {
         // Hidden-by-default columns
         ColumnDefinition(identifier: "date",        title: "Date",      defaultWidth: 85,  minWidth: 70,  isDefaultVisible: false, isHideable: true),
         ColumnDefinition(identifier: "telescope",   title: "Telescope", defaultWidth: 80,  minWidth: 60,  isDefaultVisible: false, isHideable: true),
+        ColumnDefinition(identifier: "focalLength", title: "FL",        defaultWidth: 55,  minWidth: 40,  isDefaultVisible: false, isHideable: true),
         ColumnDefinition(identifier: "binning",     title: "Binning",   defaultWidth: 55,  minWidth: 40,  isDefaultVisible: false, isHideable: true),
         ColumnDefinition(identifier: "offset",      title: "Offset",    defaultWidth: 50,  minWidth: 35,  isDefaultVisible: false, isHideable: true),
     ]
@@ -65,7 +66,7 @@ struct ColumnDefinition {
         "ambientTemp", "focuserTemp", "sensorTemp", "gain",
         "moonPhase", "moonDist", "bortle",
         "fileSize", "subfolder",
-        "date", "telescope", "binning", "offset"
+        "date", "telescope", "focalLength", "binning", "offset"
     ]
 
     // Case A: Single target, multi filter — filter+exp group, then quality
@@ -132,6 +133,7 @@ struct ColumnDefinition {
         case "target":      return entry.target ?? ""
         case "telescope":   return entry.telescope ?? ""
         case "camera":      return entry.camera ?? ""
+        case "focalLength": return entry.focalLength.map { String(format: "%.0f", $0) } ?? ""
         case "binning":     return entry.binning ?? ""
         case "offset":      return entry.offset.map { String($0) } ?? ""
         case "focuserTemp": return entry.focuserTemp.map { String(format: "%.1f", $0) } ?? ""
@@ -178,6 +180,7 @@ struct ColumnDefinition {
             return Double(med / mad)
         case "snrContrib":  return entry.qualityBreakdown?.snrContribution
         case "eccentricity": return entry.computedEccentricity
+        case "focalLength":  return entry.focalLength
         case "moonPhase":    return entry.moonIllumination
         case "moonDist":     return entry.moonDistance
         case "bortle":       return entry.bortleClass.map { Double($0) }

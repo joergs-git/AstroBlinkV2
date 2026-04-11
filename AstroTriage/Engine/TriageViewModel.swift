@@ -2769,7 +2769,8 @@ class TriageViewModel: ObservableObject {
     }
 
     // Validate all entries target the same sky object. Returns error message if mismatch found, nil if OK.
-    // Checks by object name first; falls back to RA/DEC coordinate proximity (1° tolerance).
+    // Checks by object name first; when names differ, falls back to RA/DEC coordinate proximity
+    // (1° tolerance) since nearby targets (e.g. M81 & M82, ~0.6° apart) share the same FOV.
     private func validateSameTarget(_ entries: [ImageEntry]) -> String? {
         // Collect unique target names (ignoring nil/empty/unknown)
         let targets = Set(entries.compactMap { entry -> String? in
@@ -2777,34 +2778,47 @@ class TriageViewModel: ObservableObject {
             return t.trimmingCharacters(in: .whitespaces).lowercased()
         })
 
-        if targets.count > 1 {
+        // When names match (or no names), skip straight to coordinate check if needed
+        let namesMismatch = targets.count > 1
+
+        // RA/DEC proximity check: allows stacking of nearby targets sharing the same FOV.
+        // Prefer plate-solved coordinates (CRVAL1/CRVAL2), fall back to OBJCTRA/OBJCTDEC.
+        let coords = entries.compactMap { entry -> (ra: Double, dec: Double)? in
+            if let ra = entry.solvedRA, let dec = entry.solvedDec { return (ra, dec) }
+            guard let raStr = entry.objctRA, let decStr = entry.objctDec,
+                  let ra = parseRA(raStr), let dec = parseDec(decStr) else { return nil }
+            return (ra, dec)
+        }
+
+        if coords.count >= 2 {
+            let refRA = coords[0].ra
+            let refDec = coords[0].dec
+            for coord in coords.dropFirst() {
+                let dRA: Double = Swift.abs(coord.ra - refRA) * cos(refDec * Double.pi / 180.0)
+                let dDec: Double = Swift.abs(coord.dec - refDec)
+                let separation: Double = (dRA * dRA + dDec * dDec).squareRoot()
+                if separation > 1.0 {  // >1° apart = truly different field
+                    if namesMismatch {
+                        let names = Set(entries.compactMap { entry -> String? in
+                            guard let t = entry.target, !t.isEmpty, t.lowercased() != "unknown" else { return nil }
+                            return t.trimmingCharacters(in: .whitespaces)
+                        })
+                        return "Cannot stack: mixed targets detected (\(names.sorted().joined(separator: ", "))). Select only images of the same object."
+                    }
+                    return "Cannot stack: images point to different sky regions (>1° apart). Select only images of the same target field."
+                }
+            }
+            // Coordinates within 1° — same FOV, allow stacking regardless of name difference
+            return nil
+        }
+
+        // No coordinates available — fall back to name check only
+        if namesMismatch {
             let names = Set(entries.compactMap { entry -> String? in
                 guard let t = entry.target, !t.isEmpty, t.lowercased() != "unknown" else { return nil }
                 return t.trimmingCharacters(in: .whitespaces)
             })
             return "Cannot stack: mixed targets detected (\(names.sorted().joined(separator: ", "))). Select only images of the same object."
-        }
-
-        // If no target names, try RA/DEC proximity check
-        if targets.isEmpty {
-            let coords = entries.compactMap { entry -> (ra: Double, dec: Double)? in
-                guard let raStr = entry.objctRA, let decStr = entry.objctDec,
-                      let ra = parseRA(raStr), let dec = parseDec(decStr) else { return nil }
-                return (ra, dec)
-            }
-
-            if coords.count >= 2 {
-                let refRA = coords[0].ra
-                let refDec = coords[0].dec
-                for coord in coords.dropFirst() {
-                    let dRA: Double = Swift.abs(coord.ra - refRA) * cos(refDec * Double.pi / 180.0)
-                    let dDec: Double = Swift.abs(coord.dec - refDec)
-                    let separation: Double = (dRA * dRA + dDec * dDec).squareRoot()
-                    if separation > 1.0 {  // >1° apart = different field
-                        return "Cannot stack: images point to different sky regions (>1° apart). Select only images of the same target field."
-                    }
-                }
-            }
         }
 
         return nil
@@ -4335,6 +4349,7 @@ class TriageViewModel: ObservableObject {
     // Reset all visual sliders to defaults
     func resetSlidersToDefaults() {
         stretchStrength = STFCalculator.defaultTargetBackground
+        AppSettings.saveFloat(stretchStrength, for: .stretchStrength)
         sharpening = 0.0
         contrast = 0.0
         darkLevel = 0.0

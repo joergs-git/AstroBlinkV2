@@ -34,6 +34,14 @@ class ReleaseNotesWindowController {
 // MARK: - Release notes data (shared between view and copy)
 
 private let allReleases: [(version: String, date: String, items: [(ReleaseNotesView.ChangeType, String, String)])] = [
+    ("5.21.0", "April 11, 2026", [
+        (.fixed, "PE Arc Detection", "Gradient-based second chance in star shape measurement rescues PE arc stars that fail the concentration check. Catches 8 more periodic error frames at long focal lengths (RC12 2400mm)."),
+        (.fixed, "Clouded Frame Detection", "Frames where no star PSF could be measured (heavy clouds, fog, lens cap) are now reliably detected as garbage. Simple rule: no FWHM = trash."),
+        (.added, "Filter-Aware Historical Baseline", "Stage 1.5b historical comparison now applies relaxed thresholds for narrowband filters. Prevents false trash on Ha/OIII/SII data with slightly worse seeing than broadband baseline."),
+        (.fixed, "Stacking Mixed Targets", "Nearby targets sharing the same field of view (e.g. M81 + M82) can now be stacked together. Uses plate-solved coordinates for proximity check."),
+        (.added, "Focal Length Column", "New 'FL' column shows focal length per frame. Enable via column picker."),
+        (.fixed, "Stretch Reset", "Reset button now persists the default stretch value across app restarts."),
+    ]),
     ("5.20.0", "April 7, 2026", [
         (.added, "Meteoblue Weather", "Replaced 7Timer + Open-Meteo with Meteoblue via Supabase Edge Function. Cloud layers (low/mid/high), visibility, fog probability, 7-day hourly forecast. Hover any bar for detailed card. Past hours greyed, NOW marker, future in color."),
         (.added, "Target Hierarchy", "120+ parent/child mappings across 30+ deep-sky complexes. Sub-targets show 'Part of' parent, parents show clickable sub-target pills. Hover tooltip includes hierarchy. Unique feature — no other astro tool has this."),

@@ -539,11 +539,12 @@ struct QualityEstimator {
                 // Collect ALL matching reasons — multiple issues shown to user
                 var garbageReasons: [GarbageReason] = []
 
-                // Rule 0: Pitch black / no data — no stars AND no noise stats.
-                let hasBeenMeasured = entry.noiseMAD != nil
-                let hasNoStars = starsValues[localIdx] == nil || starsValues[localIdx] == 0
-                let hasNoNoise = (entry.noiseMAD ?? 0) == 0
-                if hasBeenMeasured && hasNoStars && hasNoNoise {
+                // Rule 0: No measurable PSF — if FWHM couldn't be computed, there are
+                // no real stars to measure. Catches: pitch black frames, heavy clouds,
+                // fog, lens cap, dome closed. Star detector may find noise peaks but
+                // Gaussian fitting fails on them → FWHM is nil.
+                let hasNoFWHM = fwhmValues[localIdx] == nil
+                if hasNoFWHM {
                     garbageReasons.append(.noData)
                 }
 
@@ -569,10 +570,35 @@ struct QualityEstimator {
                 }
 
                 // Rule 1: No stars or near-zero stars → garbage
-                if starWeight > 0, let stars = starsValues[localIdx], let median = starsMedian {
-                    let dropThreshold = isNarrowband ? garbageDropFactor * 0.3 : garbageDropFactor * 0.5
-                    if stars < 1 || (median > 10 && stars < median * dropThreshold) {
+                // Three checks, ALL run regardless of starWeight (CV check disables star
+                // count for z-score weighting, but garbage detection must always work):
+                // (a) absolute floor — <10 stars is unusable
+                // (b) relative drop — far below group median (when starWeight > 0)
+                // (c) P90 floor — far below group best (catches clouded frames even when
+                //     many bad frames drag the median down and CV disables starWeight)
+                if let stars = starsValues[localIdx] {
+                    if stars < 10 {
                         garbageReasons.append(.noStars)
+                    } else {
+                        // (b) Relative to median — only when star counts are stable
+                        if starWeight > 0, let median = starsMedian {
+                            let dropThreshold = isNarrowband ? garbageDropFactor * 0.3 : garbageDropFactor * 0.5
+                            if median > 10 && stars < median * dropThreshold {
+                                garbageReasons.append(.noStars)
+                            }
+                        }
+                        // (c) P90 floor — catches clouded frames in bimodal groups where
+                        // CV > 1.0 disabled starWeight. If P90 is 5000 and frame has 500,
+                        // that's 10% of the best frames → clearly clouded.
+                        let sortedStars = cleanStarsValues.compactMap { $0 }.sorted()
+                        if sortedStars.count >= 5 {
+                            let p90 = sortedStars[Int(Double(sortedStars.count) * 0.9)]
+                            if p90 > 100 && stars < p90 * 0.15 {
+                                if !garbageReasons.contains(.noStars) {
+                                    garbageReasons.append(.noStars)
+                                }
+                            }
+                        }
                     }
                 }
 
@@ -1317,6 +1343,22 @@ struct QualityEstimator {
             guard var bd = result[entry.url] else { continue }
             if !bd.garbageReasons.isEmpty || bd.isLockedKeep || bd.isCommunityFloorLocked { continue }
 
+            // Filter-aware thresholds: narrowband (Ha, OIII, SII) gets relaxed thresholds
+            // because (1) narrowband PSFs are inherently bloated, (2) resolution matters less
+            // for diffuse emission targets, (3) long exposures are expensive to discard.
+            let canonical = ColorCombineEngine.canonicalFilterName(entry.filter ?? "")
+            let trailMult = Self.filterTrailingMultiplier(for: canonical)
+            let isNarrowband = trailMult < 0.5  // Ha, OIII, SII, Hbeta, NII
+
+            // Narrowband: relax FWHM threshold (3→6 MADs), trailing (3→6 MADs),
+            // combined (3.5→7 MADs), eccentricity (0.5→0.7), severe (5→10 MADs)
+            let fwhmThreshold = isNarrowband ? 6.0 : 3.0
+            let trailThreshold = isNarrowband ? 6.0 : 3.0
+            let combinedThreshold = isNarrowband ? 7.0 : 3.5
+            let eccThreshold = isNarrowband ? 0.7 : 0.5
+            let eccMetricThreshold = isNarrowband ? 2.5 : 1.5
+            let severeThreshold = isNarrowband ? 10.0 : 5.0
+
             // Compute deviation from baseline for each metric
             var fwhmDev = 0.0
             var trailDev = 0.0
@@ -1325,7 +1367,7 @@ struct QualityEstimator {
 
             if let fwhm = entry.computedFWHM ?? entry.fwhm {
                 fwhmDev = max(0, (fwhm - refFWHM) / refFWHMDev)
-                if fwhmDev > 3.0 {
+                if fwhmDev > fwhmThreshold {
                     flags.append(String(format: "FWHM %.1f far above historical %.1f (%.1f MADs)",
                                        fwhm, refFWHM, fwhmDev))
                 }
@@ -1333,55 +1375,56 @@ struct QualityEstimator {
 
             if let trail = entry.trailingScore,
                let refTrail = baselineTrailing, let refTrailDev = baselineTrailingStdDev {
-                trailDev = max(0, (trail - refTrail) / refTrailDev)
-                if trailDev > 3.0 {
-                    flags.append(String(format: "trailing %.2f far above historical %.2f (%.1f MADs)",
-                                       trail, refTrail, trailDev))
+                let rawTrailDev = max(0, (trail - refTrail) / refTrailDev)
+                // Scale trailing deviation by filter multiplier: narrowband (0.3) trailing
+                // is inherently noisier (fewer well-resolved stars, bloated PSFs) and the
+                // historical baseline is typically dominated by broadband data. Same
+                // principle as the filter-aware trailing penalty in Stage 2 scoring.
+                trailDev = rawTrailDev * trailMult
+                if trailDev > trailThreshold {
+                    flags.append(String(format: "trailing %.2f far above historical %.2f (%.1f MADs, ×%.1f filter)",
+                                       trail, refTrail, rawTrailDev, trailMult))
                 }
             }
 
             // Combined deviation: catches frames where FWHM + trailing are both
-            // moderately elevated but neither alone reaches 3 MADs. Mount jump frames
+            // moderately elevated but neither alone reaches the threshold. Mount jump frames
             // typically show both degraded FWHM AND trailing — the combination is
             // distinctive even when individual metrics stay below the single-metric threshold.
-            // Threshold is 3.5 with both > 1.0 to avoid false positives on frames
-            // that are merely below-average on one metric.
             let combinedDev = fwhmDev + trailDev
-            if combinedDev > 3.5 && fwhmDev > 1.0 && trailDev > 1.0 {
+            if combinedDev > combinedThreshold && fwhmDev > 1.0 && trailDev > 1.0 {
                 flags.append(String(format: "combined FWHM+trailing deviation %.1f (FWHM %.1f + trail %.1f MADs)",
                                    combinedDev, fwhmDev, trailDev))
             }
 
             // Eccentricity as evidence amplifier: high elongation combined with
-            // ANY elevated metric is a strong tracking failure signal. Ecc > 0.5 with
-            // either FWHM or trailing > 1.5 MADs = mount issue, not optics.
-            if ecc > 0.5 && (fwhmDev > 1.5 || trailDev > 1.5) {
+            // ANY elevated metric is a strong tracking failure signal.
+            if ecc > eccThreshold && (fwhmDev > eccMetricThreshold || trailDev > eccMetricThreshold) {
                 flags.append(String(format: "eccentricity %.2f + elevated metrics (tracking failure)", ecc))
             }
 
             // Per-frame diagnostic: log all non-garbage frames with any deviation > 1.0
             if fwhmDev > 1.0 || trailDev > 1.0 || ecc > 0.4 {
                 let fname = entry.url.lastPathComponent
-                diagLog(String(format: "  %@ fwhmDev=%.2f trailDev=%.2f ecc=%.2f combined=%.2f flags=%d chain=%.2f",
+                diagLog(String(format: "  %@ fwhmDev=%.2f trailDev=%.2f ecc=%.2f combined=%.2f flags=%d chain=%.2f nb=%d",
                                fname, fwhmDev, trailDev, ecc, combinedDev,
-                               flags.count, entry.starChainFraction ?? -1))
+                               flags.count, entry.starChainFraction ?? -1, isNarrowband ? 1 : 0))
             }
 
             guard !flags.isEmpty else { continue }
 
-            // Severe = any single metric >5 MADs above baseline
-            let isSevere = fwhmDev > 5.0 || trailDev > 5.0
+            // Severe = any single metric far above baseline
+            let isSevere = fwhmDev > severeThreshold || trailDev > severeThreshold
 
             // Very high eccentricity (>0.7) is auto-sufficient: normal optics produce
             // ecc 0.3-0.5 max (RASA f/2.2 at field edges), normal seeing < 0.3.
             // Only tracking failures reach 0.7+. Combined with any metric elevation
-            // (already guaranteed by the ecc flag check above: fwhmDev>1.5 or trailDev>1.5),
-            // this is unambiguous — no second flag needed.
+            // (already guaranteed by the ecc flag check above), this is unambiguous.
             let highEccAutoSufficient = ecc > 0.7 && flags.contains(where: { $0.contains("eccentricity") })
 
             // Demotion criteria:
             // 1) Two+ independent flags (any combination)
-            // 2) Single severe flag (>5 MADs on one metric)
+            // 2) Single severe flag (far above baseline)
             // 3) Very high eccentricity (>0.7) with elevated FWHM/trailing
             // The combined deviation flag counts as a flag on its own since it
             // represents clear multi-metric degradation.

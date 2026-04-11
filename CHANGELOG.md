@@ -4,6 +4,24 @@ All notable changes to AstroBlink & AIsaac will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [5.21.0] — 2026-04-11
+
+### Added
+- **Focal Length Column** — New hideable "FL" column shows FOCALLEN header value in mm. Sortable. Enable via column picker (right-click header).
+- **Filter-Aware Stage 1.5b** — Historical baseline check now applies relaxed thresholds for narrowband filters (Ha, OIII, SII): FWHM 6 MADs (was 3), trailing scaled by filter multiplier, combined 7.0 (was 3.5). Prevents false trash on narrowband data with slightly worse seeing.
+- **Rule 1 P90 Floor** — Star count garbage detection now also checks against group P90 (top 10%). Catches clouded frames in groups where many bad frames drag the median down.
+
+### Fixed
+- **PE Arc Detection** — Gradient-based second chance in `computeShape()` rescues PE arc stars that fail concentration check. Only activates when medianFWHM >= 8px (avoids narrowband nebula false positives). M82 PE detection improved from ~52/64 to ~60/64.
+- **Clouded Frame Detection** — Rule 0 simplified: no computed FWHM = trash. Catches heavy clouds, fog, lens cap, dome closed regardless of group composition.
+- **Stacking Mixed Targets** — `validateSameTarget()` now uses plate-solved coordinates (CRVAL1/CRVAL2) as primary source. Nearby targets sharing same FOV (e.g. M81 + M82, ~0.6 degrees apart) can now be stacked together.
+- **Stretch Reset Persistence** — Reset button now saves default stretch value (0.25) to AppSettings, persisting across app restarts.
+
+### Changed
+- Algorithm version bumped to 16 (re-analysis recommended for previously scored frames).
+
+---
+
 ## [5.20.5] — 2026-04-09
 
 ### Added

@@ -1,5 +1,35 @@
 # AstroBlinkV2 — Task Tracker
 
+## v5.21.0 — PE Arc Detection + Bugfixes (COMPLETE 2026-04-11)
+
+### PE Arc Gradient Rescue ✅
+- [x] Gradient-based second chance in computeShape() when concentration < 2.0
+- [x] medianFWHM >= 8px guard (prevents narrowband nebula false positives)
+- [x] Floor guard: concentration >= 1.3 (reject truly flat nebulosity)
+- [x] Gradient threshold: maxGrad/peak >= 0.08 (4-directional)
+- [x] Verified: M82 PE frames 60/64 trash (was ~52/64)
+
+### Filter-Aware Stage 1.5b ✅
+- [x] Narrowband thresholds: FWHM 6 MADs, trailing scaled by filter mult, combined 7.0, ecc 0.7, severe 10
+- [x] Verified: NGC7000 Ha no longer false trash
+
+### Clouded Frame Detection ✅
+- [x] Rule 0: no FWHM = trash (simple, reliable)
+- [x] Rule 1: P90 star floor (<15% of group P90 = trash)
+- [x] Verified: M81 Portugal clouded frames caught
+
+### Other Fixes ✅
+- [x] Stacking mixed targets: plate-solved coords + coordinate fallback (M81+M82 works)
+- [x] Stretch reset persistence: saves to AppSettings
+- [x] FL column: hideable focal length column
+
+### Release ✅
+- [x] Algorithm version 16, app version 5.21.0 (build 68)
+- [x] ALGORITHM_CHANGELOG.md, CHANGELOG.md, What's New updated
+- [x] Archive, notarize, App Store Connect upload
+
+---
+
 ## v5.20.1 — Setup Merging + Narrowband Star Fix (COMPLETE 2026-04-07)
 
 ### Setup FL Merging ✅

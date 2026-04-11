@@ -12,6 +12,40 @@ Records with `algorithmVersion < kAlgorithmVersion` are candidates for re-analys
 
 ---
 
+## Version 16 — v5.21.0 (2026-04-11)
+
+**PE arc gradient rescue, filter-aware Stage 1.5b, clouded frame detection, Rule 1 P90 floor.**
+
+### Changes
+
+1. **PE Arc Gradient Rescue** — `StarMetricsCalculator.computeShape()`: when concentration
+   check (peak/avg < 2.0) fails AND medianFWHM >= 8px, a gradient-based second chance
+   discriminates PE arc stars (steep gradients) from nebulosity (smooth). Three guards:
+   medianFWHM >= 8 (only bloated PE arcs), concentration floor 1.3, gradient threshold 0.08.
+   M82 PE detection: 52/64 → 60/64 frames caught.
+
+2. **Filter-Aware Stage 1.5b** — `QualityEstimator.historicalBaselineCheck()` now applies
+   filter-dependent thresholds: narrowband FWHM threshold 6 MADs (was 3), trailing deviation
+   scaled by filterTrailingMultiplier (narrowband ×0.3), combined threshold 7.0 (was 3.5),
+   eccentricity threshold 0.7 (was 0.5), severe threshold 10 MADs (was 5). Prevents false
+   positives on NGC7000/IC443 H-alpha data.
+
+3. **Rule 0: No FWHM = Trash** — Simplified clouded/dark frame detection: if computedFWHM
+   is nil (Gaussian fit failed on all star candidates), the frame is garbage. Replaces
+   complex multi-condition check. Catches heavy clouds, fog, lens cap, dome closed.
+
+4. **Rule 1: P90 Star Floor** — Additional star count check: if frame has <15% of the
+   group's P90 star count (top 10%), it's garbage regardless of starWeight. Catches
+   partially clouded frames in bimodal groups where CV > 1.0 disabled star-count scoring.
+
+### Impact
+- PE arc detection improved (+8 frames at RC12 2400mm)
+- Narrowband false positive rate reduced (NGC7000, IC443 no longer trashed)
+- Clouded frame detection robust (Portugal M81 cloud gaps caught)
+- No regression on good broadband data
+
+---
+
 ## Version 15 — v5.20.1 (2026-04-07)
 
 **Star detection sharpness filter, narrowband false positive reduction, setup merging.**

@@ -283,7 +283,8 @@ enum StarMetricsCalculator {
 
             if let shape = computeShape(
                 ptr: ptr, channelOffset: channelOffset, width: w,
-                cx: star.x, cy: star.y, aperture: eccAperture, background: bg
+                cx: star.x, cy: star.y, aperture: eccAperture, background: bg,
+                medianFWHM: medianFWHM
             ) {
                 // Reject streaks again with the FWHM-adaptive aperture (more accurate than Pass 0)
                 if shape.axisRatio < streakAxisRatioThreshold { continue }
@@ -853,21 +854,28 @@ enum StarMetricsCalculator {
         width: Int,
         cx: Float, cy: Float,
         aperture: Float,
-        background: Float
+        background: Float,
+        medianFWHM: Double = 0
     ) -> ShapeResult? {
         let intCx = Int(cx.rounded())
         let intCy = Int(cy.rounded())
         let fitRadiusSq = aperture * aperture
         let fitR = Int(aperture)
 
-        // Find peak value for threshold
+        // Find peak value and its pixel location for threshold + gradient check
         var peakValue: Float = 0
+        var peakPx = intCx
+        var peakPy = intCy
         for dy in -2...2 {
             for dx in -2...2 {
                 let px = intCx + dx
                 let py = intCy + dy
                 let val = Float(ptr[channelOffset + py * width + px]) - background
-                if val > peakValue { peakValue = val }
+                if val > peakValue {
+                    peakValue = val
+                    peakPx = px
+                    peakPy = py
+                }
             }
         }
         guard peakValue > 30 else { return nil }  // Lower SNR threshold than before (was 50)
@@ -896,7 +904,40 @@ enum StarMetricsCalculator {
         if apertureCount > 0 {
             let avgInAperture = apertureSum / apertureCount
             // Stars: peak >> average (concentrated). Nebulosity: peak ≈ average (flat).
-            if avgInAperture > 0 && peakValue / avgInAperture < 2.0 { return nil }
+            if avgInAperture > 0 && peakValue / avgInAperture < 2.0 {
+                // Concentration ratio < 2.0: could be nebulosity OR a PE arc star whose
+                // light is spread directionally. Discriminate via gradient analysis.
+                //
+                // Guard: only attempt gradient rescue when stars are severely bloated,
+                // indicating PE arcs at long FL (FWHM ~10px+). Normal seeing + narrowband
+                // produces FWHM 3-7px even in bad conditions. Nebula filaments (IC443,
+                // NGC7000 H-alpha) have sharp edges with high gradients that would pass
+                // the gradient check — the FWHM guard prevents this.
+                guard medianFWHM >= 8.0 else { return nil }
+
+                // Floor: ratio < 1.3 is definitively not a point source — reject immediately
+                guard peakValue / avgInAperture >= 1.3 else { return nil }
+
+                // Gradient discrimination: PE arc stars have steep brightness drop-off
+                // perpendicular to the trailing direction (short axis is still ~2-4px wide).
+                // Nebulosity is smooth everywhere — uniformly low gradients in all directions.
+                // Check 4 directions through the peak pixel and use the maximum.
+                let off = channelOffset + peakPy * width + peakPx
+                func pxVal(_ dx: Int, _ dy: Int) -> Float {
+                    Float(ptr[off + dy * width + dx]) - background
+                }
+                let pv = peakValue
+                let gH  = (abs(pv - pxVal(-1,  0)) + abs(pv - pxVal( 1, 0))) * 0.5
+                let gV  = (abs(pv - pxVal( 0, -1)) + abs(pv - pxVal( 0, 1))) * 0.5
+                let gD1 = (abs(pv - pxVal(-1, -1)) + abs(pv - pxVal( 1, 1))) * 0.5
+                let gD2 = (abs(pv - pxVal( 1, -1)) + abs(pv - pxVal(-1, 1))) * 0.5
+                let maxGrad = max(gH, max(gV, max(gD1, gD2)))
+
+                // PE arcs: maxGrad/peak typically 0.08-0.20 (sharp edge on short axis)
+                // Nebulosity: maxGrad/peak typically < 0.05 (smooth emission)
+                if maxGrad / peakValue < 0.08 { return nil }
+                // else: gradient indicates compact/semi-compact source — proceed
+            }
         }
 
         // Use 5% of peak as threshold (was 10%) to capture more of the PSF wings
