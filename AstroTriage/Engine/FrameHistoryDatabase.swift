@@ -398,7 +398,9 @@ final class FrameHistoryDatabase {
                 args.append(target)
             }
 
-            sql += " GROUP BY observingNight, filter ORDER BY observingNight ASC"
+            // Group by target too — without it, multiple targets on the same night
+            // with the same filter get merged into one row, causing misattribution
+            sql += " GROUP BY observingNight, cTarget, filter ORDER BY observingNight ASC"
 
             let rows = try Row.fetchAll(db, sql: sql, arguments: StatementArguments(args))
             return rows.map { row in
@@ -458,7 +460,9 @@ final class FrameHistoryDatabase {
                 args.append(target)
             }
 
-            sql += " GROUP BY observingNight, filter ORDER BY observingNight ASC"
+            // Group by target too — without it, multiple targets on the same night
+            // with the same filter get merged into one row, causing misattribution
+            sql += " GROUP BY observingNight, cTarget, filter ORDER BY observingNight ASC"
 
             let rows = try Row.fetchAll(db, sql: sql, arguments: StatementArguments(args))
             return rows.map { row in
@@ -1004,7 +1008,8 @@ final class FrameHistoryDatabase {
                 args.append(target)
             }
 
-            sql += " GROUP BY observingNight, filter ORDER BY observingNight ASC"
+            // Group by target too — matches single-setup query fix
+            sql += " GROUP BY observingNight, cTarget, filter ORDER BY observingNight ASC"
 
             let rows = try Row.fetchAll(db, sql: sql, arguments: StatementArguments(args))
             return rows.map { row in

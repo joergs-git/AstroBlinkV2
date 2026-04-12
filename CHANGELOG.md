@@ -4,6 +4,14 @@ All notable changes to AstroBlink & AIsaac will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [5.21.1] — 2026-04-12
+
+### Fixed
+- **Filter Gap Integration Hours** — Fixed SQL GROUP BY that merged multiple targets imaged on the same night with the same filter into one row, causing one target to receive all hours while others showed zero. Integration hours in the Target Catalog's Filter Gap Analysis now correctly attribute hours per target.
+- **Borderline Frames Counted** — Filter Gap Analysis now includes borderline and uncertain frames (qualityTier 1 & 4) in the usable integration count. These frames are stackable and were incorrectly excluded, causing actual hours to appear lower than reality.
+
+---
+
 ## [5.21.0] — 2026-04-11
 
 ### Added

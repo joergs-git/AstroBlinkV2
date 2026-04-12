@@ -352,7 +352,8 @@ class TargetDatabaseViewModel: ObservableObject {
                 guard let target = summary.target, !target.isEmpty else { continue }
                 let canonical = TargetCatalog.canonicalName(target)
                 let filter = summary.filter ?? "?"
-                let usable = summary.goodCount + summary.excellentCount
+                // Include borderline/uncertain — they're still stackable, only exclude trash
+                let usable = summary.goodCount + summary.excellentCount + summary.borderlineCount
                 guard usable > 0 else { continue }
                 let hours = Double(usable) * (summary.medianExposure ?? 0) / 3600.0
 
