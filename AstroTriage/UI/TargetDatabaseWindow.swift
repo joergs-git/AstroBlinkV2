@@ -541,7 +541,7 @@ struct TargetDatabaseContentView: View {
                         .foregroundColor(AppColors.fgDim(nightMode))
                     Picker("Setup", selection: $viewModel.selectedSetupIndex) {
                         ForEach(Array(viewModel.equipmentSetups.enumerated()), id: \.offset) { index, setup in
-                            Text(setup.description).tag(index)
+                            Text(viewModel.setupDisplayName(for: setup)).tag(index)
                         }
                     }
                     .frame(minWidth: 160)
@@ -1452,7 +1452,7 @@ struct TargetDetailView: View {
                let fov = viewModel.fovArcmin(setup: setup),
                let major = target.angularSizeMajor, let minor = target.angularSizeMinor {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("FOV with \(setup.description)")
+                    Text("FOV with \(viewModel.setupDisplayName(for: setup))")
                         .font(.system(size: 10 * fontScale, weight: .medium))
                         .foregroundColor(AppColors.fgDim(nightMode))
 

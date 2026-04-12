@@ -126,6 +126,13 @@ class TargetDatabaseViewModel: ObservableObject {
         return equipmentSetups[selectedSetupIndex]
     }
 
+    /// Display name for a setup, using nickname from Frame History DB if available
+    func setupDisplayName(for setup: AIsaacUserProfile.EquipmentSetup) -> String {
+        let db = FrameHistoryDatabase.shared
+        return db.setupDisplayName(telescope: setup.telescope, camera: setup.camera,
+                                   focalLength: setup.focalLength, pixelSizeMicrons: setup.pixelSize)
+    }
+
     /// Tonight's weather forecast (from 7Timer + Open-Meteo)
     @Published var weatherForecast: AIsaacWeatherService.AstroForecast?
     @Published var isLoadingWeather: Bool = false
