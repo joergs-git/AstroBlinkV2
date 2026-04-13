@@ -4,6 +4,16 @@ All notable changes to AstroBlink & AIsaac will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [5.22.2] — 2026-04-13
+
+### Fixed
+- **Session sanity now compares FWHM in arcseconds on mixed-plate-scale pools** (Algorithm v18) — `QualityEstimator.sessionSanityCheck`: when the target+exposure pool contains frames at different plate scales (min/max `arcsecPerPixel` ratio > 1.10 and every frame has a plate scale), both the pool P10 benchmark and the per-frame comparison are computed in arcseconds instead of pixel FWHM. The original cross-setup "catch a bad night" design intent is preserved; the plate-scale bias that systematically over-flagged longer-FL frames is removed. Single-plate-scale sessions — the common case — have zero behavioral change because the arcsec conversion is a uniform multiplier per frame and the `fwhm/P10` ratio is identical. Star-count sanity check is skipped on mixed-plate-scale pools because detection sensitivity scales with plate scale and there is no clean normalization. `kAlgorithmVersion` bumped 17 → 18. Triggered by analysis of the user's M97 session where the RC12 native (2423mm) + RC12 + 0.81× reducer (1964mm) frames landed in the same pool and the native frames were being demoted despite equivalent physical seeing.
+
+### Under the hood
+- New unit tests `testSessionSanityCheck_mixedPlateScaleArcsecNormalization` (positive: good mixed-FL pool not demoted) and `testSessionSanityCheck_mixedPlateScaleStillCatchesRealBadNight` (negative control: bad native-FL frames still caught in a mixed pool). `testSessionSanityCheck_demotesBadCrossGroup` remains untouched and passes — pre-existing synthetic tests don't populate plate scale, so they traverse the unchanged pixel-FWHM fallback path.
+
+---
+
 ## [5.22.1] — 2026-04-13
 
 ### Fixed

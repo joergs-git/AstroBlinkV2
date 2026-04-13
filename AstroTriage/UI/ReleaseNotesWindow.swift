@@ -34,6 +34,9 @@ class ReleaseNotesWindowController {
 // MARK: - Release notes data (shared between view and copy)
 
 private let allReleases: [(version: String, date: String, items: [(ReleaseNotesView.ChangeType, String, String)])] = [
+    ("5.22.2", "April 13, 2026", [
+        (.fixed, "Session Sanity — Mixed Plate Scales (Algorithm v18)", "Sessions that mix two configurations of the same scope (e.g. native FL vs focal-reducer) no longer get their longer-FL frames falsely demoted by the Stage 1.5 session sanity check. Pool FWHM is now compared in arcseconds instead of pixels whenever the pool's plate-scale variation exceeds 10% — physical seeing quality drives the verdict, not pixel-scale bias. Single-plate-scale sessions (the common case) are unaffected because the conversion is a uniform multiplier. Star-count sanity is skipped on mixed pools (detection sensitivity varies with plate scale). Algorithm version bumped to 18."),
+    ]),
     ("5.22.1", "April 13, 2026", [
         (.fixed, "Quality Feedback Round-Trip", "Feedback state (Agree / Disagree / Partly) now reloads from the Frame History DB when a folder is reopened — was already persisted and synced to Supabase, just not read back. fileHash is the stable cross-machine identity, so the same feedback also appears when the session is opened on a different Mac via iCloud-synced SQLite."),
         (.changed, "Feedback Icons → Thumbs", "Agree / Disagree / Partly now render as thumbs up / thumbs down / sideways pointing hand — clearer semantics than the old checkmark / cross / half-circle. Context menu items gain matching icons."),

@@ -1122,6 +1122,135 @@ final class QualityEstimatorTests: XCTestCase {
         }
     }
 
+    /// Regression guard for algorithm v18 (v5.22.2):
+    /// A pool that mixes plate scales — same scope with and without a focal
+    /// reducer — must compare FWHM in arcseconds, not pixels. Native-FL frames
+    /// and reduced-FL frames at identical physical seeing (2″ arcsec FWHM)
+    /// should NOT be session-sanity-demoted against each other.
+    func testSessionSanityCheck_mixedPlateScaleArcsecNormalization() {
+        // Native RC12: 2423mm, 3.8µm → 0.324"/px. 2.0" seeing ⇒ 6.2 px FWHM.
+        // Reduced RC12 + 0.81× reducer: 1964mm, 3.8µm → 0.399"/px. 2.0" seeing ⇒ 5.0 px FWHM.
+        //
+        // Under v17 (pixel comparison): pool P10 ~5.0 px (reduced dominates the
+        // "best" decile), native frames at 6.2 px trip the 1.3× threshold = 6.5 px
+        // and would get a FWHM-flag. With ecc/trailing/SNR flags if the metrics
+        // drift at all, those frames demote to trash incorrectly.
+        //
+        // Under v18 (arcsec comparison on mixed-plate-scale pool): both sets
+        // convert to ~2.0" FWHM. Pool P10 ~2.0". 1.3× = 2.6". Neither set trips.
+        //
+        // Uses a galaxy target ("M82") so the stricter default 1.3× multiplier
+        // applies — matches the fwhmSanityMultiplier for default targetType.
+        let fwhmJitter = [-0.10, -0.05, 0.0, 0.02, 0.05, 0.08, 0.10, 0.12, 0.15, 0.20]
+
+        let nativeRC12: [ImageEntry] = (0..<10).map { i in
+            var e = makeEntry(index: i, filter: "L", target: "M82", exposure: 300,
+                      noiseMAD: 0.002, noiseMedian: 0.050,
+                      computedFWHM: 6.2 + fwhmJitter[i],
+                      computedStarCount: 600,
+                      computedEccentricity: 0.35,
+                      focalLength: 2423,
+                      pixelSizeMicrons: 3.8)
+            e.date = "2026-03-15"; e.time = "22:00:00"
+            return e
+        }
+        let reducedRC12: [ImageEntry] = (0..<10).map { i in
+            var e = makeEntry(index: 100 + i, filter: "L", target: "M82", exposure: 300,
+                      noiseMAD: 0.002, noiseMedian: 0.050,
+                      computedFWHM: 5.0 + fwhmJitter[i],
+                      computedStarCount: 420,
+                      computedEccentricity: 0.35,
+                      focalLength: 1964,
+                      pixelSizeMicrons: 3.8)
+            e.date = "2026-03-16"; e.time = "22:00:00"
+            return e
+        }
+
+        let entries = nativeRC12 + reducedRC12
+        let scores = QualityEstimator.computeScores(for: entries)
+
+        // Every frame here is at ~2" physical seeing — no FWHM or star-count
+        // session-sanity flag should fire on ANY frame. (SNR/ecc/trailing are
+        // plate-scale invariant and uniform in this fixture, so they can't
+        // fire either.) Any session sanity reason on any frame = regression.
+        for (idx, entry) in entries.enumerated() {
+            guard let bd = scores[entry.url] else { continue }
+            XCTAssertTrue(
+                bd.sessionSanityReasons.isEmpty,
+                "Frame \(idx) (FL=\(entry.focalLength ?? 0)mm) should NOT be session-sanity-flagged on a mixed-plate-scale pool at uniform physical seeing — got: \(bd.sessionSanityReasons)"
+            )
+            // And therefore must not be in trash tier *from* session sanity.
+            // (Other Stage 1 rules could still trash-tier, but nothing in this
+            // fixture triggers them.)
+            XCTAssertNotEqual(bd.tier, .trash, "Frame \(idx) should not be trash")
+        }
+    }
+
+    /// Negative control for v18: mixed-plate-scale pool where the longer-FL
+    /// frames genuinely have 2× worse physical seeing than the reduced-FL
+    /// frames. The native-FL frames SHOULD still be session-sanity-flagged,
+    /// because they're actually bad in arcseconds. Proves the arcsec
+    /// normalization doesn't disable session sanity — only neutralizes the
+    /// plate-scale bias.
+    func testSessionSanityCheck_mixedPlateScaleStillCatchesRealBadNight() {
+        // Native RC12 at 2423mm: fwhmPx 13.0 → 13.0 × 0.324 = 4.21" arcsec (bad!)
+        // Reduced RC12 at 1964mm: fwhmPx 5.0 → 5.0 × 0.399 = 2.00" arcsec (good)
+        // Pool P10 (arcsec) dominated by reduced: ~2.0".
+        // Native 4.21" / 2.0" = 2.1× → exceeds both 1.3× (flag) AND 1.4× (severe).
+        // Severe single flag + nothing else still demotes per the single-outlier rule.
+        let fwhmJitter = [-0.10, -0.05, 0.0, 0.02, 0.05, 0.08, 0.10, 0.12, 0.15, 0.20]
+
+        let nativeRC12Bad: [ImageEntry] = (0..<10).map { i in
+            var e = makeEntry(index: 200 + i, filter: "L", target: "M82", exposure: 300,
+                      noiseMAD: 0.002, noiseMedian: 0.050,
+                      computedFWHM: 13.0 + fwhmJitter[i],
+                      computedStarCount: 600,
+                      computedEccentricity: 0.35,
+                      focalLength: 2423,
+                      pixelSizeMicrons: 3.8)
+            e.date = "2026-03-15"; e.time = "22:00:00"
+            return e
+        }
+        let reducedRC12Good: [ImageEntry] = (0..<10).map { i in
+            var e = makeEntry(index: 300 + i, filter: "L", target: "M82", exposure: 300,
+                      noiseMAD: 0.002, noiseMedian: 0.050,
+                      computedFWHM: 5.0 + fwhmJitter[i],
+                      computedStarCount: 420,
+                      computedEccentricity: 0.35,
+                      focalLength: 1964,
+                      pixelSizeMicrons: 3.8)
+            e.date = "2026-03-16"; e.time = "22:00:00"
+            return e
+        }
+
+        let entries = nativeRC12Bad + reducedRC12Good
+        let scores = QualityEstimator.computeScores(for: entries)
+
+        // The bad native frames should be tagged with a session-sanity FWHM reason
+        // OR demoted to a worse tier than .good. The reduced frames should remain.
+        var demotedCount = 0
+        for i in 200..<210 {
+            let url = URL(fileURLWithPath: "/tmp/test_\(i).xisf")
+            guard let bd = scores[url] else { continue }
+            // Either it's flagged by session sanity OR already trashed by Stage 1.
+            // We don't care which — the behavior we're proving is that session
+            // sanity didn't stop working because of the arcsec switch.
+            if bd.sessionSanityReasons.contains(where: { $0.contains("FWHM") }) || bd.tier == .trash || bd.tier == .borderline {
+                demotedCount += 1
+            }
+        }
+        XCTAssertGreaterThanOrEqual(demotedCount, 7,
+            "At least 7 of 10 bad-native frames should be demoted (session-sanity or Stage 1). Got \(demotedCount)")
+
+        // Reduced frames (genuinely good) should NOT be demoted by session sanity.
+        for i in 300..<310 {
+            let url = URL(fileURLWithPath: "/tmp/test_\(i).xisf")
+            guard let bd = scores[url] else { continue }
+            XCTAssertTrue(bd.sessionSanityReasons.isEmpty,
+                "Reduced-FL good frame \(i) should not be session-sanity-flagged: \(bd.sessionSanityReasons)")
+        }
+    }
+
     /// Session sanity must not touch isLockedKeep frames
     func testSessionSanityCheck_respectsLockedKeep() {
         // Similar to above but with calibration that locks bad frames

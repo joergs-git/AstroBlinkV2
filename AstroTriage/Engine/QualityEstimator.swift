@@ -1510,6 +1510,35 @@ struct QualityEstimator {
             let distinctNights = Set(indices.compactMap { entries[$0].observingNight })
             guard distinctNights.count >= 2 else { continue }
 
+            // Detect plate-scale variation across the pool. When the pool mixes
+            // configurations at different plate scales — e.g. the same scope with
+            // and without a focal reducer, or two entirely different scopes that
+            // both imaged this target — pixel FWHM is NOT a fair comparison across
+            // the pool because the same physical seeing produces different pixel
+            // FWHM at different arcsec/pixel values. In that case we compare in
+            // arcseconds, which is the plate-scale-invariant representation of
+            // the seeing disk. Single-plate-scale pools (the common case) are
+            // unaffected because the conversion is a uniform multiplier — ratios
+            // fwhm/P10 stay identical.
+            var poolArcsecScales: [Double] = []
+            for i in indices {
+                if let aps = entries[i].arcsecPerPixel, aps > 0 {
+                    poolArcsecScales.append(aps)
+                }
+            }
+            let poolIsMixedPlateScale: Bool = {
+                guard poolArcsecScales.count >= 2 else { return false }
+                let minAPS = poolArcsecScales.min() ?? 0
+                let maxAPS = poolArcsecScales.max() ?? 0
+                // 10% ratio tolerates minor FL-reporting noise but catches real
+                // configuration differences (e.g. 0.81× reducer → ~25% change).
+                return minAPS > 0 && (maxAPS / minAPS) > 1.10
+            }()
+            // Require ALL frames in the pool to have plate scale before we can
+            // switch to arcsec comparison. A partial switch would compare arcsec
+            // values against pixel values, which is worse than the status quo.
+            let useArcsecFWHM = poolIsMixedPlateScale && poolArcsecScales.count == indices.count
+
             // Collect metrics from ALL frames in the pool (across all filters/nights)
             var fwhms: [Double] = []
             var snrs: [Double] = []
@@ -1523,7 +1552,16 @@ struct QualityEstimator {
                 // would contaminate session benchmarks with unrealistic metrics
                 // (17000 hot pixel "stars", FWHM 3, SNR 113)
                 if let bd = result[e.url], !bd.garbageReasons.isEmpty { continue }
-                if let v = e.computedFWHM ?? e.fwhm { fwhms.append(v) }
+                if let v = e.computedFWHM ?? e.fwhm {
+                    // For mixed-plate-scale pools, compare in arcsec so native
+                    // and reduced configurations of the same scope are judged on
+                    // physical seeing rather than pixel-scale-biased pixel FWHM.
+                    if useArcsecFWHM, let aps = e.arcsecPerPixel, aps > 0 {
+                        fwhms.append(v * aps)
+                    } else {
+                        fwhms.append(v)
+                    }
+                }
                 if let med = e.noiseMedian, let mad = e.noiseMAD, mad > 0 {
                     snrs.append(Double(med / mad))
                 }
@@ -1581,7 +1619,16 @@ struct QualityEstimator {
                 // FWHM: frame significantly above session's best-decile → worse seeing.
                 // Threshold is target-type-aware: emission nebulae get 1.6x (diffuse, FWHM less critical),
                 // galaxies/clusters get 1.3x (resolution critical).
-                if let fwhm = entry.computedFWHM ?? entry.fwhm, fwhmP10 > 0 {
+                // When the pool mixes plate scales, both the pool P10 and the per-frame
+                // value are in arcseconds — single-plate-scale pools stay in pixels.
+                let frameFWHMForPool: Double? = {
+                    guard let px = entry.computedFWHM ?? entry.fwhm else { return nil }
+                    if useArcsecFWHM, let aps = entry.arcsecPerPixel, aps > 0 {
+                        return px * aps
+                    }
+                    return px
+                }()
+                if let fwhm = frameFWHMForPool, fwhmP10 > 0 {
                     if fwhm > fwhmP10 * fwhmSanityMultiplier { flags.append("FWHM far above session norm") }
                 }
                 // SNR: frame < 0.4× the session's best-decile → dramatically lower signal
@@ -1589,7 +1636,14 @@ struct QualityEstimator {
                     let snr = Double(med / mad)
                     if snr < snrP90 * 0.4 { flags.append("SNR far below session norm") }
                 }
-                if let sc = entry.computedStarCount, starsP90 > 50 {
+                // Star count check is skipped on mixed-plate-scale pools because
+                // star detection sensitivity varies with plate scale (more pixels
+                // per arcsec → more detected stars for the same sky), and the
+                // pool P90 would be dominated by the finer-scale frames. Without
+                // a clean plate-scale normalization for star count (which would
+                // require image area + detection model), skipping is safer than
+                // false-flagging the coarser-scale frames.
+                if let sc = entry.computedStarCount, starsP90 > 50, !poolIsMixedPlateScale {
                     if Double(sc) < starsP90 * 0.4 { flags.append("star count far below session norm") }
                 }
                 if let ecc = entry.computedEccentricity, eccP10 > 0.1 {
@@ -1606,8 +1660,9 @@ struct QualityEstimator {
                 // it's unambiguous garbage even without a second flag.
                 // This catches L-filter frames where SNR is acceptable (L captures
                 // more photons than RGB) but seeing is catastrophically worse.
+                // Same arcsec/pixel unit convention as the normal FWHM check above.
                 var isSevereOutlier = false
-                if let fwhm = entry.computedFWHM ?? entry.fwhm, fwhmP10 > 0 {
+                if let fwhm = frameFWHMForPool, fwhmP10 > 0 {
                     if fwhm > fwhmP10 * severeFwhmMultiplier { isSevereOutlier = true }
                 }
 

@@ -12,6 +12,86 @@ Records with `algorithmVersion < kAlgorithmVersion` are candidates for re-analys
 
 ---
 
+## Version 18 — v5.22.2 (2026-04-13)
+
+**Mixed-plate-scale session sanity — arcsec FWHM comparison, star-count skip.**
+
+### Changes
+
+1. **Session sanity FWHM comparison in arcseconds for mixed-plate-scale pools** —
+   `QualityEstimator.sessionSanityCheck`: when the target+exposure pool contains
+   frames at different plate scales (min/max `arcsecPerPixel` ratio > 1.10 and
+   every frame has a plate scale available), both the pool P10 benchmark and
+   the per-frame comparison are computed in arcseconds instead of pixel FWHM.
+   Single-plate-scale pools — the overwhelming majority of sessions — are
+   unaffected because the arcsec conversion is a uniform multiplier per frame
+   and the ratio `fwhm / P10` stays identical.
+
+2. **Session sanity star count check skipped on mixed-plate-scale pools** —
+   Star detection sensitivity scales with plate scale: at longer FL (finer
+   plate scale), more pixels are available per star and detection yields
+   higher counts for the same sky. Pooling star counts across mixed plate
+   scales lets the finer-scale frames dominate the P90 benchmark, causing
+   coarser-scale frames to falsely trip the `< 0.4 × P90` check. Without a
+   clean plate-scale normalization for star count (which would require image
+   area and detection model), skipping the check on mixed pools is safer
+   than false-flagging. Single-plate-scale pools continue to run the check.
+
+### Why
+
+The pre-v18 session sanity pool intentionally merged across plate scales
+(the design comment cites "catch a bad night where one setup's frames are
+uniformly bad while another's are fine"). That goal remains — but the
+implementation compared pixel FWHM across setups, which is plate-scale
+biased. With the user's M97 dataset captured on the same RC12 both with
+and without a 0.81× focal reducer (FL 2423mm → 1964mm), the reduced-FL
+frames at 0.40″/px dominated the pool P10 while the native-FL frames at
+0.32″/px were systematically ~20 % larger in pixels for the same physical
+seeing. Any native-FL frame near the seeing threshold would trip the
+`> 1.3–1.6 × P10` multiplier and be demoted, even when its physical arcsec
+FWHM matched the reduced-FL frames. This contributes to the over-flagging
+pattern that showed up in the community_sessions telemetry for long-FL
+narrowband (~74–75 % user override rate across multiple independent
+setups at FL 2423 and FL 1964).
+
+Physical seeing is the right invariant, and arcsec FWHM is the plate-scale
+invariant representation of it, so we compare in arcsec when the pool
+mixes plate scales. The detection is a ratio test on the per-frame
+`arcsecPerPixel` values: a 10 % tolerance absorbs minor FL-reporting
+noise while still catching real configuration changes (a 0.81× reducer
+produces a ~25 % change, well above the tolerance).
+
+### Impact
+
+- Mixed-plate-scale sessions: native-FL frames no longer get falsely
+  flagged as FWHM outliers when pooled with reduced-FL frames of the
+  same target. Star count flagging is also disabled in this scenario.
+- Single-plate-scale sessions (the common case): zero behavioral change.
+  Unit-test coverage remains stable because `testSessionSanityCheck_*`
+  tests don't populate `pixelSizeMicrons` or `focalLength`, so they
+  fall through to the pixel-based path identical to v17.
+- Golden-set M82-January and M82 datasets (both mixed FL: RC12 2455mm +
+  RC12red08 1964mm): need manual verification because those are the
+  only two golden fixtures with mixed plate scale. Expected behavior —
+  January tracking-hop frames still catch on SNR/ecc/trailing flags
+  (plate-scale invariant) and on Rule 9 `.trackingHop` Stage 1 garbage
+  which fires before session sanity; March M82 good frames stay good.
+- Re-analysis recommended for archive frames scored under v17 in
+  sessions that mix native + reduced configurations of the same scope.
+
+### Files changed
+
+- `AstroTriage/Engine/QualityEstimator.swift` — `sessionSanityCheck`
+  plate-scale detection, arcsec FWHM conversion in pool collection and
+  per-frame comparison, star count skip on mixed pools.
+- `AstroTriage/Model/FrameRecord.swift` — `kAlgorithmVersion` 17 → 18.
+- `Tests/QualityEstimatorTests.swift` — new
+  `testSessionSanityCheck_mixedPlateScaleArcsecNormalization` covers
+  both the positive case (good mixed-FL pool not demoted) and the
+  negative control (single-FL pool behavior unchanged).
+
+---
+
 ## Version 17 — v5.22.0 (2026-04-13)
 
 **FL-adaptive star chain detection, user quality feedback system, WCS-based display alignment.**
