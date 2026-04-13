@@ -65,6 +65,7 @@ class TriageViewModel: ObservableObject {
     struct OrientationRef {
         let pierSide: String?
         let rotatorAngle: Double?
+        let wcsRotation: Double?
     }
     private var targetOrientationRefs: [String: OrientationRef] = [:]  // key = canonical target name
 
@@ -108,7 +109,7 @@ class TriageViewModel: ObservableObject {
 
     // Blink playback
     @Published var isPlaying: Bool = false
-    @Published var playbackDelay: Double = 0.5
+    @Published var playbackDelay: Double = 0.1
     private var playbackTimer: Timer?
     private var playbackIndices: [Int] = []
     private var playbackPosition: Int = 0
@@ -250,6 +251,12 @@ class TriageViewModel: ObservableObject {
 
     // Preview cache: pre-stretched, binned BGRA8 textures for instant display
     private var prefetchCache: PrefetchCache?
+
+    // Star-based visual alignment — shared with prefetch cache for per-target reference tracking
+    let displayAligner = DisplayAligner()
+
+    // Benchmark upload service — auto-uploads session load stats after caching completes
+    let benchmarkService = BenchmarkService()
 
     // Local file cache for network volumes
     private let sessionCache = SessionCache()
@@ -493,6 +500,41 @@ class TriageViewModel: ObservableObject {
             self.prefetchCache?.onPriorityPreviewReady = { [weak self] url in
                 guard let self = self, self.selectedImage?.url == url else { return }
                 self.displayCurrentImage()
+            }
+            // Star-based display alignment — shared aligner lives on the view model so it can
+            // be reset per session. Workers compute transforms against the per-target reference
+            // and report back via the callback below.
+            self.prefetchCache?.displayAligner = self.displayAligner
+            self.prefetchCache?.targetKeyForEntry = { entry in
+                // Group by target only — one reference per target is the correct model:
+                // the user expects all frames of M81 to align to the same orientation,
+                // regardless of filter or exposure. Cross-filter matching is handled by
+                // using more stars in the triangle pool (see triangleStarLimit).
+                //
+                // Falls back to a session-wide "TARGET" bucket when entry.target is not
+                // yet populated (header enrichment may lag behind prefetch). For typical
+                // single-target sessions this still produces one shared reference.
+                if let t = entry.target, !t.isEmpty {
+                    return TargetCatalog.canonicalName(t)
+                }
+                return "TARGET"
+            }
+            self.prefetchCache?.onAlignmentComputed = { [weak self] url, transform in
+                guard let self = self else { return }
+                if let idx = self.images.firstIndex(where: { $0.url == url }) {
+                    // CRITICAL: never overwrite a WCS-based transform. Star matching is
+                    // a fallback for frames without plate-solve data. If the entry already
+                    // has WCS in its headers, applyWCSAlignment() has either already set
+                    // the exact transform OR will do so when header enrichment finishes —
+                    // either way we must not clobber it with a heuristic star-matching result.
+                    if PrefetchCache.wcsDataIfComplete(self.images[idx]) != nil {
+                        return
+                    }
+                    self.images[idx].alignmentTransform = transform
+                    if self.selectedImage?.url == url {
+                        self.updateMeridianRotation()
+                    }
+                }
             }
         }
         // Clean up stale network cache directories (keep most recent 3)
@@ -914,6 +956,7 @@ class TriageViewModel: ObservableObject {
         currentSessionId = UUID().uuidString
         wireSessionOverviewCallbacks()
         benchmarkStats.markSessionStart()
+        print("[Bench] LOAD START at \(Date().timeIntervalSince1970) — \(url.lastPathComponent)")
         isLoading = true
         isCaching = false
         cacheProgress = 0
@@ -928,6 +971,8 @@ class TriageViewModel: ObservableObject {
 
         sessionRootURL = url
         prefetchCache?.clear()
+        // Reset the display aligner — each session establishes its own per-target references
+        displayAligner.reset()
         // Cancel any in-progress NAS downloads
         downloadCancelled.lock()
         _downloadCancelled = true
@@ -940,13 +985,54 @@ class TriageViewModel: ObservableObject {
         let isNetwork = SessionCache.isNetworkVolume(url)
 
         Task.detached(priority: .userInitiated) { [weak self] in
-            let entries = SessionScanner.scan(rootURL: url)
+            var entries = SessionScanner.scan(rootURL: url)
+
+            // Read FITS headers synchronously (in parallel) for every file BEFORE
+            // returning to MainActor. This guarantees that prefetch workers see
+            // accurate per-frame WCS data at enqueue time — frames with WCS skip
+            // star matching (saving lots of CPU), frames without WCS still get
+            // proper star-based fallback alignment. ~300-500ms for typical sessions.
+            let headerStart = Date()
+
+            // Use a lock-protected mutation: concurrentPerform writes to entries[idx]
+            // from different threads, but each thread writes only its own index, so
+            // we need a barrier — Swift Array is value type, so we use an unsafe pointer.
+            entries.withUnsafeMutableBufferPointer { buffer in
+                DispatchQueue.concurrentPerform(iterations: buffer.count) { idx in
+                    let headers = MetadataExtractor.readHeaders(from: buffer[idx].decodingURL)
+                    guard !headers.isEmpty else { return }
+                    // Populate JUST the WCS fields needed for the alignment skip decision
+                    // and applyWCSAlignment. Full header enrichment still runs later for
+                    // all the other metadata fields.
+                    if let v = headers["CRPIX1"] { buffer[idx].wcsCRPIX1 = Double(v) }
+                    if let v = headers["CRPIX2"] { buffer[idx].wcsCRPIX2 = Double(v) }
+                    if let v = headers["CD1_1"]  { buffer[idx].wcsCD11 = Double(v) }
+                    if let v = headers["CD1_2"]  { buffer[idx].wcsCD12 = Double(v) }
+                    if let v = headers["CD2_1"]  { buffer[idx].wcsCD21 = Double(v) }
+                    if let v = headers["CD2_2"]  { buffer[idx].wcsCD22 = Double(v) }
+                    if let v = headers["CRVAL1"], let val = Double(v) { buffer[idx].solvedRA = val }
+                    if let v = headers["CRVAL2"], let val = Double(v) { buffer[idx].solvedDec = val }
+                    if let v = headers["NAXIS1"], let val = Int(v), val > 0 { buffer[idx].width = val }
+                    if let v = headers["NAXIS2"], let val = Int(v), val > 0 { buffer[idx].height = val }
+                }
+            }
+            let headerMs = Int(Date().timeIntervalSince(headerStart) * 1000)
+            let wcsCount = entries.filter { $0.wcsCD11 != nil && $0.wcsCRPIX1 != nil }.count
+            print("[Bench] WCS pre-scan: \(wcsCount)/\(entries.count) frames have WCS (\(headerMs)ms)")
 
             await MainActor.run {
                 guard let self = self else { return }
                 self.benchmarkStats.markScanComplete(fileCount: entries.count, totalBytes: entries.reduce(Int64(0)) { $0 + ($1.fileSize ?? 0) })
                 self.images = entries
                 self.assignSessionIndices()
+                // Disable prefetch star-matching when ANY frame has WCS. Reasoning:
+                // when WCS frames exist, applyWCSAlignment defines the global reference.
+                // Frames WITHOUT WCS would otherwise star-match against each other,
+                // forming a separate reference group inconsistent with WCS.
+                // applyWCSAlignment now also handles the WCS-less frames via a
+                // rotator-based synthetic transform, all anchored to the same reference.
+                let anyHasWCS = entries.contains { $0.wcsCD11 != nil && $0.wcsCRPIX1 != nil }
+                self.prefetchCache?.skipStarMatchingForAlignment = anyHasWCS
                 self.isLoading = false
                 self.needsTableRefresh = true
 
@@ -1131,6 +1217,12 @@ class TriageViewModel: ObservableObject {
                     self.needsTableRefresh = true
                     self.statusMessage = "instant navigation ready"
                     self.benchmarkStats.markCachingEnd()
+                    print("[Bench] LOAD READY at \(Date().timeIntervalSince1970) — caching complete, \(self.images.count) frames")
+                    // Fire-and-forget anonymous upload of session load stats (community telemetry)
+                    self.benchmarkService.autoUploadSessionLoad(
+                        stats: self.benchmarkStats,
+                        sessionRootURL: self.sessionRootURL
+                    )
                     // Release App Nap assertion when caching completes
                     self.appNapAssertion = nil
                     // Update session overview with noise stats now that all images are measured
@@ -1427,6 +1519,11 @@ class TriageViewModel: ObservableObject {
                     self.needsTableRefresh = true
                     self.statusMessage = "instant navigation ready"
                     self.benchmarkStats.markCachingEnd()
+                    // Fire-and-forget anonymous upload of session load stats (community telemetry)
+                    self.benchmarkService.autoUploadSessionLoad(
+                        stats: self.benchmarkStats,
+                        sessionRootURL: self.sessionRootURL
+                    )
                     self.appNapAssertion = nil
                     // Don't compute quality scores here — header enrichment hasn't run yet
                     // for NAS sessions. enrichWithHeaders() completion handles quality scoring
@@ -1626,6 +1723,35 @@ class TriageViewModel: ObservableObject {
                               let dec = headers["DEC"], let val = Double(dec) {
                         self.images[index].solvedDec = val
                     }
+                    // WCS rotation from plate solve for meridian flip detection
+                    if self.images[index].wcsRotation == nil {
+                        if let crota2 = headers["CROTA2"], let val = Double(crota2) {
+                            self.images[index].wcsRotation = val
+                        } else if let cd11 = headers["CD1_1"], let cd12 = headers["CD1_2"],
+                                  let v11 = Double(cd11), let v12 = Double(cd12) {
+                            self.images[index].wcsRotation = atan2(-v12, v11) * 180.0 / .pi
+                        }
+                    }
+                    // Full WCS plate-solve data for CD-matrix based display alignment.
+                    // Used by DisplayAligner as the primary alignment path — exact,
+                    // filter-independent, ~100x faster than star matching.
+                    if let v = headers["CRPIX1"] { self.images[index].wcsCRPIX1 = Double(v) }
+                    if let v = headers["CRPIX2"] { self.images[index].wcsCRPIX2 = Double(v) }
+                    if let v = headers["CD1_1"]  { self.images[index].wcsCD11 = Double(v) }
+                    if let v = headers["CD1_2"]  { self.images[index].wcsCD12 = Double(v) }
+                    if let v = headers["CD2_1"]  { self.images[index].wcsCD21 = Double(v) }
+                    if let v = headers["CD2_2"]  { self.images[index].wcsCD22 = Double(v) }
+                    // Image dimensions from FITS headers — needed by WCS alignment to
+                    // normalize the pixel-space transform into UV space. Populated here
+                    // so applyWCSAlignment() doesn't have to wait for frame decode.
+                    if self.images[index].width == nil,
+                       let v = headers["NAXIS1"], let w = Int(v), w > 0 {
+                        self.images[index].width = w
+                    }
+                    if self.images[index].height == nil,
+                       let v = headers["NAXIS2"], let h = Int(v), h > 0 {
+                        self.images[index].height = h
+                    }
                     // Site coordinates for AIsaac location-aware language detection
                     // NINA writes SITELAT/SITELONG, some software uses LAT-OBS/LONG-OBS or OBSLAT/OBSLONG
                     if self.images[index].siteLatitude == nil {
@@ -1749,6 +1875,10 @@ class TriageViewModel: ObservableObject {
                 // Fix for MainActor Task delivery race (same as local path)
                 self.scheduleQualityRescore()
                 self.detectMeridianFlip()
+                // Apply WCS-based alignment (fast, exact) now that headers are available.
+                // For every frame with complete plate-solve data, overrides whatever the
+                // star-based prefetch alignment computed earlier with an exact transform.
+                self.applyWCSAlignment()
 
                 // Fetch community baseline for cold-start calibration (async, non-blocking)
                 if let fp = self.currentSetupFingerprint {
@@ -2446,36 +2576,59 @@ class TriageViewModel: ObservableObject {
         let targetKey = canonicalTargetKey(for: entry)
         guard let ref = targetOrientationRefs[targetKey] else { return false }
 
-        // Check pier side change
-        let piersideFlipped: Bool
-        if let refSide = ref.pierSide, let entrySide = entry.pierSide {
-            piersideFlipped = refSide.uppercased() != entrySide.uppercased()
-        } else {
-            piersideFlipped = false  // No pier side data — can't determine
+        // OR logic: if ANY of the three available signals indicates a flip, rotate.
+        // This is the correct behavior for 99% of amateur setups (ASIAIR/AM5, physical rotators,
+        // no-rotator mounts). The previous XOR logic was incorrect for ASIAIR/AM5 where BOTH
+        // PIERSIDE and ROTATOR change during a flip — XOR cancelled them out.
+
+        // Signal 1: PIERSIDE change
+        if let refSide = ref.pierSide, let entrySide = entry.pierSide,
+           refSide.uppercased() != entrySide.uppercased() {
+            return true
         }
 
-        // Check rotator angle change (~180°)
-        let rotatorFlipped: Bool
+        // Signal 2: ROTATOR angle change (any large rotation ≥ 90° = flip)
         if let refAngle = ref.rotatorAngle, let entryAngle = entry.rotatorAngle {
             let diff = angleDifference(entryAngle, refAngle)
-            rotatorFlipped = Swift.abs(diff - 180.0) <= 30.0  // Within 30° of 180°
-        } else {
-            rotatorFlipped = false  // No rotator data — can't determine
+            if diff >= 90.0 { return true }
         }
 
-        // XOR: flip needed when exactly one of the two changed
-        return piersideFlipped != rotatorFlipped
+        // Signal 3: WCS rotation from plate solve (any change ≥ 90° = flip)
+        if let refWCS = ref.wcsRotation, let entryWCS = entry.wcsRotation {
+            let diff = angleDifference(entryWCS, refWCS)
+            if diff >= 90.0 { return true }
+        }
+
+        return false
     }
 
-    // Update rotation state for the currently displayed image
+    // Update display alignment for the currently displayed image.
+    // Preference order:
+    //   1. Star-based alignment transform (computed by DisplayAligner in prefetch pipeline)
+    //   2. Header-based 180° flip (fallback when star alignment hasn't completed or failed)
+    //   3. Identity (no correction)
     private func updateMeridianRotation() {
+        guard let renderer = renderer else { return }
         guard let entry = selectedImage else {
-            renderer?.rotate180 = false
+            renderer.displayTransform = .identity
+            renderer.rotate180 = false
             if let mtkView = findMTKView() { mtkView.needsDisplay = true }
             return
         }
-        let shouldRotate = shouldRotateForMeridian(entry)
-        renderer?.rotate180 = shouldRotate
+
+        if autoMeridianEnabled, let transform = entry.alignmentTransform {
+            // Star-based alignment succeeded — use the precise per-frame transform
+            renderer.displayTransform = transform
+            renderer.rotate180 = false
+        } else if autoMeridianEnabled, shouldRotateForMeridian(entry) {
+            // Fall back to header-based 180° flip
+            renderer.displayTransform = .identity
+            renderer.rotate180 = true
+        } else {
+            renderer.displayTransform = .identity
+            renderer.rotate180 = false
+        }
+
         if let mtkView = findMTKView() { mtkView.needsDisplay = true }
     }
 
@@ -2501,12 +2654,16 @@ class TriageViewModel: ObservableObject {
             if targetOrientationRefs[key] == nil {
                 targetOrientationRefs[key] = OrientationRef(
                     pierSide: img.pierSide,
-                    rotatorAngle: img.rotatorAngle
+                    rotatorAngle: img.rotatorAngle,
+                    wcsRotation: img.wcsRotation
                 )
             }
         }
 
-        // Detect if ANY image in ANY target group needs flipping
+        // Detect if ANY image in ANY target group needs flipping.
+        // OR logic: any of PIERSIDE change, large rotator change (>=90°), or WCS rotation
+        // change (>=90°) triggers a flip. This handles ASIAIR/AM5, physical rotators, and
+        // plate-solved setups uniformly.
         var flipCount = 0
         var totalChecked = 0
         for img in images {
@@ -2520,16 +2677,39 @@ class TriageViewModel: ObservableObject {
                 piersideFlipped = false
             }
 
+            var rotatorDiff: Double?
             let rotatorFlipped: Bool
             if let refAngle = ref.rotatorAngle, let angle = img.rotatorAngle {
                 let diff = angleDifference(angle, refAngle)
-                rotatorFlipped = Swift.abs(diff - 180.0) <= 30.0
+                rotatorDiff = diff
+                rotatorFlipped = diff >= 90.0
             } else {
                 rotatorFlipped = false
             }
 
-            if piersideFlipped != rotatorFlipped { flipCount += 1 }
+            var wcsDiff: Double?
+            let wcsFlipped: Bool
+            if let refWCS = ref.wcsRotation, let wcs = img.wcsRotation {
+                let diff = angleDifference(wcs, refWCS)
+                wcsDiff = diff
+                wcsFlipped = diff >= 90.0
+            } else {
+                wcsFlipped = false
+            }
+
+            let needsFlip = piersideFlipped || rotatorFlipped || wcsFlipped
+            if needsFlip { flipCount += 1 }
             totalChecked += 1
+
+            // Detailed logging for flip-relevant images (any signal changed or rotator moved >30°)
+            if piersideFlipped || rotatorFlipped || wcsFlipped || (rotatorDiff ?? 0) > 30 {
+                let parts = [
+                    rotatorDiff.map { String(format: "rot diff=%.1f°", $0) },
+                    wcsDiff.map { String(format: "wcs diff=%.1f°", $0) },
+                    img.pierSide.map { "pier=\($0)" }
+                ].compactMap { $0 }.joined(separator: ", ")
+                print("[Meridian] \(img.filename): \(parts), decision=\(needsFlip ? "FLIP" : "NO_FLIP")")
+            }
         }
 
         hasMeridianFlip = flipCount > 0
@@ -2539,7 +2719,8 @@ class TriageViewModel: ObservableObject {
             for (target, ref) in targetOrientationRefs {
                 let refDesc = [
                     ref.pierSide.map { "pier=\($0)" },
-                    ref.rotatorAngle.map { String(format: "rot=%.0f°", $0) }
+                    ref.rotatorAngle.map { String(format: "rot=%.0f°", $0) },
+                    ref.wcsRotation.map { String(format: "wcs=%.0f°", $0) }
                 ].compactMap { $0 }.joined(separator: ", ")
                 print("[Meridian]   \(target): ref (\(refDesc))")
             }
@@ -2554,6 +2735,174 @@ class TriageViewModel: ObservableObject {
             return TargetCatalog.canonicalName(target)
         }
         return "UNKNOWN"
+    }
+
+    /// Apply WCS-based alignment transforms to all frames that have complete plate-solve data.
+    /// Runs on the main actor after header enrichment completes, when CRVAL/CRPIX/CD matrix
+    /// values are finally populated on every ImageEntry.
+    ///
+    /// The math is direct matrix algebra (CD_ref⁻¹ × CD_frame for rotation/scale, plus CRVAL
+    /// offsets scaled by cos(dec) for translation) and takes microseconds per frame. Overrides
+    /// any star-matching-based transform computed earlier in the prefetch pipeline because
+    /// the WCS-based transform is mathematically exact while star matching is heuristic.
+    ///
+    /// Smart reference selection: picks the frame closest to the median CRVAL across all
+    /// frames in the target group. This means the reference represents the typical pointing,
+    /// not whichever frame happened to be first in the array — outliers (e.g. a frame where
+    /// the mount lost center) won't accidentally become the reference everyone else aligns to.
+    ///
+    /// Frames without WCS retain their prefetch-computed star-matching transform (or nil).
+    private func applyWCSAlignment() {
+        // Collect entries that have complete WCS data, grouped by target
+        var targetEntries: [String: [(idx: Int, wcs: DisplayAligner.WCSData)]] = [:]
+        for (idx, entry) in images.enumerated() {
+            guard let wcs = PrefetchCache.wcsDataIfComplete(entry) else { continue }
+            let key = canonicalTargetKey(for: entry)
+            targetEntries[key, default: []].append((idx, wcs))
+        }
+
+        guard !targetEntries.isEmpty else { return }
+
+        var updatedCount = 0
+        var fallbackCount = 0
+        var referenceLog: [String] = []
+
+        for (targetKey, entries) in targetEntries {
+            guard !entries.isEmpty else { continue }
+
+            // Smart reference selection: find the frame closest to the median CRVAL.
+            // Median is robust against outliers (a frame where the mount lost center
+            // by 50% won't drag the median much, so the chosen reference stays in the
+            // bulk of the pointing distribution).
+            let sortedRA  = entries.map { $0.wcs.crval1 }.sorted()
+            let sortedDec = entries.map { $0.wcs.crval2 }.sorted()
+            let medianRA  = sortedRA[sortedRA.count / 2]
+            let medianDec = sortedDec[sortedDec.count / 2]
+
+            var refIdx = entries[0].idx
+            var refWCS = entries[0].wcs
+            var bestDistSq = Double.infinity
+            for entry in entries {
+                let dx = entry.wcs.crval1 - medianRA
+                let dy = entry.wcs.crval2 - medianDec
+                let distSq = dx * dx + dy * dy
+                if distSq < bestDistSq {
+                    bestDistSq = distSq
+                    refIdx = entry.idx
+                    refWCS = entry.wcs
+                }
+            }
+            referenceLog.append("\(targetKey)→\(images[refIdx].filename)")
+            let refRotator = images[refIdx].rotatorAngle
+
+            // Apply WCS-based transform to every frame in this target group
+            for entry in entries {
+                guard let width = images[entry.idx].width,
+                      let height = images[entry.idx].height,
+                      width > 0, height > 0
+                else { continue }
+
+                guard let pixelTransform = DisplayAligner.transformFromWCS(
+                    frame: entry.wcs, reference: refWCS
+                ) else { continue }
+
+                let inv = pixelTransform.inverse ?? .identity
+                images[entry.idx].alignmentTransform = inv.normalized(width: width, height: height)
+                updatedCount += 1
+            }
+
+            // Fallback for frames in this target that don't have WCS but DO have a
+            // rotator angle in their headers: compute a synthetic rotation transform
+            // from the rotator angle delta vs the reference's rotator. This is less
+            // accurate than full WCS (no precise translation) but correctly handles
+            // the rotation, which is what users notice most.
+            if let refRot = refRotator {
+                for idx in images.indices where canonicalTargetKey(for: images[idx]) == targetKey {
+                    // Skip frames that already have alignment from the WCS pass
+                    guard images[idx].alignmentTransform == nil,
+                          let frameRot = images[idx].rotatorAngle,
+                          let width = images[idx].width,
+                          let height = images[idx].height,
+                          width > 0, height > 0
+                    else { continue }
+
+                    // Rotation needed: frame_rotator - ref_rotator (in degrees)
+                    let deltaDeg = frameRot - refRot
+                    let theta = Float(deltaDeg * .pi / 180.0)
+                    let cosT = cosf(theta)
+                    let sinT = sinf(theta)
+                    let W = Float(width)
+                    let H = Float(height)
+                    // Pixel-space rotation around image center (W/2, H/2):
+                    //   p' = R*(p - c) + c = R*p + (c - R*c)
+                    let txPix = W * 0.5 * (1 - cosT) + H * 0.5 * sinT
+                    let tyPix = -W * 0.5 * sinT + H * 0.5 * (1 - cosT)
+                    let pixelTransform = AffineTransform2D(
+                        a: cosT, b: -sinT, tx: txPix,
+                        c: sinT, d: cosT, ty: tyPix
+                    )
+                    let inv = pixelTransform.inverse ?? .identity
+                    images[idx].alignmentTransform = inv.normalized(width: width, height: height)
+                    fallbackCount += 1
+                }
+            }
+        }
+
+        print("[AutoRotate] WCS alignment: \(updatedCount) frames via WCS, \(fallbackCount) via rotator-fallback, \(targetEntries.count) target group(s); reference: \(referenceLog.joined(separator: ", "))")
+        if let selected = selectedImage, selected.alignmentTransform != nil {
+            updateMeridianRotation()
+        }
+        needsTableRefresh = true
+    }
+
+    // MARK: - Filename-based Grouping Helpers (for DisplayAligner)
+
+    /// Extract a canonical filter key for grouping. Tries entry.filter first (which the
+    /// parser fills when header data is available), then falls back to parsing the filename
+    /// for common filter tokens like "_B_", "_L_", "_Ha_", etc. Returns "?" only when both
+    /// sources fail, which is safe but collapses all such frames into one group.
+    static func extractFilterKey(from entry: ImageEntry) -> String {
+        if let f = entry.filter, !f.isEmpty {
+            return f.uppercased()
+        }
+        // Common astro filter tokens, longer ones first so "Ha" wins over "H"
+        let filterTokens = [
+            "SII", "Ha", "OIII", "Hbeta", "NII",  // narrowband
+            "Lum", "Luminance",                    // luminance
+            "L", "R", "G", "B", "H", "O", "S",     // broadband + single-letter narrowband
+            "UV", "IR", "CLS", "UHC", "Lpro", "Lextreme", "Duo", "Tri", "Quad"
+        ]
+        let lowered = entry.filename.lowercased()
+        for token in filterTokens {
+            let needle = "_\(token.lowercased())_"
+            if lowered.contains(needle) {
+                return token.uppercased()
+            }
+        }
+        return "?"
+    }
+
+    /// Extract exposure (rounded to integer seconds) for grouping. Tries entry.exposure first,
+    /// then parses the filename for patterns like "180.0s", "300s", "60.00s".
+    static func extractExposureKey(from entry: ImageEntry) -> Int {
+        if let exp = entry.exposure, exp > 0 {
+            return Int(exp.rounded())
+        }
+        // Regex: one or more digits, optional decimal, followed by "s" and end-of-token
+        // Common patterns: "_180.0s_", "_300s_", "_60.00s_"
+        let pattern = #"_(\d+(?:\.\d+)?)s[_.]"#
+        if let regex = try? NSRegularExpression(pattern: pattern),
+           let match = regex.firstMatch(
+            in: entry.filename,
+            range: NSRange(entry.filename.startIndex..., in: entry.filename)),
+           match.numberOfRanges >= 2,
+           let range = Range(match.range(at: 1), in: entry.filename) {
+            let str = String(entry.filename[range])
+            if let val = Double(str) {
+                return Int(val.rounded())
+            }
+        }
+        return 0
     }
 
     // Compute absolute angle difference in [0, 180] range
@@ -3681,6 +4030,86 @@ class TriageViewModel: ObservableObject {
             let stars = String(repeating: "★", count: lastRating)
             statusMessage = "\(stars) confidence set for \(changed) frame\(changed == 1 ? "" : "s")"
         }
+    }
+
+    // MARK: - Quality Feedback
+
+    /// Cycle quality feedback for frames at given row indices.
+    /// Cycle: none → agree → disagree → partly → none
+    func cycleQualityFeedback(forRows rows: IndexSet) {
+        guard !rows.isEmpty else {
+            statusMessage = "No frames selected"
+            return
+        }
+
+        var changed = 0
+        var lastFeedback: QualityFeedback = .none
+        for idx in rows where idx >= 0 && idx < images.count {
+            // Only allow feedback on frames that have a quality tier
+            guard images[idx].qualityTier != nil else { continue }
+
+            let next = images[idx].qualityFeedback.next
+            images[idx].qualityFeedback = next
+            lastFeedback = next
+            changed += 1
+
+            // Persist to Frame History DB
+            if let hash = images[idx].fileHash {
+                let fb = next.rawValue
+                Task {
+                    try? FrameHistoryDatabase.shared.updateQualityFeedback(
+                        fileHash: hash, feedback: fb)
+                }
+            }
+
+            // Record to CalibrationDatabase for learning
+            if let fp = currentSetupFingerprint {
+                CalibrationDatabase.shared.recordFeedback(
+                    entry: images[idx], feedback: next, fingerprint: fp)
+            }
+        }
+
+        needsTableRefresh = true
+        if changed == 0 {
+            statusMessage = "No scored frames in selection"
+            return
+        }
+        let label: String
+        switch lastFeedback {
+        case .none:     label = "Cleared"
+        case .agree:    label = "Agree"
+        case .disagree: label = "Disagree"
+        case .partly:   label = "Partly"
+        }
+        statusMessage = "Quality feedback: \(label) for \(changed) frame\(changed == 1 ? "" : "s")"
+    }
+
+    /// Set a specific quality feedback value for frames at given row indices.
+    /// Used by context menu — toggle behavior (same value again clears it).
+    func setQualityFeedback(_ feedback: QualityFeedback, forRows rows: IndexSet) {
+        guard !rows.isEmpty else { return }
+
+        var changed = 0
+        for idx in rows where idx >= 0 && idx < images.count {
+            guard images[idx].qualityTier != nil else { continue }
+            let current = images[idx].qualityFeedback
+            let newVal: QualityFeedback = (current == feedback) ? .none : feedback
+            images[idx].qualityFeedback = newVal
+            changed += 1
+
+            if let hash = images[idx].fileHash {
+                let fb = newVal.rawValue
+                Task {
+                    try? FrameHistoryDatabase.shared.updateQualityFeedback(
+                        fileHash: hash, feedback: fb)
+                }
+            }
+            if let fp = currentSetupFingerprint {
+                CalibrationDatabase.shared.recordFeedback(
+                    entry: images[idx], feedback: newVal, fingerprint: fp)
+            }
+        }
+        needsTableRefresh = true
     }
 
     // MARK: - Skip/Hide Marked

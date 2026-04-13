@@ -13,6 +13,24 @@ struct StarDetail: Hashable {
     let axisRatio: Double?      // Minor/major eigenvalue ratio [0..1], 1 = perfectly round
 }
 
+// User feedback on algorithm's quality tier assessment
+enum QualityFeedback: Int, Codable, Hashable {
+    case none     = 0  // No feedback given
+    case agree    = 1  // User agrees with quality tier
+    case disagree = 2  // User disagrees with quality tier
+    case partly   = 3  // User partially agrees
+
+    /// Next state in the A-key cycling sequence: none→agree→disagree→partly→none
+    var next: QualityFeedback {
+        switch self {
+        case .none:     return .agree
+        case .agree:    return .disagree
+        case .disagree: return .partly
+        case .partly:   return .none
+        }
+    }
+}
+
 // Core data model representing a single astro image in the session
 struct ImageEntry: Identifiable, Hashable {
     let id = UUID()
@@ -48,6 +66,7 @@ struct ImageEntry: Identifiable, Hashable {
     var bayerPattern: String?  // CFA pattern from BAYERPAT header (RGGB, GRBG, GBRG, BGGR)
     var pierSide: String?      // Pier side from PIERSIDE header (EAST or WEST)
     var rotatorAngle: Double?  // Camera rotator angle from ROTATOR header (degrees)
+    var wcsRotation: Double?   // WCS image rotation from CROTA2 or CD matrix (degrees)
     var objctRA: String?       // Object RA from OBJCTRA header (e.g. "20 14 28")
     var objctDec: String?      // Object Dec from OBJCTDEC header (e.g. "+36 29 24")
     var subfolder: String      // Relative path from session root (empty if root)
@@ -72,6 +91,16 @@ struct ImageEntry: Identifiable, Hashable {
     var siteLongitude: Double?         // From SITELONG header — imaging site longitude
     var solvedRA: Double?              // Plate-solved center RA in degrees from CRVAL1 header
     var solvedDec: Double?             // Plate-solved center Dec in degrees from CRVAL2 header
+    // Full WCS plate-solve data for fast frame-to-frame alignment via CD matrix composition.
+    // ASIAir (and most plate-solve implementations) write this for every captured frame.
+    // With these values available we can compute exact pixel-to-pixel transforms between
+    // any two frames without star matching — filter/exposure/night independent.
+    var wcsCRPIX1: Double?             // Reference pixel X (from CRPIX1 header)
+    var wcsCRPIX2: Double?             // Reference pixel Y (from CRPIX2 header)
+    var wcsCD11: Double?               // CD matrix element (1,1) — deg per pixel
+    var wcsCD12: Double?               // CD matrix element (1,2) — deg per pixel
+    var wcsCD21: Double?               // CD matrix element (2,1) — deg per pixel
+    var wcsCD22: Double?               // CD matrix element (2,2) — deg per pixel
     var twilightPhase: TwilightPhase?  // Sun position classification at capture time
 
     // Trailing analysis (computed by TrailingAnalyzer after star metrics)
@@ -85,6 +114,14 @@ struct ImageEntry: Identifiable, Hashable {
 
     // User confidence rating: 0 = unrated, 1-3 = star rating (orthogonal to quality scoring)
     var userConfidence: Int = 0
+
+    // Quality feedback: user agreement with algorithm's quality tier assessment
+    var qualityFeedback: QualityFeedback = .none
+
+    // Star-based visual alignment transform (frame pixels → reference pixels).
+    // Computed in the prefetch pipeline against the per-target reference frame.
+    // Nil = not yet computed or alignment failed (display falls back to header flip).
+    var alignmentTransform: AffineTransform2D?
 
     // File identity hash (SHA256 of first 64KB) — for Frame History Database
     var fileHash: String?

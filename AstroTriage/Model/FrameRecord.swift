@@ -11,7 +11,7 @@ import GRDB
 /// with a detailed entry describing what changed and why.
 ///
 /// See: ALGORITHM_CHANGELOG.md for full version history.
-let kAlgorithmVersion = 16
+let kAlgorithmVersion = 17
 
 // MARK: - FrameRecord
 
@@ -88,6 +88,7 @@ struct FrameRecord: Codable, FetchableRecord, PersistableRecord {
     var majorTarget: String?        // Parent target for sub-targets (e.g., "IC1805" for "MEL15")
 
     var userConfidence: Int          // 0 = unrated, 1-3 = star rating
+    var qualityFeedback: Int        // 0=none, 1=agree, 2=disagree, 3=partly (QualityFeedback.rawValue)
     var wasDeleted: Int             // 0 or 1
 
     // Meta
@@ -186,6 +187,7 @@ extension FrameRecord {
             canonicalTarget: entry.canonicalTarget,
             majorTarget: entry.majorTarget,
             userConfidence: entry.userConfidence,
+            qualityFeedback: entry.qualityFeedback.rawValue,
             wasDeleted: entry.isMarkedForDeletion ? 1 : 0,
             algorithmVersion: kAlgorithmVersion,
             recordedAt: iso.string(from: Date()),

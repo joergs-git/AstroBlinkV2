@@ -50,8 +50,13 @@ class MetalRenderer: NSObject, MTKViewDelegate {
     var zoomScale: CGFloat = 1.0       // 1.0 = fit-to-view
     var panOffset: CGPoint = .zero     // Offset in points from centered position
 
-    // Auto Meridian: 180° rotation via UV flip (zero GPU cost — just flips texture coordinates)
+    // Auto Meridian: 180° rotation via UV flip (fallback when star alignment unavailable)
     var rotate180: Bool = false
+
+    // Star-based display alignment transform (frame pixels → reference pixels).
+    // Identity by default — overrides rotate180 when non-identity.
+    // Zero GPU cost: applied as per-vertex UV transformation during render setup.
+    var displayTransform: AffineTransform2D = .identity
 
     init?(mtkView: MTKView) {
         guard let device = MTLCreateSystemDefaultDevice(),
@@ -485,21 +490,40 @@ class MetalRenderer: NSObject, MTKViewDelegate {
         let ndcOX = Float(panPxX / vW) * 2.0
         let ndcOY = Float(-panPxY / vH) * 2.0
 
-        // UV coordinates: normal or flipped 180° for meridian flip correction
-        // Rotation is just a UV swap (u→1-u, v→1-v) — zero GPU cost
-        let (u0, u1, v0, v1): (Float, Float, Float, Float)
-        if rotate180 {
-            (u0, u1, v0, v1) = (1.0, 0.0, 0.0, 1.0)
+        // Compute per-corner UVs from the display transform.
+        //
+        // displayTransform is a NORMALIZED UV-space transform mapping reference UV → frame UV.
+        // The prefetch pipeline has already inverted and normalized it so we can apply
+        // directly to the 4 reference-space quad corners. Identity = pass-through. General
+        // affine = 4 different UV pairs forming a rotated parallelogram on the quad.
+        //
+        // Fallback: if displayTransform is identity (no star alignment) AND rotate180 is
+        // set (header-based flip detected), use the legacy 180° UV swap.
+        var vertices: [Float] = [Float](repeating: 0, count: 16)
+
+        let texNorm: AffineTransform2D
+        if displayTransform != .identity {
+            texNorm = displayTransform
+        } else if rotate180 {
+            texNorm = .rotate180Normalized
         } else {
-            (u0, u1, v0, v1) = (0.0, 1.0, 1.0, 0.0)
+            texNorm = .identity
         }
 
-        var vertices: [Float] = [
-            -ndcHW + ndcOX, -ndcHH + ndcOY, u0, v0,
-             ndcHW + ndcOX, -ndcHH + ndcOY, u1, v0,
-            -ndcHW + ndcOX,  ndcHH + ndcOY, u0, v1,
-             ndcHW + ndcOX,  ndcHH + ndcOY, u1, v1,
-        ]
+        // Apply transform to each reference-space corner (V=0 at top, V=1 at bottom).
+        // Vertex 0 = screen BL → reference (0, 1)
+        // Vertex 1 = screen BR → reference (1, 1)
+        // Vertex 2 = screen TL → reference (0, 0)
+        // Vertex 3 = screen TR → reference (1, 0)
+        let (blU, blV) = texNorm.apply(0, 1)
+        let (brU, brV) = texNorm.apply(1, 1)
+        let (tlU, tlV) = texNorm.apply(0, 0)
+        let (trU, trV) = texNorm.apply(1, 0)
+
+        vertices[ 0] = -ndcHW + ndcOX; vertices[ 1] = -ndcHH + ndcOY; vertices[ 2] = blU; vertices[ 3] = blV
+        vertices[ 4] =  ndcHW + ndcOX; vertices[ 5] = -ndcHH + ndcOY; vertices[ 6] = brU; vertices[ 7] = brV
+        vertices[ 8] = -ndcHW + ndcOX; vertices[ 9] =  ndcHH + ndcOY; vertices[10] = tlU; vertices[11] = tlV
+        vertices[12] =  ndcHW + ndcOX; vertices[13] =  ndcHH + ndcOY; vertices[14] = trU; vertices[15] = trV
 
         renderEncoder.setVertexBytes(&vertices, length: vertices.count * MemoryLayout<Float>.size, index: 0)
         renderEncoder.setFragmentTexture(displayTexture, index: 0)

@@ -360,8 +360,8 @@ struct ContentView: View {
                     .help("Color debayering active — one-shot-color (OSC) images shown in RGB instead of mono (D to toggle)")
             }
             if viewModel.autoMeridianEnabled && viewModel.hasMeridianFlip {
-                statusPill("MeridianFlip", bg: viewModel.nightMode ? Color(red: 0.25, green: 0, blue: 0.15) : Color.purple.opacity(0.7))
-                    .help("Meridian flip detected — images from the opposite pier side are rotated 180\u{00B0} for consistent orientation")
+                statusPill("AutoRotate", bg: viewModel.nightMode ? Color(red: 0.25, green: 0, blue: 0.15) : Color.purple.opacity(0.7))
+                    .help("AutoRotate active — frames are aligned to the first image of each target for pixel-locked visual consistency (star-based, with 180\u{00B0} header flip fallback)")
             }
             if viewModel.isPlaying {
                 statusPill("Blink", bg: viewModel.nightMode ? Color(red: 0.4, green: 0, blue: 0) : Color.green.opacity(0.7))
@@ -518,7 +518,7 @@ struct ContentView: View {
         }
     }
 
-    // Display toggles: Apply All, Debayer, Lock STF, Meridian Flip
+    // Display toggles: Apply All, Debayer, Lock STF, AutoRotate
     private var toolbarDisplayToggles: some View {
         HStack(spacing: 4) {
             VStack(spacing: 2) {
@@ -560,14 +560,14 @@ struct ContentView: View {
             .frame(width: 90)
 
             VStack(spacing: 2) {
-                Toggle("Meridian\nFlip", isOn: Binding(
+                Toggle("Auto\nRotate", isOn: Binding(
                     get: { viewModel.autoMeridianEnabled },
                     set: { _ in viewModel.toggleAutoMeridian() }
                 ))
                 .toggleStyle(.switch)
                 .controlSize(.mini)
                 .tint(.purple)
-                .help("Auto-rotate images across meridian flip for consistent orientation")
+                .help("AutoRotate: star-based visual alignment keeps all frames pixel-locked to the first image of each target. Handles meridian flips, dithers, and pointing offsets. Falls back to 180° header flip when star matching fails.")
             }
             .frame(width: 95)
         }
@@ -976,14 +976,11 @@ struct ContentView: View {
     private var autoMarkToolbarButton: some View {
         Button(action: { showAutoMarkPopover.toggle() }) {
             VStack(spacing: 2) {
-                Image(systemName: "wand.and.stars")
-                    .font(.system(size: 24, weight: .light))
-                    .foregroundStyle(
-                        LinearGradient(
-                            colors: [.green, .orange, .red],
-                            startPoint: .topLeading, endPoint: .bottomTrailing
-                        )
-                    )
+                // Racing finish-line flag — red/white checkered via palette rendering
+                Image(systemName: "flag.checkered")
+                    .font(.system(size: 24, weight: .regular))
+                    .symbolRenderingMode(.palette)
+                    .foregroundStyle(.red, .white)
                 Spacer(minLength: 0)
                 Text("Auto-Mark")
                     .font(.system(size: 8, weight: .medium))

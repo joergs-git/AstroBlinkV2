@@ -32,8 +32,26 @@ struct FileListView: NSViewRepresentable {
 
         // Load persisted visible columns, or use defaults
         let savedVisibleIds = AppSettings.loadStrings(for: .visibleColumns)
-        let visibleIds: Set<String> = savedVisibleIds.map { Set($0) }
+        var visibleIds: Set<String> = savedVisibleIds.map { Set($0) }
             ?? Set(ColumnDefinition.allColumns.filter(\.isDefaultVisible).map(\.identifier))
+
+        // Auto-migrate: when new columns are added with isDefaultVisible=true, they should
+        // appear for existing users too. Merge any default-visible columns not yet in the
+        // saved set (tracked via sentinel key to avoid re-adding after user hides them).
+        if savedVisibleIds != nil {
+            let seenDefaults = Set(AppSettings.loadStrings(for: .seenDefaultColumns) ?? [])
+            let currentDefaults = Set(ColumnDefinition.allColumns.filter(\.isDefaultVisible).map(\.identifier))
+            let newDefaults = currentDefaults.subtracting(seenDefaults)
+            if !newDefaults.isEmpty {
+                visibleIds.formUnion(newDefaults)
+                AppSettings.saveStrings(Array(visibleIds), for: .visibleColumns)
+                AppSettings.saveStrings(Array(currentDefaults), for: .seenDefaultColumns)
+            }
+        } else {
+            // First-run user: record current defaults as seen
+            let currentDefaults = Set(ColumnDefinition.allColumns.filter(\.isDefaultVisible).map(\.identifier))
+            AppSettings.saveStrings(Array(currentDefaults), for: .seenDefaultColumns)
+        }
 
         // Configure columns based on ColumnDefinition (respecting saved visibility)
         for colDef in ColumnDefinition.allColumns where visibleIds.contains(colDef.identifier) {
@@ -386,6 +404,11 @@ struct FileListView: NSViewRepresentable {
                 return makeQualityCell(for: entry, in: tableView)
             }
 
+            // Quality feedback column: agree/disagree/partly icons
+            if colId == "qualityFeedback" {
+                return makeFeedbackCell(for: entry, in: tableView)
+            }
+
             // User confidence rating: 1-3 star icons
             if colId == "userConfidence" {
                 return makeConfidenceCell(for: entry, in: tableView)
@@ -613,6 +636,65 @@ struct FileListView: NSViewRepresentable {
             return cellView
         }
 
+        // Quality feedback cell: green checkmark (agree), red X (disagree), orange half (partly)
+        private func makeFeedbackCell(for entry: ImageEntry, in tableView: NSTableView) -> NSView {
+            let identifier = NSUserInterfaceItemIdentifier("Cell_qualityFeedback")
+            let cellView: NSTableCellView
+
+            if let reused = tableView.makeView(withIdentifier: identifier, owner: self) as? NSTableCellView {
+                cellView = reused
+            } else {
+                let cell = NSTableCellView()
+                cell.identifier = identifier
+                let imageView = NSImageView()
+                imageView.translatesAutoresizingMaskIntoConstraints = false
+                imageView.imageScaling = .scaleProportionallyDown
+                cell.addSubview(imageView)
+                cell.imageView = imageView
+                NSLayoutConstraint.activate([
+                    imageView.widthAnchor.constraint(equalToConstant: 14),
+                    imageView.heightAnchor.constraint(equalToConstant: 14),
+                    imageView.centerXAnchor.constraint(equalTo: cell.centerXAnchor),
+                    imageView.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
+                ])
+                cellView = cell
+            }
+
+            let symbolName: String?
+            let color: NSColor?
+            let tooltip: String
+
+            switch entry.qualityFeedback {
+            case .none:
+                symbolName = nil
+                color = nil
+                tooltip = "No feedback (press A to cycle)"
+            case .agree:
+                symbolName = "checkmark.circle.fill"
+                color = .systemGreen
+                tooltip = "Agree with quality assessment (press A to change)"
+            case .disagree:
+                symbolName = "xmark.circle.fill"
+                color = .systemRed
+                tooltip = "Disagree with quality assessment (press A to change)"
+            case .partly:
+                symbolName = "circle.lefthalf.filled"
+                color = .systemOrange
+                tooltip = "Partly agree with quality assessment (press A to change)"
+            }
+
+            cellView.toolTip = tooltip
+            if let name = symbolName, let tint = color,
+               let image = NSImage(systemSymbolName: name, accessibilityDescription: nil) {
+                let config = NSImage.SymbolConfiguration(pointSize: 11, weight: .medium)
+                cellView.imageView?.image = image.withSymbolConfiguration(config)
+                cellView.imageView?.contentTintColor = tint
+            } else {
+                cellView.imageView?.image = nil
+            }
+            return cellView
+        }
+
         // Orange gradient icon and color for borderline sub-tiers.
         // 4 levels from light amber (nearly good) to deep orange (nearly trash).
         private static func borderlineIconAndColor(severity: Int) -> (String, NSColor) {
@@ -808,11 +890,11 @@ struct FileListView: NSViewRepresentable {
             } else if isCached && isRotated {
                 indicator.stringValue = "\u{21BB}"  // Clockwise arrow (rotated indicator)
                 indicator.textColor = isNight ? NSColor(red: 0.35, green: 0, blue: 0.2, alpha: 1) : .systemPurple
-                indicator.toolTip = "Cached · Rotated 180° (meridian flip)"
+                indicator.toolTip = "Cached · AutoRotate applied"
             } else if isRotated {
                 indicator.stringValue = "\u{21BB}"  // Clockwise arrow
                 indicator.textColor = isNight ? NSColor(red: 0.35, green: 0, blue: 0.2, alpha: 1) : .systemPurple
-                indicator.toolTip = "Rotated 180° (meridian flip)"
+                indicator.toolTip = "AutoRotate applied (aligned to reference frame)"
             } else if isCached {
                 indicator.stringValue = "\u{2713}"  // Checkmark
                 indicator.textColor = isNight ? NSColor(red: 0.4, green: 0, blue: 0, alpha: 1) : .systemGray
@@ -1052,6 +1134,41 @@ struct FileListView: NSViewRepresentable {
                 menu.addItem(compareItem)
             }
 
+            // Quality Feedback submenu (only when frame has quality score)
+            if entry.qualityTier != nil {
+                let feedbackMenu = NSMenu(title: "Quality Feedback")
+
+                let agreeItem = NSMenuItem(title: "Agree", action: #selector(setFeedbackAgree(_:)), keyEquivalent: "")
+                agreeItem.target = self
+                agreeItem.tag = clickedRow
+                if entry.qualityFeedback == .agree { agreeItem.state = .on }
+                feedbackMenu.addItem(agreeItem)
+
+                let disagreeItem = NSMenuItem(title: "Disagree", action: #selector(setFeedbackDisagree(_:)), keyEquivalent: "")
+                disagreeItem.target = self
+                disagreeItem.tag = clickedRow
+                if entry.qualityFeedback == .disagree { disagreeItem.state = .on }
+                feedbackMenu.addItem(disagreeItem)
+
+                let partlyItem = NSMenuItem(title: "Partly Agree", action: #selector(setFeedbackPartly(_:)), keyEquivalent: "")
+                partlyItem.target = self
+                partlyItem.tag = clickedRow
+                if entry.qualityFeedback == .partly { partlyItem.state = .on }
+                feedbackMenu.addItem(partlyItem)
+
+                feedbackMenu.addItem(NSMenuItem.separator())
+
+                let clearItem = NSMenuItem(title: "Clear Feedback", action: #selector(clearFeedback(_:)), keyEquivalent: "")
+                clearItem.target = self
+                clearItem.tag = clickedRow
+                clearItem.isEnabled = entry.qualityFeedback != .none
+                feedbackMenu.addItem(clearItem)
+
+                let feedbackMenuItem = NSMenuItem(title: "Quality Feedback", action: nil, keyEquivalent: "")
+                feedbackMenuItem.submenu = feedbackMenu
+                menu.addItem(feedbackMenuItem)
+            }
+
             menu.addItem(NSMenuItem.separator())
 
             // Mark/Unmark option
@@ -1156,6 +1273,65 @@ struct FileListView: NSViewRepresentable {
                     }
                 } else {
                     viewModel.togglePreDelete(at: row)
+                }
+            }
+        }
+
+        // MARK: - Quality Feedback Context Menu Actions
+
+        @objc private func setFeedbackAgree(_ sender: NSMenuItem) {
+            applyFeedback(.agree, row: sender.tag)
+        }
+        @objc private func setFeedbackDisagree(_ sender: NSMenuItem) {
+            applyFeedback(.disagree, row: sender.tag)
+        }
+        @objc private func setFeedbackPartly(_ sender: NSMenuItem) {
+            applyFeedback(.partly, row: sender.tag)
+        }
+        @objc private func clearFeedback(_ sender: NSMenuItem) {
+            applyFeedback(.none, row: sender.tag)
+        }
+
+        private func applyFeedback(_ feedback: QualityFeedback, row: Int) {
+            guard let tableView = tableView else { return }
+            let selectedRows = tableView.selectedRowIndexes
+            // If clicked row is in selection, apply to all selected; otherwise just clicked row
+            let targetRows = selectedRows.contains(row) ? selectedRows : IndexSet(integer: row)
+
+            Task { @MainActor in
+                let isFiltered = viewModel.hideMarked || viewModel.showOnlyMarked || !viewModel.filterText.isEmpty
+                if isFiltered {
+                    let visible = viewModel.visibleImages
+                    var realIndices = IndexSet()
+                    for r in targetRows where r < visible.count {
+                        if let realIdx = viewModel.images.firstIndex(where: { $0.url == visible[r].url }) {
+                            realIndices.insert(realIdx)
+                        }
+                    }
+                    if feedback == .none {
+                        // Clear: set to none directly
+                        for idx in realIndices where idx >= 0 && idx < viewModel.images.count {
+                            viewModel.images[idx].qualityFeedback = .none
+                            if let hash = viewModel.images[idx].fileHash {
+                                try? FrameHistoryDatabase.shared.updateQualityFeedback(fileHash: hash, feedback: 0)
+                            }
+                        }
+                        viewModel.needsTableRefresh = true
+                    } else {
+                        viewModel.setQualityFeedback(feedback, forRows: realIndices)
+                    }
+                } else {
+                    if feedback == .none {
+                        for idx in targetRows where idx >= 0 && idx < viewModel.images.count {
+                            viewModel.images[idx].qualityFeedback = .none
+                            if let hash = viewModel.images[idx].fileHash {
+                                try? FrameHistoryDatabase.shared.updateQualityFeedback(fileHash: hash, feedback: 0)
+                            }
+                        }
+                        viewModel.needsTableRefresh = true
+                    } else {
+                        viewModel.setQualityFeedback(feedback, forRows: targetRows)
+                    }
                 }
             }
         }

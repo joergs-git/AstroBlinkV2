@@ -428,7 +428,8 @@ class ArchiveScanner: ObservableObject {
         if !stars.isEmpty {
             if let metrics = StarMetricsCalculator.measure(
                 stars: stars, fullResImage: decoded, channel: channel,
-                totalStarCount: totalStarCount
+                totalStarCount: totalStarCount,
+                arcsecPerPixel: entry.arcsecPerPixel
             ) {
                 entry.computedHFR = metrics.medianHFR > 0 ? metrics.medianHFR : nil
                 entry.computedFWHM = metrics.medianFWHM > 0 ? metrics.medianFWHM : nil
@@ -534,6 +535,21 @@ class ArchiveScanner: ObservableObject {
         if let v = headers["SITELONG"] { entry.siteLongitude = Double(v) }
         if let v = headers["CRVAL1"] { entry.solvedRA = Double(v) }
         if let v = headers["CRVAL2"] { entry.solvedDec = Double(v) }
+        if let v = headers["ROTATOR"] { entry.rotatorAngle = Double(v) }
+        // WCS rotation from plate solve: CROTA2 (direct) or CD matrix (computed)
+        if let v = headers["CROTA2"], let val = Double(v) {
+            entry.wcsRotation = val
+        } else if let cd11 = headers["CD1_1"], let cd12 = headers["CD1_2"],
+                  let v11 = Double(cd11), let v12 = Double(cd12) {
+            entry.wcsRotation = atan2(-v12, v11) * 180.0 / .pi
+        }
+        // Full WCS plate-solve data for CD-matrix based display alignment
+        if let v = headers["CRPIX1"] { entry.wcsCRPIX1 = Double(v) }
+        if let v = headers["CRPIX2"] { entry.wcsCRPIX2 = Double(v) }
+        if let v = headers["CD1_1"]  { entry.wcsCD11 = Double(v) }
+        if let v = headers["CD1_2"]  { entry.wcsCD12 = Double(v) }
+        if let v = headers["CD2_1"]  { entry.wcsCD21 = Double(v) }
+        if let v = headers["CD2_2"]  { entry.wcsCD22 = Double(v) }
         if let v = headers["OBJCTRA"] { entry.objctRA = v.trimmingCharacters(in: .whitespaces) }
         if let v = headers["OBJCTDEC"] { entry.objctDec = v.trimmingCharacters(in: .whitespaces) }
         if let v = headers["DATE-OBS"] ?? headers["DATE-LOC"] {

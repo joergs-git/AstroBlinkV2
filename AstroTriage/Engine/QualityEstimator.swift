@@ -752,12 +752,23 @@ struct QualityEstimator {
                 }
 
                 // Rule 9: Star chain detection — tracking hops (mount jumps/PE)
-                // Even 8% of stars forming directional chains is a clear tracking failure.
-                // The directional consensus (R > 0.35) in detectStarChains ensures these
-                // are systematic patterns, not random star clustering. Mount jumps create
-                // discrete star copies that trailing/eccentricity can't detect.
-                if let chainFrac = entry.starChainFraction, chainFrac > 0.08 {
-                    garbageReasons.append(.trackingHop)
+                // Threshold scales smoothly with plate scale: narrow plate scales (long FL) use 8%,
+                // wider plate scales (short FL, dense fields with coincidental close pairs) use up to 18%.
+                // Smooth linear interpolation prevents discontinuous behavior across FL boundaries
+                // (e.g. 450mm vs 550mm behaves predictably the same).
+                // The directional consensus (R threshold also FL-adaptive in StarMetricsCalculator)
+                // ensures these are systematic patterns, not random star clustering.
+                if let chainFrac = entry.starChainFraction {
+                    let chainThreshold: Double
+                    if let scale = entry.arcsecPerPixel, scale > 0 {
+                        let t = max(0.0, min(1.0, (scale - 0.5) / 2.0))  // 0..1 as scale 0.5 → 2.5 "/px
+                        chainThreshold = 0.08 + t * 0.10  // 0.08 → 0.18
+                    } else {
+                        chainThreshold = 0.08
+                    }
+                    if chainFrac > chainThreshold {
+                        garbageReasons.append(.trackingHop)
+                    }
                 }
 
                 // Rule 10: Twilight/daylight exposure — filter-aware thresholds.

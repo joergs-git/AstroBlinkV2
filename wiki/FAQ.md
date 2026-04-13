@@ -78,7 +78,45 @@ Press 1, 2, or 3 on a selected frame to assign a user confidence rating (shown a
 **Q: When should I use confidence ratings?**
 Use them to manually flag frames you've visually inspected. For example, rate "3" for frames with exceptional detail, "1" for frames you're unsure about. They complement SmartCull's automatic scoring with your own visual assessment. Ratings are independent of the quality tier — a borderline frame can get a high confidence rating if you see something the algorithm missed.
 
-## Target Catalog
+## Quality Feedback
+
+**Q: What is Quality Feedback and how is it different from the Confidence Rating?**
+Confidence Rating (1/2/3 keys) is your own personal "I like this frame this much" judgment. Quality Feedback (A key) is your agreement with the algorithm's tier assignment for that frame. Press A to cycle through Agree → Disagree → Partly → Clear. A green checkmark, red X, orange half-circle, or empty icon appears in the FB column right next to the Q column. Use Disagree when the algorithm's tier feels wrong — e.g. it marked a perfectly usable frame as trash, or missed a real problem on a frame tiered as good.
+
+**Q: What happens to my feedback?**
+Feedback is persisted locally in the Frame History database and in the per-setup CalibrationProfile. When you confirm pre-delete (the moment the calibration system also learns from your retained frames), your cumulative agreement/disagreement counts are uploaded anonymously to the community_sessions table — alongside the existing algorithm_flagged/user_overrode counts and with the scoring algorithm version tag. Over time, this lets us tune detection thresholds based on real-world user agreement rates across many setups. No personal data, no file paths, no image content — just counters.
+
+**Q: Do I have to use Quality Feedback?**
+No. It's entirely opt-in. The column is visible by default, but if you never press A or use the context menu, no feedback is ever recorded or uploaded. It's there for users who want to help improve the algorithm.
+
+**Q: I disagree with a trash tier. Will my feedback un-mark the frame?**
+No — feedback and marking are independent. If the algorithm marked a frame as trash and you disagree, press Space to unmark it (or just don't pre-delete) AND press A for Disagree to record your feedback. The two actions combined tell the calibration system "this frame should have been kept". If you only unmark without feedback, the existing `userOverrodeKeep` counter is still incremented (same signal, less explicit).
+
+## AutoRotate
+
+**Q: What is AutoRotate?**
+AutoRotate pixel-locks every frame of a target to a single reference so that when you blink through frames or compare them side-by-side, the stars don't jump around. It uses the WCS plate-solve data that ASIAir, NINA, and most other capture software write into the FITS/XISF headers (CD matrix, CRPIX, CRVAL) to compute a mathematically exact per-frame affine transform via direct matrix algebra. The transform is applied at render time as a UV coordinate transformation, so it has zero GPU cost at display time.
+
+**Q: How is this different from the old Meridian Flip toggle?**
+The old Meridian Flip only detected pier-side/rotator changes from FITS headers and applied a coarse 180° rotation — a binary flip or no flip, nothing in between. AutoRotate uses the WCS plate-solve data to compute the exact transform (arbitrary rotation + precise translation) between any two frames of the same target, regardless of filter, exposure, night, camera angle, or pointing offset. The math is direct matrix algebra (invert the reference CD matrix, multiply with the frame's CD matrix, account for CRVAL sky offset scaled by cos(dec)) — microseconds per frame, exact.
+
+**Q: Does AutoRotate slow things down?**
+No — it's effectively free. WCS alignment is pure matrix math in the microsecond range. At session load, all FITS/XISF headers are read in parallel (~50-500ms for typical sessions depending on file count and I/O speed), then every plate-solved frame gets its transform computed in one batch. The render pipeline applies the pre-computed transform via a vertex shader uniform, so navigation responsiveness is unchanged.
+
+**Q: How is the reference frame chosen?**
+Smart median selection: among all frames with WCS data in a target group, AutoRotate picks the frame whose pointing (CRVAL) is closest to the median. This way outliers — frames where the mount lost center by 50% of the sensor — can't accidentally become the reference everyone else aligns to. The bulk of correctly-centered frames define the baseline.
+
+**Q: What if a frame doesn't have WCS data?**
+Some frames fail plate-solving (clouded, defocused, low star count) and lack WCS in their headers. AutoRotate falls back to a synthetic rotation transform derived from the `ROTATOR` header value: it computes `frame_rotator − reference_rotator` and builds a rotation-only affine around the image center. This handles rotation exactly (matching the rest of the session) but translation is approximate. When even the rotator header is missing, the frame falls through to the legacy header-based 180° flip (based on PIERSIDE / CROTA2 change), and if that also fails, to raw orientation.
+
+**Q: Why is this better than the old star-matching alignment?**
+Star matching worked well for same-filter same-exposure frames but struggled when matching across filters (narrowband H-alpha vs broadband B) or exposures (180s vs 300s) because the top brightest stars differ between those groups. WCS is in sky coordinates — it doesn't care what color filter you used or how long the exposure was. It just reads the plate-solve answer your capture software already computed. Identical accuracy across a full multi-filter multi-night session.
+
+**Q: Does it work with NINA?**
+Yes, as long as NINA's plate-solve step ran (ASPS, ASTAP, etc.) and the WCS keywords were written to the FITS/XISF headers. Both ASIAir and NINA write the CD matrix format that AutoRotate reads. If your NINA workflow skips plate-solving entirely, those frames fall through to the rotator-based synthetic transform.
+
+**Q: Blink mode now shows star shifts on some frames. Was this always there?**
+Yes — but before AutoRotate, the dither offsets and mount drift were hidden because every frame was displayed at its own natural pixel origin. Now that stars are pixel-locked across frames via WCS, anything that actually moved in the sky (focus drift, trailing, tracking errors) pops out as the only moving thing. This is the intended effect — it makes quality differences visually obvious.
 
 **Q: Where does the Target Catalog data come from?**
 A Supabase-backed database with 533+ deep-sky objects. Data is cached locally for offline use and refreshed in the background when a connection is available. The catalog includes coordinates, photometry, angular sizes, filter recommendations, difficulty ratings, and imaging notes.

@@ -259,6 +259,11 @@ final class FrameHistoryDatabase {
             }
         }
 
+        // v9: Add qualityFeedback column for user agree/disagree/partly on quality tier
+        migrator.registerMigration("v9_quality_feedback") { db in
+            try db.execute(sql: "ALTER TABLE frame_record ADD COLUMN qualityFeedback INTEGER NOT NULL DEFAULT 0")
+        }
+
         try migrator.migrate(db)
     }
 
@@ -286,6 +291,15 @@ final class FrameHistoryDatabase {
             try db.execute(
                 sql: "UPDATE frame_record SET userConfidence = ? WHERE fileHash = ?",
                 arguments: [confidence, fileHash])
+        }
+    }
+
+    /// Update quality feedback for a frame by file hash.
+    func updateQualityFeedback(fileHash: String, feedback: Int) throws {
+        try dbQueue.write { db in
+            try db.execute(
+                sql: "UPDATE frame_record SET qualityFeedback = ? WHERE fileHash = ?",
+                arguments: [feedback, fileHash])
         }
     }
 

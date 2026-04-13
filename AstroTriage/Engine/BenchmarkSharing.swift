@@ -435,6 +435,34 @@ class BenchmarkService: ObservableObject {
         )
     }
 
+    /// Auto-upload session load benchmark when caching completes.
+    /// Called automatically from TriageViewModel after markCachingEnd() — no user interaction required.
+    /// Silently skips if Supabase isn't configured, if the session is too small to be meaningful,
+    /// or if an upload is already in flight.
+    func autoUploadSessionLoad(stats: BenchmarkStats, sessionRootURL: URL?) {
+        guard BenchmarkConfig.isConfigured else { return }
+        guard !isUploading else { return }
+        // Only upload meaningful sessions — skip tiny test loads
+        guard stats.fileCount >= 5 else { return }
+        guard let totalDuration = stats.totalSessionDuration, totalDuration > 0 else { return }
+
+        let sourceType = MachineInfo.sourceType(for: sessionRootURL)
+        let entry = Self.buildSessionEntry(
+            fileCount: stats.fileCount,
+            totalSizeBytes: stats.totalFileSizeBytes,
+            sourceType: sourceType,
+            scanMs: Int((stats.fileLoadingDuration ?? 0) * 1000),
+            firstImageMs: Int((stats.firstImageDuration ?? 0) * 1000),
+            headerMs: Int((stats.headerEnrichDuration ?? 0) * 1000),
+            cachingMs: Int((stats.cachingDuration ?? 0) * 1000),
+            totalReadyMs: Int(totalDuration * 1000)
+        )
+
+        Task { [weak self] in
+            await self?.shareSessionBenchmark(entry: entry)
+        }
+    }
+
     static func buildSessionEntry(
         fileCount: Int, totalSizeBytes: Int64, sourceType: String,
         scanMs: Int, firstImageMs: Int, headerMs: Int,

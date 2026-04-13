@@ -23,7 +23,7 @@ Absolute thresholds catch catastrophic failures immediately. Any single metric f
 - **R7: Star count anomaly** — stars > 1.8x median + elevated FWHM/HFR (doubled stars from tracking jump)
 - **R7b: Atmospheric attenuation** — stars < 65% median + SNR < 65% median + FWHM normal. Detects thin cloud, dew, or fog (signal loss without defocus). Requires ≥8 frames.
 - **R8: Background anomaly** — background > 5-6.5 MAD from group median (clouds, fog, gradient). Moon-aware for broadband (relaxes threshold near bright moon).
-- **R9: Tracking hops** — star chain fraction > 25% (tracking jump during exposure)
+- **R9: Tracking hops** — star chain fraction above FL-adaptive threshold (8% at long FL, up to 18% at wide-field plate scales). Detection proximity threshold scales with plate scale (~40 arcsec physical separation), and the directional consensus (R) threshold interpolates from 0.35 at 0.5"/px to 0.55 at 2.5"/px. This prevents false positives on dense wide-field targets like NGC 2024 at 468 mm FL, where normal star clustering used to be mistaken for periodic error chains. Smoothly interpolated — no discontinuous behavior between adjacent focal lengths.
 - **R10: Twilight/daylight** — sun altitude > -12° for broadband; narrowband tolerates down to -6° (civil twilight)
 
 ### Stage 1.5 — Session-Wide Sanity Check
@@ -91,6 +91,8 @@ After 30+ frames with the same setup (telescope + camera + focal length):
 - Prevents the "death spiral" where repeated culling removes good frames
 
 **Community Floor (Cold Start):** When local calibration has fewer than 30 frames, a community baseline is used instead. Frames meeting the community floor are promoted to Good with a gray lock badge (weaker than the blue local calibration lock).
+
+**User Feedback Loop (v5.22.0):** Per-frame explicit agreement via the A key. When you press A to cycle Agree → Disagree → Partly → Clear on a scored frame, the feedback is recorded in the per-setup CalibrationProfile (local JSON) alongside the existing `algorithmFlagged` and `userOverrodeKeep` counters. After PRE-DELETE confirm, the per-session totals are uploaded anonymously to the `community_sessions` table with the algorithm version tag. Aggregate disagreement rates across many setups help us identify scoring rules that are too strict or too lenient for specific plate scales, focal lengths, or filter mixes — and tune them in a future algorithm version.
 
 ## Quality Reasoning ("Why?")
 

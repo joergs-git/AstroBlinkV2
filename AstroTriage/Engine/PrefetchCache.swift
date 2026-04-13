@@ -36,6 +36,43 @@ class PrefetchCache {
     // Callback for when a priority-queued preview completes (notifies ViewModel to refresh display)
     var onPriorityPreviewReady: ((URL) -> Void)?
 
+    // Star-based display alignment — shared with view model.
+    // Set once per session; workers call alignOrEstablish after star detection to
+    // compute per-frame transforms for display-time visual consistency.
+    var displayAligner: DisplayAligner?
+
+    // Closure to look up the per-frame target grouping key (used by the aligner).
+    // Captured at enqueue time so background workers don't touch @MainActor state.
+    var targetKeyForEntry: ((ImageEntry) -> String)?
+
+    // Callback fired when alignment transform is computed for a frame.
+    var onAlignmentComputed: ((URL, AffineTransform2D) -> Void)?
+
+    /// Set to true when the session is known to have WCS plate-solve data in every file
+    /// (e.g. ASIAir captures). Detected by peeking at the first file's headers in
+    /// loadSession. When true, prefetch workers skip star matching entirely — alignment
+    /// will be computed by applyWCSAlignment after header enrichment, much faster.
+    var skipStarMatchingForAlignment: Bool = false
+
+    /// Extract complete WCS data from an ImageEntry — returns nil if any required field is missing.
+    /// All 8 fields (CRPIX1/2, CRVAL1/2, CD11/12/21/22) must be present for CD-matrix alignment.
+    static func wcsDataIfComplete(_ entry: ImageEntry) -> DisplayAligner.WCSData? {
+        guard let crpix1 = entry.wcsCRPIX1,
+              let crpix2 = entry.wcsCRPIX2,
+              let crval1 = entry.solvedRA,
+              let crval2 = entry.solvedDec,
+              let cd11 = entry.wcsCD11,
+              let cd12 = entry.wcsCD12,
+              let cd21 = entry.wcsCD21,
+              let cd22 = entry.wcsCD22
+        else { return nil }
+        return DisplayAligner.WCSData(
+            crpix1: crpix1, crpix2: crpix2,
+            crval1: crval1, crval2: crval2,
+            cd11: cd11, cd12: cd12, cd21: cd21, cd22: cd22
+        )
+    }
+
     init(device: MTLDevice) {
         self.device = device
         self.previewGenerator = PreviewGenerator(device: device)
@@ -117,11 +154,22 @@ class PrefetchCache {
 
         let device = self.device
         let generator = self.previewGenerator
+        // Capture alignment state at enqueue time (main actor) so background workers
+        // can use them without hopping back.
+        let aligner = self.displayAligner
+        let targetKeyProvider = self.targetKeyForEntry
+        let onAligned = self.onAlignmentComputed
+        let skipStarAlignment = self.skipStarMatchingForAlignment
 
         for entry in uncachedEntries {
             let url = entry.url
             let decodingURL = entry.decodingURL
             let bayerPattern = bayerPatterns[entry.url]
+            // Pre-compute target key on main actor so worker doesn't need entry access later
+            let targetKey: String? = targetKeyProvider?(entry)
+            // Extract WCS plate-solve data from entry (main-actor access) to pass
+            // to background worker. Nil when header enrichment hasn't read the fields yet.
+            let wcsData: DisplayAligner.WCSData? = Self.wcsDataIfComplete(entry)
 
             priorityQueue?.addOperation { [weak self] in
                 // Double-check cache (may have been filled by background queue)
@@ -152,6 +200,7 @@ class PrefetchCache {
                 }
 
                 var starMetricsResult: StarMetrics?
+                var alignmentResult: AffineTransform2D?
                 if onStarMetrics != nil {
                     let channel = imageForSTF.channelCount == 3 ? 1 : 0
                     let stars = generator?.detectStarsFromImage(imageForSTF, channel: channel) ?? []
@@ -160,7 +209,8 @@ class PrefetchCache {
                         let metrics = StarMetricsCalculator.measure(
                             stars: stars, fullResImage: imageForSTF, channel: channel,
                             totalStarCount: totalStarCount,
-                            generator: generator
+                            generator: generator,
+                            arcsecPerPixel: entry.arcsecPerPixel
                         )
                         starMetricsResult = metrics ?? StarMetrics(
                             medianHFR: 0, medianFWHM: 0,
@@ -170,6 +220,31 @@ class PrefetchCache {
                             starChainFraction: 0, trailCandidateCount: 0, trailRejectCount: 0,
                             psfFluxSum: 0, psfMeanFlux: 0
                         )
+
+                        // Compute star-based alignment transform for display
+                        // (thread-safe: aligner uses internal lock).
+                        //
+                        // Convert the pixel-space "frame → reference" transform into a ready-to-use
+                        // normalized UV-space "reference UV → frame UV" transform:
+                        //   1. Invert (ref pixels → frame pixels)
+                        //   2. Normalize to [0,1] UV space using the full-res image dimensions
+                        //      (stars come from full-res coordinates, see PreviewGenerator.detectStarsFromImage)
+                        // The renderer then applies it directly to the 4 reference-space quad corners.
+                        // Skip star matching entirely when:
+                        //   (a) the WCS detection at session start determined every file
+                        //       in this session has plate-solve data — applyWCSAlignment
+                        //       will handle alignment after headers are enriched, OR
+                        //   (b) this specific entry already has WCS at enqueue time
+                        if !skipStarAlignment, wcsData == nil,
+                           let aligner = aligner, let tk = targetKey,
+                           let pixelTransform = aligner.alignOrEstablish(
+                            stars: stars, wcs: nil, targetKey: tk, debugTag: entry.filename) {
+                            let inv = pixelTransform.inverse ?? .identity
+                            alignmentResult = inv.normalized(
+                                width: imageForSTF.width,
+                                height: imageForSTF.height
+                            )
+                        }
                     }
                 }
 
@@ -200,6 +275,7 @@ class PrefetchCache {
                     if let hash = fileHashResult { onFileHash?(url, hash) }
                     if let stats = noiseStatsResult { onNoiseStats?(url, stats) }
                     if let metrics = starMetricsResult { onStarMetrics?(url, metrics) }
+                    if let transform = alignmentResult { onAligned?(url, transform) }
                     if let preview = resultPreview {
                         self?.storePreview(preview, for: url)
                     }
@@ -252,6 +328,24 @@ class PrefetchCache {
         let total = images.count
         // Capture previewGenerator on main actor before entering background operations
         let generator = self.previewGenerator
+        // Capture alignment state for use in background workers
+        let aligner = self.displayAligner
+        let targetKeyProvider = self.targetKeyForEntry
+        let onAligned = self.onAlignmentComputed
+        let skipStarAlignment = self.skipStarMatchingForAlignment
+        // Pre-compute target keys for all images (so workers don't touch MainActor state)
+        let targetKeys: [URL: String]
+        if let provider = targetKeyProvider {
+            targetKeys = Dictionary(uniqueKeysWithValues: images.map { ($0.url, provider($0)) })
+        } else {
+            targetKeys = [:]
+        }
+        // Pre-extract WCS data per URL (main-actor access) for background workers
+        let wcsDataByURL: [URL: DisplayAligner.WCSData] = Dictionary(
+            uniqueKeysWithValues: images.compactMap { entry in
+                Self.wcsDataIfComplete(entry).map { (entry.url, $0) }
+            }
+        )
 
         // Create sliding window operation queue for background fill
         let queue = OperationQueue()
@@ -346,6 +440,7 @@ class PrefetchCache {
                     // 2c. GPU star detection + CPU HFR/FWHM measurement (~5-7ms per image)
                     // Always computed for all images to support per-group source consistency
                     var starMetricsResult: StarMetrics?
+                    var alignmentResult: AffineTransform2D?
                     if onStarMetrics != nil {
                         let channel = imageForSTF.channelCount == 3 ? 1 : 0  // Green for OSC
                         let stars = generator?.detectStarsFromImage(imageForSTF, channel: channel) ?? []
@@ -354,8 +449,24 @@ class PrefetchCache {
                             let metrics = StarMetricsCalculator.measure(
                                 stars: stars, fullResImage: imageForSTF, channel: channel,
                                 totalStarCount: totalStarCount,
-                                generator: generator
+                                generator: generator,
+                                arcsecPerPixel: entry.arcsecPerPixel
                             )
+                            // Compute star-based alignment for display consistency.
+                            // See detailed comment in prioritizeCaching path — we normalize
+                            // to UV space here so the renderer can apply it directly.
+                            // Skip star matching when WCS available — see priorityQueue path
+                            if !skipStarAlignment, wcsDataByURL[url] == nil,
+                               let aligner = aligner, let tk = targetKeys[url],
+                               let pixelTransform = aligner.alignOrEstablish(
+                                stars: stars, wcs: nil,
+                                targetKey: tk, debugTag: entry.filename) {
+                                let inv = pixelTransform.inverse ?? .identity
+                                alignmentResult = inv.normalized(
+                                    width: imageForSTF.width,
+                                    height: imageForSTF.height
+                                )
+                            }
                             // Always report star count even if HFR/FWHM measurement failed
                             // (not enough stars in center crop for measurement)
                             starMetricsResult = metrics ?? StarMetrics(
@@ -403,6 +514,7 @@ class PrefetchCache {
                         if let hash = fileHashResult { onFileHash?(url, hash) }
                         if let stats = noiseStatsResult { onNoiseStats?(url, stats) }
                         if let metrics = starMetricsResult { onStarMetrics?(url, metrics) }
+                        if let transform = alignmentResult { onAligned?(url, transform) }
                         if let preview = resultPreview {
                             self?.storePreview(preview, for: url)
                         }

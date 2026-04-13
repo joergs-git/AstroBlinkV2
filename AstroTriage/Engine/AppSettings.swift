@@ -60,6 +60,7 @@ struct AppSettings {
         case fontScale            // Float — UI font scale factor (1.0 = default)
         case dismissedMessageIDs  // [String] — UUIDs of permanently dismissed in-app messages
         case snoozedMessages      // Data — encoded [String: Date] of snoozed message ID → snooze-until date
+        case seenDefaultColumns   // [String] — default-visible column ids seen by user (tracks auto-migration of new columns)
     }
 
     // Start observing iCloud changes (call once at app launch)

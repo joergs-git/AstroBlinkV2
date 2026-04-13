@@ -108,14 +108,27 @@ struct CalibrationProfile: Codable {
     var globalTrailing: MetricBaseline
     var algorithmFlagged: Int            // Frames algorithm marked as trash
     var userOverrodeKeep: Int            // Frames user unmarked (algorithm was wrong)
+    // Explicit quality feedback counters (from 'A' key cycling)
+    var userAgreed: Int
+    var userDisagreed: Int
+    var userPartlyAgreed: Int
     var createdAt: Date
     var lastUpdated: Date
 
-    /// Agreement rate: how often user agrees with algorithm
+    /// Agreement rate: how often user agrees with algorithm (mark/unmark based)
     var agreementRate: Double {
         let total = algorithmFlagged + userOverrodeKeep
         guard total > 0 else { return 1.0 }
         return Double(algorithmFlagged) / Double(total)
+    }
+
+    /// Feedback-based agreement rate (from explicit user feedback via A key).
+    /// Returns nil if fewer than 5 feedback entries exist.
+    var feedbackAgreementRate: Double? {
+        let total = userAgreed + userDisagreed + userPartlyAgreed
+        guard total >= 5 else { return nil }
+        // Partly counts as 0.5 agreement
+        return Double(userAgreed) + Double(userPartlyAgreed) * 0.5 / Double(total)
     }
 
     /// Minimum frames before applying absolute quality floor
@@ -135,8 +148,29 @@ struct CalibrationProfile: Codable {
         self.globalTrailing = MetricBaseline()
         self.algorithmFlagged = 0
         self.userOverrodeKeep = 0
+        self.userAgreed = 0
+        self.userDisagreed = 0
+        self.userPartlyAgreed = 0
         self.createdAt = Date()
         self.lastUpdated = Date()
+    }
+
+    // Custom decoder for backward compatibility — old JSON files lack feedback counters
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        fingerprint = try container.decode(SetupFingerprint.self, forKey: .fingerprint)
+        filterBaselines = try container.decode([String: FilterExposureBaseline].self, forKey: .filterBaselines)
+        totalSessionsAnalyzed = try container.decode(Int.self, forKey: .totalSessionsAnalyzed)
+        totalFramesAnalyzed = try container.decode(Int.self, forKey: .totalFramesAnalyzed)
+        globalFWHM = try container.decode(MetricBaseline.self, forKey: .globalFWHM)
+        globalTrailing = try container.decode(MetricBaseline.self, forKey: .globalTrailing)
+        algorithmFlagged = try container.decode(Int.self, forKey: .algorithmFlagged)
+        userOverrodeKeep = try container.decode(Int.self, forKey: .userOverrodeKeep)
+        userAgreed = try container.decodeIfPresent(Int.self, forKey: .userAgreed) ?? 0
+        userDisagreed = try container.decodeIfPresent(Int.self, forKey: .userDisagreed) ?? 0
+        userPartlyAgreed = try container.decodeIfPresent(Int.self, forKey: .userPartlyAgreed) ?? 0
+        createdAt = try container.decode(Date.self, forKey: .createdAt)
+        lastUpdated = try container.decode(Date.self, forKey: .lastUpdated)
     }
 
     /// Get baseline for a filter+exposure group (returns empty if not learned yet)
@@ -219,6 +253,32 @@ final class CalibrationDatabase {
                 // User confirmed algorithm's trash assessment
                 prof.algorithmFlagged += 1
             }
+        }
+
+        prof.lastUpdated = Date()
+        profiles[fingerprint.hash] = prof
+        save(profile: prof)
+    }
+
+    /// Record explicit quality feedback (agree/disagree/partly) from user.
+    /// Called when user presses 'A' key or uses context menu.
+    func recordFeedback(entry: ImageEntry, feedback: QualityFeedback, fingerprint: SetupFingerprint) {
+        guard feedback != .none else { return }
+        var prof = profile(for: fingerprint)
+
+        switch feedback {
+        case .agree:
+            prof.userAgreed += 1
+        case .disagree:
+            prof.userDisagreed += 1
+            // Disagree is a strong signal — also count as override when algorithm flagged trash
+            if entry.qualityTier == .trash {
+                prof.userOverrodeKeep += 1
+            }
+        case .partly:
+            prof.userPartlyAgreed += 1
+        case .none:
+            break
         }
 
         prof.lastUpdated = Date()

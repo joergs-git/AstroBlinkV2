@@ -34,6 +34,16 @@ class ReleaseNotesWindowController {
 // MARK: - Release notes data (shared between view and copy)
 
 private let allReleases: [(version: String, date: String, items: [(ReleaseNotesView.ChangeType, String, String)])] = [
+    ("5.22.0", "April 13, 2026", [
+        (.added, "AutoRotate — WCS Plate-Solve Alignment", "Pixel-locks every frame of a target to a single reference using the FITS/XISF WCS data (CD matrix + CRPIX + CRVAL) that ASIAir and NINA already write. Direct matrix algebra — microseconds per frame, mathematically exact. Works across any filter, exposure, night, or camera rotator angle. Smart median-CRVAL reference selection. Rotator-based synthetic fallback for frames without plate-solve."),
+        (.added, "Quality Feedback (A key)", "New feedback loop on the algorithm's quality tier. Press A to cycle Agree → Disagree → Partly → Clear. New 'FB' column with colored icons right next to Q. Context menu submenu. Persisted in Frame History DB and uploaded to community_sessions table (anonymously) so thresholds can be tuned from real agreement rates."),
+        (.added, "Auto-upload Session Benchmarks", "Session load timings are now uploaded anonymously to the community leaderboard automatically after caching completes. No more manual click on the Benchmark button."),
+        (.added, "XISF NAXIS Injection", "libxisf doesn't expose image dimensions as FITS keywords — they live in the <Image> geometry attribute. The bridge now injects synthetic NAXIS1/NAXIS2 entries so XISF files work in all downstream code paths that need pixel dimensions (including WCS alignment)."),
+        (.changed, "FL-Adaptive Star Chain Detection", "closeThreshold in chain detection now scales with plate scale (40 arcsec / plate scale, capped at 120 px). Long FL (2423mm) unchanged; mid FL (468mm, 85mm aperture scopes) drops to ~24 px. Fixes false positives on NGC 2024 at short focal lengths. R and garbage thresholds interpolate smoothly across 0.5–2.5\"/px."),
+        (.changed, "Meridian Flip → AutoRotate", "Toolbar toggle renamed and repurposed — the feature is broader than pier-side correction now. Replaced broken XOR with OR in the legacy header-flip fallback path: any single signal (PIERSIDE / ROTATOR / CROTA2) triggers flip."),
+        (.changed, "Checkered-Flag Auto-Mark Icon", "Toolbar Auto-Mark button now uses a red/white racing finish flag instead of the magic wand — clearer visual metaphor for 'finish the culling job'."),
+        (.changed, "Play Speed Default 0.1s", "Blink playback now defaults to the fastest 0.1s step (was 0.5s)."),
+    ]),
     ("5.21.0", "April 11, 2026", [
         (.fixed, "PE Arc Detection", "Gradient-based second chance in star shape measurement rescues PE arc stars that fail the concentration check. Catches 8 more periodic error frames at long focal lengths (RC12 2400mm)."),
         (.fixed, "Clouded Frame Detection", "Frames where no star PSF could be measured (heavy clouds, fog, lens cap) are now reliably detected as garbage. Simple rule: no FWHM = trash."),

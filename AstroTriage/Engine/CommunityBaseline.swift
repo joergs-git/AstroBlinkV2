@@ -103,6 +103,18 @@ struct CommunitySessionEntry: Codable {
     // Algorithm performance
     let algo_flagged_trash: Int
     let user_overrode_keep: Int
+
+    // Explicit user quality feedback counters (v5.22.0+).
+    // Accumulated across all sessions for this setup — uploaded as a running total
+    // so the server can track how often users agree/disagree with the algorithm's
+    // tier assignments. Helps us tune thresholds over time.
+    let user_agreed: Int
+    let user_disagreed: Int
+    let user_partly_agreed: Int
+
+    // Algorithm version used when these metrics were computed.
+    // Lets us correlate baseline drift with scoring algorithm changes.
+    let algorithm_version: Int
 }
 
 // MARK: - Supabase RPC Response

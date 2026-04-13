@@ -62,6 +62,11 @@ final class CommunityDetectionService {
         let algoFlagged = entries.filter { $0.qualityTier == .trash && $0.qualityBreakdown?.garbageReasons.isEmpty == false }.count
         let userOverrode = entries.filter { $0.qualityTier == .trash && !$0.isMarkedForDeletion }.count
 
+        // Explicit quality feedback counts — per-session totals from the A-key cycle
+        let agreedCount = entries.filter { $0.qualityFeedback == .agree }.count
+        let disagreedCount = entries.filter { $0.qualityFeedback == .disagree }.count
+        let partlyCount = entries.filter { $0.qualityFeedback == .partly }.count
+
         // Build upload entries per group
         var uploadEntries: [CommunitySessionEntry] = []
         for (key, groupEntries) in groups {
@@ -99,7 +104,11 @@ final class CommunityDetectionService {
                 mad_snr: Self.mad(groupEntries.compactMap { self.snr(for: $0) }),
                 mad_trailing: Self.mad(groupEntries.compactMap(\.trailingScore)),
                 algo_flagged_trash: algoFlagged,
-                user_overrode_keep: userOverrode
+                user_overrode_keep: userOverrode,
+                user_agreed: agreedCount,
+                user_disagreed: disagreedCount,
+                user_partly_agreed: partlyCount,
+                algorithm_version: kAlgorithmVersion
             )
             uploadEntries.append(entry)
         }

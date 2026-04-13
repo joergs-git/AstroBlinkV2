@@ -209,6 +209,32 @@ struct KeyboardHandler {
             return true
         }
 
+        // A: Cycle quality feedback (agree → disagree → partly → none)
+        if modifiers.isEmpty, chars == "a" {
+            Task { @MainActor in
+                if let tableView = findTableView() {
+                    let selectedRows = tableView.selectedRowIndexes
+                    guard !selectedRows.isEmpty else { return }
+                    let isFiltered = viewModel.hideMarked || viewModel.showOnlyMarked || !viewModel.filterText.isEmpty
+                    if isFiltered {
+                        let visible = viewModel.visibleImages
+                        var realIndices = IndexSet()
+                        for row in selectedRows where row < visible.count {
+                            if let realIdx = viewModel.images.firstIndex(where: { $0.url == visible[row].url }) {
+                                realIndices.insert(realIdx)
+                            }
+                        }
+                        viewModel.cycleQualityFeedback(forRows: realIndices)
+                    } else {
+                        viewModel.cycleQualityFeedback(forRows: selectedRows)
+                    }
+                } else {
+                    viewModel.cycleQualityFeedback(forRows: IndexSet(integer: viewModel.selectedIndex))
+                }
+            }
+            return true
+        }
+
         // S: Toggle Lock STF (freeze exact stretch params from current image)
         if modifiers.isEmpty, chars == "s" {
             Task { @MainActor in viewModel.toggleLockSTF() }

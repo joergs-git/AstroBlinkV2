@@ -530,6 +530,7 @@ Fallback: Filename-Token-Parsing
 | N                | Toggle night mode (red-on-black)                    |
 | Cmd+O            | Open folder                                         |
 | 1 / 2 / 3       | Set confidence rating (1-3 stars, same key clears)  |
+| A                | Cycle quality feedback (agree/disagree/partly/clear)|
 | Double-click     | Reset zoom to fit-to-view                           |
 
 ---

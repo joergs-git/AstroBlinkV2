@@ -52,6 +52,7 @@ AIsaac knows your equipment, remembers your imaging history, understands light p
 - **Blink Playback & Video Export** — play/stop button with adjustable delay (0.1–2s) cycles through visible images endlessly. Export as animated GIF (size-constrained) or HEVC .mov with scale, loops, and crop-to-zoom. Multi-select support.
 - **SSWEIGHT & PSFSignalWeight Export** — writes PixInsight-compatible SSWEIGHT and PSFSWGHT keywords into FITS/XISF headers. GPU PSF fitting (Metal Gauss-Newton) for accurate flux. Batch keyword deletion via Batch Rename.
 - **User Confidence Rating** — Press 1/2/3 to rate frames with 1-3 yellow stars (same key toggles off). Persisted in Frame History DB. Filter with `rating:1`, `rating:2`, `rating:3`.
+- **Quality Feedback (A key)** — Tell the algorithm whether you agree with its quality tier. Press A to cycle Agree → Disagree → Partly → Clear. New FB column right next to Q with colored icons (green checkmark / red X / orange half). Context menu submenu for mouse users. Persisted in Frame History DB and uploaded anonymously to the community baseline so thresholds can be tuned from real agreement rates.
 - **PixInsight Bridge** — PI script launches AstroBlink from PixInsight, imports CSV with quality scores, and prepares WBPP file lists. Available via PI Update Repository.
 - **GPU PSF Fitting** — Metal compute kernels: circular (3 params) and elliptical (5 params: A, σx, σy, θ, B) Gaussian PSF fitting per star. Elliptical fit derives eccentricity and PA analytically. CPU FWHM fallback when GPU fit quality is poor.
 - **Native FITS/XISF QuickLook** — Finder thumbnails and spacebar previews with debayer support for color cameras.
@@ -204,7 +205,7 @@ After a night of imaging you might have 200-600 sub-exposures. Some have clouds,
 - Quality Overview — per-filter noise, background, and SNR statistics with color-coded bars
 - Interactive quality help — click ? for beginner-friendly explanation with real-world examples and rules of thumb
 - Fact Sheet generator — one click copies a ready-to-paste summary with hashtags for Astrobin, Instagram, or forums
-- Auto Meridian Flip — automatically rotates images across pier side changes for consistent orientation. Supports both PIERSIDE header and ROTATOR angle fallback (for mounts like ASIAIR on AM5 that don't write PIERSIDE)
+- AutoRotate — WCS plate-solve based visual alignment. Every frame of a target is pixel-locked to a single reference using the FITS/XISF WCS data (CD matrix + CRPIX + CRVAL) via direct matrix algebra — takes microseconds per frame, is mathematically exact, and works for any filter, exposure, night, rotator angle, or pointing offset. Smart median-CRVAL reference selection keeps outliers from becoming the baseline. Falls back to a synthetic rotator-based transform for the rare frames without plate-solve data. Works with ASIAir, NINA, and any other capture software that writes WCS keywords. Blink mode shows stars pixel-locked across frames — tracking drift, focus changes, and trailing pop out as the only things moving.
 - Astronomical observing night — sessions spanning midnight are treated as one night. Quality scoring and grouping use the evening date, not the calendar date
 
 ### File List & Sorting

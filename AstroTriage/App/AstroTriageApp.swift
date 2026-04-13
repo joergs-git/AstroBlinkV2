@@ -27,6 +27,9 @@ struct AstroBlinkV2App: App {
     @NSApplicationDelegateAdaptor(AstroBlinkV2AppDelegate.self) var appDelegate
 
     init() {
+        // Make stdout line-buffered so print() output is visible live when redirected
+        // to a file (debug runs). Default block-buffering hides log output until exit.
+        setvbuf(stdout, nil, _IOLBF, 0)
         // Register URL scheme handler BEFORE SwiftUI steals the event pipeline
         NSAppleEventManager.shared().setEventHandler(
             URLSchemeHandler.shared,
@@ -1092,6 +1095,26 @@ struct HelpContentView: View {
                 featureRow("Debayer OFF (default)", "Fastest caching — images shown as grayscale")
                 featureRow("Debayer ON (press D)", "Bayer interpolation to RGB — slower caching but color preview")
                 Text("Toggle only appears when session contains OSC images.")
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+                    .italic()
+
+                Divider()
+
+                // AutoRotate
+                sectionHeader("AutoRotate")
+
+                Text("Pixel-locks every frame of a target to a single reference so you can blink through a session without stars visually jumping between frames. Uses the WCS plate-solve data (CD matrix + CRPIX + CRVAL) that ASIAir, NINA and most capture software already write to the FITS/XISF headers. Alignment is mathematically exact via direct matrix algebra — microseconds per frame, regardless of filter, exposure, night, or camera rotator angle.")
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                featureRow("AutoRotate toggle (toolbar)", "Turn on to align all frames of each target to the smart-picked reference")
+                featureRow("Primary path", "WCS plate-solve data (CD matrix) — exact, filter-independent")
+                featureRow("Fallback path", "Rotator-based synthetic rotation for frames without plate-solve data")
+                featureRow("Reference frame", "Auto-picked: the frame closest to the median pointing of the target group")
+                featureRow("Covers", "Meridian flips, dithers, re-centering between nights, polar drift, camera rotation between sessions")
+                Text("Blink mode is where it shines — with stars pixel-locked, any tracking errors, focus drift, or trailing pop out immediately as the only things that move.")
                     .font(.system(size: 11))
                     .foregroundColor(.secondary)
                     .italic()

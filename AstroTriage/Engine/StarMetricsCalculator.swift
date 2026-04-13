@@ -93,7 +93,8 @@ enum StarMetricsCalculator {
         fullResImage image: DecodedImage,
         channel: Int = 0,
         totalStarCount: Int? = nil,
-        generator: PreviewGenerator? = nil
+        generator: PreviewGenerator? = nil,
+        arcsecPerPixel: Double? = nil
     ) -> StarMetrics? {
         let w = image.width
         let h = image.height
@@ -256,7 +257,7 @@ enum StarMetricsCalculator {
 
         // ── Star chain detection: tracking hop pattern (parallel short chains) ──
         // Must run after Pass 1 (needs medianFWHM) and on all refined stars (before crowding filter).
-        let chainFraction = detectStarChains(stars: refinedClean, medianFWHM: medianFWHM)
+        let chainFraction = detectStarChains(stars: refinedClean, medianFWHM: medianFWHM, arcsecPerPixel: arcsecPerPixel)
 
         // ── Pass 2: Compute eccentricity with FWHM-adaptive aperture ──
         // Use median FWHM to determine a consistent aperture across all stars in this image.
@@ -415,16 +416,24 @@ enum StarMetricsCalculator {
     /// Returns the fraction of stars participating in consensus-direction close pairs [0..1].
     /// Values > 0.25 indicate tracking hops. Values near 0 indicate normal star field.
     private static func detectStarChains(
-        stars: [DetectedStar], medianFWHM: Double
+        stars: [DetectedStar], medianFWHM: Double, arcsecPerPixel: Double? = nil
     ) -> Double {
         let n = stars.count
         guard n >= 10 else { return 0 }
 
-        // Close neighbor threshold: mount PE at 2455mm FL with 3.76µm pixels
-        // creates gaps of 30-100+ pixels between chain dots. Use generous threshold
-        // to catch various PE magnitudes. Normal star-to-star distances in a 50-star
-        // field of 9576x6388 average ~1100px, so 120px is still highly discriminating.
-        let closeThreshold = max(80.0, Float(medianFWHM) * 12.0)
+        // Close neighbor threshold: PE chain gap is ~30-40 arcseconds in angular space.
+        // Scale with plate scale when available; fall back to fixed threshold.
+        // At long FL (2423mm, 0.32"/px): 40/0.32 = 125px → capped at 120px (preserves existing behavior)
+        // At mid FL (468mm, 1.66"/px):   40/1.66 = 24px → prevents false positives from normal clustering
+        let closeThreshold: Float
+        if let scale = arcsecPerPixel, scale > 0 {
+            let physicalThresholdArcsec: Float = 40.0  // PE chain gap angular size
+            let flScaled = physicalThresholdArcsec / Float(scale)
+            closeThreshold = max(Float(medianFWHM) * 8.0, min(120.0, flScaled))
+        } else {
+            // Fallback when plate scale unknown: original fixed threshold
+            closeThreshold = max(80.0, Float(medianFWHM) * 12.0)
+        }
         let closeThresholdSq = closeThreshold * closeThreshold
 
         // PA tolerance for consensus: close pairs within this range count as "agreeing"
@@ -466,8 +475,17 @@ enum StarMetricsCalculator {
         let R = ((sumSin * sumSin + sumCos * sumCos).squareRoot()) / count
 
         // Require minimum consensus strength — random close pairs in dense fields
-        // will have low R. Threshold 0.35 is lenient enough for partial chain visibility.
-        guard R > 0.35 else { return 0 }
+        // will have low R. At wider plate scales (short FL), dense fields have more
+        // coincidental clustering, so require stronger consensus to avoid false positives.
+        // Smooth linear interpolation from 0.35 at 0.5"/px to 0.55 at 2.5"/px (clamped).
+        let rThreshold: Double
+        if let scale = arcsecPerPixel, scale > 0 {
+            let t = max(0.0, min(1.0, (scale - 0.5) / 2.0))  // 0..1 as scale goes 0.5 → 2.5
+            rThreshold = 0.35 + t * 0.20  // 0.35 → 0.55
+        } else {
+            rThreshold = 0.35
+        }
+        guard R > rThreshold else { return 0 }
 
         // Compute circular mean PA
         var meanDoubled = atan2(sumSin / count, sumCos / count)

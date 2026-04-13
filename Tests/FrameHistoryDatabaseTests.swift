@@ -60,6 +60,12 @@ final class FrameHistoryDatabaseTests: XCTestCase {
                 t.column("garbageReasons", .text)
                 t.column("isLockedKeep", .integer).notNull().defaults(to: 0)
                 t.column("filterTrailingMultiplier", .double)
+                t.column("psfFlux", .double)
+                t.column("bortleClass", .double)
+                t.column("canonicalTarget", .text)
+                t.column("majorTarget", .text)
+                t.column("userConfidence", .integer).notNull().defaults(to: 0)
+                t.column("qualityFeedback", .integer).notNull().defaults(to: 0)
                 t.column("wasDeleted", .integer).notNull().defaults(to: 0)
                 t.column("algorithmVersion", .integer).notNull().defaults(to: 1)
                 t.column("recordedAt", .text).notNull()
@@ -130,7 +136,7 @@ final class FrameHistoryDatabaseTests: XCTestCase {
             moonIllumination: moon, moonDistance: moonDist,
             qualityTier: tier, combinedZScore: zScore,
             garbageReasons: nil, isLockedKeep: 0,
-            filterTrailingMultiplier: 1.0, userConfidence: 0, wasDeleted: 0,
+            filterTrailingMultiplier: 1.0, userConfidence: 0, qualityFeedback: 0, wasDeleted: 0,
             algorithmVersion: 1,
             recordedAt: ISO8601DateFormatter().string(from: Date()),
             width: 9576, height: 6388

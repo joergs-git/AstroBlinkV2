@@ -265,7 +265,13 @@ extern "C" HeaderResult read_xisf_headers(const char* path) {
         const LibXISF::Image& image = reader.getImage(0, false);
 
         const auto keywords = image.fitsKeywords();
-        result.count = (int32_t)keywords.size();
+        // Allocate +2 slots for synthetic NAXIS1/NAXIS2 entries.
+        // XISF stores image dimensions in the <Image> element's geometry attribute,
+        // not as FITS-style keywords inside <FITSKeyword> elements — so libxisf's
+        // fitsKeywords() returns everything EXCEPT NAXIS. We inject them manually
+        // from image.width()/image.height() so downstream code (WCS alignment,
+        // dimension-aware logic) can read them like any other header value.
+        result.count = (int32_t)keywords.size() + 2;
         result.entries = (HeaderEntry*)calloc(result.count, sizeof(HeaderEntry));
         if (!result.entries) {
             result.success = 0;
@@ -273,11 +279,21 @@ extern "C" HeaderResult read_xisf_headers(const char* path) {
             return result;
         }
 
-        for (int32_t i = 0; i < result.count; i++) {
+        for (size_t i = 0; i < keywords.size(); i++) {
             const auto& kw = keywords[i];
             strncpy(result.entries[i].key, kw.name.c_str(), sizeof(result.entries[i].key) - 1);
             strncpy(result.entries[i].value, kw.value.c_str(), sizeof(result.entries[i].value) - 1);
         }
+
+        // Append synthetic NAXIS1/NAXIS2 entries
+        size_t n1 = keywords.size();
+        size_t n2 = n1 + 1;
+        strncpy(result.entries[n1].key, "NAXIS1", sizeof(result.entries[n1].key) - 1);
+        snprintf(result.entries[n1].value, sizeof(result.entries[n1].value), "%d",
+                 static_cast<int>(image.width()));
+        strncpy(result.entries[n2].key, "NAXIS2", sizeof(result.entries[n2].key) - 1);
+        snprintf(result.entries[n2].value, sizeof(result.entries[n2].value), "%d",
+                 static_cast<int>(image.height()));
 
         reader.close();
         result.success = 1;

@@ -4,6 +4,30 @@ All notable changes to AstroBlink & AIsaac will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [5.22.0] — 2026-04-13
+
+### Added
+- **AutoRotate — WCS plate-solve based visual alignment** — Pixel-locks every frame of each target to a single reference regardless of filter, exposure, or night. For plate-solved frames (the vast majority of ASIAir and NINA captures), the transform is computed exactly from the FITS/XISF WCS data (`CD1_1`/`CD1_2`/`CD2_1`/`CD2_2` matrix, `CRPIX1`/`CRPIX2`, `CRVAL1`/`CRVAL2`) via direct matrix algebra — takes microseconds, is mathematically exact, and works for any rotation or pointing offset. Frames without WCS fall back to a synthetic rotation transform derived from the `ROTATOR` header vs the reference's rotator. Smart reference selection picks the frame whose pointing is closest to the median CRVAL of the target group, so outliers (e.g. a frame where the mount lost center) never become the baseline everyone else aligns to. Replaces the old header-flip / star-matching paths as the primary alignment route.
+- **Synchronous WCS pre-scan** — On session load, FITS/XISF headers for every file are read in parallel (`DispatchQueue.concurrentPerform`) before prefetch workers start. Populates WCS fields (`wcsCD11`/`wcsCRPIX1`/`solvedRA`/etc.) plus `NAXIS1`/`NAXIS2` dimensions synchronously, so prefetch workers see accurate per-frame WCS state and can skip expensive triangle matching for plate-solved frames. ~50ms for 180 local files; scales with file count and I/O speed.
+- **XISF NAXIS keyword injection** — `ImageDecoderBridge.read_xisf_headers` now appends synthetic `NAXIS1`/`NAXIS2` entries from `LibXISF::Image::width()` and `height()`. XISF stores image dimensions as `<Image>` geometry attributes, not FITS-style keywords, so libxisf's `fitsKeywords()` wasn't exposing them. Without this fix, XISF files couldn't participate in WCS alignment (the normalization step needs pixel dimensions).
+- **Quality Feedback** — New user feedback loop on the algorithm's quality tier assessment. Press **A** to cycle: Agree → Disagree → Partly → Clear. New "FB" column right next to the Q column with colored icons (green checkmark / red X / orange half). Context menu "Quality Feedback" submenu for mouse users. Multi-selection aware. Persisted in the Frame History DB (migration v9) and in the per-setup CalibrationProfile. Uploaded anonymously to the `community_sessions` table so thresholds can be tuned from real user agreement rates.
+- **Auto-upload of session load benchmarks** — Session scan/first-image/header/caching timings are now uploaded anonymously to the community leaderboard automatically after caching completes. No more manual click on the Benchmark button. Only meaningful sessions (≥5 files) are uploaded. Machine identity is already a SHA256 hash of the hardware UUID — unchanged from the existing community upload path.
+- **Checkered-flag Auto-Mark icon** — The toolbar Auto-Mark button now uses SF Symbols' `flag.checkered` with red/white palette rendering — a racing finish-line flag instead of the previous magic wand. Clearer visual metaphor for "finish the culling job".
+
+### Changed
+- **Star chain detection is now FL-adaptive** — The `closeThreshold` in `StarMetricsCalculator.detectStarChains()` scales with plate scale when `arcsecPerPixel` is available. Physical threshold of 40 arcseconds divided by plate scale, capped at 120 pixels. At long FL (2423 mm, 0.32"/px) the threshold stays at 120 px (preserves existing behavior); at mid FL (468 mm / 85 mm aperture scopes, ~1.66"/px) it drops to ~24 px, preventing the false positives on NGC 2024 and similar dense wide-field targets where normal star clustering used to get flagged as tracking hops. Directional consensus (R) and garbage fraction thresholds now scale smoothly with plate scale across 0.5–2.5"/px (linear interpolation, no discontinuous behavior between 450mm and 550mm). Algorithm version bumped to 17.
+- **Quality Feedback column visible by default** — The new FB column auto-migrates into existing users' saved visible column set via a new `seenDefaultColumns` UserDefaults key. Future default-visible column additions inherit this migration behavior.
+- **Play speed default 0.1s** — Blink playback now defaults to the fastest step (0.1s). Previously defaulted to 0.5s.
+- **community_sessions table extended** — New columns `user_agreed`, `user_disagreed`, `user_partly_agreed`, `algorithm_version`. Migration `20260412_community_feedback_columns.sql` applied to Supabase. Enables server-side analysis of per-setup agreement rates and baseline-drift correlation with algorithm versions.
+- **Renamed "Meridian Flip" → "AutoRotate"** — Toolbar toggle label, status pill, tooltip, help text, and README. The feature is now broader than pier-side correction — it handles any plate-solved transform.
+- **Line-buffered stdout for debug runs** — `setvbuf(stdout, nil, _IOLBF, 0)` at app startup so `print()` output is visible live when redirected to a file during debugging (was block-buffered, hiding everything until exit).
+
+### Fixed
+- **Meridian flip detection** — Replaced XOR logic with OR: any single signal (PIERSIDE change, rotator ≥ 90°, WCS rotation ≥ 90°) triggers the flip. The old XOR cancelled detection on ASIAIR/AM5 mounts where BOTH PIERSIDE and ROTATOR change during a flip. Used as fallback only when WCS is unavailable.
+- **Mirrored alignment transforms rejected** — Added determinant sign check in `DisplayAligner.solveAffine` and `refineTransform`. Triangle-ratio matching is invariant to triangle handedness, so the hash search could pair a CCW triangle with its CW mirror and produce a negative-determinant affine. Mirror transforms are never legitimate between frames from the same camera, so they're rejected regardless of rotation angle.
+
+---
+
 ## [5.21.1] — 2026-04-12
 
 ### Fixed

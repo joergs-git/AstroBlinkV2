@@ -12,6 +12,38 @@ Records with `algorithmVersion < kAlgorithmVersion` are candidates for re-analys
 
 ---
 
+## Version 17 — v5.22.0 (2026-04-13)
+
+**FL-adaptive star chain detection, user quality feedback system, WCS-based display alignment.**
+
+### Changes
+
+1. **FL-Adaptive Star Chain Detection** — `StarMetricsCalculator.detectStarChains()`: close
+   neighbor threshold now scales with plate scale when `arcsecPerPixel` is available. Uses
+   40 arcsecond physical threshold divided by plate scale, capped at 120px. At long FL
+   (2423mm, 0.32"/px): 120px (preserves existing behavior). At mid FL (468mm, 1.66"/px):
+   24px (prevents false positives from normal star clustering, e.g. NGC2024). Directional
+   consensus R threshold raised from 0.35 to 0.50 for plate scales >1.5"/px. Falls back
+   to original 80px threshold when plate scale unknown.
+
+2. **FL-Adaptive Chain Garbage Threshold** — `QualityEstimator` Rule 9: garbage threshold
+   raised from 0.08 to 0.15 for plate scales >1.5"/px. Dense wide-field star fields
+   naturally produce more coincidental close pairs; higher threshold prevents false
+   `.trackingHop` classification while still catching real PE at any FL.
+
+3. **User Quality Feedback** — New `QualityFeedback` enum (agree/disagree/partly) on
+   `ImageEntry`. Stored in Frame History DB (`qualityFeedback` column, migration v9).
+   'A' key cycles feedback, context menu submenu. Feeds into CalibrationDatabase
+   counters (userAgreed/userDisagreed/userPartlyAgreed) for per-setup learning.
+
+### Impact
+- Short/mid FL setups (<1.5"/px plate scale): potential reduction in false `.trackingHop`
+  garbage flags. Frames previously flagged as chain garbage may now score normally.
+- Long FL setups (>1.5"/px): no change in behavior.
+- Re-analysis recommended for archive frames from short FL setups.
+
+---
+
 ## Version 16 — v5.21.0 (2026-04-11)
 
 **PE arc gradient rescue, filter-aware Stage 1.5b, clouded frame detection, Rule 1 P90 floor.**

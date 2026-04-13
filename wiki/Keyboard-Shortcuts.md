@@ -11,6 +11,7 @@
 | Key | Action |
 |-----|--------|
 | 1 / 2 / 3 | Set confidence rating (1-3 stars, same key clears) |
+| A | Cycle quality feedback: Agree → Disagree → Partly → Clear |
 | Space | Toggle pre-delete mark (single or multi-selection) |
 | Cmd+Backspace | Move marked files to _predel/ staging folder |
 | Cmd+M | Move marked files to a chosen folder |
@@ -34,7 +35,7 @@
 ## Blink Playback
 | Key | Action |
 |-----|--------|
-| Play button | Start auto-blink through visible images (adjustable delay 0.1–2s) |
+| Play button | Start auto-blink through visible images (adjustable delay 0.1–2s, default 0.1s) |
 | ESC | Stop blink playback |
 | Film icon | Export blink as animated GIF or HEVC .mov (scale, loops, crop to zoom) |
 
