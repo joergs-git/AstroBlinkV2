@@ -165,6 +165,27 @@ final class AIsaacKnowledgeTests: XCTestCase {
         }
     }
 
+    /// v5.22.1 feedback round-trip, unified folder loader, Session panel persistence
+    /// must be documented in AIsaac's knowledge.
+    func testV5_22_1_FeaturesDocumentedInPrompt() {
+        let prompt = AIsaacContextBuilder.appKnowledge.lowercased()
+
+        let concepts = [
+            "quality feedback",         // Feedback feature in prompt
+            "a on selected",            // A key binding
+            "thumbs-up",                // New icon set
+            "filehash",                 // Cross-machine identity
+            "pre-delete",               // PRE-DELETE skip rule
+            "multi-source",             // Multi-folder PRE-DELETE common ancestor
+            "session overview panel",   // Panel persistence
+        ]
+
+        for concept in concepts {
+            XCTAssertTrue(prompt.contains(concept),
+                          "AIsaac prompt missing v5.22.1 concept: \"\(concept)\"")
+        }
+    }
+
     // MARK: - Frame Data Completeness
 
     /// The per-frame CSV header in AIsaac context must include all metric columns.

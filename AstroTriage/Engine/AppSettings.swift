@@ -61,6 +61,7 @@ struct AppSettings {
         case dismissedMessageIDs  // [String] — UUIDs of permanently dismissed in-app messages
         case snoozedMessages      // Data — encoded [String: Date] of snoozed message ID → snooze-until date
         case seenDefaultColumns   // [String] — default-visible column ids seen by user (tracks auto-migration of new columns)
+        case showSessionOverviewPanel  // Bool — right-side Session Overview panel visibility (persisted across sessions & iCloud)
     }
 
     // Start observing iCloud changes (call once at app launch)

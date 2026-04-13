@@ -104,10 +104,11 @@ struct CommunitySessionEntry: Codable {
     let algo_flagged_trash: Int
     let user_overrode_keep: Int
 
-    // Explicit user quality feedback counters (v5.22.0+).
-    // Accumulated across all sessions for this setup — uploaded as a running total
-    // so the server can track how often users agree/disagree with the algorithm's
-    // tier assignments. Helps us tune thresholds over time.
+    // Explicit user quality feedback counters (v5.22.0+, per-group semantics since v5.22.1).
+    // These are counts for THIS filter/exposure group in THIS session — not session-wide,
+    // not setup-cumulative. Server-side aggregation across rows produces setup-wide totals.
+    // Prior to v5.22.1 the uploader stamped session-wide totals on every group row, which
+    // inflated aggregates by a factor of (group count); v5.22.1+ uploads are per-group.
     let user_agreed: Int
     let user_disagreed: Int
     let user_partly_agreed: Int

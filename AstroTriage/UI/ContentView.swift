@@ -468,6 +468,8 @@ struct ContentView: View {
             sfToolbarButton("list.bullet.rectangle", "Inspector", "Show FITS/XISF header keywords for selected image (I)") { viewModel.toggleHeaderInspector() }
             sfToolbarButton("chart.bar", "Session", "Session overview — group stats by filter, night, and target") {
                 viewModel.showSessionOverview.toggle()
+                // Persist across sessions & iCloud so hiding the panel sticks.
+                AppSettings.saveBool(viewModel.showSessionOverview, for: .showSessionOverviewPanel)
             }
             sfToolbarButton("clock.arrow.circlepath", "History", "Frame history — quality trends across all sessions") {
                 FrameHistoryController.shared.toggleWindow()

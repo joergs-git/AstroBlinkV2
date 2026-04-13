@@ -58,16 +58,13 @@ final class CommunityDetectionService {
             groups[key, default: []].append(entry)
         }
 
-        // Count algorithm flags and user overrides across ALL entries (not just retained)
-        let algoFlagged = entries.filter { $0.qualityTier == .trash && $0.qualityBreakdown?.garbageReasons.isEmpty == false }.count
-        let userOverrode = entries.filter { $0.qualityTier == .trash && !$0.isMarkedForDeletion }.count
-
-        // Explicit quality feedback counts — per-session totals from the A-key cycle
-        let agreedCount = entries.filter { $0.qualityFeedback == .agree }.count
-        let disagreedCount = entries.filter { $0.qualityFeedback == .disagree }.count
-        let partlyCount = entries.filter { $0.qualityFeedback == .partly }.count
-
-        // Build upload entries per group
+        // Build upload entries per group.
+        //
+        // v5.22.1 fix: feedback & algorithm-agreement counters are scoped to each
+        // filter/exposure group individually, NOT session-wide. Prior versions
+        // computed them once across all entries and stamped the same total onto
+        // every group row, which inflated server-side aggregates by a factor of
+        // (number of groups per session).
         var uploadEntries: [CommunitySessionEntry] = []
         for (key, groupEntries) in groups {
             guard groupEntries.count >= 6 else { continue }
@@ -76,10 +73,37 @@ final class CommunityDetectionService {
             let filterCanonical = String(parts[0])
             let exposureS = Int(parts[1]) ?? 0
 
-            let totalInGroup = entries.filter {
-                ColorCombineEngine.canonicalFilterName($0.filter ?? "") == filterCanonical &&
-                ($0.exposure.map { Int($0.rounded()) } ?? 0) == exposureS
+            // Full group population (retained + marked-for-deletion) —
+            // algo_flagged_trash & user_overrode_keep are defined over this set.
+            // Explicit [ImageEntry] annotation keeps the Swift type-checker fast,
+            // otherwise the chained filter closures below stress inference.
+            let groupAll: [ImageEntry] = entries.filter { e in
+                let entryFilter = ColorCombineEngine.canonicalFilterName(e.filter ?? "")
+                let entryExposure: Int
+                if let exp = e.exposure {
+                    entryExposure = Int(exp.rounded())
+                } else {
+                    entryExposure = 0
+                }
+                return entryFilter == filterCanonical && entryExposure == exposureS
+            }
+            let totalInGroup = groupAll.count
+
+            // Per-group algorithm agreement counters
+            let groupAlgoFlagged = groupAll.filter {
+                $0.qualityTier == .trash && $0.qualityBreakdown?.garbageReasons.isEmpty == false
             }.count
+            let groupUserOverrode = groupAll.filter {
+                $0.qualityTier == .trash && !$0.isMarkedForDeletion
+            }.count
+
+            // Per-group explicit quality feedback (from the A-key cycle).
+            // Counts every frame in this group — retained AND marked — because
+            // feedback reflects the user's opinion of the algorithm's tier, which
+            // applies regardless of whether the frame ended up being deleted.
+            let groupAgreed = groupAll.filter { $0.qualityFeedback == .agree }.count
+            let groupDisagreed = groupAll.filter { $0.qualityFeedback == .disagree }.count
+            let groupPartly = groupAll.filter { $0.qualityFeedback == .partly }.count
 
             let entry = CommunitySessionEntry(
                 machine_hash: MachineInfo.machineHash,
@@ -103,11 +127,11 @@ final class CommunityDetectionService {
                 mad_fwhm: Self.mad(groupEntries.compactMap(\.displayFWHM)),
                 mad_snr: Self.mad(groupEntries.compactMap { self.snr(for: $0) }),
                 mad_trailing: Self.mad(groupEntries.compactMap(\.trailingScore)),
-                algo_flagged_trash: algoFlagged,
-                user_overrode_keep: userOverrode,
-                user_agreed: agreedCount,
-                user_disagreed: disagreedCount,
-                user_partly_agreed: partlyCount,
+                algo_flagged_trash: groupAlgoFlagged,
+                user_overrode_keep: groupUserOverrode,
+                user_agreed: groupAgreed,
+                user_disagreed: groupDisagreed,
+                user_partly_agreed: groupPartly,
                 algorithm_version: kAlgorithmVersion
             )
             uploadEntries.append(entry)

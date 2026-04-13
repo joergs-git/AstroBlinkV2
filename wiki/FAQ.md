@@ -81,16 +81,44 @@ Use them to manually flag frames you've visually inspected. For example, rate "3
 ## Quality Feedback
 
 **Q: What is Quality Feedback and how is it different from the Confidence Rating?**
-Confidence Rating (1/2/3 keys) is your own personal "I like this frame this much" judgment. Quality Feedback (A key) is your agreement with the algorithm's tier assignment for that frame. Press A to cycle through Agree → Disagree → Partly → Clear. A green checkmark, red X, orange half-circle, or empty icon appears in the FB column right next to the Q column. Use Disagree when the algorithm's tier feels wrong — e.g. it marked a perfectly usable frame as trash, or missed a real problem on a frame tiered as good.
+Confidence Rating (1/2/3 keys) is your own personal "I like this frame this much" judgment. Quality Feedback (A key) is your agreement with the algorithm's tier assignment for that frame. Press A to cycle through Agree → Disagree → Partly → Clear. In the FB column (right next to Q) you'll see a thumbs-up (green), thumbs-down (red), sideways pointing hand (orange = partly), or empty cell. Use Disagree when the algorithm's tier feels wrong — e.g. it marked a perfectly usable frame as trash, or missed a real problem on a frame tiered as good.
 
-**Q: What happens to my feedback?**
-Feedback is persisted locally in the Frame History database and in the per-setup CalibrationProfile. When you confirm pre-delete (the moment the calibration system also learns from your retained frames), your cumulative agreement/disagreement counts are uploaded anonymously to the community_sessions table — alongside the existing algorithm_flagged/user_overrode counts and with the scoring algorithm version tag. Over time, this lets us tune detection thresholds based on real-world user agreement rates across many setups. No personal data, no file paths, no image content — just counters.
+**Q: Do my feedback marks survive closing and reopening a folder?**
+Yes (since v5.22.1). Feedback is written to the Frame History DB the moment you press A, and it's restored automatically when you re-open the same folder — the same way your 1/2/3 confidence ratings already persisted. The lookup is by `fileHash` (SHA256 of the first 64KB), so even renamed or moved files keep their feedback.
+
+**Q: Does feedback follow me across Macs?**
+Yes. The Frame History SQLite file is automatically iCloud-synced, and it's keyed by `fileHash` rather than machine identity. If you press A on a frame on your Mac Studio and then open the same NAS folder from your MacBook, the thumbs appear in the same places — no manual sync step. (v5.22.0 and earlier wrote the feedback to the DB but forgot to read it back on reload, so the icons disappeared. v5.22.1 fixes the round-trip.)
+
+**Q: What happens to my feedback beyond the local DB?**
+When you confirm pre-delete (the moment the calibration system also learns from your retained frames), per-filter/per-exposure feedback counts are uploaded anonymously to the `community_sessions` table — alongside the existing algorithm_flagged/user_overrode counts and the scoring algorithm version tag. Counts are scoped to each filter/exposure group individually so the server can tell "the user disagreed with 14 Ha frames" from "the user disagreed with 0 SII frames". Over time this lets us tune detection thresholds based on real-world agreement rates. No personal data, no file paths, no image content — just counters. (v5.22.0 had a bug that stamped session-wide totals onto every group row, inflating aggregates by the group count; v5.22.1 fixes this and the user-agreed / user-disagreed / user-partly-agreed columns are now per-group accurate.)
 
 **Q: Do I have to use Quality Feedback?**
 No. It's entirely opt-in. The column is visible by default, but if you never press A or use the context menu, no feedback is ever recorded or uploaded. It's there for users who want to help improve the algorithm.
 
 **Q: I disagree with a trash tier. Will my feedback un-mark the frame?**
 No — feedback and marking are independent. If the algorithm marked a frame as trash and you disagree, press Space to unmark it (or just don't pre-delete) AND press A for Disagree to record your feedback. The two actions combined tell the calibration system "this frame should have been kept". If you only unmark without feedback, the existing `userOverrodeKeep` counter is still incremented (same signal, less explicit).
+
+## Opening Folders & Files
+
+**Q: I opened a parent folder that has some loose FITS at the top plus subfolders per filter — only the loose ones showed up. Why?**
+Fixed in v5.22.1. The scanner used to short-circuit: if it found any images at the root, it skipped all subfolders. Now it always merges root-level images with subfolder content, so opening `M97/` with 2 stray files plus `Ha/`, `OIII/`, `SII/` subdirs loads everything.
+
+**Q: Can I open multiple folders at once?**
+Yes — Cmd+click folders in the Open dialog. All of them are scanned and merged into a single session. Since v5.22.1 the app holds security-scoped access on every picked folder, so PRE-DELETE moves work for frames from any of them (pre-5.22.1 only held scope on the first folder and the sandbox would reject moves from the rest).
+
+**Q: What about mixing loose files and folders in the Open dialog?**
+Also supported since v5.22.1. Cmd+click a folder and individual files and they all load together, deduped by URL. Pre-5.22.1 silently dropped the folders because they lacked a `.fits` extension.
+
+**Q: Where does PRE-DELETE end up when I open multiple folders?**
+The app computes the deepest common ancestor of every picked folder and creates a single `PRE-DELETE/` there. On the first delete in a multi-source session, a confirmation dialog shows you exactly where the files will land. Subsequent deletes in the same session don't re-prompt.
+
+**Q: I want to browse my PRE-DELETE folder to restore something. Does it get pulled into a normal session open?**
+No. PRE-DELETE / `_predel` / `pre-delete` subfolders are auto-skipped when they're encountered during recursion from a parent (so a normal session stays clean). But if you explicitly pick the PRE-DELETE folder as the top-level folder in the Open dialog, its contents load normally — exactly the use case where you'd want to review or restore previously culled frames.
+
+## Session Overview panel
+
+**Q: Every time I open a folder, the right-side Session panel comes back even though I closed it. Can I make it stick?**
+Yes (since v5.22.1). The hide state of the right-side Session Overview panel is now persisted across folder opens AND across app restarts, and it's iCloud-synced with the rest of your settings. Click the "Session" button in the toolbar once — your choice sticks everywhere. (Pre-5.22.1 force-showed the panel on every session load.)
 
 ## AutoRotate
 

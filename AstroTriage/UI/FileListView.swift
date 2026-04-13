@@ -636,7 +636,9 @@ struct FileListView: NSViewRepresentable {
             return cellView
         }
 
-        // Quality feedback cell: green checkmark (agree), red X (disagree), orange half (partly)
+        // Quality feedback cell: thumbs up (agree), thumbs down (disagree),
+        // sideways thumb/pointing hand (partly), empty (none).
+        // Hand gestures chosen over abstract marks for at-a-glance semantics.
         private func makeFeedbackCell(for entry: ImageEntry, in tableView: NSTableView) -> NSView {
             let identifier = NSUserInterfaceItemIdentifier("Cell_qualityFeedback")
             let cellView: NSTableCellView
@@ -660,39 +662,45 @@ struct FileListView: NSViewRepresentable {
                 cellView = cell
             }
 
-            let symbolName: String?
-            let color: NSColor?
-            let tooltip: String
-
-            switch entry.qualityFeedback {
-            case .none:
-                symbolName = nil
-                color = nil
-                tooltip = "No feedback (press A to cycle)"
-            case .agree:
-                symbolName = "checkmark.circle.fill"
-                color = .systemGreen
-                tooltip = "Agree with quality assessment (press A to change)"
-            case .disagree:
-                symbolName = "xmark.circle.fill"
-                color = .systemRed
-                tooltip = "Disagree with quality assessment (press A to change)"
-            case .partly:
-                symbolName = "circle.lefthalf.filled"
-                color = .systemOrange
-                tooltip = "Partly agree with quality assessment (press A to change)"
-            }
-
-            cellView.toolTip = tooltip
-            if let name = symbolName, let tint = color,
-               let image = NSImage(systemSymbolName: name, accessibilityDescription: nil) {
-                let config = NSImage.SymbolConfiguration(pointSize: 11, weight: .medium)
-                cellView.imageView?.image = image.withSymbolConfiguration(config)
-                cellView.imageView?.contentTintColor = tint
-            } else {
-                cellView.imageView?.image = nil
-            }
+            cellView.toolTip = Self.feedbackTooltip(for: entry.qualityFeedback)
+            cellView.imageView?.image = Self.feedbackIcon(for: entry.qualityFeedback)
+            cellView.imageView?.contentTintColor = Self.feedbackTint(for: entry.qualityFeedback)
             return cellView
+        }
+
+        // Feedback icon factory: returns an SF Symbol configured at the cell size.
+        // Used by makeFeedbackCell and the right-click context menu so both stay in sync.
+        fileprivate static func feedbackIcon(for feedback: QualityFeedback) -> NSImage? {
+            let symbolName: String
+            switch feedback {
+            case .none:     return nil
+            case .agree:    symbolName = "hand.thumbsup.fill"
+            case .disagree: symbolName = "hand.thumbsdown.fill"
+            case .partly:   symbolName = "hand.point.right.fill"  // sideways-pointing hand reads as "horizontal/neutral"
+            }
+            guard let image = NSImage(systemSymbolName: symbolName, accessibilityDescription: nil) else {
+                return nil
+            }
+            let config = NSImage.SymbolConfiguration(pointSize: 11, weight: .medium)
+            return image.withSymbolConfiguration(config)
+        }
+
+        fileprivate static func feedbackTint(for feedback: QualityFeedback) -> NSColor? {
+            switch feedback {
+            case .none:     return nil
+            case .agree:    return .systemGreen
+            case .disagree: return .systemRed
+            case .partly:   return .systemOrange
+            }
+        }
+
+        fileprivate static func feedbackTooltip(for feedback: QualityFeedback) -> String {
+            switch feedback {
+            case .none:     return "No feedback (press A to cycle)"
+            case .agree:    return "Agree with quality assessment (press A to change)"
+            case .disagree: return "Disagree with quality assessment (press A to change)"
+            case .partly:   return "Partly agree — neutral (press A to change)"
+            }
         }
 
         // Orange gradient icon and color for borderline sub-tiers.
@@ -1141,18 +1149,21 @@ struct FileListView: NSViewRepresentable {
                 let agreeItem = NSMenuItem(title: "Agree", action: #selector(setFeedbackAgree(_:)), keyEquivalent: "")
                 agreeItem.target = self
                 agreeItem.tag = clickedRow
+                agreeItem.image = Self.feedbackIcon(for: .agree)
                 if entry.qualityFeedback == .agree { agreeItem.state = .on }
                 feedbackMenu.addItem(agreeItem)
 
                 let disagreeItem = NSMenuItem(title: "Disagree", action: #selector(setFeedbackDisagree(_:)), keyEquivalent: "")
                 disagreeItem.target = self
                 disagreeItem.tag = clickedRow
+                disagreeItem.image = Self.feedbackIcon(for: .disagree)
                 if entry.qualityFeedback == .disagree { disagreeItem.state = .on }
                 feedbackMenu.addItem(disagreeItem)
 
                 let partlyItem = NSMenuItem(title: "Partly Agree", action: #selector(setFeedbackPartly(_:)), keyEquivalent: "")
                 partlyItem.target = self
                 partlyItem.tag = clickedRow
+                partlyItem.image = Self.feedbackIcon(for: .partly)
                 if entry.qualityFeedback == .partly { partlyItem.state = .on }
                 feedbackMenu.addItem(partlyItem)
 

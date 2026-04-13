@@ -4,6 +4,23 @@ All notable changes to AstroBlink & AIsaac will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [5.22.1] — 2026-04-13
+
+### Fixed
+- **Quality feedback now reloads across sessions and machines** — User agree/disagree/partly feedback (the `A` key cycle) was already persisted to the Frame History DB and uploaded to Supabase, but was not read back when a folder was reopened. Added restore in both `onFileHash` callbacks mirroring the existing `userConfidence` path. Because `fileHash` is the primary key on `frame_record` and the SQLite file is iCloud-synced, feedback given on one Mac now also appears when the same session is opened on another Mac — without any new sync code.
+- **Parent folder with stray root files + subfolders now merges everything** — `SessionScanner.scan` no longer short-circuits on `rootHasImages`. Opening a parent like `M97/` with 2 loose `.fits` files at root plus per-filter `Ha/`, `OIII/`, `SII/` subdirs now loads all of them instead of just the 2 at root.
+- **PRE-DELETE folders auto-skipped during recursion, loadable when explicitly picked** — `_predel` / `pre-delete` / `predelete` (case-insensitive) directories encountered at `depth > 0` during a parent-folder scan are skipped so their contents don't pollute the session. Opening one directly as the top-level rootURL still works, so power users can review and restore previously culled frames.
+- **Multi-folder selection security scopes & session root** — `loadMultipleFolders` now holds security-scoped access on every picked folder (pre-5.22.1 only kept scope on the first one, so PRE-DELETE moves for frames in folders 2, 3, … failed with a sandbox error). `sessionRootURL` is now the deepest common ancestor of the picked folders instead of the first folder's parent.
+- **Mixed files + folders in Open panel** — Picking a mix of loose files and folders used to silently drop every folder because `loadFiles` filtered URLs by `.fits` extension. A new `loadMixedSelection` path scans every picked directory and merges every loose file as its own `ImageEntry`, deduped by standardized URL.
+- **Multi-source PRE-DELETE confirmation** — Multi-folder / mixed sessions now show a one-time informational line in the PRE-DELETE confirmation dialog explaining where the files will be moved (`<commonAncestor>/PRE-DELETE/`). Subsequent deletes in the same session don't re-prompt.
+- **Per-group feedback & algorithm-agreement counts in Supabase upload** — `CommunityDetectionService.uploadSessionData` previously computed session-wide totals of `user_agreed/disagreed/partly_agreed/algo_flagged_trash/user_overrode_keep` and stamped them onto every filter/exposure row, inflating server-side aggregates by a factor of (group count). Fixed to compute each counter from its own group's entries. Misleading comment on `CommunitySessionEntry` corrected. Existing corrupted rows from 2026-04-13 were manually deleted from Supabase before shipping this fix.
+
+### Changed
+- **Feedback icons redesigned** — Agree / Disagree / Partly now render as `hand.thumbsup.fill` / `hand.thumbsdown.fill` / `hand.point.right.fill` (thumbs up / thumbs down / sideways pointing hand) in the FB column and the right-click Quality Feedback submenu. Clearer semantics than the old checkmark / cross / half-circle.
+- **Right-side Session Overview panel visibility persisted** — New `showSessionOverviewPanel` AppSettings key (dual-write UserDefaults + iCloud). Load paths (`loadFiles`, `loadMultipleFolders`, `loadSession`, `loadMixedSelection`) no longer force-show the panel on every folder open; the user's last choice is respected. First-run default remains collapsed.
+
+---
+
 ## [5.22.0] — 2026-04-13
 
 ### Added

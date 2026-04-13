@@ -1,10 +1,14 @@
-// v1.0.0
+// v1.1.0 (v5.22.1: merge root files + subfolders in one pass; PRE-DELETE auto-skip)
 import Foundation
 
-// Scans a folder for FITS/XISF files with smart subfolder logic:
-// - If root has image files → only load root images, ignore subfolders
-// - If root has NO image files but has subfolders → scan subfolders recursively
-// - Calibration frames (DARK, FLAT, BIAS) are excluded by default (folder scan only)
+// Scans a folder for FITS/XISF files:
+// - Always merges root-level image files AND subfolder content into a single list
+//   (pre-v5.22.1 short-circuited to root-only when any root file was present, which
+//   silently hid everything under per-filter subfolders when a stray file sat at root).
+// - Calibration frames (DARK, FLAT, BIAS) are excluded by default (folder scan only).
+// - PRE-DELETE / _predel folders are auto-skipped during recursion (depth > 0) BUT
+//   load normally when the user explicitly picks one as the top-level rootURL
+//   (e.g. to review / restore previously culled frames).
 struct SessionScanner {
 
     static let supportedExtensions: Set<String> = ["xisf", "fits", "fit", "fts"]
@@ -13,6 +17,16 @@ struct SessionScanner {
     // Calibration keywords for folder-level detection (case-insensitive substring match).
     // "dark" also catches "darkflat", "masterdark", "Dark_Frames" etc.
     private static let calibrationKeywords = ["dark", "flat", "bias"]
+
+    // PRE-DELETE folder names we auto-skip during subfolder recursion.
+    // User can still explicitly open one of these as rootURL to review deleted frames.
+    // Case-insensitive exact match — does not match arbitrary folders containing "delete".
+    private static let preDeleteFolderNames: Set<String> = ["_predel", "pre-delete", "predelete"]
+
+    // True iff the given folder name matches any configured PRE-DELETE name (case-insensitive).
+    private static func isPreDeleteFolder(_ folderName: String) -> Bool {
+        return preDeleteFolderNames.contains(folderName.lowercased())
+    }
 
     // Check if a folder name contains any calibration keyword (case-insensitive)
     // Used for folder-level exclusion where substring matching is appropriate
@@ -39,22 +53,15 @@ struct SessionScanner {
         return calibrationKeywords.contains { lower.contains($0) }
     }
 
-    // Scan a root folder with smart subfolder detection
-    // lightsOnly: when true (default for folder open), skip calibration frames (DARK/FLAT/BIAS)
+    // Scan a root folder. Always recurses into subfolders AND picks up root-level
+    // files — a parent folder with a stray .fits plus per-filter subdirs now yields
+    // both in a single session. Calibration subfolders/frames are excluded when
+    // lightsOnly is true.
     static func scan(rootURL: URL, maxDepth: Int = defaultMaxDepth, lightsOnly: Bool = true) -> [ImageEntry] {
         var entries: [ImageEntry] = []
         let fm = FileManager.default
 
-        // Check if root folder contains any image files directly
-        let rootHasImages = hasImageFiles(in: rootURL, fm: fm)
-
-        if rootHasImages {
-            // Root has images → only scan root level, ignore subfolders
-            scanDirectory(url: rootURL, rootURL: rootURL, depth: 0, maxDepth: 0, fm: fm, lightsOnly: lightsOnly, entries: &entries)
-        } else {
-            // Root has no images → scan subfolders recursively (e.g. per-filter folders)
-            scanDirectory(url: rootURL, rootURL: rootURL, depth: 0, maxDepth: maxDepth, fm: fm, lightsOnly: lightsOnly, entries: &entries)
-        }
+        scanDirectory(url: rootURL, rootURL: rootURL, depth: 0, maxDepth: maxDepth, fm: fm, lightsOnly: lightsOnly, entries: &entries)
 
         // Default sort: date/time ascending
         entries.sort { ($0.dateTime ?? "") < ($1.dateTime ?? "") }
@@ -79,8 +86,12 @@ struct SessionScanner {
     private static func scanDirectory(url: URL, rootURL: URL, depth: Int, maxDepth: Int, fm: FileManager, lightsOnly: Bool, entries: inout [ImageEntry]) {
         guard depth <= maxDepth else { return }
 
-        // Skip _predel directories
-        if url.lastPathComponent == "_predel" { return }
+        // Skip PRE-DELETE / _predel directories encountered via recursion,
+        // but ALLOW them when the user explicitly opens one as the top-level
+        // rootURL (depth == 0). This lets power-users review/restore culled
+        // frames while keeping normal session opens free of their PRE-DELETE
+        // subfolder contents.
+        if depth > 0 && isPreDeleteFolder(url.lastPathComponent) { return }
 
         // Skip calibration folders entirely when lightsOnly is active
         // Matches any folder containing "dark", "flat", or "bias" anywhere in the name

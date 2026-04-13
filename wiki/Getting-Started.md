@@ -2,7 +2,7 @@
 
 ## First Launch
 
-1. **Open your session folder** (Cmd+O) — select the folder containing your FITS or XISF sub-exposures
+1. **Open your session folder** (Cmd+O) — select a folder containing FITS/XISF sub-exposures. You can also pick multiple folders, multiple individual files, or a mix of files and folders; everything gets merged into one session. Loose files at the parent level are merged with any subfolder contents automatically (e.g. `M97/` with `Ha/`, `OIII/`, `SII/` subdirs plus a stray master frame at root — you'll see all of them).
 2. **Wait for caching** — AstroBlink decodes, stretches, and analyzes every frame. Progress shows in the status bar. First-time caching takes 30-90 seconds depending on file count and compression.
 3. **Quality scores appear** — once caching completes, every frame gets a quality icon (green/orange/red) based on SmartCull analysis
 
@@ -28,7 +28,8 @@ AIsaac starts as a compact floating window with preset chips and an input field 
 - **Lock STF (S key)** — freeze stretch parameters from one image and apply to all others for brightness comparison
 - **Apply All** — bake current stretch + post-processing settings into all cached previews for instant navigation
 - **Filter search** — type `filter:Ha` in the search bar to focus on one filter at a time
-- **Multi-folder** — Cmd+click multiple folders in the open dialog to merge sessions
+- **Multi-folder / mixed selection** — Cmd+click multiple folders and/or individual files in the Open dialog to merge them into one session. PRE-DELETE lands at the deepest common ancestor (with a one-time confirmation sheet on the first delete so you know exactly where). PRE-DELETE folders themselves are auto-skipped during recursion, but you can open one directly as the top-level folder to review or restore previously culled frames.
+- **Right-side Session panel** — click "Session" in the toolbar to show/hide the group stats sidebar. Your choice sticks across folder opens AND app restarts (iCloud-synced).
 - **Night mode (N key)** — red-on-black UI for dark-adapted vision at the telescope
 - **Target Catalog** — open Window > Target Catalog to browse 533+ deep-sky objects with visibility charts, weather, FOV simulation, and filter gap analysis. Great for planning your next session before heading outside.
 

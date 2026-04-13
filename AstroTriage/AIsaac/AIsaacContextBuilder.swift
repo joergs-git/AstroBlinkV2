@@ -851,6 +851,41 @@ struct AIsaacContextBuilder {
         - Filter syntax: "rating:1", "rating:2", "rating:3", "rating:>0" (any rated).
         - Orthogonal to deletion marking — both tracked independently.
 
+        QUALITY FEEDBACK (v5.22.0, round-trip fixed in v5.22.1):
+        - Press A on selected frames to tell the algorithm whether you AGREE with its quality tier. \
+        Cycles: none → Agree → Disagree → Partly → Clear. FB column right next to Q.
+        - Icons (v5.22.1): thumbs-up (green = agree), thumbs-down (red = disagree), \
+        sideways pointing hand (orange = partly), empty (no feedback).
+        - Context menu has a "Quality Feedback" submenu with the same options for mouse users.
+        - Only applies to frames that already have a quality tier (small groups <6 frames are unscored).
+        - Persisted in Frame History DB keyed by fileHash (SHA256 of first 64KB). Since v5.22.1 the feedback \
+        is also RELOADED when you reopen a folder — pre-5.22.1 wrote to DB but forgot to read back.
+        - Cross-machine automatic: fileHash is stable across Macs and the Frame History SQLite is iCloud-synced, \
+        so feedback given on one Mac appears on another when the same NAS folder is opened there.
+        - Uploaded anonymously to community_sessions per filter/exposure group on pre-delete commit \
+        (per-group accurate since v5.22.1; earlier versions stamped session-wide totals on every row). \
+        Drives long-term algorithm tuning — no personal data, just counters.
+        - Independent of marking: disagreeing with a trash tier does NOT un-mark the frame. Press Space \
+        separately to unmark.
+
+        FOLDER / FILE OPENING (refined in v5.22.1):
+        - Cmd+O opens the NSOpenPanel which allows multi-selection of files, folders, or a mix.
+        - Parent folders with stray root files AND per-filter subdirs now merge everything (pre-5.22.1 \
+        silently ignored subfolders when any root file was present).
+        - Multi-folder selection: security scope is held for every picked folder so PRE-DELETE moves work \
+        for frames from any of them. sessionRoot is the deepest common ancestor.
+        - Mixed files + folders: both are loaded, deduped by URL.
+        - Multi-source PRE-DELETE: single PRE-DELETE/ folder created at the common ancestor. On the first \
+        delete a one-time confirmation sheet shows the exact path.
+        - PRE-DELETE / _predel / pre-delete folders encountered during recursion are auto-skipped. \
+        BUT opening one directly as the top-level folder loads it normally (use case: review/restore \
+        previously culled frames).
+
+        SESSION OVERVIEW PANEL PERSISTENCE (v5.22.1):
+        - Right-side Session Overview panel visibility is now persisted across folder opens AND across \
+        app restarts. iCloud-synced via AppSettings.showSessionOverviewPanel. Pre-5.22.1 force-showed \
+        it on every load.
+
         PIXINSIGHT BRIDGE (v5.13.0):
         - PixInsight PJSR script "AstroBlink Importer" can launch AstroBlink from PI.
         - Imports AstroBlinkV2_SSWEIGHT.csv with quality tiers, SSWEIGHT, and PSFSWGHT values.

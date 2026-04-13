@@ -489,8 +489,82 @@ class TriageViewModel: ObservableObject {
         }
     }
 
-    // Track security-scoped resource for proper cleanup
-    private var accessedURL: URL?
+    // Track security-scoped resources for proper cleanup. Multi-folder / mixed
+    // selections need one scope per picked URL so PRE-DELETE moves succeed for
+    // frames from any source folder (not just the first one).
+    private var accessedURLs: [URL] = []
+
+    // Backwards-compatible accessor for the primary (first) security-scoped URL.
+    // Legacy callers such as moveMarkedToPreDelete read this — always prefer the
+    // array when iterating or checking membership.
+    private var accessedURL: URL? {
+        get { accessedURLs.first }
+        set {
+            // Legacy assignment path: stop all previous, then store the single new one.
+            stopAllAccessedURLs()
+            if let url = newValue { accessedURLs = [url] }
+        }
+    }
+
+    // Whether the current session was loaded from multiple source folders (or
+    // a mix of files + folders). Used by moveMarkedToPreDelete to show a one-time
+    // confirmation sheet explaining where PRE-DELETE will be created.
+    private var multiSourceSession: Bool = false
+
+    // One-time-per-session flag: set after the user confirms the multi-source
+    // PRE-DELETE location so subsequent deletes in the same session don't re-prompt.
+    private var multiSourcePreDeleteConfirmed: Bool = false
+
+    /// Stop accessing every URL we currently hold a scope for and clear the list.
+    private func stopAllAccessedURLs() {
+        for u in accessedURLs { u.stopAccessingSecurityScopedResource() }
+        accessedURLs.removeAll()
+    }
+
+    /// Start security-scoped access to each URL and store those that succeeded.
+    /// Callers should call stopAllAccessedURLs() before invoking this to release
+    /// any previous session's scopes.
+    private func beginSecurityScopes(for urls: [URL]) {
+        for u in urls {
+            if u.startAccessingSecurityScopedResource() {
+                accessedURLs.append(u)
+            }
+        }
+    }
+
+    /// Compute the deepest common ancestor directory across a set of URLs.
+    /// Returns `/` if the URLs don't share any common parent, or the first URL's
+    /// parent when the set has a single element. Used to derive sessionRootURL
+    /// for multi-folder / mixed selections so PRE-DELETE ends up at a sensible
+    /// location (and so the selection is still reachable from the sandbox).
+    private static func commonAncestor(of urls: [URL]) -> URL {
+        guard let first = urls.first else {
+            return URL(fileURLWithPath: "/")
+        }
+        if urls.count == 1 {
+            // For a single URL, return its parent (or itself if it's a directory
+            // — the caller is responsible for passing the right thing).
+            return first
+        }
+        // Build path-component arrays for each URL and walk forward while every
+        // array agrees. The longest common prefix is the deepest common ancestor.
+        let componentLists = urls.map { $0.pathComponents }
+        var prefix: [String] = []
+        var idx = 0
+        outer: while true {
+            var current: String?
+            for list in componentLists {
+                guard idx < list.count else { break outer }
+                if current == nil { current = list[idx] }
+                if list[idx] != current { break outer }
+            }
+            if let c = current { prefix.append(c) }
+            idx += 1
+        }
+        // Reconstruct a URL from the shared prefix. Empty prefix → "/".
+        let path = prefix.isEmpty ? "/" : ("/" + prefix.dropFirst().joined(separator: "/"))
+        return URL(fileURLWithPath: path, isDirectory: true)
+    }
 
     init() {
         self.device = MTLCreateSystemDefaultDevice()
@@ -551,6 +625,9 @@ class TriageViewModel: ObservableObject {
         if let v = AppSettings.loadBool(for: .hideMarked) { hideMarked = v }
         if let v = AppSettings.loadBool(for: .autoMeridian) { autoMeridianEnabled = v }
         if let v = AppSettings.loadFloat(for: .fontScale) { fontScale = CGFloat(v) }
+        // Right-side Session Overview panel: user-controlled, persists across sessions & iCloud.
+        // First-run default remains false (clean single-column layout until user opens it once).
+        if let v = AppSettings.loadBool(for: .showSessionOverviewPanel) { showSessionOverview = v }
 
         // Start lightweight system stats polling (CPU + memory every 2s)
         startStatsPolling()
@@ -766,12 +843,145 @@ class TriageViewModel: ObservableObject {
         if directories.count == 1 && files.isEmpty {
             // Single directory — standard folder scan
             loadSession(url: directories[0])
-        } else if directories.count > 1 {
-            // Multiple directories — merge into one session
+        } else if directories.count >= 1 && files.isEmpty {
+            // Multiple directories only — merge into one session
             loadMultipleFolders(urls: directories)
+        } else if directories.isEmpty && !files.isEmpty {
+            // Individual files only — no folders picked
+            loadFiles(urls: files)
         } else {
-            // Individual files (or mix of files + dirs — treat dirs as files)
-            loadFiles(urls: urls)
+            // Mixed selection: files + at least one folder. Pre-v5.22.1 silently
+            // dropped the folders because loadFiles filtered by .fits extension.
+            // Now we route through a dedicated mixed path that scans every picked
+            // directory and merges each picked file as its own ImageEntry.
+            loadMixedSelection(files: files, directories: directories)
+        }
+    }
+
+    /// Handle a mixed NSOpenPanel selection of loose files + one or more folders.
+    /// Each directory is scanned via SessionScanner; each standalone file produces
+    /// its own ImageEntry. Results are deduped by standardizedFileURL so a file
+    /// listed both inside a picked folder and as a top-level pick appears once.
+    private func loadMixedSelection(files: [URL], directories: [URL]) {
+        let fileEntries = files.filter {
+            SessionScanner.supportedExtensions.contains($0.pathExtension.lowercased())
+        }
+        guard !fileEntries.isEmpty || !directories.isEmpty else {
+            statusMessage = "No FITS/XISF files or folders in selection"
+            return
+        }
+
+        wireSessionOverviewCallbacks()
+        benchmarkStats.markSessionStart()
+        isLoading = true
+        isCaching = false
+        cacheProgress = 0
+        cachingStopped = false
+        loadingPhase = .scanning
+
+        // Deepest common ancestor across every picked URL (files' parents + dirs),
+        // used as sessionRootURL / PRE-DELETE location.
+        let parentsAndDirs: [URL] = fileEntries.map { $0.deletingLastPathComponent() } + directories
+        let uniqueScopes = Array(Set(parentsAndDirs.map { $0.standardizedFileURL }))
+        let rootURL: URL
+        if uniqueScopes.count == 1 {
+            rootURL = uniqueScopes[0]
+            multiSourceSession = false
+        } else {
+            rootURL = Self.commonAncestor(of: uniqueScopes)
+            multiSourceSession = true
+        }
+        multiSourcePreDeleteConfirmed = false
+
+        // Claim scopes for every picked folder, every file parent, and the files
+        // themselves — the sandbox needs the individual file URLs to move them
+        // into PRE-DELETE.
+        stopAllAccessedURLs()
+        beginSecurityScopes(for: uniqueScopes + fileEntries)
+
+        sessionRootURL = rootURL
+        prefetchCache?.clear()
+        downloadCancelled.lock(); _downloadCancelled = true; downloadCancelled.unlock()
+        isDownloading = false; isCaching = false
+
+        let summary = "\(fileEntries.count) file\(fileEntries.count == 1 ? "" : "s") + \(directories.count) folder\(directories.count == 1 ? "" : "s")"
+        statusMessage = "Scanning \(summary)..."
+
+        Task.detached(priority: .userInitiated) { [weak self] in
+            var merged: [ImageEntry] = []
+            let fm = FileManager.default
+
+            // Folder scans
+            for dir in directories {
+                merged.append(contentsOf: SessionScanner.scan(rootURL: dir))
+            }
+
+            // Loose files — build ImageEntries the same way loadFiles does
+            for url in fileEntries {
+                let tokens = NINAFilenameParser.parse(url.lastPathComponent)
+                var entry = ImageEntry(url: url)
+                entry.date = tokens.date
+                entry.time = tokens.time
+                entry.target = tokens.target
+                entry.frameNumber = tokens.frameNumber
+                entry.exposure = tokens.exposure
+                entry.filter = tokens.filter
+                entry.frameType = tokens.frameType
+                entry.gain = tokens.gain
+                entry.offset = tokens.offset
+                entry.binning = tokens.binning
+                entry.sensorTemp = tokens.sensorTemp
+                entry.telescope = tokens.telescope
+                entry.camera = tokens.camera
+                entry.fwhm = tokens.fwhm
+                entry.focuserTemp = tokens.focuserTemp
+                entry.hfr = tokens.hfr
+                entry.starCount = tokens.starCount
+                if let attrs = try? fm.attributesOfItem(atPath: url.path),
+                   let size = attrs[.size] as? Int64 {
+                    entry.fileSize = size
+                }
+                merged.append(entry)
+            }
+
+            // Dedupe by standardized URL — a file listed both inside a picked
+            // folder and as its own pick collapses to one entry.
+            var seen: Set<URL> = []
+            let deduped = merged.filter { entry in
+                let key = entry.url.standardizedFileURL
+                if seen.contains(key) { return false }
+                seen.insert(key)
+                return true
+            }
+
+            let sorted = deduped.sorted { ($0.dateTime ?? "") < ($1.dateTime ?? "") }
+
+            await MainActor.run {
+                guard let self = self else { return }
+                self.benchmarkStats.markScanComplete(
+                    fileCount: sorted.count,
+                    totalBytes: sorted.reduce(Int64(0)) { $0 + ($1.fileSize ?? 0) })
+                self.images = sorted
+                self.assignSessionIndices()
+                self.isLoading = false
+                self.needsTableRefresh = true
+                self.needsQualityResort = false
+
+                if !sorted.isEmpty {
+                    self.selectImage(at: 0)
+                    self.needsScrollToTop = true
+                }
+
+                self.sessionOverviewModel.updateStats(from: sorted)
+                // Respect user-persisted Session Overview visibility.
+                self.showInspector = true
+                self.applyAllEnabled = true
+                self.triggerApplyAll()
+                self.enrichWithHeaders()
+                self.focusTableAfterDelay()
+
+                self.statusMessage = "\(sorted.count) frames loaded from \(summary)"
+            }
         }
     }
 
@@ -797,18 +1007,25 @@ class TriageViewModel: ObservableObject {
         cachingStopped = false
         loadingPhase = .scanning
 
-        // Use the parent folder of the first file as session root
-        let rootURL = imageURLs[0].deletingLastPathComponent()
-
-        // Release previous security-scoped resource
-        if let prev = accessedURL {
-            prev.stopAccessingSecurityScopedResource()
-            accessedURL = nil
+        // Session root: if all files share the same parent, use that; otherwise
+        // compute the deepest common ancestor across the picked file URLs so
+        // PRE-DELETE lands somewhere every picked file is reachable from.
+        let parentFolders = imageURLs.map { $0.deletingLastPathComponent() }
+        let uniqueParents = Array(Set(parentFolders.map { $0.standardizedFileURL }))
+        let rootURL: URL
+        if uniqueParents.count == 1 {
+            rootURL = uniqueParents[0]
+            multiSourceSession = false
+        } else {
+            rootURL = Self.commonAncestor(of: uniqueParents)
+            multiSourceSession = true
         }
+        multiSourcePreDeleteConfirmed = false
 
-        // Start security-scoped access to the root directory (needed for PRE-DELETE etc.)
-        let accessed = rootURL.startAccessingSecurityScopedResource()
-        if accessed { accessedURL = rootURL }
+        // Release previous security-scoped resources and grab scopes for every
+        // distinct parent folder + each explicit file URL.
+        stopAllAccessedURLs()
+        beginSecurityScopes(for: uniqueParents + imageURLs)
 
         sessionRootURL = rootURL
         prefetchCache?.clear()
@@ -868,7 +1085,8 @@ class TriageViewModel: ObservableObject {
                 }
 
                 self.sessionOverviewModel.updateStats(from: entries)
-                self.showSessionOverview = true
+                // Session Overview visibility is user-persisted (AppSettings.showSessionOverviewPanel).
+                // Do not force-show on every load — respects the user's last choice.
                 self.showInspector = true
 
                 self.statusMessage = "\(entries.count) files loaded"
@@ -883,7 +1101,10 @@ class TriageViewModel: ObservableObject {
         }
     }
 
-    // Load multiple folders as a merged session
+    // Load multiple folders as a merged session. sessionRootURL is set to the
+    // deepest common ancestor of the picked folders (not the first folder's
+    // parent) and security scope is held for EVERY folder so PRE-DELETE moves
+    // succeed for frames originating from any of them.
     func loadMultipleFolders(urls: [URL]) {
         guard !urls.isEmpty else { return }
 
@@ -895,23 +1116,25 @@ class TriageViewModel: ObservableObject {
         cachingStopped = false
         loadingPhase = .scanning
 
-        // Use parent of first folder as session root
-        let rootURL = urls[0].deletingLastPathComponent()
-
-        if let prev = accessedURL {
-            prev.stopAccessingSecurityScopedResource()
-            accessedURL = nil
+        // Deepest common ancestor across all picked folders — the single
+        // location PRE-DELETE will be created in (single-folder case still
+        // falls through to that same folder).
+        let rootURL: URL
+        if urls.count == 1 {
+            rootURL = urls[0]
+            multiSourceSession = false
+        } else {
+            rootURL = Self.commonAncestor(of: urls)
+            multiSourceSession = true
         }
+        multiSourcePreDeleteConfirmed = false
 
-        // Access each folder
-        var accessedURLs: [URL] = []
-        for url in urls {
-            if url.startAccessingSecurityScopedResource() {
-                accessedURLs.append(url)
-            }
-        }
+        // Release previous session scopes, then claim a scope for every picked
+        // folder so moveMarkedToPreDelete can move frames from any source.
+        stopAllAccessedURLs()
+        beginSecurityScopes(for: urls)
+
         sessionRootURL = rootURL
-        accessedURL = urls[0]  // Keep first one for PRE-DELETE operations
         prefetchCache?.clear()
         downloadCancelled.lock(); _downloadCancelled = true; downloadCancelled.unlock()
         isDownloading = false; isCaching = false
@@ -943,7 +1166,7 @@ class TriageViewModel: ObservableObject {
                 }
 
                 self.sessionOverviewModel.updateStats(from: allEntries)
-                self.showSessionOverview = true
+                // Session Overview visibility is user-persisted; do not force-show.
                 self.showInspector = true
                 self.applyAllEnabled = true
 
@@ -963,11 +1186,11 @@ class TriageViewModel: ObservableObject {
         loadingPhase = .scanning
         statusMessage = "Scanning \(url.lastPathComponent)..."
 
-        // Release previous security-scoped resource before loading new session
-        if let prev = accessedURL {
-            prev.stopAccessingSecurityScopedResource()
-            accessedURL = nil
-        }
+        // Release previous session's security-scoped resources before starting a
+        // new session. Single-folder load: one scope on the picked folder.
+        stopAllAccessedURLs()
+        multiSourceSession = false
+        multiSourcePreDeleteConfirmed = false
 
         sessionRootURL = url
         prefetchCache?.clear()
@@ -980,8 +1203,7 @@ class TriageViewModel: ObservableObject {
         isDownloading = false
         isCaching = false
 
-        let accessed = url.startAccessingSecurityScopedResource()
-        if accessed { accessedURL = url }
+        beginSecurityScopes(for: [url])
         let isNetwork = SessionCache.isNetworkVolume(url)
 
         Task.detached(priority: .userInitiated) { [weak self] in
@@ -1041,9 +1263,9 @@ class TriageViewModel: ObservableObject {
                     self.needsScrollToTop = true
                 }
 
-                // Show both side panels with session data
+                // Refresh overview stats but honor user-persisted visibility.
                 self.sessionOverviewModel.updateStats(from: entries)
-                self.showSessionOverview = true
+                // Session Overview visibility is user-persisted; do not force-show.
                 self.showInspector = true
 
                 // Enable Apply All by default so cached previews are instant from the start
@@ -1284,9 +1506,12 @@ class TriageViewModel: ObservableObject {
                 guard let self = self else { return }
                 if let idx = self.images.firstIndex(where: { $0.url == url }) {
                     self.images[idx].fileHash = hash
-                    // Restore user confidence rating from Frame History DB
+                    // Restore persisted per-frame user state from Frame History DB.
+                    // fileHash is the stable cross-machine identity, so this also
+                    // picks up feedback given on another Mac via the iCloud-synced DB.
                     if let record = try? FrameHistoryDatabase.shared.frameRecord(fileHash: hash) {
                         self.images[idx].userConfidence = record.userConfidence
+                        self.images[idx].qualityFeedback = QualityFeedback(rawValue: record.qualityFeedback) ?? .none
                     }
                 }
             }
@@ -1573,9 +1798,12 @@ class TriageViewModel: ObservableObject {
                 guard let self = self else { return }
                 if let idx = self.images.firstIndex(where: { $0.url == url }) {
                     self.images[idx].fileHash = hash
-                    // Restore user confidence rating from Frame History DB
+                    // Restore persisted per-frame user state from Frame History DB.
+                    // fileHash is the stable cross-machine identity, so this also
+                    // picks up feedback given on another Mac via the iCloud-synced DB.
                     if let record = try? FrameHistoryDatabase.shared.frameRecord(fileHash: hash) {
                         self.images[idx].userConfidence = record.userConfidence
+                        self.images[idx].qualityFeedback = QualityFeedback(rawValue: record.qualityFeedback) ?? .none
                     }
                 }
             }
@@ -4277,6 +4505,14 @@ class TriageViewModel: ObservableObject {
 
         sections.append("Files will be moved to \"PRE-DELETE\" — not permanently deleted.\nUndo with \u{2318}Z.")
 
+        // Multi-source sessions: show the user WHERE PRE-DELETE will be created
+        // on the first delete, since the location is the deepest common ancestor
+        // across the picked folders (not any one folder the user picked). After
+        // they confirm once, subsequent deletes in the same session stay quiet.
+        if multiSourceSession && !multiSourcePreDeleteConfirmed {
+            sections.append("This session spans multiple picked folders.\nAll marked frames will be moved to:\n    \(rootURL.appendingPathComponent("PRE-DELETE", isDirectory: true).path)")
+        }
+
         let infoText = sections.joined(separator: "\n\n")
 
         // Show confirmation dialog with impact summary
@@ -4288,6 +4524,9 @@ class TriageViewModel: ObservableObject {
         alert.addButton(withTitle: "Cancel")
 
         guard alert.runModal() == .alertFirstButtonReturn else { return }
+
+        // Latch the multi-source confirmation for the remainder of this session.
+        if multiSourceSession { multiSourcePreDeleteConfirmed = true }
 
         // Create PRE-DELETE folder if needed
         let preDeleteDir = rootURL.appendingPathComponent("PRE-DELETE", isDirectory: true)
@@ -4313,14 +4552,12 @@ class TriageViewModel: ObservableObject {
                 return
             }
 
-            // Start security-scoped access to the granted folder
-            let accessed = grantedURL.startAccessingSecurityScopedResource()
-            if accessed {
-                // Release previous if any, store new
-                if let prev = accessedURL {
-                    prev.stopAccessingSecurityScopedResource()
-                }
-                accessedURL = grantedURL
+            // Start security-scoped access to the granted folder. ADD to the
+            // existing scopes rather than replacing — we still want to keep
+            // scope on the original session folders so we can read the source
+            // files during the move.
+            if grantedURL.startAccessingSecurityScopedResource() {
+                accessedURLs.append(grantedURL)
                 sessionRootURL = grantedURL
             }
 
