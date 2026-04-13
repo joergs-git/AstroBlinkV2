@@ -1,0 +1,22 @@
+AutoRotate — visual alignment across filters, exposures, and nights
+
+Every frame of a target now pixel-locks to a single reference using the plate-solve data your capture software already writes (ASIAir, NINA, and others). Direct matrix math — microseconds per frame, filter-independent, exposure-independent, works across any camera rotator angle and pointing offset. Blink through a multi-night session and stars stay rigid; only tracking errors, focus drift, and trailing actually move. Smart reference selection picks the frame closest to the median pointing, so a mount that lost center on one frame can never drag the rest with it.
+
+Quality Feedback (A key)
+
+Tell the algorithm whether you agree with its quality tier. Press A to cycle Agree → Disagree → Partly → Clear. New "FB" column with colored icons right next to Q. Feedback is persisted per-setup and uploaded anonymously to the community baseline so detection thresholds can be tuned from real user agreement rates.
+
+Smarter star chain detection at short focal lengths
+
+The tracking-hop detector now scales with plate scale. Fixes false positives on dense wide-field targets like NGC 2024 at 468mm focal length without affecting long-FL setups. Behavior interpolates smoothly — no discontinuous jumps between adjacent focal lengths.
+
+Also in this release
+
+• Auto-upload of session load benchmarks — no more manual click on the Benchmark button to share your numbers with the community leaderboard
+• New racing checkered-flag icon on the Auto-Mark toolbar button
+• Blink playback now defaults to the fastest 0.1s step
+• Renamed "Meridian Flip" toggle to "AutoRotate" — the feature is broader than just pier-side correction now
+• XISF support fixes so NINA-captured files get full alignment treatment
+• Rotator-based fallback for the rare frames that lack plate-solve data
+
+Clear skies!
