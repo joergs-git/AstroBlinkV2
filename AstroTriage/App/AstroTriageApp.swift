@@ -153,6 +153,14 @@ struct AstroBlinkV2App: App {
             CommandGroup(after: .windowList) {
                 Divider()
                 Menu("Advanced") {
+                    Button("Toggle Blind Curation") {
+                        NotificationCenter.default.post(name: .toggleBlindCuration, object: nil)
+                    }
+                    .keyboardShortcut("b", modifiers: [.command, .shift])
+                    Button("Export Curated Dataset...") {
+                        NotificationCenter.default.post(name: .exportCuratedDataset, object: nil)
+                    }
+                    Divider()
                     Button("Reset Frame History Database...") {
                         NotificationCenter.default.post(name: .resetFrameHistory, object: nil)
                     }
@@ -933,6 +941,8 @@ extension Notification.Name {
     static let fontScaleReset = Notification.Name("fontScaleReset")
     static let resetFrameHistory = Notification.Name("resetFrameHistory")
     static let destroyAllData = Notification.Name("destroyAllData")
+    static let toggleBlindCuration = Notification.Name("toggleBlindCuration")
+    static let exportCuratedDataset = Notification.Name("exportCuratedDataset")
     static let checkAppMessages = Notification.Name("checkAppMessages")
     static let frameHistoryDidImport = Notification.Name("frameHistoryDidImport")
     static let zoomInStep = Notification.Name("zoomInStep")

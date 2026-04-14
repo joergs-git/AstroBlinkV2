@@ -356,8 +356,11 @@ class FrameHistoryModel: ObservableObject {
                         // Check FL tolerance against any member of the cluster
                         if let existingFL = clusters[i].first(where: { $0.fl != nil })?.fl,
                            let newFL = setup.fl, existingFL > 0, newFL > 0 {
-                            let tolerance = Double(max(existingFL, newFL)) * 0.03
-                            if abs(Double(existingFL - newFL)) <= tolerance {
+                            // Explicit types + .magnitude (instead of abs, which has many
+                            // overloads) disambiguate the expression for Swift 6 inference.
+                            let tolerance: Double = Double(max(existingFL, newFL)) * 0.03
+                            let diff: Double = Double(existingFL - newFL)
+                            if diff.magnitude <= tolerance {
                                 clusters[i].append(setup)
                                 placed = true
                                 break
@@ -1220,7 +1223,10 @@ class FrameHistoryModel: ObservableObject {
         let avg = vals.reduce(0, +) / Double(vals.count)
         let sorted = vals.sorted()
         let median = sorted[sorted.count / 2]
-        let mad = 1.4826 * sorted.map { abs($0 - median) }.sorted()[sorted.count / 2]
+        // .magnitude is unambiguous (single method on numeric types) where Swift 6
+        // fails to resolve which abs() overload to use inside the closure.
+        let deviations: [Double] = sorted.map { ($0 - median).magnitude }.sorted()
+        let mad: Double = 1.4826 * deviations[sorted.count / 2]
         return (avg, median, mad)
     }
 

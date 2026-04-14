@@ -1159,6 +1159,23 @@ final class FrameHistoryDatabase {
         }
     }
 
+    /// Fetch all frame records that the user has personally rated (userConfidence > 0).
+    /// These are the ground-truth labels for the curated quality-check dataset — every
+    /// row here is a frame the user explicitly rated ★1/★2/★3 in Blind Curation mode.
+    /// Ordered by setup, then filter, then capture time for reproducible exports.
+    func curatedFrameRecords() throws -> [FrameRecord] {
+        try dbQueue.read { db in
+            try FrameRecord.fetchAll(
+                db,
+                sql: """
+                    SELECT * FROM frame_record
+                    WHERE userConfidence > 0
+                    ORDER BY setupHash, filter, captureDate, captureTime
+                    """
+            )
+        }
+    }
+
     /// Batch update quality tiers for frame records.
     func updateQualityTiers(_ updates: [(hash: String, tier: Int, zScore: Double)]) throws {
         try dbQueue.write { db in

@@ -1270,8 +1270,11 @@ struct QualityEstimator {
                     // looks like" — frames clearly above P25 + margin are suspect.
                     let p25 = fwhms[fwhms.count / 4]
                     let median = fwhms[fwhms.count / 2]
-                    // MAD computed around median (robust spread estimate)
-                    let mad = fwhms.map { abs($0 - median) }.sorted()[fwhms.count / 2] * 1.4826
+                    // MAD computed around median (robust spread estimate).
+                    // .magnitude instead of abs() disambiguates for Swift 6's stricter
+                    // overload resolution inside the nested closure+sort+multiply chain.
+                    let deviations: [Double] = fwhms.map { ($0 - median).magnitude }.sorted()
+                    let mad: Double = deviations[fwhms.count / 2] * 1.4826
                     baselineFWHM = p25
                     baselineFWHMStdDev = max(mad, 0.3)
                     baselineFrameCount = fwhms.count
@@ -1280,7 +1283,8 @@ struct QualityEstimator {
                 if trails.count >= 20 {
                     let p25 = trails[trails.count / 4]
                     let median = trails[trails.count / 2]
-                    let mad = trails.map { abs($0 - median) }.sorted()[trails.count / 2] * 1.4826
+                    let deviations: [Double] = trails.map { ($0 - median).magnitude }.sorted()
+                    let mad: Double = deviations[trails.count / 2] * 1.4826
                     baselineTrailing = p25
                     baselineTrailingStdDev = max(mad, 0.02)
                     diagLog("Trail P25=\(String(format: "%.3f", p25)) median=\(String(format: "%.3f", median)) MAD=\(String(format: "%.3f", mad))")
@@ -1319,7 +1323,8 @@ struct QualityEstimator {
                 if crossTrails.count >= 10 {
                     let p25 = crossTrails[crossTrails.count / 4]
                     let median = crossTrails[crossTrails.count / 2]
-                    let mad = crossTrails.map { abs($0 - median) }.sorted()[crossTrails.count / 2] * 1.4826
+                    let deviations: [Double] = crossTrails.map { ($0 - median).magnitude }.sorted()
+                    let mad: Double = deviations[crossTrails.count / 2] * 1.4826
                     // Replace equipment-wide trailing baseline with tighter same-target data
                     baselineTrailing = p25
                     baselineTrailingStdDev = max(mad, 0.02)
