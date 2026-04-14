@@ -4,6 +4,18 @@ All notable changes to AstroBlink & AIsaac will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [5.24.0] — 2026-04-14
+
+### Added
+- **Curated dataset auto-sync to Supabase** — every time the user rates a frame with `1`/`2`/`3` (setting `userConfidence > 0`), the full ground-truth row is mirrored to the new `public.curated_frames` Supabase table via fire-and-forget REST upsert. Clearing a rating (same key twice → `userConfidence = 0`) deletes the row on Supabase so stale labels don't accumulate. Keyed on `(file_hash, machine_hash)` so the same frame rated on two different Macs stays as two distinct rows — cross-machine consensus is a query, not an overwrite. The local `FrameHistory.sqlite` remains the source of truth; Supabase is a queryable mirror that Claude Code sessions can read via MCP without needing the user's Mac to be online. Network failures are silently swallowed, same pattern as `BenchmarkSharing.autoUploadSessionLoad`. New file `AstroTriage/Engine/CurationService.swift` with `uploadCuratedFrame(entry:)`, `deleteCuratedFrame(fileHash:)`, and `bulkSync(completion:)`. Uses `Prefer: resolution=merge-duplicates` + the table's `UNIQUE (file_hash, machine_hash)` constraint for native PostgREST upsert semantics. Wired into `TriageViewModel.setUserConfidence()` right next to the existing Frame History DB update. (`AstroTriage/Engine/CurationService.swift`, `AstroTriage/Engine/TriageViewModel.swift`)
+- **Window → Advanced → Sync Curated Dataset to Supabase…** — bulk backfill for ratings made while offline or before `CurationService` existed. Iterates every row from `FrameHistoryDatabase.curatedFrameRecords()` and upserts each to Supabase, reporting success/failure counts in the status bar. Safe to re-run — upsert semantics mean duplicate calls are no-ops. (`AstroTriage/App/AstroTriageApp.swift`, `AstroTriage/UI/ContentView.swift`)
+- **Supabase `public.curated_frames` table** — new migration `create_curated_frames`. 39 columns: `(file_hash, machine_hash)` composite unique identity; denormalized filename / capture timestamp / equipment / capture parameters; every computed pixel-derived metric (FWHM, HFR, stars, ecc, noise, PSF flux, trailing); environment (moon, bortle, twilight) for future stratification; the algorithm's verdict at rating time (`quality_tier`, `combined_z_score`, `garbage_reasons`) so drift per `algorithm_version` can be measured; the ground-truth label `user_confidence` (CHECK constraint 1..3); `quality_feedback` for the orthogonal A-key signal; algorithm + app version + rated_at for provenance. Two indexes: `(machine_hash, setup_hash, filter)` for per-setup regression queries, `canonical_target` for target-type stratification. RLS enabled with anon INSERT / SELECT / UPDATE policies mirroring the existing `session_benchmarks` pattern.
+
+### Changed
+- **Advanced menu reorganized** — the former "Export Curated Dataset…" item is now "Export Curated Dataset to File…" to disambiguate from the new Supabase sync option sitting right above it. Both paths produce the same data; the Supabase one is the canonical store going forward, the file one is for offline inspection and diffing.
+
+---
+
 ## [5.23.0] — 2026-04-14
 
 ### Added

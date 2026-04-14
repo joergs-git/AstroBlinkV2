@@ -1329,6 +1329,20 @@ struct ContentViewModifiers2: ViewModifier {
             .onReceive(NotificationCenter.default.publisher(for: .exportCuratedDataset)) { _ in
                 CuratedExport.runInteractive(viewModel: viewModel)
             }
+            .onReceive(NotificationCenter.default.publisher(for: .syncCuratedToSupabase)) { _ in
+                // Bulk backfill for curated frames that never made it to Supabase
+                // (rated while offline, or created before CurationService existed).
+                viewModel.statusMessage = "Syncing curated dataset to Supabase…"
+                CurationService.bulkSync { synced, failed in
+                    if synced == 0 && failed == 0 {
+                        viewModel.statusMessage = "No curated frames to sync (rate some with 1/2/3 first)"
+                    } else if failed == 0 {
+                        viewModel.statusMessage = "Synced \(synced) curated frame\(synced == 1 ? "" : "s") to Supabase"
+                    } else {
+                        viewModel.statusMessage = "Synced \(synced) curated frames, \(failed) failed (check network)"
+                    }
+                }
+            }
             .modifier(AIsaacStateObserver(viewModel: viewModel))
             .onReceive(NotificationCenter.default.publisher(for: .fontScaleIncrease)) { _ in
                 viewModel.fontScale = min(1.5, viewModel.fontScale + 0.1)

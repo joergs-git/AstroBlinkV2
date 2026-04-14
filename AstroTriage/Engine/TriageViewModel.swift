@@ -4287,6 +4287,15 @@ class TriageViewModel: ObservableObject {
                     try? FrameHistoryDatabase.shared.updateUserConfidence(
                         fileHash: hash, confidence: conf)
                 }
+
+                // Mirror to Supabase curated_frames so the ground-truth label
+                // is queryable from any future session via MCP. Fire-and-forget.
+                // newVal > 0 → upsert; newVal == 0 → delete the stale row.
+                if newVal > 0 {
+                    CurationService.uploadCuratedFrame(images[idx])
+                } else {
+                    CurationService.deleteCuratedFrame(fileHash: hash)
+                }
             }
         }
 

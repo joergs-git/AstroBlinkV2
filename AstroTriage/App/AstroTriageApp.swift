@@ -157,7 +157,10 @@ struct AstroBlinkV2App: App {
                         NotificationCenter.default.post(name: .toggleBlindCuration, object: nil)
                     }
                     .keyboardShortcut("b", modifiers: [.command, .shift])
-                    Button("Export Curated Dataset...") {
+                    Button("Sync Curated Dataset to Supabase...") {
+                        NotificationCenter.default.post(name: .syncCuratedToSupabase, object: nil)
+                    }
+                    Button("Export Curated Dataset to File...") {
                         NotificationCenter.default.post(name: .exportCuratedDataset, object: nil)
                     }
                     Divider()
@@ -943,6 +946,7 @@ extension Notification.Name {
     static let destroyAllData = Notification.Name("destroyAllData")
     static let toggleBlindCuration = Notification.Name("toggleBlindCuration")
     static let exportCuratedDataset = Notification.Name("exportCuratedDataset")
+    static let syncCuratedToSupabase = Notification.Name("syncCuratedToSupabase")
     static let checkAppMessages = Notification.Name("checkAppMessages")
     static let frameHistoryDidImport = Notification.Name("frameHistoryDidImport")
     static let zoomInStep = Notification.Name("zoomInStep")
