@@ -1323,6 +1323,12 @@ struct ContentViewModifiers2: ViewModifier {
                 try? FrameHistoryDatabase.shared.destroyAllData()
                 viewModel.statusMessage = "All database data destroyed"
             }
+            .onReceive(NotificationCenter.default.publisher(for: .toggleBlindCuration)) { _ in
+                viewModel.toggleBlindCurationMode()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .exportCuratedDataset)) { _ in
+                CuratedExport.runInteractive(viewModel: viewModel)
+            }
             .modifier(AIsaacStateObserver(viewModel: viewModel))
             .onReceive(NotificationCenter.default.publisher(for: .fontScaleIncrease)) { _ in
                 viewModel.fontScale = min(1.5, viewModel.fontScale + 0.1)

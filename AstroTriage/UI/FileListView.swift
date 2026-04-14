@@ -150,6 +150,21 @@ struct FileListView: NSViewRepresentable {
             tableView.reloadData()
         }
 
+        // Apply pending bulk column visibility change (Blind Curation enter/exit).
+        // Persist only when NOT in blind mode, so the blind-set doesn't overwrite
+        // the user's normal layout in AppSettings.
+        if let newVisibility = viewModel.pendingColumnVisibility {
+            viewModel.pendingColumnVisibility = nil
+            applyColumnVisibility(to: tableView, visibleIds: newVisibility)
+            if !viewModel.isBlindCurationMode {
+                let visibleIds = tableView.tableColumns.map { $0.identifier.rawValue }
+                AppSettings.saveStrings(visibleIds, for: .visibleColumns)
+            }
+            coordinator.displayedImages = isFiltered ? viewModel.visibleImages : viewModel.images
+            coordinator.updateMetricRanges()
+            tableView.reloadData()
+        }
+
         // Re-sort after quality scores become available (once per session)
         // Always uses recommended order for sort (not saved column layout — that's visual only)
         if viewModel.needsQualityResort {
@@ -308,6 +323,50 @@ struct FileListView: NSViewRepresentable {
             if let currentIndex = tableView.tableColumns.firstIndex(where: { $0.identifier.rawValue == id }) {
                 if currentIndex != targetIndex {
                     tableView.moveColumn(currentIndex, toColumn: targetIndex)
+                }
+            }
+        }
+    }
+
+    /// Bulk column-visibility change: remove columns not in `visibleIds`, add
+    /// any missing columns from the definition, and resync header-menu checkmarks.
+    /// Used by Blind Curation enter/exit to swap the visible column set atomically
+    /// instead of calling toggleColumnVisibility per column.
+    private func applyColumnVisibility(to tableView: NSTableView, visibleIds: Set<String>) {
+        // Remove columns not in the target set
+        let columnsToRemove = tableView.tableColumns.filter { !visibleIds.contains($0.identifier.rawValue) }
+        for col in columnsToRemove {
+            tableView.removeTableColumn(col)
+        }
+
+        // Add missing columns in the order they appear in ColumnDefinition.allColumns
+        // (preserves the canonical left-to-right order for the blind set)
+        let existingIds = Set(tableView.tableColumns.map { $0.identifier.rawValue })
+        for colDef in ColumnDefinition.allColumns
+            where visibleIds.contains(colDef.identifier) && !existingIds.contains(colDef.identifier) {
+            let identifier = NSUserInterfaceItemIdentifier(colDef.identifier)
+            let column = NSTableColumn(identifier: identifier)
+            column.title = colDef.title
+            column.headerToolTip = ColumnDefinition.headerToolTip(for: colDef.identifier)
+            column.width = colDef.defaultWidth
+            column.minWidth = colDef.minWidth
+            if colDef.identifier == "marked" {
+                column.maxWidth = 28
+                column.resizingMask = []
+            } else {
+                column.sortDescriptorPrototype = NSSortDescriptor(key: colDef.identifier, ascending: true)
+                column.resizingMask = colDef.identifier == "filename"
+                    ? [.autoresizingMask, .userResizingMask]
+                    : .userResizingMask
+            }
+            tableView.addTableColumn(column)
+        }
+
+        // Resync header right-click menu checkmarks
+        if let headerMenu = tableView.headerView?.menu {
+            for item in headerMenu.items {
+                if let colId = item.representedObject as? String {
+                    item.state = visibleIds.contains(colId) ? .on : .off
                 }
             }
         }

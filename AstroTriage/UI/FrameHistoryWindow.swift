@@ -327,8 +327,8 @@ struct FrameHistoryContentView: View {
                 .frame(minHeight: 300)
                 .overlay(alignment: .topLeading) {
                     if let hd = hoveredDate,
-                       let point = scores.min(by: { abs($0.date.timeIntervalSince(hd)) < abs($1.date.timeIntervalSince(hd)) }),
-                       abs(point.date.timeIntervalSince(hd)) < 30 * 86400 {
+                       let point = scores.min(by: { $0.date.timeIntervalSince(hd).magnitude < $1.date.timeIntervalSince(hd).magnitude }),
+                       point.date.timeIntervalSince(hd).magnitude < 30 * 86400 {
                         chartTooltip {
                             Text(point.night).font(.system(size: fs(10), weight: .bold))
                             Text(String(format: "Score: %.0f — %d frames, %.0f%% kept", point.score, point.frameCount, point.retentionRate * 100))
@@ -416,7 +416,7 @@ struct FrameHistoryContentView: View {
                         point.retentionPct >= 60 ? Color.yellow :
                         point.retentionPct >= 40 ? Color.orange : Color.red
                     )
-                    if let hd = hoveredDate, abs(point.date.timeIntervalSince(hd)) < 30 * 86400 {
+                    if let hd = hoveredDate, point.date.timeIntervalSince(hd).magnitude < 30 * 86400 {
                         RuleMark(x: .value("Hover", point.date, unit: .day))
                             .foregroundStyle(fg.opacity(0.3))
                             .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 3]))
@@ -429,8 +429,8 @@ struct FrameHistoryContentView: View {
                 .frame(minHeight: 300)
                 .overlay(alignment: .topLeading) {
                     if let hd = hoveredDate,
-                       let point = data.min(by: { abs($0.date.timeIntervalSince(hd)) < abs($1.date.timeIntervalSince(hd)) }),
-                       abs(point.date.timeIntervalSince(hd)) < 30 * 86400 {
+                       let point = data.min(by: { $0.date.timeIntervalSince(hd).magnitude < $1.date.timeIntervalSince(hd).magnitude }),
+                       point.date.timeIntervalSince(hd).magnitude < 30 * 86400 {
                         chartTooltip {
                             Text(point.night).font(.system(size: fs(10), weight: .bold))
                             Text(String(format: "%.0f%% kept — %d frames", point.retentionPct, point.total))
@@ -577,8 +577,8 @@ struct FrameHistoryContentView: View {
                 .frame(minHeight: 300)
                 .overlay(alignment: .topLeading) {
                     if let hd = hoveredDate,
-                       let point = data.min(by: { Swift.abs($0.date.timeIntervalSince(hd)) < Swift.abs($1.date.timeIntervalSince(hd)) }),
-                       Swift.abs(point.date.timeIntervalSince(hd)) < 86400 * 3 {
+                       let point = data.min(by: { $0.date.timeIntervalSince(hd).magnitude < $1.date.timeIntervalSince(hd).magnitude }),
+                       point.date.timeIntervalSince(hd).magnitude < 86400 * 3 {
                         chartTooltip {
                             Text(point.night).font(.system(size: fs(10), weight: .bold))
                             Text(String(format: "FWHM: %.2f px  (rolling: %.2f)", point.rawFWHM, point.rollingFWHM))

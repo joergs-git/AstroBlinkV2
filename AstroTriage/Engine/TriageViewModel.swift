@@ -133,6 +133,24 @@ class TriageViewModel: ObservableObject {
     @Published var pendingColumnOrder: [String]?
     @Published var needsQualityResort = false
 
+    // Blind Curation mode — hides all metric columns + quality icons so the user
+    // rates frames purely on visual impression (1/2/3 stars → userConfidence).
+    // Ground-truth dataset builder: pairs with the Export Curated Dataset feature.
+    @Published var isBlindCurationMode: Bool = false
+    private var preBlindVisibleColumns: [String]?
+    private var preBlindInspectorShown: Bool = false
+    // FileListView consumes this and applies a bulk column-visibility change.
+    // Set to nil after the change is applied.
+    @Published var pendingColumnVisibility: Set<String>?
+
+    // Minimal column set while in Blind Curation — intentionally excludes every
+    // metric column, tier icons, and the feedback column so the user can't see
+    // the algorithm's judgment before scoring the frame.
+    static let blindCurationColumnIds: [String] = [
+        "marked", "frameNumber", "userConfidence",
+        "filter", "nightDate", "time", "filename"
+    ]
+
     // Hide marked images: when true, marked images are invisible in the list
     @Published var hideMarked: Bool = false
 
@@ -1589,17 +1607,26 @@ class TriageViewModel: ObservableObject {
                 self?.downloadCancelled.unlock()
                 guard !cancelled else { return }
 
-                let localURL = sessionCacheRef.cacheFile(sourceURL: sourceURLs[index])
+                let sourceURL = sourceURLs[index]
+                let localURL = sessionCacheRef.cacheFile(sourceURL: sourceURL)
 
                 // Update decodingURL + thread-safe URL map for prefetch pipeline
                 if let localURL = localURL {
+                    // URL-based lookup (not index-based): self.images may have been
+                    // reordered by applySortByColumnOrder since concurrentPerform
+                    // snapshotted sourceURLs. An index-based write here would
+                    // cross-assign cache paths to the wrong entries, causing
+                    // enrichWithHeaders to later read headers from the wrong files
+                    // (manifests as duplicate DATE-LOC / EXPTIME across rows).
                     Task { @MainActor [weak self] in
-                        guard let self = self, index < self.images.count else { return }
-                        self.images[index].decodingURL = localURL
+                        guard let self = self else { return }
+                        if let idx = self.images.firstIndex(where: { $0.url == sourceURL }) {
+                            self.images[idx].decodingURL = localURL
+                        }
                     }
                     // Update thread-safe URL map (no main-thread hop needed)
                     Task { @MainActor [weak self] in
-                        self?.networkURLUpdater?(sourceURLs[index], localURL)
+                        self?.networkURLUpdater?(sourceURL, localURL)
                     }
                 }
 
@@ -4933,7 +4960,50 @@ class TriageViewModel: ObservableObject {
         showInspector.toggle()
         if showInspector, let image = selectedImage {
             headerInspectorModel.update(for: image.decodingURL, filename: image.filename)
-            headerInspectorModel.updateQualityMetrics(from: image.qualityBreakdown, entry: image)
+            // In Blind Curation, suppress the Quality Metrics section so the
+            // algorithm's tier / z-scores / reasoning stay hidden. Raw FITS
+            // keywords still show — the user can peek if they really want to,
+            // but the explicit algorithm verdict is gone.
+            if isBlindCurationMode {
+                headerInspectorModel.updateQualityMetrics(from: nil, entry: nil)
+            } else {
+                headerInspectorModel.updateQualityMetrics(from: image.qualityBreakdown, entry: image)
+            }
+        }
+    }
+
+    // MARK: - Blind Curation Mode
+
+    /// Toggle Blind Curation mode. Hides every metric column + quality tier icon +
+    /// the Quality Metrics section of the Header Inspector so the user rates frames
+    /// purely on visual impression. 1/2/3 keys still work (→ userConfidence).
+    /// Prior column layout and Header Inspector visibility are restored on exit.
+    func toggleBlindCurationMode() {
+        if !isBlindCurationMode {
+            // Entering blind mode
+            guard !images.isEmpty else {
+                statusMessage = "Blind Curation: load a session first"
+                return
+            }
+            preBlindVisibleColumns = AppSettings.loadStrings(for: .visibleColumns)
+                ?? ColumnDefinition.allColumns.filter(\.isDefaultVisible).map(\.identifier)
+            preBlindInspectorShown = showInspector
+            showInspector = false
+            pendingColumnVisibility = Set(Self.blindCurationColumnIds)
+            isBlindCurationMode = true
+            needsTableRefresh = true
+            statusMessage = "Blind Curation ON — rate frames with 1/2/3, ⌘⇧B to exit"
+        } else {
+            // Exiting blind mode — restore prior layout
+            let prior = preBlindVisibleColumns
+                ?? ColumnDefinition.allColumns.filter(\.isDefaultVisible).map(\.identifier)
+            pendingColumnVisibility = Set(prior)
+            isBlindCurationMode = false
+            showInspector = preBlindInspectorShown
+            preBlindVisibleColumns = nil
+            needsTableRefresh = true
+            let rated = images.filter { $0.userConfidence > 0 }.count
+            statusMessage = "Blind Curation OFF — rated \(rated)/\(images.count) frames"
         }
     }
 
@@ -5206,9 +5276,15 @@ class TriageViewModel: ObservableObject {
         // GBE disabled for now
         // if gradientRemovalEnabled { gradientRemovalEnabled = false }
 
-        // Update header inspector model (panel updates reactively via SwiftUI)
+        // Update header inspector model (panel updates reactively via SwiftUI).
+        // Blind Curation suppresses the Quality Metrics section so the algorithm's
+        // tier / z-scores / reasoning don't leak into the user's rating.
         headerInspectorModel.update(for: image.decodingURL, filename: image.filename)
-        headerInspectorModel.updateQualityMetrics(from: image.qualityBreakdown, entry: image)
+        if isBlindCurationMode {
+            headerInspectorModel.updateQualityMetrics(from: nil, entry: nil)
+        } else {
+            headerInspectorModel.updateQualityMetrics(from: image.qualityBreakdown, entry: image)
+        }
 
         // Update meridian rotation for this image (zero-cost UV flip)
         updateMeridianRotation()
