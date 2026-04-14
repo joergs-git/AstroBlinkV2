@@ -34,6 +34,12 @@ class ReleaseNotesWindowController {
 // MARK: - Release notes data (shared between view and copy)
 
 private let allReleases: [(version: String, date: String, items: [(ReleaseNotesView.ChangeType, String, String)])] = [
+    ("5.22.3", "April 14, 2026", [
+        (.added, "Auto-Mark — Per-Filter Loss Breakdown", "Each Conservative / Balanced / Aggressive option in the Auto-Mark popover now shows a third compact line listing how many frames per filter would be marked, with the per-filter integration time. Sorted biggest loss first, shown only when 2+ filters are affected. Lets you judge channel-level risk before confirming. Example: 33 Ha = 2.0h   56 R = 1.0h   22 B = 30m"),
+        (.fixed, "Welcome Window — Get Started Button Visibility", "The 'Get Started' button on the first-launch welcome window used SwiftUI's borderedProminent style, which renders nearly invisibly in an inactive NSHostingView window. Replaced with an explicit accent-colored rounded button — always visible regardless of window focus state."),
+        (.fixed, "Welcome Window — Traffic Lights & Resizing", "The first-launch welcome window now has standard close / minimize / zoom buttons in the title bar and is resizable within sane bounds (720×560 to 1100×820). Previously it only had a title bar."),
+        (.fixed, "Session Load Benchmark — Time to First Image", "The 'Time to first image' metric used to measure how long until the user CLICKED on a frame, not how long until the app was actually ready to display one — so leaving the app idle after loading would inflate the value to 30+ minutes. Now fires the moment the very first preview lands in the prefetch cache, completely decoupled from MTKView attachment timing and user navigation. Reflects real app readiness."),
+    ]),
     ("5.22.2", "April 13, 2026", [
         (.fixed, "Session Sanity — Mixed Plate Scales (Algorithm v18)", "Sessions that mix two configurations of the same scope (e.g. native FL vs focal-reducer) no longer get their longer-FL frames falsely demoted by the Stage 1.5 session sanity check. Pool FWHM is now compared in arcseconds instead of pixels whenever the pool's plate-scale variation exceeds 10% — physical seeing quality drives the verdict, not pixel-scale bias. Single-plate-scale sessions (the common case) are unaffected because the conversion is a uniform multiplier. Star-count sanity is skipped on mixed pools (detection sensitivity varies with plate scale). Algorithm version bumped to 18."),
     ]),

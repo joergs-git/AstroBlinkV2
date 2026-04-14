@@ -36,6 +36,12 @@ class PrefetchCache {
     // Callback for when a priority-queued preview completes (notifies ViewModel to refresh display)
     var onPriorityPreviewReady: ((URL) -> Void)?
 
+    // Callback fired exactly once per session the very first time ANY preview is stored in the cache.
+    // Used by the benchmark system to measure true "app ready to display" time without depending on
+    // user navigation, MTKView attachment timing, or displayCurrentImage success. Reset by resetFirstPreviewTracking().
+    var onFirstPreviewStored: (() -> Void)?
+    private var firstPreviewStoredFired: Bool = false
+
     // Star-based display alignment — shared with view model.
     // Set once per session; workers call alignOrEstablish after star detection to
     // compute per-frame transforms for display-time visual consistency.
@@ -525,15 +531,29 @@ class PrefetchCache {
         }
     }
 
-    // Store a preview in the cache (also updates thread-safe URL set)
+    // Store a preview in the cache (also updates thread-safe URL set).
+    // Fires onFirstPreviewStored exactly once per session — measures actual app readiness
+    // independent of which image the user is looking at or whether the MTKView is attached yet.
     func storePreview(_ preview: CachedPreview, for url: URL) {
         cache[url] = preview
         cachedURLsLock.lock()
         cachedURLsSet.insert(url)
         cachedURLsLock.unlock()
+        if !firstPreviewStoredFired {
+            firstPreviewStoredFired = true
+            onFirstPreviewStored?()
+        }
     }
 
-    // Invalidate all cached previews (e.g. when stretch mode changes)
+    // Reset the "first preview stored" guard for a fresh session.
+    // Called by the view model at session start so the benchmark metric is recomputed.
+    func resetFirstPreviewTracking() {
+        firstPreviewStoredFired = false
+    }
+
+    // Invalidate all cached previews (e.g. when stretch mode changes).
+    // Note: does NOT reset firstPreviewStoredFired — settings changes mid-session must not
+    // re-fire the "time to first image" benchmark metric.
     func invalidateAll() {
         cache.removeAll()
         cachedURLsLock.lock()

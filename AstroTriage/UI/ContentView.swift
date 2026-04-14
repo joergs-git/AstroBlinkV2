@@ -1490,12 +1490,23 @@ struct AutoMarkPopover: View {
     @State private var pendingOption: MarkOption?
     @State private var showSpread = false
 
+    // Per-filter impact of a single Auto-Mark option.
+    // Used to show the user WHICH filters suffer — not just the overall total —
+    // so they can judge risk per-channel before confirming.
+    private struct FilterImpact: Hashable {
+        let filter: String     // display label, e.g. "Ha", "R", or "—" when unknown
+        let count: Int
+        let exposure: Double   // seconds
+    }
+
     private struct MarkOption {
         let title: String
         let subtitle: String
         let count: Int
         let integrationLoss: String
         let color: Color
+        // Sorted by exposure desc (biggest loss first). Empty or 1-entry = row hides this line.
+        let filterBreakdown: [FilterImpact]
     }
 
     private var options: [MarkOption] {
@@ -1525,13 +1536,36 @@ struct AutoMarkPopover: View {
             return "-\(time) (\(String(format: "%.0f", pct))%)"
         }
 
+        // Group a target list by filter, summing exposure per filter.
+        // nil/empty filter is bucketed as "—" so the user still sees those frames accounted for.
+        func filterBreakdown(_ frames: [ImageEntry]) -> [FilterImpact] {
+            let grouped = Dictionary(grouping: frames) { entry -> String in
+                if let f = entry.filter?.trimmingCharacters(in: .whitespaces), !f.isEmpty {
+                    return f
+                }
+                return "—"
+            }
+            return grouped
+                .map { name, items in
+                    FilterImpact(
+                        filter: name,
+                        count: items.count,
+                        exposure: items.reduce(0.0) { $0 + ($1.exposure ?? 0.0) }
+                    )
+                }
+                .sorted { $0.exposure > $1.exposure }
+        }
+
         return [
             MarkOption(title: "Conservative", subtitle: "Nebula — maximize integration time.\nOnly removes definite garbage.",
-                       count: conservativeTarget.count, integrationLoss: lossStr(trashExp), color: .green),
+                       count: conservativeTarget.count, integrationLoss: lossStr(trashExp), color: .green,
+                       filterBreakdown: filterBreakdown(conservativeTarget)),
             MarkOption(title: "Balanced", subtitle: "General use — removes garbage\n+ worst borderline frames.",
-                       count: balancedTarget.count, integrationLoss: lossStr(balancedExp), color: .orange),
+                       count: balancedTarget.count, integrationLoss: lossStr(balancedExp), color: .orange,
+                       filterBreakdown: filterBreakdown(balancedTarget)),
             MarkOption(title: "Aggressive", subtitle: "Stars/Galaxy — prioritize sharpness.\nRemoves questionable + weak frames (<30% SNR).",
-                       count: aggressiveTarget.count, integrationLoss: lossStr(aggressiveExp), color: .red),
+                       count: aggressiveTarget.count, integrationLoss: lossStr(aggressiveExp), color: .red,
+                       filterBreakdown: filterBreakdown(aggressiveTarget)),
         ]
     }
 
@@ -1620,11 +1654,37 @@ struct AutoMarkPopover: View {
                     .font(.system(size: 10))
                     .foregroundColor(.secondary)
                     .lineLimit(2)
+                // Per-filter loss breakdown — only when the option would hit 2+ distinct filters,
+                // otherwise the line is redundant with the main count/loss total above.
+                if option.filterBreakdown.count >= 2 {
+                    Text(filterBreakdownString(option.filterBreakdown))
+                        .font(.system(size: 9, design: .monospaced))
+                        .foregroundColor(.secondary.opacity(0.85))
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, 2)
+                }
             }
         }
         .padding(.vertical, 6)
         .padding(.horizontal, 8)
         .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(0.05)))
+    }
+
+    // Formats a per-filter loss list as a compact single-string readable line.
+    // Example output: "33 Ha = 2.0h   56 R = 1.0h   22 B = 30m"
+    // Time format matches the main lossStr() convention (hours with one decimal above 1h, minutes below).
+    private func filterBreakdownString(_ breakdown: [FilterImpact]) -> String {
+        return breakdown.map { impact in
+            let time: String
+            if impact.exposure >= 3600 {
+                time = String(format: "%.1fh", impact.exposure / 3600)
+            } else if impact.exposure > 0 {
+                time = String(format: "%.0fm", impact.exposure / 60)
+            } else {
+                time = "—"
+            }
+            return "\(impact.count) \(impact.filter) = \(time)"
+        }.joined(separator: "   ")
     }
 
     // Session spread: per-metric distribution info

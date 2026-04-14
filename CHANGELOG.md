@@ -4,6 +4,18 @@ All notable changes to AstroBlink & AIsaac will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [5.22.3] — 2026-04-14
+
+### Added
+- **Auto-Mark popover — per-filter loss breakdown** — Each Conservative / Balanced / Aggressive option in the Auto-Mark popover now shows a third compact line listing how many frames per filter would be marked, with the per-filter integration time. Sorted by exposure descending (biggest loss first), shown only when the option would touch 2+ distinct filters. Lets the user judge channel-level risk before confirming a culling step instead of just seeing one aggregate frame count and hour total. Example output: `33 Ha = 2.0h   56 R = 1.0h   22 B = 30m`. `ContentView.AutoMarkPopover.MarkOption` extended with a `filterBreakdown: [FilterImpact]` field; nil/empty filters bucketed as "—" so unknown frames still surface. (`AstroTriage/UI/ContentView.swift`)
+
+### Fixed
+- **Welcome window — "Get Started" button now reliably visible on first show** — The first-launch onboarding window's "Get Started" button used SwiftUI's `.borderedProminent` style, which renders nearly invisibly inside an `NSHostingView` when the parent NSWindow is inactive at first paint. Adding `NSApp.activate()` and `keyboardShortcut(.defaultAction)` was not sufficient because `borderedProminent`'s background fill follows the system `controlActiveState`. Replaced with a plain Button + explicit `Color.accentColor` `RoundedRectangle` background and white-on-blue text label — immune to inactive-window state and renders identically whether the window is key or not. (`AstroTriage/App/AstroTriageApp.swift`)
+- **Welcome window — standard window chrome** — The onboarding window previously had only a `.titled` style mask, missing the red close, yellow miniaturize, and green zoom traffic-light buttons. Now uses `[.titled, .closable, .miniaturizable, .resizable]` with `minSize` 720×560 and `maxSize` 1100×820 so the user can close, minimize, zoom, and resize within sane bounds. Root view frame switched from a hard `.frame(width: 820, height: 640)` to flexible `min/ideal/max` so the bottom Get Started VStack can never be clipped by an over-tight root frame. (`AstroTriage/App/AstroTriageApp.swift`)
+- **Session load benchmark — "Time to first image" now measures app readiness, not user click latency** — The metric was firing from `displayCurrentImage()` callbacks (`TriageViewModel.swift` ~lines 5220 / 5319), which silently no-op when `findMTKView()` returns nil (the Metal view is not yet attached at session-load time) or when the user navigated to a different image while the original decode was still running. The result was that the metric only landed when the user eventually clicked something — sometimes 30 minutes after session start — producing nonsense values. Fix: added `onFirstPreviewStored` callback on `PrefetchCache`, fired exactly once per session from `storePreview()` the very first time any preview lands in the cache (regardless of which image, regardless of user navigation). Wired in `TriageViewModel.init` to call `benchmarkStats.markFirstImageDisplayed()`. The flag is reset by `resetFirstPreviewTracking()` at every `markSessionStart()` call (4 callsites: `loadFiles`, `loadMultipleFolders`, `loadMixedSelection`, `loadSession`). The original `displayCurrentImage()` calls remain as a defensive fallback (idempotent due to the `firstImageDisplayTime == nil` guard inside `BenchmarkStats`). (`AstroTriage/Engine/PrefetchCache.swift`, `AstroTriage/Engine/TriageViewModel.swift`)
+
+---
+
 ## [5.22.2] — 2026-04-13
 
 ### Fixed

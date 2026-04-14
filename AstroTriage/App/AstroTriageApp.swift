@@ -498,7 +498,9 @@ class AboutWindowController {
         ))
         let win = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 820, height: 640),
-            styleMask: [.titled],
+            // Standard window chrome: title + close (red) + miniaturize (yellow) + zoom (green).
+            // Resizable enables the green zoom button; min/max sizes below pin the practical range.
+            styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false
         )
@@ -507,6 +509,13 @@ class AboutWindowController {
         win.center()
         win.isReleasedWhenClosed = false
         win.isMovableByWindowBackground = true
+        win.minSize = NSSize(width: 720, height: 560)
+        win.maxSize = NSSize(width: 1100, height: 820)
+        // Activate the app first so the onboarding window comes up KEY (active).
+        // Otherwise if another app has focus at launch the window becomes visible but
+        // inactive — and SwiftUI's .borderedProminent "Get Started" button renders
+        // nearly invisible in inactive windows until the user clicks to focus it.
+        NSApp.activate()
         win.makeKeyAndOrderFront(nil)
         self.window = win
     }
@@ -670,15 +679,27 @@ struct OnboardingView: View {
             Spacer()
                 .frame(height: 12)
 
-            // Get Started + checkbox
+            // Get Started + checkbox.
+            // We deliberately do NOT use .borderedProminent here. SwiftUI's .borderedProminent
+            // renders nearly invisibly inside an NSHostingView when the parent NSWindow is
+            // inactive at first paint — even with NSApp.activate() and keyboardShortcut(.defaultAction)
+            // applied — because its background fill follows the system controlActiveState.
+            // Custom Button with an explicit accent-color background is immune to that and
+            // also keeps the visual prominence on inactive show.
             VStack(spacing: 8) {
                 Button(action: dismissAction) {
                     Text("Get Started")
-                        .font(.system(size: 14, weight: .semibold))
-                        .frame(width: 200, height: 36)
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 90)
+                        .padding(.vertical, 12)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .fill(Color.accentColor)
+                        )
                 }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
+                .buttonStyle(.plain)
+                .keyboardShortcut(.defaultAction)
 
                 Toggle("Don't show on startup", isOn: $hideSplash)
                     .toggleStyle(.checkbox)
@@ -690,7 +711,10 @@ struct OnboardingView: View {
             }
             .padding(.bottom, 16)
         }
-        .frame(width: 820, height: 640)
+        // Width pinned, height free so the bottom Get Started VStack can never be clipped
+        // by an over-tight root frame even when the window is resized.
+        .frame(minWidth: 720, idealWidth: 820, maxWidth: 1100,
+               minHeight: 560, idealHeight: 640, maxHeight: 820)
     }
 
     private func pillarCard(_ pillar: Pillar, index: Int) -> some View {

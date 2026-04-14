@@ -597,7 +597,7 @@ class TriageViewModel: ObservableObject {
                 guard let self = self else { return }
                 if let idx = self.images.firstIndex(where: { $0.url == url }) {
                     // CRITICAL: never overwrite a WCS-based transform. Star matching is
-                    // a fallback for frames without plate-solve data. If the entry already
+                    // a fallback for plate-solve data. If the entry already
                     // has WCS in its headers, applyWCSAlignment() has either already set
                     // the exact transform OR will do so when header enrichment finishes —
                     // either way we must not clobber it with a heuristic star-matching result.
@@ -608,6 +608,14 @@ class TriageViewModel: ObservableObject {
                     if self.selectedImage?.url == url {
                         self.updateMeridianRotation()
                     }
+                }
+            }
+            // Benchmark "time to first image" — fires once per session as soon as ANY preview
+            // is stored in the cache, decoupled from MTKView attachment, user navigation, and
+            // displayCurrentImage success. Measures real app readiness, not user-click latency.
+            self.prefetchCache?.onFirstPreviewStored = { [weak self] in
+                Task { @MainActor in
+                    self?.benchmarkStats.markFirstImageDisplayed()
                 }
             }
         }
@@ -873,6 +881,7 @@ class TriageViewModel: ObservableObject {
 
         wireSessionOverviewCallbacks()
         benchmarkStats.markSessionStart()
+        prefetchCache?.resetFirstPreviewTracking()
         isLoading = true
         isCaching = false
         cacheProgress = 0
@@ -1001,6 +1010,7 @@ class TriageViewModel: ObservableObject {
 
         wireSessionOverviewCallbacks()
         benchmarkStats.markSessionStart()
+        prefetchCache?.resetFirstPreviewTracking()
         isLoading = true
         isCaching = false
         cacheProgress = 0
@@ -1110,6 +1120,7 @@ class TriageViewModel: ObservableObject {
 
         wireSessionOverviewCallbacks()
         benchmarkStats.markSessionStart()
+        prefetchCache?.resetFirstPreviewTracking()
         isLoading = true
         isCaching = false
         cacheProgress = 0
@@ -1179,6 +1190,7 @@ class TriageViewModel: ObservableObject {
         currentSessionId = UUID().uuidString
         wireSessionOverviewCallbacks()
         benchmarkStats.markSessionStart()
+        prefetchCache?.resetFirstPreviewTracking()
         print("[Bench] LOAD START at \(Date().timeIntervalSince1970) — \(url.lastPathComponent)")
         isLoading = true
         isCaching = false
