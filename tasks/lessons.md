@@ -1,5 +1,11 @@
 # Lessons Learned
 
+## [2026-04-14] — Index-based mutation inside concurrentPerform races with image reordering
+- **Mistake:** `TriageViewModel.cacheNetworkFiles` wrote `self.images[index].decodingURL = localURL` via index inside `DispatchQueue.concurrentPerform`, but `applySortByColumnOrder` reorders `self.images` on quality-score completion while downloads are still in flight. Stale indices from the concurrentPerform snapshot then landed cache paths onto the wrong entries — and `enrichWithHeaders` subsequently read headers from the wrong physical files, producing cross-contaminated `DATE-LOC`, `EXPTIME`, filter, focal length across rows. Only affected NAS sessions; local-disk sessions were fine because `decodingURL == url` there.
+- **Root cause:** `self.images` is mutable and gets reordered by sort operations. Any background job that snapshots an index and writes back later by index is racing against the sort. The adjacent `networkURLUpdater` in the same closure already used URL-based lookup (correct) — the inconsistency between the two paths in the same function was the tell.
+- **Rule:** When mutating `self.images[n].field` from an async/concurrent closure, ALWAYS use `firstIndex(where: { $0.url == sourceURL })` at write time, never a captured index from when the closure was scheduled. URL is the stable identity — indices are not. Index-based mutation is safe only inside a synchronous `for index in images.indices` loop that cannot be interrupted by a sort.
+- **Applies to:** Any future `concurrentPerform`, `Task { @MainActor ... }`, or background-to-main hop that mutates `images`. Specifically `cacheNetworkFiles`, `enrichWithHeaders`, `saveToFrameHistory`, anything in `PrefetchCache` that touches `images`.
+
 ## [2026-04-07] — Star detector false positives on narrowband (H-alpha) nebulosity
 - **Mistake:** Star detector's 5-sigma + 3x3 local maximum check had no sharpness/concentration filter. Bright nebulosity in H-alpha data creates smooth intensity peaks that pass both checks, resulting in star circles drawn on empty nebula regions in Compare window.
 - **Root cause:** Local maximum detection only checks if a pixel is brighter than its 8 neighbors — true for any smooth gradient peak. No verification that the detection is actually a compact point source (star) rather than extended emission.
