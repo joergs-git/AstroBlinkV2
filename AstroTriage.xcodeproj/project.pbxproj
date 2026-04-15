@@ -26,6 +26,7 @@
 		27A50C3C24B073F7FA400012 /* ImageEntryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1ABC62333FF8D3609F74755 /* ImageEntryTests.swift */; };
 		2AC85F5C8AE08A1DB6A74261 /* KeyboardHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 763931350538CED5EA81290D /* KeyboardHandler.swift */; };
 		2B342761B8218D9FD97D3063 /* DisplayAligner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2727035D4657A3FCCCEE6076 /* DisplayAligner.swift */; };
+		2CF2D0DA29197AECBEE2FA9D /* CurationServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A418D2B8B47E7D7859BCC0E /* CurationServiceTests.swift */; };
 		31747A36A973DE54498AA159 /* FrameRecord.swift in Sources */ = {isa = PBXBuildFile; fileRef = F90E148C13F8C7FE088D1524 /* FrameRecord.swift */; };
 		31947D5AB6C982F422ECFD8C /* DeepSkyTargetDatabase.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0FAA26375FEB3A7D2F9BFBAC /* DeepSkyTargetDatabase.swift */; };
 		37DA495A008C7E13F6D23D6C /* HeaderInspectorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D45AA5729C0A57A6C12C9C2 /* HeaderInspectorView.swift */; };
@@ -177,6 +178,7 @@
 		107592623F603E84A4E408A9 /* GPUStarDetectionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GPUStarDetectionTests.swift; sourceTree = "<group>"; };
 		18942289A31EB02EAC0670C9 /* FrameHistoryDatabase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FrameHistoryDatabase.swift; sourceTree = "<group>"; };
 		19E7CEF533FCAE62802CFC77 /* MetadataExtractorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetadataExtractorTests.swift; sourceTree = "<group>"; };
+		1A418D2B8B47E7D7859BCC0E /* CurationServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CurationServiceTests.swift; sourceTree = "<group>"; };
 		1A5DA4A13F92A7266A8F0998 /* BenchmarkStatsWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BenchmarkStatsWindow.swift; sourceTree = "<group>"; };
 		1B4C4D1E3CA9608F6E41582A /* PrefetchCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrefetchCache.swift; sourceTree = "<group>"; };
 		1BC8D6B7579B8D8EE0A8190B /* AIsaacUserProfile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIsaacUserProfile.swift; sourceTree = "<group>"; };
@@ -341,6 +343,7 @@
 				E46927C78C5F676909307325 /* ColumnDefinitionTests.swift */,
 				B46C0B1EE92EE58C5BBA5EEE /* CommunityDetectionTests.swift */,
 				E2264DF9C1BBEE95302DA02E /* ConvergenceDetectorTests.swift */,
+				1A418D2B8B47E7D7859BCC0E /* CurationServiceTests.swift */,
 				DE83C9556D164ED7CC41C0FC /* DecoderTests.swift */,
 				45F32B6422A0EB353A91C74B /* FrameHistoryDatabaseTests.swift */,
 				107592623F603E84A4E408A9 /* GPUStarDetectionTests.swift */,
@@ -732,6 +735,7 @@
 				5FAD6705D12685E27FBBE43A /* ColumnDefinitionTests.swift in Sources */,
 				F86A4F77FBA8E35B9205024B /* CommunityDetectionTests.swift in Sources */,
 				142FCBA2B931A2772A0E206E /* ConvergenceDetectorTests.swift in Sources */,
+				2CF2D0DA29197AECBEE2FA9D /* CurationServiceTests.swift in Sources */,
 				E85D3B8048F5775EF0C70BB9 /* DecoderTests.swift in Sources */,
 				8042B085C948F458CE1A217A /* FrameHistoryDatabaseTests.swift in Sources */,
 				6F0B663C43C9629F2CE3C655 /* GPUStarDetectionTests.swift in Sources */,
