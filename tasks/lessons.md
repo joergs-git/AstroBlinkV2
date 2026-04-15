@@ -1,5 +1,17 @@
 # Lessons Learned
 
+## [2026-04-15] — SourceKit diagnostics lie when the vendored SPM package doesn't index
+- **Mistake:** Spent several iterations trying to "fix" SourceKit errors like "Cannot find 'BenchmarkConfig' in scope", "Cannot find type 'ImageEntry'", "No such module 'ImageDecoderBridge'" — they were cascading from the local `Packages/ImageDecoder/` SPM package not indexing in the editor.
+- **Root cause:** The in-editor SourceKit indexer doesn't fully resolve the vendored C/C++ bridge package graph. The actual Swift compiler invoked by `xcodebuild` resolves it fine and the code compiles cleanly.
+- **Rule:** Ignore SourceKit diagnostics on this project. Trust `xcodebuild` output. When a SourceKit error looks like "Cannot find 'AppSettings' / 'FrameHistoryDatabase' / 'MachineInfo' / any internal type" — assume cascade, run `xcodebuild build` or `xcodebuild -only-testing:<SuiteName> test` to see what the real compiler says. Only fix errors that appear in actual xcodebuild output.
+- **Applies to:** Any file editing workflow. The trap is most tempting on fresh files like `CurationService.swift` where every reference looks broken — they're not.
+
+## [2026-04-15] — Swift 6 strict inference breaks `abs(x - y)` inside closures
+- **Mistake:** Existing code like `fwhms.map { abs($0 - median) }.sorted()[...] * 1.4826` compiled fine under older Swift but fails under Swift 6 with "ambiguous use of 'abs'". There are many `abs` overloads (Int, Double, Float, Decimal, generic Numeric) and Swift 6 refuses to pick one when the closure's element type isn't already pinned.
+- **Root cause:** Swift 6 tightened overload resolution inside closures. The surrounding `.sorted()[...] * 1.4826` chain doesn't propagate type info back into the closure fast enough for the inference to terminate.
+- **Rule:** Inside closures, use `.magnitude` instead of `abs(x)`. It's a single unambiguous method on numeric types, not a multi-type overload set. For Int→Double coercions paired with `abs`, hoist the conversion out: `let d: Double = Double(a - b); if d.magnitude <= tol`. Add explicit `[Double]` / `Double` annotations on MAD computation temporaries.
+- **Applies to:** `QualityEstimator.swift` (3 sites already fixed), `FrameHistoryModel.swift` (2 sites fixed), `FrameHistoryWindow.swift` (3 sites fixed). Will recur in any future nested-closure statistical code.
+
 ## [2026-04-14] — Index-based mutation inside concurrentPerform races with image reordering
 - **Mistake:** `TriageViewModel.cacheNetworkFiles` wrote `self.images[index].decodingURL = localURL` via index inside `DispatchQueue.concurrentPerform`, but `applySortByColumnOrder` reorders `self.images` on quality-score completion while downloads are still in flight. Stale indices from the concurrentPerform snapshot then landed cache paths onto the wrong entries — and `enrichWithHeaders` subsequently read headers from the wrong physical files, producing cross-contaminated `DATE-LOC`, `EXPTIME`, filter, focal length across rows. Only affected NAS sessions; local-disk sessions were fine because `decodingURL == url` there.
 - **Root cause:** `self.images` is mutable and gets reordered by sort operations. Any background job that snapshots an index and writes back later by index is racing against the sort. The adjacent `networkURLUpdater` in the same closure already used URL-based lookup (correct) — the inconsistency between the two paths in the same function was the tell.
