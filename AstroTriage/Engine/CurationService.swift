@@ -136,7 +136,8 @@ enum CurationService {
 
     /// Build an upload entry from an in-memory ImageEntry. Used from the live
     /// 1/2/3 rating path, where the entry has the most up-to-date metric values.
-    private static func buildEntry(from entry: ImageEntry, fileHash: String) -> CuratedFrameEntry {
+    /// Internal (not private) so CurationServiceTests can exercise field mapping.
+    static func buildEntry(from entry: ImageEntry, fileHash: String) -> CuratedFrameEntry {
         // Derive the setup hash the same way currentSetupFingerprint does,
         // from the entry's own equipment fields.
         let setupHash = SetupFingerprint(
@@ -204,7 +205,8 @@ enum CurationService {
     /// sync path, which operates on whatever the DB currently holds (may be
     /// slightly stale relative to the live session state, but that's fine —
     /// the auto-upload path covers every fresh rating).
-    private static func buildEntry(from record: FrameRecord) -> CuratedFrameEntry {
+    /// Internal (not private) so CurationServiceTests can exercise field mapping.
+    static func buildEntry(from record: FrameRecord) -> CuratedFrameEntry {
         CuratedFrameEntry(
             file_hash: record.fileHash,
             machine_hash: MachineInfo.machineHash,
