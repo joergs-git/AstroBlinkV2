@@ -56,12 +56,19 @@ struct AppSettings {
         case sessionCount         // Int — number of sessions opened (for App Store review prompt)
         case hideSplash           // Bool — never show splash screen on launch
         case hasSeenOnboarding    // Bool — true after user dismissed the first-launch onboarding
-        case communityLearning    // Bool — opt-in to community detection learning (default: off)
+        case communityLearning    // Bool — community detection learning (default: on for new installs)
         case fontScale            // Float — UI font scale factor (1.0 = default)
         case dismissedMessageIDs  // [String] — UUIDs of permanently dismissed in-app messages
         case snoozedMessages      // Data — encoded [String: Date] of snoozed message ID → snooze-until date
         case seenDefaultColumns   // [String] — default-visible column ids seen by user (tracks auto-migration of new columns)
         case showSessionOverviewPanel  // Bool — right-side Session Overview panel visibility (persisted across sessions & iCloud)
+    }
+
+    // Register defaults for new installs (call once at app launch, before startCloudSync)
+    static func registerDefaults() {
+        defaults.register(defaults: [
+            Key.communityLearning.rawValue: true   // opt-in by default so new users contribute data
+        ])
     }
 
     // Start observing iCloud changes (call once at app launch)

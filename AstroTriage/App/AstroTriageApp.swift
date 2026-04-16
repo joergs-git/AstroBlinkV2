@@ -248,8 +248,9 @@ class AstroBlinkV2AppDelegate: NSObject, NSApplicationDelegate {
         // Skip heavy init when running as test host
         let isTestHost = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
 
-        // Start iCloud key-value sync for app settings
+        // Register defaults (community learning on for new installs) + start iCloud sync
         if !isTestHost {
+            AppSettings.registerDefaults()
             AppSettings.startCloudSync()
         }
 
