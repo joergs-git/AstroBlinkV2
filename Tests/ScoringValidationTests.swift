@@ -257,23 +257,23 @@ final class ScoringValidationTests: XCTestCase {
 
     func testR6a_AbsoluteTrailingCeiling() {
         var entries = makeBaselineGroup(setup: Self.rc12, filter: "L", count: 10)
-        entries[0].trailingScore = 0.55
+        entries[0].trailingScore = 0.65  // above 0.60 ceiling (raised from 0.50 in v20)
         entries[0].trailingConsensus = 0.6
 
         let scores = score(entries: entries)
         let r = reasons(for: 0, in: entries, scores: scores)
         XCTAssertTrue(r.contains(.elongated),
-            "trailingScore=0.55 + consensus=0.6 must trigger R6a absolute ceiling")
+            "trailingScore=0.65 + consensus=0.6 must trigger R6a absolute ceiling (0.60)")
     }
 
     func testR6a_Guard_BelowScoreThreshold() {
         var entries = makeBaselineGroup(setup: Self.rc12, filter: "L", count: 10)
-        entries[0].trailingScore = 0.48
+        entries[0].trailingScore = 0.58  // below 0.60 ceiling
         entries[0].trailingConsensus = 0.6
 
         let scores = score(entries: entries)
         XCTAssertFalse(reasons(for: 0, in: entries, scores: scores).contains(.elongated),
-            "trailingScore=0.48 must NOT trigger R6a (below 0.50)")
+            "trailingScore=0.58 must NOT trigger R6a (below 0.60)")
     }
 
     func testR6a_Guard_BelowConsensusThreshold() {
@@ -291,21 +291,23 @@ final class ScoringValidationTests: XCTestCase {
     func testR9_TrackingHops() {
         var entries = makeBaselineGroup(setup: Self.rc12, count: 10)
         entries[0].starChainFraction = 0.30
+        // v20: chain detection now requires elongation cross-check — add trailing evidence
+        entries[0].trailingScore = 0.25  // above 0.15 cross-check threshold
 
         let scores = score(entries: entries)
         XCTAssertTrue(reasons(for: 0, in: entries, scores: scores).contains(.trackingHop),
-            "starChainFraction=0.30 must trigger R9")
+            "starChainFraction=0.30 + trailing=0.25 must trigger R9")
     }
 
     func testR9_Guard_BelowThreshold() {
         var entries = makeBaselineGroup(setup: Self.rc12, count: 10)
-        // Threshold lowered to 0.08 in v5.21.0 — even 8% directional chains indicate
-        // tracking failure when consensus is high (R > 0.35 in detectStarChains)
+        // Threshold raised to 0.10 in v20 (was 0.08)
         entries[0].starChainFraction = 0.05
+        entries[0].trailingScore = 0.25
 
         let scores = score(entries: entries)
         XCTAssertFalse(reasons(for: 0, in: entries, scores: scores).contains(.trackingHop),
-            "starChainFraction=0.05 must NOT trigger R9 (threshold 0.08)")
+            "starChainFraction=0.05 must NOT trigger R9 (threshold 0.10)")
     }
 
     // MARK: R10 — Twilight
@@ -345,6 +347,8 @@ final class ScoringValidationTests: XCTestCase {
         entries[0].computedFWHM = Self.rc12.fwhmGoodMean * 2.5
         entries[0].computedHFR = Self.rc12.fwhmGoodMean * 2.5 * 0.65
         entries[0].starChainFraction = 0.35
+        // v20: chain requires elongation cross-check — add trailing
+        entries[0].trailingScore = 0.25
 
         let scores = score(entries: entries)
         let r = reasons(for: 0, in: entries, scores: scores)

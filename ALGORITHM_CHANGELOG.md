@@ -12,6 +12,51 @@ Records with `algorithmVersion < kAlgorithmVersion` are candidates for re-analys
 
 ---
 
+## Version 20 — v5.24.2 (2026-04-16)
+
+**Curation-driven threshold tuning: trailing ceiling + chain cross-check.**
+
+Based on analysis of 4,550 blind-curated frames with corrected confusion matrix.
+187 tunable false positives identified (human=3★, algo=trash, excluding decentered/
+background/twilight which human can't judge zoomed in).
+
+### Changes
+
+1. **Trailing absolute ceiling raised 0.50 → 0.60** — `QualityEstimator` Rule 6a.
+   33 false positives clustered at trailing 0.50-0.60 where human rated 3★ (stars
+   looked round enough). True garbage median trailing is 0.98; the 0.10 shift
+   rescues mild trailing while preserving strong separation from real defects.
+
+2. **Chain detection base threshold raised 0.08 → 0.10** — `QualityEstimator` Rule 9.
+   56 chain FPs, mostly RC12 2423mm (28) and RASA 620mm (25). Scale range now
+   0.10-0.22 (was 0.08-0.18) across plate scales 0.5-2.5"/px.
+
+3. **Chain detection elongation cross-check added** — `QualityEstimator` Rule 9.
+   Chain pattern alone no longer triggers garbage. Stars must also show elongation
+   (trailing > 0.15 OR eccentricity > FL-baseline + 0.15) to confirm tracking error.
+   Curation evidence: chain FP axis_ratio 0.844 (round) vs true garbage 0.626
+   (elongated). Dense star fields and optical aberrations no longer false-positive.
+
+### Impact
+
+- **Reduced:** Trailing FPs at 0.50-0.60 no longer flagged as garbage
+- **Reduced:** Chain FPs on RC12/RASA with round stars no longer flagged
+- **Unchanged:** True trailing garbage (score > 0.60 with consensus) still caught
+- **Unchanged:** True chain garbage (elongated stars with chain pattern) still caught
+
+### Evidence
+
+4,550 blind-curated frames, 5 setups (RC12 2423mm, RC12red08 1964mm, RASA 620mm,
+ZWO AM5 468/904/905mm), 21 targets, 7 filters. Confusion matrix corrected for
+486 race-condition frames with stale quality_tier.
+
+### Files Changed
+
+- `AstroTriage/Engine/QualityEstimator.swift` — Rule 6a ceiling, Rule 9 threshold + cross-check
+- `AstroTriage/Model/FrameRecord.swift` — `kAlgorithmVersion` 19 → 20
+
+---
+
 ## Version 19 — v5.24.1 (2026-04-16)
 
 **Fix false dome/dark detection on undersampled full-frame sensors.**

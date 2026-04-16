@@ -253,7 +253,10 @@ struct QualityEstimator {
 
     // Severity-dependent trailing multiplier thresholds (named constants for tuning)
     private static let severityExponent: Double = 2.0
-    private static let absoluteTrailingCeilingScore: Double = 0.50
+    // Raised from 0.50 to 0.60 based on 4550-frame curation analysis (2026-04-16):
+    // 33 false positives clustered at trailing 0.50-0.60 where human rated 3★.
+    // True garbage median trailing is 0.98, so 0.60 retains strong separation.
+    private static let absoluteTrailingCeilingScore: Double = 0.60
     private static let absoluteTrailingCeilingConsensus: Double = 0.5
 
     /// Severity-dependent trailing multiplier: escalates from baseMult toward 1.0
@@ -784,22 +787,39 @@ struct QualityEstimator {
                 }
 
                 // Rule 9: Star chain detection — tracking hops (mount jumps/PE)
-                // Threshold scales smoothly with plate scale: narrow plate scales (long FL) use 8%,
-                // wider plate scales (short FL, dense fields with coincidental close pairs) use up to 18%.
-                // Smooth linear interpolation prevents discontinuous behavior across FL boundaries
-                // (e.g. 450mm vs 550mm behaves predictably the same).
-                // The directional consensus (R threshold also FL-adaptive in StarMetricsCalculator)
-                // ensures these are systematic patterns, not random star clustering.
+                // Threshold scales smoothly with plate scale: narrow plate scales (long FL) use 10%,
+                // wider plate scales (short FL, dense fields with coincidental close pairs) use up to 22%.
+                // Base raised from 0.08→0.10 based on 4550-frame curation: 56 chain FPs at RC12/RASA.
+                //
+                // Cross-check: chain pattern + round stars = coincidental alignment, NOT tracking error.
+                // Real tracking hops produce elongated stars (trailing > 0.15 or eccentricity above
+                // FL baseline). Without this, dense star fields and optical aberrations false-positive.
+                // Curation evidence: chain FPs had axis_ratio 0.844 (round) vs TG 0.626 (elongated).
                 if let chainFrac = entry.starChainFraction {
                     let chainThreshold: Double
                     if let scale = entry.arcsecPerPixel, scale > 0 {
                         let t = max(0.0, min(1.0, (scale - 0.5) / 2.0))  // 0..1 as scale 0.5 → 2.5 "/px
-                        chainThreshold = 0.08 + t * 0.10  // 0.08 → 0.18
+                        chainThreshold = 0.10 + t * 0.12  // 0.10 → 0.22
                     } else {
-                        chainThreshold = 0.08
+                        chainThreshold = 0.10
                     }
                     if chainFrac > chainThreshold {
-                        garbageReasons.append(.trackingHop)
+                        // Cross-check: stars must show SOME elongation to confirm tracking error.
+                        // Chain pattern alone with round stars is coincidental (dense field, optics).
+                        let hasElongation: Bool = {
+                            if let ts = entry.trailingScore, ts > 0.15 { return true }
+                            if let ecc = entry.computedEccentricity {
+                                let fl = entry.focalLength ?? 0
+                                let baseline = fl > 0
+                                    ? min(0.70, max(0.15, 0.8 / (fl / 200.0).squareRoot()))
+                                    : 0.40
+                                if ecc > baseline + 0.15 { return true }
+                            }
+                            return false
+                        }()
+                        if hasElongation {
+                            garbageReasons.append(.trackingHop)
+                        }
                     }
                 }
 
