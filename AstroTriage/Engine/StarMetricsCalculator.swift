@@ -67,8 +67,11 @@ enum StarMetricsCalculator {
     // Wider crop for shape/eccentricity measurement and compare overlay (5% margin)
     // Trailing consensus handles edge aberrations via PA analysis, so wider coverage is safe
     private static let shapeCropFraction: Float = 0.90
-    // Gaussian fit: minimum pixels above background required for valid fit
-    private static let minFitPixels = 8
+    // Gaussian fit: minimum pixels above background required for valid fit.
+    // Lowered from 8 to 4 to support undersampled stars (FWHM ~1.0-1.5px)
+    // at short FL + small pixels (e.g. 504mm FL, 3.76μm → 1.54"/px plate scale).
+    // A 2-parameter linear regression (ln(I) vs r²) needs ≥3 points; 4 is safe.
+    private static let minFitPixels = 4
     // Minimum eccentricity aperture (pixels) — ensures measurement even for tiny stars
     private static let minEccAperture: Float = 5.0
     // Maximum eccentricity aperture (pixels) — prevents measuring too far into background
@@ -813,7 +816,11 @@ enum StarMetricsCalculator {
 
         let fitRadius = min(radius, 5.0)
         let fitRadiusSq = fitRadius * fitRadius
-        let threshold = peakValue * 0.1
+        // 3% threshold (was 10%) to capture more of the Gaussian profile for tight stars.
+        // At FWHM ~1.3px (σ=0.55), pixels at distance 1.0 are ~19% of peak (pass),
+        // at distance √2 are ~3.7% (pass with 3%, fail with 10%). This yields ~9 qualifying
+        // pixels instead of ~5, enabling reliable fits on undersampled stars.
+        let threshold = peakValue * 0.03
 
         var sumR2: Double = 0
         var sumLnI: Double = 0

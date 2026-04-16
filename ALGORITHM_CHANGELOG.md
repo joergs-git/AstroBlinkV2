@@ -12,6 +12,61 @@ Records with `algorithmVersion < kAlgorithmVersion` are candidates for re-analys
 
 ---
 
+## Version 19 — v5.24.1 (2026-04-16)
+
+**Fix false dome/dark detection on undersampled full-frame sensors.**
+
+Reported by user with ASI6200MM (61 MP, 3.76μm pixels) at 504mm FL (1.54"/px
+plate scale). All luminance lights flagged as "no signal detected" + "noise peaks,
+not real stars (dome/cap)" despite 52,785 legitimate stars and SNR 19.8.
+
+### Root Cause
+
+At 1.54"/px with ~2" seeing, real stars have FWHM ~1.3px. The Gaussian FWHM fit
+required 8 pixels above 10% of peak — at σ=0.55px only ~5 pixels qualify, so the
+fit returned nil for every star. With FWHM nil, Rule 0 flagged "no signal" and
+Rule 0b flagged "dome/cap" (hardcoded FWHM > 3.0 threshold unreachable at this
+plate scale).
+
+### Changes
+
+1. **Gaussian fit parameters relaxed for undersampled stars** —
+   `StarMetricsCalculator.computeFWHMGaussian`: `minFitPixels` 8 → 4,
+   threshold 10% → 3% of peak. At FWHM ~1.3px this yields ~9 qualifying pixels
+   (vs ~5 before), enabling reliable fits on tight stars. The 2-parameter linear
+   regression (ln(I) vs r²) only needs ≥3 points, so 4 is safe.
+
+2. **SNR cross-check on dome/dark detection** — `QualityEstimator`: both the
+   pre-pass dark frame identification AND Rule 0b now check `SNR > 5.0` before
+   flagging. Dark/dome frames have near-zero SNR (random noise only). Real light
+   frames with sky signal have SNR >> 1. This is the most reliable discriminator
+   and prevents false positives when FWHM measurement fails for other reasons.
+
+3. **Rule 0 SNR safety net** — `QualityEstimator` Rule 0 (noData): if FWHM is nil
+   but `SNR > 5.0 AND stars > 100`, the frame clearly has signal — don't flag as
+   "no signal detected". This catches measurement failures on undersampled stars.
+
+4. **Plate-scale-aware FWHM threshold in dome detection** — `QualityEstimator`:
+   replaced hardcoded `FWHM > 3.0` with `max(0.8, min(3.0, 1.5 / arcsecPerPixel))`.
+   At 1.54"/px this becomes ~0.97px (matching real star FWHM under good seeing).
+   At 0.5"/px it remains 3.0 (oversampled setups unaffected). Fallback to 3.0 when
+   plate scale unknown.
+
+### Impact
+
+- **Fixed:** Full-frame sensors at short FL (ASI6200MM, ASI2600MM at 400-600mm)
+  no longer false-positive as dome/dark frames in star-rich fields
+- **Unchanged:** Actual dark/dome detection unaffected (SNR ≈ 0 for real darks)
+- **Unchanged:** Long FL setups (>1000mm) and oversampled setups use same thresholds
+
+### Files Changed
+
+- `AstroTriage/Engine/StarMetricsCalculator.swift` — minFitPixels, threshold
+- `AstroTriage/Engine/QualityEstimator.swift` — pre-pass, Rule 0, Rule 0b
+- `AstroTriage/Model/FrameRecord.swift` — `kAlgorithmVersion` 18 → 19
+
+---
+
 ## Version 18 — v5.22.2 (2026-04-13)
 
 **Mixed-plate-scale session sanity — arcsec FWHM comparison, star-count skip.**

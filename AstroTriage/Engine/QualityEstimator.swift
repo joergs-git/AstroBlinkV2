@@ -403,19 +403,37 @@ struct QualityEstimator {
 
             for (i, entry) in groupEntries.enumerated() {
                 if let stars = starsValues[i] {
-                    // Cross-check: real stars have FWHM > 3px and measurable background.
-                    // Hot pixel noise peaks from dark/dome frames have tiny FWHM (~1px)
-                    // and near-zero background. Bright nebulae (M42 H-alpha) can legitimately
-                    // produce 10000+ star detections with normal FWHM and significant background.
-                    let hasRealPSF = fwhmValues[i] != nil && fwhmValues[i]! > 3.0
+                    // Cross-check: real stars have measurable FWHM and background.
+                    // Hot pixel noise peaks from dark/dome frames have tiny FWHM (~0.5px)
+                    // and near-zero background. Bright nebulae and dense star fields can
+                    // legitimately produce 10000+ star detections with normal FWHM and sky.
+                    // FWHM threshold is plate-scale-aware: at 1.54"/px (e.g. 504mm FL,
+                    // 3.76μm pixels), real stars have FWHM ~1.3px under typical 2" seeing.
+                    // Hardcoded 3.0px would reject all stars at that plate scale.
+                    let fwhmThreshold: Double = {
+                        if let app = entry.arcsecPerPixel, app > 0 {
+                            // Minimum expected FWHM under good seeing (1.5") at this plate scale.
+                            // At 1.54"/px: max(0.8, min(3.0, 1.5/1.54)) = max(0.8, 0.97) = 0.97
+                            // At 0.5"/px:  max(0.8, min(3.0, 1.5/0.5))  = max(0.8, 3.0)  = 3.0
+                            return max(0.8, min(3.0, 1.5 / app))
+                        }
+                        return 3.0  // fallback for unknown plate scale
+                    }()
+                    let hasRealPSF = fwhmValues[i] != nil && fwhmValues[i]! > fwhmThreshold
                     let hasSignificantBackground = entry.noiseMedian != nil && entry.noiseMedian! >= 0.002
+                    // SNR cross-check: dark/dome frames have near-zero SNR (noise only).
+                    // Real light frames with sky signal have SNR >> 1. This catches cases
+                    // where FWHM measurement fails on undersampled stars (e.g. full-frame
+                    // ASI6200MM at 504mm FL with 52000+ real stars but FWHM ~1.3px).
+                    let hasMeasurableSignal = snrValues[i] != nil && snrValues[i]! > 5.0
 
-                    if stars >= 10000 && !(hasRealPSF && hasSignificantBackground) {
-                        // Path A: Extreme star count, but only if stars don't look real.
-                        // Genuine dense fields (M42 narrowband) have FWHM > 3px + measurable sky.
+                    if stars >= 10000 && !(hasRealPSF && hasSignificantBackground) && !hasMeasurableSignal {
+                        // Path A: Extreme star count, but only if stars don't look real
+                        // AND no measurable sky signal (SNR). All three must fail.
                         darkFrameIndices.insert(i)
-                    } else if stars >= darkStarThreshold, let bgLevel = entry.noiseMedian, bgLevel < 0.002 {
-                        // Path B: FL-scaled star threshold + very low background.
+                    } else if stars >= darkStarThreshold, let bgLevel = entry.noiseMedian, bgLevel < 0.002,
+                              !hasMeasurableSignal {
+                        // Path B: FL-scaled star threshold + very low background + no signal.
                         // Wide-field (620mm): threshold ~9200 (wide FOV = many real stars)
                         // Long FL (2423mm): threshold ~5000 (narrow FOV = few real stars)
                         darkFrameIndices.insert(i)
@@ -543,28 +561,42 @@ struct QualityEstimator {
                 // no real stars to measure. Catches: pitch black frames, heavy clouds,
                 // fog, lens cap, dome closed. Star detector may find noise peaks but
                 // Gaussian fitting fails on them → FWHM is nil.
+                // Exception: if SNR is measurable (> 5) and star count is meaningful (> 100),
+                // the frame clearly has signal — FWHM nil means measurement failure on
+                // undersampled stars, not absence of signal.
                 let hasNoFWHM = fwhmValues[localIdx] == nil
                 if hasNoFWHM {
-                    garbageReasons.append(.noData)
+                    let hasSignal = snr != nil && snr! > 5.0 && (starsValues[localIdx] ?? 0) > 100
+                    if !hasSignal {
+                        garbageReasons.append(.noData)
+                    }
                 }
 
                 // Rule 0b: Dark frame / dome closed / lens cap detection.
                 // Dark frames have near-zero sky background but hot pixels create thousands
                 // of false star detections that survive even 16σ auto-escalation.
                 // Detection paths:
-                // (a) Stars ≥ 10000 AND no real PSF signature (FWHM ≤ 3px or bg < 0.002).
-                //     Bright nebulae (M42 H-alpha) can have 14000+ real star detections
-                //     with FWHM > 3px and significant background — these pass through.
-                // (b) Stars ≥ FL-dependent threshold AND extremely low background (< 0.002).
-                //     Wide-field (620mm) can have 5000+ real stars at low gain + narrowband.
-                //     Long FL (2400mm) rarely exceeds 4000 real stars.
+                // (a) Stars ≥ 10000 AND no real PSF AND no sky signal (SNR ≤ 5).
+                //     Bright nebulae (M42 H-alpha) and dense star fields (NGC 2251 at
+                //     504mm FL) can have 14000-52000+ real star detections with measurable
+                //     FWHM, significant background, and/or high SNR — these pass through.
+                // (b) Stars ≥ FL-dependent threshold AND very low background AND no signal.
+                // FWHM threshold is plate-scale-aware (see pre-pass for details).
                 if let stars = starsValues[localIdx] {
-                    let hasRealPSF = fwhmValues[localIdx] != nil && fwhmValues[localIdx]! > 3.0
+                    let r0bFwhmThreshold: Double = {
+                        if let app = entry.arcsecPerPixel, app > 0 {
+                            return max(0.8, min(3.0, 1.5 / app))
+                        }
+                        return 3.0
+                    }()
+                    let hasRealPSF = fwhmValues[localIdx] != nil && fwhmValues[localIdx]! > r0bFwhmThreshold
                     let hasSignificantBackground = entry.noiseMedian != nil && entry.noiseMedian! >= 0.002
+                    let hasMeasurableSignal = snr != nil && snr! > 5.0
 
-                    if stars >= 10000 && !(hasRealPSF && hasSignificantBackground) {
+                    if stars >= 10000 && !(hasRealPSF && hasSignificantBackground) && !hasMeasurableSignal {
                         garbageReasons.append(.noisePeaks)
-                    } else if stars >= darkStarThreshold, let bgLevel = entry.noiseMedian, bgLevel < 0.002 {
+                    } else if stars >= darkStarThreshold, let bgLevel = entry.noiseMedian, bgLevel < 0.002,
+                              !hasMeasurableSignal {
                         garbageReasons.append(.noisePeaks)
                     }
                 }
