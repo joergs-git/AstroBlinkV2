@@ -2304,6 +2304,17 @@ class TriageViewModel: ObservableObject {
 
         // Save frame records to history database (async, non-blocking)
         saveToFrameHistory()
+
+        // Re-upload curated frames whose quality breakdown changed since initial rating.
+        // Fixes race condition: if user rates a frame before scoring completes, the initial
+        // upload captures stale quality_tier/z-score/garbage_reasons. This re-sync ensures
+        // the Supabase curated_frames table reflects the final scored state.
+        let curatedToResync = images.filter { $0.userConfidence > 0 && $0.qualityBreakdown != nil && $0.fileHash != nil }
+        if !curatedToResync.isEmpty {
+            for entry in curatedToResync {
+                CurationService.uploadCuratedFrame(entry)
+            }
+        }
     }
 
     // MARK: - Frame History Persistence
