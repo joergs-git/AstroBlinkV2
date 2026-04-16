@@ -727,8 +727,21 @@ struct AIsaacContextBuilder {
         - K: toggle skip-marked during navigation. H: cycle hide marked / show only marked / show all.
         - +/-: zoom in/out. 0: reset zoom. Double-click: fit to view. Option+drag: pan.
         - 1/2/3: set confidence rating (1-3 stars, same key clears). Yellow star column.
+        - A: cycle quality feedback (agree/disagree/partly/clear). Trains the scoring model.
+        - Cmd+Shift+B: toggle Blind Curation mode (rate frames without seeing algo scores).
         - Cmd+O: open folder (Cmd-click for multi-folder). Cmd+W: close window.
         - Cmd+/Cmd-: 25% step zoom. Cmd+0: fit to view. Cmd+1: 100%. Cmd+2: 200%.
+
+        BLIND CURATION MODE (Cmd+Shift+B):
+        - Hides quality scores so you rate frames purely on visual impression. Focus on star shapes.
+        - Rate 1★ (bad) / 2★ (uncertain) / 3★ (good) with number keys 1/2/3.
+        - Your ratings train the scoring model — uploaded anonymously to improve quality thresholds.
+        - Human visual strengths: star roundness (trailing, elongation, chains, defocus).
+        - Human visual limits when zoomed in: can NOT judge decentered target, large gradients, SNR, or twilight.
+        - 1★ carries highest weight — may detect sensor artifacts (ice, frost, dew) invisible to metrics.
+        - The algorithm may overrule 2★/3★ when quantitative evidence is clear (low SNR with round stars \
+        still contributes to the stack).
+        - Community learning toggle: status bar person.3 icon (on by default for new installs).
 
         BORTLE SKY QUALITY:
         - Fractional Bortle values (e.g. B4.8, not just B5) from NOAA VIIRS 2024 annual composite \

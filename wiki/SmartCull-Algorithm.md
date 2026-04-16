@@ -19,11 +19,11 @@ Absolute thresholds catch catastrophic failures immediately. Any single metric f
 - **R4: Severe HFR** — HFR > 2x group median
 - **R5: Extreme eccentricity** — eccentricity excess > 1.0/effectiveTrailMult above FL-adaptive baseline (requires trailing outlier guard + FWHM cross-check)
 - **R6: Star trailing** — trailing score > 0.7/effectiveTrailMult (dual-path: also fires at > 0.5/mult with consensus > 0.8). Cross-checked with FWHM and trailing outlier guard.
-- **R6a: Absolute trailing ceiling** — trailing score > 0.50 + consensus > 0.50 + trailing outlier. Filter-independent, bypasses FWHM cross-check (tracking error produces normal FWHM).
+- **R6a: Absolute trailing ceiling** — trailing score > 0.60 + consensus > 0.50 + trailing outlier. Filter-independent, bypasses FWHM cross-check (tracking error produces normal FWHM). Raised from 0.50 in v20 based on 4,550-frame blind curation analysis.
 - **R7: Star count anomaly** — stars > 1.8x median + elevated FWHM/HFR (doubled stars from tracking jump)
 - **R7b: Atmospheric attenuation** — stars < 65% median + SNR < 65% median + FWHM normal. Detects thin cloud, dew, or fog (signal loss without defocus). Requires ≥8 frames.
 - **R8: Background anomaly** — background > 5-6.5 MAD from group median (clouds, fog, gradient). Moon-aware for broadband (relaxes threshold near bright moon).
-- **R9: Tracking hops** — star chain fraction above FL-adaptive threshold (8% at long FL, up to 18% at wide-field plate scales). Detection proximity threshold scales with plate scale (~40 arcsec physical separation), and the directional consensus (R) threshold interpolates from 0.35 at 0.5"/px to 0.55 at 2.5"/px. This prevents false positives on dense wide-field targets like NGC 2024 at 468 mm FL, where normal star clustering used to be mistaken for periodic error chains. Smoothly interpolated — no discontinuous behavior between adjacent focal lengths.
+- **R9: Tracking hops** — star chain fraction above FL-adaptive threshold (10% at long FL, up to 22% at wide-field plate scales). Detection proximity threshold scales with plate scale (~40 arcsec physical separation), and the directional consensus (R) threshold interpolates from 0.35 at 0.5"/px to 0.55 at 2.5"/px. **Elongation cross-check (v20):** chain pattern alone no longer triggers garbage — stars must also show trailing > 0.15 or eccentricity above FL baseline + 0.15, confirming actual tracking error rather than coincidental star alignment. Validated on 4,550 curated frames: chain FPs had round stars (axis ratio 0.84) while true garbage had elongated stars (0.63).
 - **R10: Twilight/daylight** — sun altitude > -12° for broadband; narrowband tolerates down to -6° (civil twilight)
 
 ### Stage 1.5 — Session-Wide Sanity Check
@@ -53,6 +53,13 @@ Frames that pass Stage 1 are ranked within their group using robust statistics:
 - Uncertain: small group (<8 frames) with ambiguous z-score (-1.0 to 0.5) — blue question mark
 - Borderline: z > -2.0 (orange — 4 sub-levels from light to deep)
 - Trash: z ≤ -2.0 (red X)
+
+### Dome/Dark Frame Detection (v19)
+
+Pre-pass identifies dark/dome/cap frames before group statistics. Three cross-checks prevent false positives on dense star fields:
+- **SNR cross-check:** dark frames have SNR ≈ 0; real light frames have SNR >> 1. Frames with SNR > 5 are never flagged as dome/dark.
+- **Plate-scale-aware FWHM:** threshold `max(0.8, min(3.0, 1.5/arcsecPerPixel))` instead of hardcoded 3.0px. At 1.54"/px (e.g. ASI6200MM at 504mm FL), real stars have FWHM ~1.3px under typical seeing.
+- **Gaussian fit** supports undersampled stars (FWHM ~1.0-1.5px) via lowered pixel threshold (3% of peak, 4 minimum pixels).
 
 ### Stage 3 — Rescue Rules
 

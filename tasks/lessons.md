@@ -491,3 +491,27 @@
 - **Root cause:** Narrowband PSFs are inherently bloated, trailing measurement is noisier (fewer well-resolved stars), and historical baselines mix all filters. A "3 MADs" threshold that works for luminance is too strict for narrowband.
 - **Rule:** Stage 1.5b must (1) double thresholds for narrowband (FWHM 6, combined 7, eccentricity 0.7, severe 10 MADs), and (2) scale trailing deviation by filterTrailingMultiplier before comparing to threshold. Same principle as the existing filter-aware trailing penalty in Stage 2.
 - **Applies to:** QualityEstimator.historicalBaselineCheck(), any future cross-session comparison
+
+## [2026-04-16] — Gaussian FWHM fit fails on undersampled stars (short FL + small pixels)
+- **Mistake:** minFitPixels=8 and 10% threshold required too many qualifying pixels. At 1.54"/px (504mm, 3.76μm), stars have FWHM ~1.3px → only ~5 pixels above 10% → fit returns nil → dome/dark false positive on 52,785 real stars.
+- **Root cause:** The Gaussian fit was calibrated for oversampled setups. At FWHM < 1.5px, too few pixels exceed the 10% brightness threshold to fit a 2-parameter model.
+- **Rule:** Use minFitPixels=4 and 3% threshold. Also add SNR cross-check (>5) to dome detection — dark frames have SNR≈0. Make FWHM threshold plate-scale-aware: max(0.8, min(3.0, 1.5/arcsecPerPixel)).
+- **Applies to:** StarMetricsCalculator.computeFWHMGaussian(), QualityEstimator Rule 0/0b, any setup with plate scale > 1"/px
+
+## [2026-04-16] — CurationService uploads stale quality_tier when user rates before scoring completes
+- **Mistake:** 486 of 4550 curated frames had quality_tier=0 but z-scores well above -2.0 (median -0.15). Caused incorrect confusion matrix analysis.
+- **Root cause:** User rates frames (1/2/3 key) before recomputeQualityScores() finishes. buildEntry() captures qualityBreakdown at keypress time → stale or nil tier. qualityTier?.rawValue defaults to 0 (trash) when nil.
+- **Rule:** After every recomputeQualityScores(), re-upload all curated frames (userConfidence > 0) to Supabase. The upsert (file_hash + machine_hash unique) overwrites stale data.
+- **Applies to:** CurationService, TriageViewModel.recomputeQualityScores(), any curation data pipeline
+
+## [2026-04-16] — Blind curation: human visual limits define what to learn from ratings
+- **Mistake:** Initial analysis counted decentered (69) and background (32) false positives as tunable — but humans can't see these while zoomed in to check star shapes.
+- **Root cause:** During blind curation, humans zoom in heavily to evaluate star roundness. This makes them blind to: (a) decentered target (need full FOV), (b) large gradients (need full FOV), (c) twilight (physical constraint). They're also poor at judging absolute SNR.
+- **Rule:** NEVER learn decentered/background/twilight rules from human ratings. Only learn: trailing, chain detection, FWHM thresholds, dome/cap detection. 1★ carries asymmetric higher weight (may detect ice/frost invisible to metrics). 2★/3★ are softer signals the algorithm may overrule.
+- **Applies to:** Any future curation-driven threshold learning, QualityEstimator parameter tuning
+
+## [2026-04-16] — Chain detection needs elongation cross-check (round stars ≠ tracking hops)
+- **Mistake:** Rule 9 fired on chain fraction alone. Dense star fields and optical aberrations produced chain-like patterns with perfectly round stars (axis_ratio 0.844).
+- **Root cause:** Chain detection only checked spatial pattern (fraction of stars in close directional chains) without verifying the stars themselves show elongation. True tracking hops produce both chain patterns AND elongated stars.
+- **Rule:** Chain detection must require trailing > 0.15 OR eccentricity > FL-baseline + 0.15 in addition to chain fraction exceeding threshold. Raise base threshold from 0.08 to 0.10.
+- **Applies to:** QualityEstimator Rule 9, any pattern-based detection that should correlate with star shape
