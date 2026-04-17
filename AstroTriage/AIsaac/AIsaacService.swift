@@ -159,6 +159,7 @@ class AIsaacService: ObservableObject {
     // Parse Claude SSE stream and call onStreamChunk for each text delta
     private func parseSSEStream(_ bytes: URLSession.AsyncBytes) async throws -> String {
         var fullText = ""
+        var truncated = false
 
         for try await line in bytes.lines {
             // SSE format: "data: {...}" or "event: ..."
@@ -178,6 +179,20 @@ class AIsaacService: ObservableObject {
                 fullText += text
                 onStreamChunk?(text)
             }
+
+            // message_delta carries the final stop_reason — surface max_tokens truncation
+            // to the user instead of ending silently mid-word
+            if eventType == "message_delta",
+               let delta = json["delta"] as? [String: Any],
+               (delta["stop_reason"] as? String) == "max_tokens" {
+                truncated = true
+            }
+        }
+
+        if truncated {
+            let marker = "\n\n(… response truncated at token limit — ask me to continue)"
+            fullText += marker
+            onStreamChunk?(marker)
         }
 
         return fullText
@@ -199,7 +214,8 @@ class AIsaacService: ObservableObject {
 
         let body: [String: Any] = [
             "model": "claude-opus-4-20250514",
-            "max_tokens": 4096,
+            // 8192 gives headroom for large JSON tool outputs (e.g. mark_frames on 1000+ files)
+            "max_tokens": 8192,
             "system": system,
             "messages": messages,
             "stream": true

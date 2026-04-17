@@ -10,7 +10,9 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
 const SUPABASE_SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 // Model — update when newer versions release
 const MODEL = "claude-sonnet-4-6";
-const MAX_TOKENS = 1024;
+// 4096 ≈ 3000 words — prevents silent mid-word truncation seen at 1024
+// (Sonnet 4.6 supports up to 64K output; 4096 is a safe free-tier budget)
+const MAX_TOKENS = 4096;
 
 // Track API errors for Pushover alerting
 let firstErrorTime: number | null = null;
