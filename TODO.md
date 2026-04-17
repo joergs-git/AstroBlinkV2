@@ -99,6 +99,25 @@ All original implementation phases are complete:
 - [ ] Approaches: index-based solver (astrometry.net style) or GPU-accelerated star pattern matching
 - [ ] Would enable mosaic planning and astrometric quality checks
 
+### UI Polish — v5.25.1 (READY TO IMPLEMENT)
+
+**Blink Controls:**
+- [ ] Blink delay dropdown too narrow — only "0..." visible when not clicked. Widen to show full "0.1s" label
+- [ ] Add 0.05s as a new blink delay option. Default stays 0.1s
+- [ ] P key to toggle play/pause auto-blinking
+
+**Zoom:**
+- [ ] Minus key zoom should go down to 5% (currently stops at 25%)
+- [ ] Compare window: Cmd+1 and Cmd+2 quick zoom, +/- zoom keys (same as main viewer)
+
+**Compare Window:**
+- [ ] C key toggles star circle overlay on/off (scoped to compare window, reusable)
+- [ ] Metadata redesign:
+  - Both filenames: white/grey, smaller font, shown below the main info
+  - BEST label: green, current font size. SELECTED label: orange, current font size
+  - Add one-line summary: Filter, Exposure, Cam-Temp, Night, Time next to BEST/SELECTED
+  - Stars/FWHM/HFR/Ecc/SNR: centered line, values colored per side (green=best, orange=selected). Format: "Stars: 3619 vs 4867" with green left, orange right. No comma separators for star count.
+
 ### Tilted-Plane Background in GPU PSF Fit (Future R&D)
 - [ ] GPU `psf_fit_gaussian`: expand 3-param (A, σ, B) to 5-param (A, σ, B0, Bx, By) with tilted-plane background
 - [ ] CPU `computeFWHMGaussian`: gradient pre-subtraction from stamp edge pixels before linearized fit
