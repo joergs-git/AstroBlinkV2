@@ -519,6 +519,13 @@ struct FileListView: NSViewRepresentable {
 
             cellView.textField?.stringValue = value
 
+            // Cell-level tooltip for "!" indicator (FWHM/HFR unmeasurable)
+            if value == "!" && (colId == "fwhm" || colId == "hfr") {
+                cellView.toolTip = "Measurement not possible — all bright star candidates are saturated in full resolution.\nCommon with broadband filters + high gain + bright targets (open clusters) + moonlight.\nQuality scoring uses other available metrics (stars, SNR, noise, trailing).\nAsk AIsaac for a detailed explanation of this frame."
+            } else if isMetricCol {
+                cellView.toolTip = nil  // Clear tooltip on reused cells
+            }
+
             // Update font size for scale changes (reused cells keep old font)
             let scaledFontSize = round(11 * lastFontScale)
             if cellView.textField?.font?.pointSize != scaledFontSize {

@@ -121,6 +121,31 @@ class AIsaacWindowController: NSWindowController {
         }
     }
 
+    /// Open AIsaac window and immediately send a question — designed for external callers
+    /// (e.g. "Ask AIsaac" buttons in inspector, quality panels, tooltips).
+    /// Handles the full flow: show window → refresh context → send message.
+    /// Bypasses inputText binding to avoid SwiftUI race conditions.
+    func askQuestion(_ question: String) {
+        // Ensure window exists and is visible
+        showWindow(nil)
+        window?.makeKeyAndOrderFront(nil)
+        model.onRefreshContext?()
+
+        // Two-step: first show the question in chat, then fire the API call.
+        // sendQuickReply sets inputText (which races with SwiftUI binding),
+        // so we set inputText and trigger objectWillChange manually.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            guard let model = self?.model else { return }
+            // Force SwiftUI to notice the change by explicitly sending objectWillChange
+            model.objectWillChange.send()
+            model.inputText = question
+            // Another tick to let SwiftUI process the inputText change before sendMessage reads it
+            DispatchQueue.main.async {
+                model.sendMessage()
+            }
+        }
+    }
+
     // Lightweight state push — call frequently from ContentView .onChange handlers
     // Only triggers reactive comments when the window is visible
     func pushStateUpdate(from viewModel: TriageViewModel) {

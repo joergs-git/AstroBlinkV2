@@ -940,6 +940,7 @@ extension Notification.Name {
     static let showBenchmarkStats = Notification.Name("showBenchmarkStats")
     static let showBatchRename = Notification.Name("showBatchRename")
     static let showAIsaac = Notification.Name("showAIsaac")
+    static let askAIsaacAboutQuality = Notification.Name("askAIsaacAboutQuality")
     static let fontScaleIncrease = Notification.Name("fontScaleIncrease")
     static let fontScaleDecrease = Notification.Name("fontScaleDecrease")
     static let fontScaleReset = Notification.Name("fontScaleReset")

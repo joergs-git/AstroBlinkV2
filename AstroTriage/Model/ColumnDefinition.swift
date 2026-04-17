@@ -119,7 +119,10 @@ struct ColumnDefinition {
         case "date":        return entry.date ?? ""
         case "nightDate":   return entry.observingNight ?? ""
         case "exposure":    return entry.exposure.map { formatExposure($0) } ?? ""
-        case "hfr":         return entry.displayHFR.map { String(format: "%.2f", $0) } ?? ""
+        case "hfr":
+            if let v = entry.displayHFR { return String(format: "%.2f", v) }
+            // Show "!" when star detection ran but HFR couldn't be measured (all stars saturated)
+            return entry.computedStarCount != nil ? "!" : ""
         case "starCount":   return entry.displayStarCount.map { String($0) } ?? ""
         case "psfFlux":
             guard let flux = entry.psfFluxSum else { return "" }
@@ -127,7 +130,10 @@ struct ColumnDefinition {
             if flux >= 1_000 { return String(format: "%.1fK", flux / 1_000) }
             return String(format: "%.0f", flux)
         case "sensorTemp":  return entry.sensorTemp.map { String(format: "%.1f", $0) } ?? ""
-        case "fwhm":        return entry.displayFWHM.map { String(format: "%.2f", $0) } ?? ""
+        case "fwhm":
+            if let v = entry.displayFWHM { return String(format: "%.2f", v) }
+            // Show "!" when star detection ran but FWHM couldn't be measured (all stars saturated)
+            return entry.computedStarCount != nil ? "!" : ""
         case "gain":        return entry.gain.map { String($0) } ?? ""
         case "fileSize":    return entry.fileSizeFormatted
         case "subfolder":   return entry.subfolder
@@ -239,9 +245,9 @@ struct ColumnDefinition {
         case "snr":
             return "Signal-to-Noise Ratio.\nComputed from median pixel value / noise MAD during auto-stretch.\nHigher = cleaner signal. Affected by exposure, light pollution, clouds."
         case "fwhm":
-            return "Full Width at Half Maximum of stars (arcsec).\nMeasured by GPU star detection + Gaussian fitting.\nLower = sharper stars = better seeing/focus."
+            return "Full Width at Half Maximum of stars (pixels).\nMeasured by GPU star detection + Gaussian fitting.\nLower = sharper stars = better seeing/focus.\n\n\"!\" = measurement not possible (all bright stars saturated).\nCommon on broadband + high gain + bright targets + moonlight.\nQuality scoring uses other metrics instead. Ask AIsaac for details."
         case "hfr":
-            return "Half-Flux Radius of stars.\nFrom NINA filename token, CSV, or GPU star detection.\nLower = tighter stars = better focus."
+            return "Half-Flux Radius of stars.\nFrom NINA filename token, CSV, or GPU star detection.\nLower = tighter stars = better focus.\n\n\"!\" = measurement not possible (all bright stars saturated).\nQuality scoring uses other metrics instead. Ask AIsaac for details."
         case "starCount":
             return "Total number of stars detected in the image.\nFrom NINA filename token, CSV, or GPU star detection.\nFewer stars may indicate clouds, fog, or tracking issues."
         case "filter":

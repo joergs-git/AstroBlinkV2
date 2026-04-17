@@ -191,10 +191,11 @@ enum StarMetricsCalculator {
             }
             return peak < saturationThreshold
         }
-        // Use unsaturated candidates if enough exist; otherwise fall back to all filtered
-        // (better to measure partially saturated stars than nothing)
-        let measureCandidates = unsaturated.count >= minStars ? unsaturated : filtered
-        let toMeasure = Array(measureCandidates.prefix(maxMeasuredStars))
+        // Only use unsaturated candidates — saturated stars produce wrong FWHM/HFR.
+        // If too few unsaturated stars exist, measure() will return nil for FWHM/HFR,
+        // which is the honest answer: "we can't reliably measure this frame."
+        // Quality scoring falls back to other metrics (stars, noise, trailing).
+        let toMeasure = Array(unsaturated.prefix(maxMeasuredStars))
 
         // ── Pass 1: Compute HFR and FWHM (on streak-filtered stars only) ──
         var hfrValues: [Double] = []
@@ -249,7 +250,22 @@ enum StarMetricsCalculator {
             }
         }
 
-        guard hfrValues.count >= minStars, fwhmValues.count >= minStars else { return nil }
+        // If not enough valid FWHM/HFR measurements, return partial metrics with
+        // totalStarCount (from detection) but zero FWHM/HFR. This lets the quality
+        // scorer and UI know that star detection ran but measurement failed — triggering
+        // the "Quality Assessment Incomplete" explanation instead of showing nothing.
+        let totalCount = totalStarCount ?? totalDetected
+        if hfrValues.count < minStars || fwhmValues.count < minStars {
+            return StarMetrics(
+                medianHFR: 0, medianFWHM: 0,
+                measuredStarCount: 0, totalStarCount: totalCount,
+                medianEccentricity: nil, starDetails: [],
+                starChainFraction: 0,
+                trailCandidateCount: trailIndices.count,
+                trailRejectCount: streakRejectCount,
+                psfFluxSum: 0, psfMeanFlux: 0
+            )
+        }
 
         // ── GPU PSF Fitting (when available) ──
         // Circular fit: replaces CPU FWHM with proper Gauss-Newton fitted σ.

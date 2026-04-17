@@ -138,12 +138,50 @@ class HeaderInspectorModel: ObservableObject {
         }
     }
 
+    /// When true, the quality section shows an explanation why metrics are incomplete
+    /// and an "Ask AIsaac" button instead of z-score details.
+    @Published var qualityIncomplete: Bool = false
+    @Published var qualityIncompleteReason: String = ""
+
     // Update quality metrics section from QualityBreakdown + optional entry context
     func updateQualityMetrics(from bd: QualityBreakdown?, entry: ImageEntry? = nil) {
         guard let bd = bd else {
-            qualityMetrics = []
+            // No quality breakdown — build a specific reason from the frame's available data
+            if let entry = entry, entry.computedStarCount != nil {
+                qualityIncomplete = true
+                let hasFWHM = entry.computedFWHM != nil || entry.fwhm != nil
+                let hasHFR = entry.computedHFR != nil || entry.hfr != nil
+
+                var reasons: [String] = []
+
+                // Check specific measurement failures
+                if !hasFWHM && !hasHFR {
+                    reasons.append("FWHM and HFR could not be measured — all bright star candidates are saturated in full resolution. Common with broadband filters at high gain on bright targets, especially with moonlight.")
+                } else if !hasFWHM {
+                    reasons.append("FWHM could not be measured — star candidates may be saturated or undersampled at this plate scale.")
+                }
+
+                // Check group size (< 6 frames with same filter+target+exposure = no z-scores)
+                reasons.append("The scoring group for this filter/target/exposure combination may have fewer than 6 frames — too few for reliable statistical comparison.")
+
+                // Check for combination of factors
+                if let moonPct = entry.moonIllumination, moonPct > 0.3 {
+                    let filterStr = entry.filter ?? "unknown"
+                    let isNB = ["Ha", "OIII", "SII", "Hbeta", "NII", "H", "O", "S"].contains(filterStr)
+                    if !isNB {
+                        reasons.append("Moon illumination is \(Int(moonPct * 100))% — bright sky background on broadband \(filterStr) filter increases star saturation and reduces measurement accuracy.")
+                    }
+                }
+
+                qualityIncompleteReason = reasons.joined(separator: "\n\n")
+                qualityMetrics = []
+            } else {
+                qualityIncomplete = false
+                qualityMetrics = []
+            }
             return
         }
+        qualityIncomplete = false
         var metrics: [(label: String, value: String)] = []
 
         // Tier and combined z-score
@@ -430,6 +468,45 @@ struct HeaderInspectorContentView: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
             .background(Color(NSColor.textBackgroundColor))
+
+            // Quality incomplete section — shown when star detection ran but quality couldn't be computed
+            if model.qualityIncomplete {
+                Divider()
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.system(size: fs(12)))
+                            .foregroundColor(.orange)
+                        Text("Quality Assessment Incomplete")
+                            .font(.system(size: fs(11), weight: .semibold))
+                            .foregroundColor(.orange)
+                    }
+                    Text(model.qualityIncompleteReason)
+                        .font(.system(size: fs(10)))
+                        .foregroundColor(Color(NSColor.secondaryLabelColor))
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    Button(action: {
+                        AIsaacWindowController.shared.askQuestion(
+                            "Look at this frame's per-frame metrics (FWHM, HFR, stars, SNR, moon%, filter, gain, exposure). Why couldn't quality be fully assessed? What specific combination of factors caused the measurement limitation? Should I adjust my imaging settings for this target?"
+                        )
+                    }) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "sparkles")
+                                .font(.system(size: fs(10)))
+                            Text("Ask AIsaac for details")
+                                .font(.system(size: fs(10), weight: .medium))
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.purple.opacity(0.15))
+                        .cornerRadius(6)
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+            }
 
             // Quality metrics section (computed z-scores, tier, reasoning)
             if !model.qualityMetrics.isEmpty {

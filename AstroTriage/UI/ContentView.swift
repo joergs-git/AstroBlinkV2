@@ -483,8 +483,9 @@ struct ContentView: View {
 
             // ── Group 2: Actions ──
             autoMarkToolbarButton
-            sfToolbarButton("eye.trianglebadge.exclamationmark", "VLM\nCheck",
-                "ALPHA — Generate mosaic for AI anomaly detection.\nHighlighted files: uses selection (any status).\nNo selection: uses all unmarked frames.") {
+            sfToolbarButton("tablecells", "VLM\nCheck",
+                "ALPHA — Generate mosaic for AI anomaly detection.\nHighlighted files: uses selection (any status).\nNo selection: uses all unmarked frames.",
+                iconColor: .gray.opacity(0.5)) {
                 showVlmAlphaWarning = true
             }
             aisaacToolbarButton
@@ -1268,6 +1269,18 @@ struct ContentViewModifiers: ViewModifier {
             .onReceive(NotificationCenter.default.publisher(for: .showAIsaac)) { _ in
                 AIsaacWindowController.shared.updateContext(images: viewModel.images, viewModel: viewModel)
                 AIsaacWindowController.shared.toggleWindow()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .askAIsaacAboutQuality)) { notification in
+                // Auto-open AIsaac, refresh context, and fire the question
+                let ctrl = AIsaacWindowController.shared
+                ctrl.updateContext(images: viewModel.images, viewModel: viewModel)
+                ctrl.showWindow(nil)
+                ctrl.window?.makeKeyAndOrderFront(nil)
+                if let question = notification.object as? String {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                        ctrl.model.sendQuickReply(question)
+                    }
+                }
             }
             .modifier(ContentViewModifiers2(viewModel: viewModel, sliderValue: $sliderValue, renderer: $renderer, keyboardMonitor: $keyboardMonitor))
     }
