@@ -172,7 +172,29 @@ enum StarMetricsCalculator {
         }
         guard filtered.count >= minStars else { return nil }
 
-        let toMeasure = Array(filtered.prefix(maxMeasuredStars))
+        // Full-resolution saturation check BEFORE prefix(60): the bin2x-based saturation
+        // filter in filterStars() can miss stars that are saturated in full-res but averaged
+        // below threshold in bin2x. On broadband B-filter 120s at gain 100 (bright open
+        // clusters), the brightest 60 candidates may ALL be saturated — leaving zero valid
+        // FWHM measurements. By filtering here, we skip saturated stars and select the
+        // brightest 60 NON-SATURATED stars, which have good signal for accurate Gaussian fits.
+        let unsaturated = filtered.filter { star -> Bool in
+            let cx = Int(star.x.rounded())
+            let cy = Int(star.y.rounded())
+            guard cx - 2 >= 0, cx + 2 < w, cy - 2 >= 0, cy + 2 < h else { return false }
+            var peak: UInt16 = 0
+            for dy in -2...2 {
+                for dx in -2...2 {
+                    let val = ptr[channelOffset + (cy + dy) * w + (cx + dx)]
+                    if val > peak { peak = val }
+                }
+            }
+            return peak < saturationThreshold
+        }
+        // Use unsaturated candidates if enough exist; otherwise fall back to all filtered
+        // (better to measure partially saturated stars than nothing)
+        let measureCandidates = unsaturated.count >= minStars ? unsaturated : filtered
+        let toMeasure = Array(measureCandidates.prefix(maxMeasuredStars))
 
         // ── Pass 1: Compute HFR and FWHM (on streak-filtered stars only) ──
         var hfrValues: [Double] = []
@@ -180,6 +202,11 @@ enum StarMetricsCalculator {
         // Per-star FWHM for adaptive aperture (parallel arrays with toMeasure)
         var perStarFWHM: [Double?] = Array(repeating: nil, count: toMeasure.count)
         var perStarHFR: [Double?] = Array(repeating: nil, count: toMeasure.count)
+        // Per-star peak SNR for quality filtering: (peak - background) / sqrt(background).
+        // On bright moonlit backgrounds, noise peaks pass the global star detection threshold
+        // but have low local peak-to-noise ratio. Real stars have peakSNR >> 10.
+        // Used after FWHM/HFR computation to exclude noise-peak contamination from medians.
+        var perStarPeakSNR: [Double] = Array(repeating: 0, count: toMeasure.count)
 
         for (i, star) in toMeasure.enumerated() {
             let cx = Int(star.x.rounded())
@@ -191,6 +218,19 @@ enum StarMetricsCalculator {
                 ptr: ptr, channelOffset: channelOffset, width: w,
                 cx: cx, cy: cy, innerR: bgInnerRadius, outerR: bgOuterRadius
             )
+
+            // Compute local peak SNR for post-measurement quality filtering.
+            // Peak pixel in 5×5 patch, background-subtracted, divided by Poisson noise estimate.
+            var peakPixel: Float = 0
+            for dy in -2...2 {
+                for dx in -2...2 {
+                    let val = Float(ptr[channelOffset + (cy + dy) * w + (cx + dx)])
+                    if val > peakPixel { peakPixel = val }
+                }
+            }
+            let peakAboveBg = peakPixel - bg
+            let noise = max(bg, 1.0).squareRoot()
+            perStarPeakSNR[i] = Double(peakAboveBg / noise)
 
             if let hfr = computeHFR(
                 ptr: ptr, channelOffset: channelOffset, width: w,
@@ -250,6 +290,28 @@ enum StarMetricsCalculator {
             if ellipResults.count == toMeasure.count {
                 gpuEllipticalResults = ellipResults
             }
+        }
+
+        // ── Peak-SNR quality gate ──
+        // On bright backgrounds (moonlit broadband), the star detector finds noise peaks
+        // that pass the global 5σ threshold but aren't real point sources. These inflate
+        // FWHM and HFR medians. Filter by local peak SNR: real stars have peakSNR >> 10,
+        // noise peaks on moonlit sky have peakSNR < 8.
+        // Only apply if enough stars survive; fall back to unfiltered if too aggressive.
+        let minPeakSNR: Double = 8.0
+        let snrFilteredFWHM = (0..<toMeasure.count).compactMap { i -> Double? in
+            guard perStarPeakSNR[i] >= minPeakSNR, let fwhm = perStarFWHM[i] else { return nil }
+            return fwhm
+        }
+        if snrFilteredFWHM.count >= minStars {
+            fwhmValues = snrFilteredFWHM
+        }
+        let snrFilteredHFR = (0..<toMeasure.count).compactMap { i -> Double? in
+            guard perStarPeakSNR[i] >= minPeakSNR, let hfr = perStarHFR[i] else { return nil }
+            return hfr
+        }
+        if snrFilteredHFR.count >= minStars {
+            hfrValues = snrFilteredHFR
         }
 
         hfrValues.sort()

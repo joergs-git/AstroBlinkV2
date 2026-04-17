@@ -1292,10 +1292,22 @@ kernel void psf_fit_gaussian(
         }
     }
 
-    // Initial parameter guess
-    float A = max(star.peakVal, 1.0f);
-    float sigma = 2.0;
+    // Initial parameter guess: compute A from actual stamp peak, not bin2x detector brightness.
+    // star.peakVal comes from the bin2x image which doesn't match full-res stamp values.
+    // On high-background frames (moonlit broadband), the bin2x/full-res mismatch causes
+    // initial A+B to overshoot actual pixel values by ~50,000 ADU, making Gauss-Newton
+    // diverge with chi² in the millions. Computing A from the stamp's own center pixels
+    // gives a correct initial guess regardless of background level.
     float B = star.bg;
+    float stampPeak = 0;
+    for (int dy2 = -2; dy2 <= 2; dy2++) {
+        for (int dx2 = -2; dx2 <= 2; dx2++) {
+            float v = stamp[(dy2 + R) * stampW + (dx2 + R)];
+            if (v > stampPeak) stampPeak = v;
+        }
+    }
+    float A = max(stampPeak - B, 1.0f);
+    float sigma = 2.0;
 
     // Gauss-Newton iterations (3 params: A, σ, B)
     for (int iter = 0; iter < 8; iter++) {
@@ -1434,8 +1446,15 @@ kernel void psf_fit_elliptical(
         }
     }
 
-    // Initial parameter guesses
-    float A = max(star.peakVal, 1.0f);
+    // Initial parameter guesses: compute A from actual stamp peak (same fix as circular kernel)
+    float ellipPeak = 0;
+    for (int dy2 = -2; dy2 <= 2; dy2++) {
+        for (int dx2 = -2; dx2 <= 2; dx2++) {
+            float v = stamp[(dy2 + R) * stampW + (dx2 + R)];
+            if (v > ellipPeak) ellipPeak = v;
+        }
+    }
+    float A = max(ellipPeak - star.bg, 1.0f);
     float sx = 2.0;   // σx
     float sy = 2.0;   // σy
     float th = 0.0;    // θ

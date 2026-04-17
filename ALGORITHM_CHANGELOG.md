@@ -12,6 +12,61 @@ Records with `algorithmVersion < kAlgorithmVersion` are candidates for re-analys
 
 ---
 
+## Version 21 — v5.25.0 (2026-04-17)
+
+**Peak-SNR quality gate: filter noise peaks from FWHM/HFR aggregation on moonlit frames.**
+
+Reported by external user (ASI6200MM @ 504mm, 1.54"/px) on NGC 2251 B-filter with 50%
+moon. Measured FWHM was 11.88 (later 13.20) vs expected ~4px. Stars looked visually fine.
+No eccentricity was computed (GPU elliptical fit failed on most candidates). Root cause:
+star detector found noise peaks on the bright moonlit background. These non-stellar objects
+inflated the median FWHM and HFR because the measurement pipeline had no quality gate
+to reject them.
+
+### Changes
+
+1. **Per-star peak SNR computation** — `StarMetricsCalculator.measure()`:
+   For each star candidate, computes `peakSNR = (peakPixel - background) / sqrt(background)`.
+   This is the local signal-to-noise of the detection relative to Poisson shot noise.
+   Real stars: peakSNR typically 20-100+. Noise peaks on moonlit sky: peakSNR < 8.
+
+2. **SNR quality gate on FWHM** — After GPU/CPU FWHM computation and fallback logic,
+   filters the FWHM array to only include stars with peakSNR >= 8. Falls back to
+   unfiltered values if too few stars pass (graceful degradation).
+
+3. **SNR quality gate on HFR** — Same filter applied to HFR values. Previously HFR
+   had zero quality filtering — any detection with HFR in [0.5, 15.0] was included.
+
+### Why Not Tighter GPU Chi²?
+
+Reduced chi² scales with background level (Poisson noise). On moonlit frames, even good
+star fits have chi² ~500-2000 (high background = high shot noise). Tightening the chi²
+threshold from 1000 would reject real stars on bright backgrounds. Peak SNR is
+background-normalized and works across all conditions.
+
+### Why Not Tilted-Plane Background Model?
+
+Tested and reverted (2026-04-17). The 5-param tilted-plane GPU PSF fit (B0 + Bx*dx + By*dy)
+did not fix this issue because the root cause is star DETECTION contamination, not gradient-
+induced PSF broadening. The gradient model made FWHM worse (11.88 → 13.20) because the
+extra parameters absorbed signal on noisy detections. Preserved as future R&D in TODO.md.
+
+### Impact
+
+- **Fixed:** Moonlit broadband frames with bright backgrounds no longer produce inflated
+  FWHM/HFR from noise peak contamination
+- **Fixed:** Missing eccentricity on moonlit frames (GPU fits fail on noise peaks, but
+  surviving real-star FWHM is now correct)
+- **Unchanged:** Dark-sky and narrowband frames unaffected (noise peaks are below detection
+  threshold, all candidates are real stars with high peakSNR)
+
+### Files Changed
+
+- `AstroTriage/Engine/StarMetricsCalculator.swift` — peakSNR computation + quality gate
+- `AstroTriage/Model/FrameRecord.swift` — `kAlgorithmVersion` 20 → 21
+
+---
+
 ## Version 20 — v5.24.2 (2026-04-16)
 
 **Curation-driven threshold tuning: trailing ceiling + chain cross-check.**

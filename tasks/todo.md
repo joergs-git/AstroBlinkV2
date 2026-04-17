@@ -331,6 +331,10 @@ Uncompressed XISF: ~17ms decode (SSD limited). LZ4-compressed: ~100-300ms (CPU d
 - [ ] Persistent rate limiting in Supabase database (survives cold starts)
 - [ ] Cache common object info queries (reduce API calls)
 - [ ] Response streaming for Opus mode (currently works, verify edge cases)
+- [ ] **Metrics-first rule in system prompt** — AIsaac must examine the frame's computed metrics (FWHM, HFR, stars, SNR, moon%, moon distance, ecc, trailing) and FITS headers BEFORE searching external sources. Current behavior: researches externally when the answer is in the local data.
+- [ ] **Include calculated metrics + FITS headers in AIsaac context** — Send full metric set + key FITS headers (moon illumination, moon distance, filter, gain, exposure, FL) for the current/selected frame(s). Currently AIsaac doesn't see per-frame computed metrics.
+- [ ] **Use hash IDs not sequential numbers** — AIsaac references frames as "#3" or "#24" (sequential position) but UI shows hash-based short IDs (#4A-7566). Must use the visible # column value.
+- [ ] **FWHM nil explanation** — When FWHM is nil, AIsaac should explain why (saturated stars, too few candidates, undersampled) using measurement metadata, not guess.
 
 ## v5.1.0 — UX Improvements (COMPLETE)
 

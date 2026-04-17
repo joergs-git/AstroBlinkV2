@@ -99,6 +99,15 @@ All original implementation phases are complete:
 - [ ] Approaches: index-based solver (astrometry.net style) or GPU-accelerated star pattern matching
 - [ ] Would enable mosaic planning and astrometric quality checks
 
+### Tilted-Plane Background in GPU PSF Fit (Future R&D)
+- [ ] GPU `psf_fit_gaussian`: expand 3-param (A, σ, B) to 5-param (A, σ, B0, Bx, By) with tilted-plane background
+- [ ] CPU `computeFWHMGaussian`: gradient pre-subtraction from stamp edge pixels before linearized fit
+- [ ] Standard approach in professional photometry (SExtractor, DAOphot) for handling moon/LP gradients
+- [ ] Tested 2026-04-17: did NOT fix the external user's NGC 2251 moonlit B-filter issue (FWHM went 11.88 → 13.20, worse)
+- [ ] Root cause was star detection contamination (noise peaks on bright background), not gradient bias
+- [ ] May still help for genuine gradient-only cases (non-crowded fields, moderate moon). Needs testing on more diverse data.
+- [ ] Implementation reference: plan `mutable-singing-glacier.md` and git stash/conversation from 2026-04-17
+
 ### History Window Chart Improvements
 - [x] Y-axis percentile clamping — P2/P98 range, outliers clamped
 - [x] Fixed window-width charts — no horizontal scrolling
@@ -182,6 +191,31 @@ All original implementation phases are complete:
   - [ ] `AIsaacService` — community context in system prompt (deferred)
 - [ ] **Phase 2: Agreement Learning** — future (adjust thresholds from community override rates)
 - [ ] **Phase 3: Contextual Priors** — future (empirical Bayesian metric weights)
+
+### Curation-Driven Threshold Learning (Phase 2) — PLANNED, READY TO IMPLEMENT
+
+**Problem:** 192 of 417 false positives (46%) are z-score-only trash — combinedZ < -2.0 but no Stage 1 reason. The static -2.0 threshold is too aggressive for some setups.
+
+**Solution:** Grid search on curated star ratings finds per-setup offsets:
+- **Borderline offset** (±0.8 max) — adjusts -2.0 trash/borderline threshold
+- **Trailing ceiling offset** ([-0.15, +0.20]) — adjusts 0.60 trailing ceiling
+
+**Cost function:** FP × 1.5 + FN × 2.5 (false negatives penalized more). Ties favor offset=0.
+
+**Activation:** ≥50 curated frames with ≥10 at 1★ and ≥10 at 3★. Never learn from: decentered, background, twilight.
+
+**Implementation steps (8 files, 2 new):**
+- [ ] Step 1: `CalibrationDatabase.swift` — Add `LearnedThresholds` struct + `CalibrationProfile.learnedThresholds` field
+- [ ] Step 2: `ThresholdLearner.swift` — **NEW** grid search engine with non-learnable exclusions
+- [ ] Step 3: `FrameHistoryDatabase.swift` — Add `curatedFrameRecords(setupHash:)` query
+- [ ] Step 4: `QualityEstimator.swift` — Add `learnedThresholds` param, use effective thresholds in Rule 6a + tier assignment
+- [ ] Step 5: `TriageViewModel.swift` — Wire learning after `commitSession()`, pass thresholds to `computeScores()`
+- [ ] Step 6: `FrameRecord.swift` — Bump `kAlgorithmVersion` 20 → 21
+- [ ] Step 7: `ALGORITHM_CHANGELOG.md` — Document v21
+- [ ] Step 8: `Tests/ThresholdLearnerTests.swift` — **NEW** 6 unit tests
+
+**Full plan:** `~/.claude/plans/mutable-singing-glacier.md`
+**Data:** 4,550 blind-curated frames in Supabase. Baseline analysis in memory (`project_curation_baseline_2026_04_16.md`)
 
 ### Onboarding / Welcome Screen
 - [x] First-launch onboarding splash — 4 marketing pillars (Speed Demon, Data Nerd, Community Learner, Power User) with hover details (v5.19.1)
