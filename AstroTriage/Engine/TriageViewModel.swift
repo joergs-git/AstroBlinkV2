@@ -3272,18 +3272,30 @@ class TriageViewModel: ObservableObject {
         statusMessage = String(format: "Zoom: %.0f%%", pct)
     }
 
-    // Zoom in by 25% true-pixel step (Cmd+)
+    // Zoom in by step (5% steps below 25%, 25% steps above)
     func zoomIn() {
         guard let current = trueZoomPct() else { return }
-        let nextPct = (floor(current / 25.0) + 1) * 25
+        let nextPct: Double
+        if current < 25 {
+            // Fine 5% steps below 25%
+            nextPct = (floor(current / 5.0) + 1) * 5
+        } else {
+            nextPct = (floor(current / 25.0) + 1) * 25
+        }
         setTrueZoom(min(nextPct, 800))
     }
 
-    // Zoom out by 25% true-pixel step (Cmd-)
+    // Zoom out by step (25% steps above 25%, 5% steps below)
     func zoomOut() {
         guard let current = trueZoomPct() else { return }
-        let nextPct = (ceil(current / 25.0) - 1) * 25
-        setTrueZoom(max(nextPct, 25))
+        let nextPct: Double
+        if current <= 25 {
+            // Fine 5% steps below 25%
+            nextPct = (ceil(current / 5.0) - 1) * 5
+        } else {
+            nextPct = (ceil(current / 25.0) - 1) * 25
+        }
+        setTrueZoom(max(nextPct, 5))
     }
 
     // Reset zoom to fit-to-view

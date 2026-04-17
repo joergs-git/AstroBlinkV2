@@ -778,9 +778,10 @@ struct ContentView: View {
                     .foregroundColor(viewModel.isPlaying ? .red : nightFg)
             }
             .buttonStyle(.plain)
-            .help(viewModel.isPlaying ? "Stop blink (ESC)" : "Blink through images (selected or all)")
+            .help(viewModel.isPlaying ? "Stop blink (ESC or P)" : "Blink through images (P key, selected or all)")
 
             Picker("", selection: $viewModel.playbackDelay) {
+                Text("0.05s").tag(0.05)
                 Text("0.1s").tag(0.1)
                 Text("0.2s").tag(0.2)
                 Text("0.5s").tag(0.5)
@@ -788,7 +789,7 @@ struct ContentView: View {
                 Text("2s").tag(2.0)
             }
             .pickerStyle(.menu)
-            .frame(width: 60)
+            .frame(width: 72)
             .help("Blink delay between images")
             .onChange(of: viewModel.playbackDelay) { _ in
                 if viewModel.isPlaying {

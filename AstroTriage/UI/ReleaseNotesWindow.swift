@@ -34,6 +34,13 @@ class ReleaseNotesWindowController {
 // MARK: - Release notes data (shared between view and copy)
 
 private let allReleases: [(version: String, date: String, items: [(ReleaseNotesView.ChangeType, String, String)])] = [
+    ("5.25.1", "April 17, 2026", [
+        (.changed, "Compare Window Redesign", "BEST (green) and SELECTED (orange) labels with one-line metadata summary (Filter, Exposure, Cam-Temp, Night, Time). Centered metric comparison bar shows Stars, FWHM, HFR, Eccentricity, and SNR with color-coded values for instant visual assessment."),
+        (.added, "Compare Window Keyboard Shortcuts", "+/- zoom in/out, Cmd+1/Cmd+2 for 100%/200% true-pixel zoom, C to toggle star circle overlay, 0 to reset zoom. Matches main viewer conventions."),
+        (.added, "Blink Play/Pause (P Key)", "P key toggles auto-blink play/pause. Works with multi-selection (highlighted rows) or all visible images."),
+        (.changed, "Blink Delay Options", "New 0.05s ultra-fast option for rapid blinking. Dropdown widened to show full label text."),
+        (.changed, "Extended Zoom Range", "Minus key zoom now reaches 5% (was 25% minimum). Fine 5% steps below 25%, standard 25% steps above."),
+    ]),
     ("5.25.0", "April 16, 2026", [
         (.fixed, "FWHM Accuracy on Saturated Stars", "Star metric candidates are now filtered by full-resolution saturation check before Gaussian fitting. Previously, stars that appeared bright in the downsampled image could be fully saturated at native resolution — producing meaningless FWHM values. Affects moonlit broadband sessions with high-gain cameras and bright targets (open clusters like M45, NGC 884). Algorithm v21."),
         (.added, "Peak-SNR Star Gate", "Star candidates must pass a local peak-to-noise ratio check. On moonlit broadband frames, elevated sky background creates noise peaks that pass shape detection but are not real stars. The gate rejects them before FWHM/HFR measurement, preventing inflated star counts and corrupted medians."),

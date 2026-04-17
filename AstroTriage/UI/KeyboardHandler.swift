@@ -13,6 +13,11 @@ struct KeyboardHandler {
                 return event
             }
 
+            // Don't intercept keys in compare windows — they have their own keyDown handler
+            if let title = NSApp.keyWindow?.title, title.hasPrefix("Compare:") {
+                return event
+            }
+
             let handled = handleKeyEvent(event, viewModel: viewModel)
             if handled {
                 // Reclaim table focus so selection highlight stays visible
@@ -154,6 +159,20 @@ struct KeyboardHandler {
         // N: Toggle night mode (red-on-black for dark-adapted vision)
         if modifiers.isEmpty, chars == "n" {
             Task { @MainActor in viewModel.toggleNightMode() }
+            return true
+        }
+
+        // P: Toggle play/pause auto-blinking
+        if modifiers.isEmpty, chars == "p" {
+            Task { @MainActor in
+                if viewModel.isPlaying {
+                    viewModel.stopPlayback()
+                } else {
+                    let rows = findTableView()?.selectedRowIndexes
+                    let highlighted = (rows?.count ?? 0) > 1 ? rows : nil
+                    viewModel.startPlayback(highlightedRows: highlighted)
+                }
+            }
             return true
         }
 

@@ -1,4 +1,6 @@
 // v3.12.0 — Side-by-side image comparison window
+// v5.25.1 — Metadata redesign (BEST/SELECTED labels, metric comparison bar),
+//           keyboard shortcuts (+/-, Cmd+1/2 zoom, C star toggle, 0 reset)
 // "Compare with Best" opens the best-quality image from the same group (target + filter + exposure)
 // next to the selected image. Zoom and pan are synchronized between both views.
 import SwiftUI
@@ -7,8 +9,9 @@ import MetalKit
 // MARK: - Shared zoom/pan state for synchronized views
 
 class SyncedZoomState: ObservableObject {
-    @Published var zoomScale: CGFloat = 3.0   // Start at 300% zoom (centered)
+    @Published var zoomScale: CGFloat = 1.0   // Start at fit-to-view
     @Published var panOffset: CGPoint = .zero
+    @Published var showStarOverlay: Bool = true  // Shared toggle for C key + UI switch
 
     func reset() {
         zoomScale = 1.0
@@ -16,51 +19,50 @@ class SyncedZoomState: ObservableObject {
     }
 }
 
+// MARK: - Metadata for Compare View
+
+/// Lightweight snapshot of relevant metadata for one side of the compare view
+struct CompareMetadata {
+    let filename: String
+    let fallbackReason: String?  // nil for selected side, set for best side if fallback was used
+    let filter: String?
+    let exposure: Double?
+    let sensorTemp: Double?
+    let date: String?
+    let time: String?
+    let stars: Int?
+    let fwhm: Double?
+    let hfr: Double?
+    let ecc: Double?
+    let snr: Double?             // noiseMedian / noiseMAD
+    let recommendation: String?  // e.g. "KEEP", "DELETE", "REVIEW"
+
+    static func from(_ entry: ImageEntry, fallbackReason: String? = nil) -> CompareMetadata {
+        let snr: Double? = {
+            guard let med = entry.noiseMedian, let mad = entry.noiseMAD, mad > 0 else { return nil }
+            return Double(med) / Double(mad)
+        }()
+        return CompareMetadata(
+            filename: entry.filename,
+            fallbackReason: fallbackReason,
+            filter: entry.filter,
+            exposure: entry.exposure,
+            sensorTemp: entry.sensorTemp,
+            date: entry.date,
+            time: entry.time,
+            stars: entry.displayStarCount,
+            fwhm: entry.displayFWHM,
+            hfr: entry.displayHFR,
+            ecc: entry.computedEccentricity,
+            snr: snr,
+            recommendation: entry.qualityBreakdown?.recommendationLabel
+        )
+    }
+}
+
 // MARK: - Compare Window Controller
 
 enum CompareWindowController {
-
-    /// Build a "why worse" summary comparing selected image metrics to the best
-    private static func buildWhyWorse(selected: ImageEntry, best: ImageEntry) -> String {
-        guard let selBD = selected.qualityBreakdown else { return "" }
-        let bestBD = best.qualityBreakdown
-
-        var lines: [String] = []
-
-        // Compare individual metrics: selected vs best
-        func cmp(_ name: String, selVal: Double?, bestVal: Double?, unit: String = "", lowerIsBetter: Bool = false) {
-            guard let sv = selVal, let bv = bestVal else { return }
-            let delta = lowerIsBetter ? sv - bv : bv - sv
-            let arrow = delta > 0.01 ? "\u{2191}" : (delta < -0.01 ? "\u{2193}" : "\u{2248}")
-            let selStr = String(format: "%.1f", sv)
-            let bestStr = String(format: "%.1f", bv)
-            lines.append("\(name): \(selStr)\(unit) vs \(bestStr)\(unit) \(arrow)")
-        }
-
-        cmp("Stars", selVal: selected.displayStarCount.map { Double($0) },
-            bestVal: best.displayStarCount.map { Double($0) })
-        cmp("FWHM", selVal: selected.displayFWHM, bestVal: best.displayFWHM, unit: "px", lowerIsBetter: true)
-        cmp("HFR", selVal: selected.displayHFR, bestVal: best.displayHFR, unit: "px", lowerIsBetter: true)
-        cmp("Ecc", selVal: selected.computedEccentricity, bestVal: best.computedEccentricity, lowerIsBetter: true)
-
-        // SNR comparison via noise stats
-        if let selMed = selected.noiseMedian, let selMAD = selected.noiseMAD, selMAD > 0,
-           let bestMed = best.noiseMedian, let bestMAD = best.noiseMAD, bestMAD > 0 {
-            let selSNR = selMed / selMAD
-            let bestSNR = bestMed / bestMAD
-            let pct = bestSNR > 0 ? (selSNR / bestSNR) * 100.0 : 0
-            lines.append("SNR: \(String(format: "%.0f", pct))% of best")
-        }
-
-        // Recommendation label
-        let rec = selBD.recommendationLabel
-        if !rec.isEmpty {
-            lines.append("")
-            lines.append("\u{2192} \(rec)")
-        }
-
-        return lines.joined(separator: "  \u{2502}  ")
-    }
 
     /// Open a comparison window: best image (left) vs selected image (right)
     static func open(selectedEntry: ImageEntry, bestEntry: ImageEntry,
@@ -115,13 +117,9 @@ enum CompareWindowController {
 
             guard let st = selTex, let bt = bestTex else { return }
 
-            // Build labels with date/time info
-            let bestDateTime = [bestEntry.date, bestEntry.time].compactMap { $0 }.joined(separator: " ")
-            let selDateTime = [selectedEntry.date, selectedEntry.time].compactMap { $0 }.joined(separator: " ")
-            let bestPrefix = fallbackReason != nil ? "Best (\(fallbackReason!))" : "Best"
-            let bestLabel = "\(bestPrefix) — \(bestEntry.filename)\n\(bestDateTime)"
-            let selLabel = "Selected — \(selectedEntry.filename)\n\(selDateTime)"
-            let whyWorse = buildWhyWorse(selected: selectedEntry, best: bestEntry)
+            // Build metadata snapshots for the compare view
+            let bestMeta = CompareMetadata.from(bestEntry, fallbackReason: fallbackReason)
+            let selMeta = CompareMetadata.from(selectedEntry)
 
             // Convert star details to normalized coordinates [0,1] for overlay rendering
             // Includes PA and axis ratio for direction arrows
@@ -141,16 +139,25 @@ enum CompareWindowController {
 
             await MainActor.run {
                 let syncState = SyncedZoomState()
-                // Start at fit-to-view when star overlay data is available
-                // so all circles are visible without needing to zoom out
-                if !selStarProblems.isEmpty {
-                    syncState.zoomScale = 1.0
+
+                // Compute initial zoom to fill panel width (each panel is ~half the screen)
+                let screen = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1920, height: 1080)
+                let panelW = (screen.width - 2) / 2.0  // minus divider, split in two
+                let panelH = screen.height - 60         // approximate bottom strips height
+                let imgW = CGFloat(bt.width)
+                let imgH = CGFloat(bt.height)
+                if imgW > 0, imgH > 0, panelW > 0, panelH > 0 {
+                    let fitMin = min(panelW / imgW, panelH / imgH)
+                    let fitWidth = panelW / imgW
+                    if fitMin > 0 {
+                        syncState.zoomScale = fitWidth / fitMin
+                    }
                 }
+
                 let view = CompareView(
                     leftTexture: bt, rightTexture: st,
-                    leftLabel: bestLabel,
-                    rightLabel: selLabel,
-                    whyWorseText: whyWorse,
+                    bestMeta: bestMeta,
+                    selectedMeta: selMeta,
                     problemStars: selStarProblems,
                     consensusPA: selConsensusPA,
                     rotateLeft: rotateBest,
@@ -183,9 +190,8 @@ enum CompareWindowController {
 struct CompareView: View {
     let leftTexture: MTLTexture
     let rightTexture: MTLTexture
-    let leftLabel: String
-    let rightLabel: String
-    let whyWorseText: String
+    let bestMeta: CompareMetadata
+    let selectedMeta: CompareMetadata
     // Problem stars: normalized (0-1) coordinates + shape metrics for overlay on right panel
     let problemStars: [(x: CGFloat, y: CGFloat, ecc: Double, pa: Double?, axisRatio: Double?)]
     let consensusPA: Double?
@@ -195,132 +201,191 @@ struct CompareView: View {
     @Environment(\.fontScale) private var fontScale
 
     private func fs(_ base: CGFloat) -> CGFloat { round(base * fontScale) }
-    @State private var showStarOverlay: Bool = true
 
     var body: some View {
         VStack(spacing: 0) {
+            // Image panels — fill all available space.
+            // BEST/SELECTED labels sit inside each panel on black, above the grey strip.
             HStack(spacing: 2) {
-                // Left: Best image (no star overlay)
+                // Left: Best image + label
                 VStack(spacing: 0) {
                     SyncedZoomableView(texture: leftTexture, syncState: syncState, rotate180: rotateLeft)
                         .id("compare-left")
-                    Text(leftLabel)
-                        .font(.system(size: fs(11), design: .monospaced))
-                        .foregroundColor(.green)
-                        .multilineTextAlignment(.center)
-                        .lineLimit(2)
-                        .padding(.vertical, 4)
-                        .frame(maxWidth: .infinity)
-                        .background(Color.black)
+                    sideLabel(meta: bestMeta,
+                              label: bestMeta.fallbackReason != nil ? "BEST (\(bestMeta.fallbackReason!))" : "BEST",
+                              color: bestColor)
                 }
 
-                // Divider
                 Rectangle().fill(Color.gray.opacity(0.5)).frame(width: 2)
 
-                // Right: Selected image with star overlay (rendered by NSView, pixel-perfect)
+                // Right: Selected image + label
                 VStack(spacing: 0) {
                     SyncedZoomableView(
                         texture: rightTexture, syncState: syncState,
                         starOverlayData: problemStars,
                         consensusPA: consensusPA,
-                        showStarOverlay: showStarOverlay,
+                        showStarOverlay: syncState.showStarOverlay,
                         rotate180: rotateRight
                     )
                     .id("compare-right")
-                    Text(rightLabel)
-                        .font(.system(size: fs(11), design: .monospaced))
-                        .foregroundColor(.orange)
-                        .multilineTextAlignment(.center)
-                        .lineLimit(2)
-                        .padding(.vertical, 4)
-                        .frame(maxWidth: .infinity)
-                        .background(Color.black)
+                    sideLabel(meta: selectedMeta, label: "SELECTED", color: selColor)
                 }
             }
+            .layoutPriority(1)
 
-            // "Why worse" info bar — educational metric comparison
-            if !whyWorseText.isEmpty {
-                HStack(spacing: 6) {
-                    Image(systemName: "info.circle.fill")
-                        .font(.system(size: fs(11)))
-                        .foregroundColor(.orange)
-                    // Style recommendation keywords: KEEP=green bold, DELETE=red bold, REVIEW=orange bold
-                    styledWhyWorse(whyWorseText)
-                        .lineLimit(2)
-                }
-                .padding(.horizontal, 8).padding(.vertical, 4)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color(NSColor.windowBackgroundColor).opacity(0.95))
-            }
+            // Grey metrics strip
+            metricsStrip
 
-            // Controls bar
-            HStack {
-                Button(action: { syncState.reset() }) {
-                    HStack(spacing: 4) {
-                        Image(systemName: "arrow.counterclockwise")
-                        Text("Reset Zoom")
-                    }
-                    .font(.system(size: fs(11), design: .monospaced))
-                }
-                .buttonStyle(.bordered).controlSize(.small)
-                .help("Reset zoom and pan to fit-to-view")
-
-                // Star overlay toggle — only show when there are problem stars
-                if !problemStars.isEmpty {
-                    Toggle(isOn: $showStarOverlay) {
-                        HStack(spacing: 3) {
-                            Image(systemName: "circle.circle")
-                                .font(.system(size: fs(11)))
-                            Text("Stars (\(problemStars.count))")
-                                .font(.system(size: fs(11), design: .monospaced))
-                        }
-                    }
-                    .toggleStyle(.switch).controlSize(.small)
-                    .tint(.red)
-                    .help("Show/hide circles on problematic stars (high eccentricity)")
-                }
-
-                Spacer()
-
-                Text("Click-drag to zoom \u{2022} Scroll to pan \u{2022} Double-click to reset")
-                    .font(.system(size: fs(10), design: .monospaced))
-                    .foregroundColor(.secondary)
-            }
-            .padding(.horizontal, 8).padding(.vertical, 4)
-            .background(Color(NSColor.windowBackgroundColor))
+            // Grey controls strip
+            controlsStrip
         }
         .background(Color.black)
     }
 
-    /// Style recommendation text: KEEP = bold green, DELETE = bold red, REVIEW = bold orange
-    private func styledWhyWorse(_ text: String) -> Text {
-        // Split on the arrow marker that precedes the recommendation
-        guard let arrowRange = text.range(of: "\u{2192} ") else {
-            return Text(text).font(.system(size: fs(13), design: .monospaced)).foregroundColor(.secondary)
-        }
-        let metricsText = String(text[text.startIndex..<arrowRange.lowerBound])
-        let recText = String(text[arrowRange.upperBound...])
+    private let bestColor = Color(red: 0.2, green: 0.8, blue: 0.3)
+    private let selColor = Color.orange
 
-        let recColor: Color
-        if recText.hasPrefix("KEEP") {
-            recColor = .green
-        } else if recText.hasPrefix("DELETE") {
-            recColor = .red
-        } else if recText.hasPrefix("REVIEW") {
-            recColor = .orange
-        } else {
-            recColor = .secondary
-        }
+    // MARK: - Side Label (inside black image panel)
 
-        return Text(metricsText)
-            .font(.system(size: fs(13), design: .monospaced))
-            .foregroundColor(.secondary)
-        + Text("\u{2192} ")
-            .font(.system(size: fs(13), design: .monospaced))
-            .foregroundColor(.secondary)
-        + Text(recText)
-            .font(.system(size: fs(13), weight: .bold, design: .monospaced))
-            .foregroundColor(recColor)
+    /// "BEST  Ha  300s  -20°C  2026-04-15  23:54" + filename — on black background
+    private func sideLabel(meta: CompareMetadata, label: String, color: Color) -> some View {
+        VStack(spacing: 1) {
+            HStack(spacing: 8) {
+                Text(label)
+                    .font(.system(size: fs(13), weight: .bold, design: .monospaced))
+                    .foregroundColor(color)
+                Text(metaSummary(meta))
+                    .font(.system(size: fs(11), design: .monospaced))
+                    .foregroundColor(color.opacity(0.85))
+            }
+            Text(meta.filename)
+                .font(.system(size: fs(11), design: .monospaced))
+                .foregroundColor(Color.white.opacity(0.5))
+                .lineLimit(1).truncationMode(.middle)
+        }
+        .padding(.vertical, 3)
+        .frame(maxWidth: .infinity)
+        .background(Color.black)
+    }
+
+    private func metaSummary(_ meta: CompareMetadata) -> String {
+        var parts: [String] = []
+        if let f = meta.filter { parts.append(f) }
+        if let e = meta.exposure { parts.append(e == floor(e) ? "\(Int(e))s" : String(format: "%.1fs", e)) }
+        if let t = meta.sensorTemp { parts.append(String(format: "%.0f\u{00B0}C", t)) }
+        if let d = meta.date { parts.append(d) }
+        if let t = meta.time { parts.append(String(t.prefix(5))) }
+        return parts.joined(separator: "  ")
+    }
+
+    // MARK: - Metrics Strip (grey, one line)
+
+    // Darker background for the metrics strip
+    private let metricsBackground = Color(red: 0.12, green: 0.12, blue: 0.14)
+
+    private var metricsStrip: some View {
+        HStack(spacing: 72) {
+            if let rec = selectedMeta.recommendation, !rec.isEmpty {
+                recLabel(rec)
+            }
+            Spacer()
+            metricPair("Stars", bestVal: bestMeta.stars.map { Double($0) }, selVal: selectedMeta.stars.map { Double($0) }, fmt: "%.0f")
+            metricPair("FWHM", bestVal: bestMeta.fwhm, selVal: selectedMeta.fwhm, fmt: "%.2f")
+            metricPair("HFR", bestVal: bestMeta.hfr, selVal: selectedMeta.hfr, fmt: "%.2f")
+            metricPair("Ecc", bestVal: bestMeta.ecc, selVal: selectedMeta.ecc, fmt: "%.2f")
+            snrPair
+            Spacer()
+        }
+        .padding(.horizontal, 12).padding(.vertical, 4)
+        .background(metricsBackground)
+    }
+
+    // MARK: - Controls Strip (grey, one line)
+
+    private var controlsStrip: some View {
+        HStack(spacing: 8) {
+            Button(action: { syncState.reset() }) {
+                HStack(spacing: 3) {
+                    Image(systemName: "arrow.counterclockwise")
+                    Text("Reset")
+                }
+                .font(.system(size: fs(10), design: .monospaced))
+            }
+            .buttonStyle(.bordered).controlSize(.mini)
+
+            if !problemStars.isEmpty {
+                Toggle(isOn: $syncState.showStarOverlay) {
+                    HStack(spacing: 2) {
+                        Image(systemName: "circle.circle").font(.system(size: fs(10)))
+                        Text("\(problemStars.count)").font(.system(size: fs(10), design: .monospaced))
+                    }
+                }
+                .toggleStyle(.switch).controlSize(.mini)
+                .tint(.red)
+                .help("Show/hide star circles (C key)")
+            }
+
+            Spacer()
+
+            Text("+/- zoom \u{2022} \u{2318}1/\u{2318}2 100%/200% \u{2022} \u{2318}0 reset \u{2022} C stars")
+                .font(.system(size: fs(9), design: .monospaced))
+                .foregroundColor(.secondary)
+        }
+        .padding(.horizontal, 10).padding(.vertical, 2)
+        .background(Color(NSColor.windowBackgroundColor))
+    }
+
+    // MARK: - Metric Helpers
+
+    // Light grey for metric labels on dark background
+    private let metricLabelColor = Color(white: 0.65)
+
+    private func metricPair(_ name: String, bestVal: Double?, selVal: Double?, fmt: String) -> some View {
+        Group {
+            if let bv = bestVal, let sv = selVal {
+                HStack(spacing: 3) {
+                    Text("\(name):")
+                        .font(.system(size: fs(12), weight: .medium, design: .monospaced))
+                        .foregroundColor(metricLabelColor)
+                    Text(String(format: fmt, bv))
+                        .font(.system(size: fs(12), weight: .bold, design: .monospaced))
+                        .foregroundColor(bestColor)
+                    Text("vs")
+                        .font(.system(size: fs(10), design: .monospaced))
+                        .foregroundColor(Color.white.opacity(0.35))
+                    Text(String(format: fmt, sv))
+                        .font(.system(size: fs(12), weight: .bold, design: .monospaced))
+                        .foregroundColor(selColor)
+                }
+            }
+        }
+    }
+
+    private var snrPair: some View {
+        Group {
+            if let bSNR = bestMeta.snr, let sSNR = selectedMeta.snr, bSNR > 0 {
+                let pct = (sSNR / bSNR) * 100.0
+                HStack(spacing: 3) {
+                    Text("SNR:")
+                        .font(.system(size: fs(12), weight: .medium, design: .monospaced))
+                        .foregroundColor(metricLabelColor)
+                    Text(String(format: "%.0f%%", pct))
+                        .font(.system(size: fs(12), weight: .bold, design: .monospaced))
+                        .foregroundColor(pct >= 95 ? bestColor : (pct >= 80 ? selColor : .red))
+                }
+            }
+        }
+    }
+
+    private func recLabel(_ rec: String) -> some View {
+        let color: Color
+        if rec.hasPrefix("KEEP") { color = bestColor }
+        else if rec.hasPrefix("DELETE") { color = .red }
+        else if rec.hasPrefix("REVIEW") { color = selColor }
+        else { color = .secondary }
+        return Text("\u{2192} \(rec)")
+            .font(.system(size: fs(12), weight: .bold, design: .monospaced))
+            .foregroundColor(color)
     }
 }
 
@@ -685,12 +750,64 @@ class SyncedZoomMTKView: MTKView {
         propagate(); needsDisplay = true
     }
 
+    // Cmd shortcuts must go through performKeyEquivalent (keyDown doesn't receive them reliably)
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        // Cmd+1: Zoom to 100% true pixel
+        if modifiers == .command, event.keyCode == 18 {
+            let fit = fitScale()
+            if fit > 0 { zoomScale = 1.0 / fit; panOffset = .zero }
+            propagate(); needsDisplay = true
+            return true
+        }
+        // Cmd+2: Zoom to 200%
+        if modifiers == .command, event.keyCode == 19 {
+            let fit = fitScale()
+            if fit > 0 { zoomScale = 2.0 / fit; panOffset = .zero }
+            propagate(); needsDisplay = true
+            return true
+        }
+        // Cmd+0: Reset zoom to fit-to-view
+        if modifiers == .command, event.keyCode == 29 {
+            zoomScale = 1.0; panOffset = .zero
+            propagate(); needsDisplay = true
+            return true
+        }
+        return super.performKeyEquivalent(with: event)
+    }
+
     override func keyDown(with event: NSEvent) {
+        let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        let chars = event.charactersIgnoringModifiers
+
         if event.keyCode == 53 { // ESC
             window?.close()
-        } else {
-            super.keyDown(with: event)
+            return
         }
+
+        // +/= key: Zoom in
+        if modifiers.isEmpty, (chars == "+" || chars == "=") {
+            zoomScale = max(0.1, min(50.0, zoomScale + 0.25))
+            propagate(); needsDisplay = true
+            return
+        }
+
+        // - key: Zoom out
+        if modifiers.isEmpty, chars == "-" {
+            zoomScale = max(0.1, min(50.0, zoomScale - 0.25))
+            propagate(); needsDisplay = true
+            return
+        }
+
+        // C key: Toggle star circle overlay
+        if modifiers.isEmpty, chars == "c" {
+            DispatchQueue.main.async { [weak self] in
+                self?.syncState?.showStarOverlay.toggle()
+            }
+            return
+        }
+
+        super.keyDown(with: event)
     }
 
     override func magnify(with event: NSEvent) {

@@ -522,6 +522,7 @@ Fallback: Filename-Token-Parsing
 | Space            | Toggle Pre-Delete mark (single or multi-selection)  |
 | Cmd+Backspace    | Move marked files to PRE-DELETE folder              |
 | Cmd+Z            | Undo last pre-delete                                |
+| P                | Toggle play/pause auto-blinking                     |
 | S                | Toggle stretch mode (auto/locked)                   |
 | K                | Toggle skip-marked during navigation                |
 | H                | Toggle hide-marked from file list                   |
@@ -529,9 +530,17 @@ Fallback: Filename-Token-Parsing
 | D                | Toggle debayer for OSC images                       |
 | N                | Toggle night mode (red-on-black)                    |
 | Cmd+O            | Open folder                                         |
+| +/=              | Zoom in (25% steps, 5% below 25%)                  |
+| -                | Zoom out (25% steps, 5% below 25%, min 5%)         |
+| 0                | Reset zoom to fit-to-view                           |
 | 1 / 2 / 3       | Set confidence rating (1-3 stars, same key clears)  |
 | A                | Cycle quality feedback (agree/disagree/partly/clear)|
 | Double-click     | Reset zoom to fit-to-view                           |
+| **Compare Window** |                                                   |
+| C                | Toggle star circle overlay                          |
+| +/- / 0          | Zoom in/out / reset (same as main viewer)           |
+| Cmd+1 / Cmd+2   | Zoom to 100% / 200% true pixel                     |
+| ESC              | Close compare window                                |
 
 ---
 

@@ -99,24 +99,19 @@ All original implementation phases are complete:
 - [ ] Approaches: index-based solver (astrometry.net style) or GPU-accelerated star pattern matching
 - [ ] Would enable mosaic planning and astrometric quality checks
 
-### UI Polish — v5.25.1 (READY TO IMPLEMENT)
+### UI Polish — v5.25.1 (SHIPPED)
 
 **Blink Controls:**
-- [ ] Blink delay dropdown too narrow — only "0..." visible when not clicked. Widen to show full "0.1s" label
-- [ ] Add 0.05s as a new blink delay option. Default stays 0.1s
-- [ ] P key to toggle play/pause auto-blinking
+- [x] Blink delay dropdown widened (60→72pt) + 0.05s option added. Default stays 0.1s
+- [x] P key to toggle play/pause auto-blinking
 
 **Zoom:**
-- [ ] Minus key zoom should go down to 5% (currently stops at 25%)
-- [ ] Compare window: Cmd+1 and Cmd+2 quick zoom, +/- zoom keys (same as main viewer)
+- [x] Minus key zoom goes down to 5% (was 25%), 5% steps below 25%
+- [x] Compare window: Cmd+1 (100%) and Cmd+2 (200%) quick zoom, +/- zoom keys, 0 to reset
 
 **Compare Window:**
-- [ ] C key toggles star circle overlay on/off (scoped to compare window, reusable)
-- [ ] Metadata redesign:
-  - Both filenames: white/grey, smaller font, shown below the main info
-  - BEST label: green, current font size. SELECTED label: orange, current font size
-  - Add one-line summary: Filter, Exposure, Cam-Temp, Night, Time next to BEST/SELECTED
-  - Stars/FWHM/HFR/Ecc/SNR: centered line, values colored per side (green=best, orange=selected). Format: "Stars: 3619 vs 4867" with green left, orange right. No comma separators for star count.
+- [x] C key toggles star circle overlay on/off (shared state with UI toggle)
+- [x] Metadata redesign: BEST (green) / SELECTED (orange) bold labels, one-line summary (Filter, Exposure, Cam-Temp, Night, Time), smaller filename below. Centered metric comparison bar (Stars, FWHM, HFR, Ecc, SNR) with green vs orange coloring.
 
 ### Tilted-Plane Background in GPU PSF Fit (Future R&D)
 - [ ] GPU `psf_fit_gaussian`: expand 3-param (A, σ, B) to 5-param (A, σ, B0, Bx, By) with tilted-plane background

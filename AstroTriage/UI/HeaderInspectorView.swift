@@ -495,7 +495,7 @@ struct HeaderInspectorContentView: View {
                             Image("AIsaacIcon")
                                 .resizable()
                                 .aspectRatio(contentMode: .fit)
-                                .frame(width: 14, height: 14)
+                                .frame(width: 21, height: 21)
                             Text("Ask AIsaac for details")
                                 .font(.system(size: fs(10), weight: .medium))
                         }
@@ -582,7 +582,7 @@ struct HeaderInspectorContentView: View {
                             Image("AIsaacIcon")
                                 .resizable()
                                 .aspectRatio(contentMode: .fit)
-                                .frame(width: 14, height: 14)
+                                .frame(width: 21, height: 21)
                             Text("Ask AIsaac about this frame")
                                 .font(.system(size: fs(10), weight: .medium))
                         }
