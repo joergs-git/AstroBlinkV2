@@ -34,6 +34,14 @@ class ReleaseNotesWindowController {
 // MARK: - Release notes data (shared between view and copy)
 
 private let allReleases: [(version: String, date: String, items: [(ReleaseNotesView.ChangeType, String, String)])] = [
+    ("5.25.0", "April 16, 2026", [
+        (.fixed, "FWHM Accuracy on Saturated Stars", "Star metric candidates are now filtered by full-resolution saturation check before Gaussian fitting. Previously, stars that appeared bright in the downsampled image could be fully saturated at native resolution — producing meaningless FWHM values. Affects moonlit broadband sessions with high-gain cameras and bright targets (open clusters like M45, NGC 884). Algorithm v21."),
+        (.added, "Peak-SNR Star Gate", "Star candidates must pass a local peak-to-noise ratio check. On moonlit broadband frames, elevated sky background creates noise peaks that pass shape detection but are not real stars. The gate rejects them before FWHM/HFR measurement, preventing inflated star counts and corrupted medians."),
+        (.fixed, "GPU PSF Fitter Edge Case", "The circular Gaussian PSF kernel had an edge case where saturated cores produced NaN sigma values. Initial estimates are now clamped and validated before FWHM derivation."),
+        (.added, "AIsaac Newton Icon", "AIsaac — named after Isaac Newton — now has a custom icon in the chat window and toolbar, replacing the generic SF Symbol."),
+        (.added, "Ask AIsaac Button in Quality Inspector", "When quality scoring cannot use all metrics (e.g. FWHM nil due to saturated stars), the header inspector shows a 'Quality Assessment Incomplete' section with an 'Ask AIsaac for details' button. Opens AIsaac with the frame's full context pre-loaded. Also available on normal quality panels."),
+        (.changed, "AIsaac Per-Frame Context Expanded", "AIsaac now receives SNR, moon illumination %, moon angular distance, and canonical object name per frame — enabling more specific advice like 'your Ha near 95% moon is fine, but L shows elevated background'."),
+    ]),
     ("5.22.3", "April 14, 2026", [
         (.added, "Auto-Mark — Per-Filter Loss Breakdown", "Each Conservative / Balanced / Aggressive option in the Auto-Mark popover now shows a third compact line listing how many frames per filter would be marked, with the per-filter integration time. Sorted biggest loss first, shown only when 2+ filters are affected. Lets you judge channel-level risk before confirming. Example: 33 Ha = 2.0h   56 R = 1.0h   22 B = 30m"),
         (.fixed, "Welcome Window — Get Started Button Visibility", "The 'Get Started' button on the first-launch welcome window used SwiftUI's borderedProminent style, which renders nearly invisibly in an inactive NSHostingView window. Replaced with an explicit accent-colored rounded button — always visible regardless of window focus state."),
