@@ -66,6 +66,8 @@ class TriageViewModel: ObservableObject {
         let pierSide: String?
         let rotatorAngle: Double?
         let wcsRotation: Double?
+        let width: Int?      // Reference frame dimensions for mixed-sensor guard
+        let height: Int?
     }
     private var targetOrientationRefs: [String: OrientationRef] = [:]  // key = canonical target name
 
@@ -2185,6 +2187,9 @@ class TriageViewModel: ObservableObject {
                 // Update rotation for current image now that pier side data is available
                 self.updateMeridianRotation()
 
+                // Detect mixed sensor dimensions and warn the user
+                self.checkForMixedDimensions()
+
                 // If debayer is enabled and OSC images were found, previews were cached
                 // without bayerPattern (headers weren't available yet). Re-cache with debayer.
                 if foundOSC && self.debayerEnabled {
@@ -2859,6 +2864,15 @@ class TriageViewModel: ObservableObject {
         let targetKey = canonicalTargetKey(for: entry)
         guard let ref = targetOrientationRefs[targetKey] else { return false }
 
+        // Skip rotation for frames with different dimensions than the reference.
+        // Mixed sensor sizes (e.g. ASI6200 9576×6388 vs ASI2600 6248×4176)
+        // cannot be meaningfully rotation-matched across different cameras.
+        if let refW = ref.width, let refH = ref.height,
+           let entW = entry.width, let entH = entry.height,
+           (refW != entW || refH != entH) {
+            return false
+        }
+
         // OR logic: if ANY of the three available signals indicates a flip, rotate.
         // This is the correct behavior for 99% of amateur setups (ASIAIR/AM5, physical rotators,
         // no-rotator mounts). The previous XOR logic was incorrect for ASIAIR/AM5 where BOTH
@@ -2938,7 +2952,9 @@ class TriageViewModel: ObservableObject {
                 targetOrientationRefs[key] = OrientationRef(
                     pierSide: img.pierSide,
                     rotatorAngle: img.rotatorAngle,
-                    wcsRotation: img.wcsRotation
+                    wcsRotation: img.wcsRotation,
+                    width: img.width,
+                    height: img.height
                 )
             }
         }
@@ -3018,6 +3034,48 @@ class TriageViewModel: ObservableObject {
             return TargetCatalog.canonicalName(target)
         }
         return "UNKNOWN"
+    }
+
+    /// Detect mixed image dimensions after header enrichment and warn the user.
+    /// Different cameras (e.g. ASI6200 full-frame 9576×6388 vs ASI2600 APS-C 6248×4176)
+    /// produce images with vastly different star counts and FOV. Quality scoring separates
+    /// them into distinct groups via GroupKey, but the user should know about the mix.
+    private func checkForMixedDimensions() {
+        let withDims = images.filter { $0.width != nil && $0.height != nil }
+        let dimensionGroups = Dictionary(grouping: withDims) { "\($0.width!)×\($0.height!)" }
+        guard dimensionGroups.count > 1 else { return }
+
+        let sorted = dimensionGroups.sorted { $0.value.count > $1.value.count }
+        let descriptions = sorted.map { "\($0.key) (\($0.value.count) frames)" }
+        print("[Session] Mixed image dimensions detected: \(descriptions.joined(separator: ", "))")
+
+        // Collect camera names per dimension group for informative display
+        let details = sorted.map { (dim, frames) -> String in
+            let cameras = Set(frames.compactMap { $0.camera }).sorted()
+            let cameraInfo = cameras.isEmpty ? "" : " — \(cameras.joined(separator: ", "))"
+            return "  • \(dim): \(frames.count) frames\(cameraInfo)"
+        }.joined(separator: "\n")
+
+        let alert = NSAlert()
+        alert.messageText = "Mixed Sensor Dimensions Detected"
+        alert.informativeText = """
+        This session contains images with different resolutions:
+        \(details)
+
+        Quality scoring automatically groups frames by resolution, so each \
+        sensor is compared against its own peers. Auto-rotation is skipped \
+        for frames that don't match the reference dimensions.
+
+        For best results, load each camera setup in a separate folder.
+        """
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "OK")
+
+        if let window = NSApp.keyWindow {
+            alert.beginSheetModal(for: window)
+        } else {
+            alert.runModal()
+        }
     }
 
     /// Apply WCS-based alignment transforms to all frames that have complete plate-solve data.
@@ -4301,12 +4359,21 @@ class TriageViewModel: ObservableObject {
 
         var changed = 0
         var lastRating = 0
+        var autoMarked = 0
         for idx in rows where idx >= 0 && idx < images.count {
             let current = images[idx].userConfidence
             let newVal = (current == rating) ? 0 : rating
             images[idx].userConfidence = newVal
             lastRating = newVal
             changed += 1
+
+            // 1-star = garbage: auto-mark for deletion so user doesn't need Space.
+            // One-way only — clearing 1-star does NOT auto-unmark (image may have
+            // been marked independently by algorithm or Space key).
+            if newVal == 1 && !images[idx].isMarkedForDeletion {
+                images[idx].isMarkedForDeletion = true
+                autoMarked += 1
+            }
 
             // Persist to Frame History DB if file hash available
             if let hash = images[idx].fileHash {
@@ -4331,9 +4398,14 @@ class TriageViewModel: ObservableObject {
         if lastRating == 0 {
             statusMessage = "Cleared confidence rating for \(changed) frame\(changed == 1 ? "" : "s")"
         } else {
-            let stars = String(repeating: "★", count: lastRating)
-            statusMessage = "\(stars) confidence set for \(changed) frame\(changed == 1 ? "" : "s")"
+            // 1-star uses outline ☆ to visually distinguish garbage
+            let stars = lastRating == 1 ? "☆" : String(repeating: "★", count: lastRating)
+            let markNote = autoMarked > 0 ? " + marked for deletion" : ""
+            statusMessage = "\(stars) confidence set for \(changed) frame\(changed == 1 ? "" : "s")\(markNote)"
         }
+
+        // Update SNR retention bar if any frames were auto-marked
+        if autoMarked > 0 { recomputeSNRRetention() }
     }
 
     // MARK: - Quality Feedback

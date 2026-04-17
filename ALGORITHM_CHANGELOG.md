@@ -12,6 +12,54 @@ Records with `algorithmVersion < kAlgorithmVersion` are candidates for re-analys
 
 ---
 
+## Version 22 — v5.25.2 (2026-04-17)
+
+**Mixed-sensor GroupKey: prevent cross-camera z-score contamination.**
+
+When a session contains images from cameras with different sensor sizes (e.g.
+ASI6200MM 9576×6388 full-frame and ASI2600MC 6248×4176 APS-C on the same
+telescope), the smaller sensor has ~2.3× fewer stars and different noise
+characteristics. Previously, GroupKey only partitioned by filter + object +
+exposure + focal length + night — frames from different cameras landed in the
+same scoring group, causing the smaller sensor to score poorly (false trash).
+
+### Changes
+
+1. **GroupKey dimension fields** — `QualityEstimator.swift`:
+   Added `sensorWidth` and `sensorHeight` (from `ImageEntry.width`/`.height`)
+   to the `GroupKey` struct. Different sensor resolutions now form separate
+   scoring pools. Z-score math is unchanged — this is purely a partition change.
+
+2. **Auto-rotate dimension guard** — `TriageViewModel.swift`:
+   `OrientationRef` now stores the reference frame's `width`/`height`.
+   `shouldRotateForMeridian()` skips rotation when frame dimensions differ
+   from the reference — a 180° UV flip is geometrically meaningless across
+   different sensor sizes.
+
+3. **Mixed-dimension detection** — `TriageViewModel.swift`:
+   New `checkForMixedDimensions()` runs after header enrichment. When multiple
+   distinct (width, height) combinations exist, shows a non-blocking sheet
+   alert listing each resolution group with camera names and frame counts.
+
+### Impact
+
+- **Fixed:** Mixed-camera sessions no longer produce false trash marks on
+  the smaller sensor due to cross-camera star count / noise comparison
+- **Fixed:** Auto-rotate no longer applies meaningless 180° flips to frames
+  from a different camera than the reference
+- **Added:** User gets an informative warning about mixed dimensions with
+  guidance to use separate folders for best results
+- **Unchanged:** Single-camera sessions are completely unaffected (all frames
+  have identical dimensions, GroupKey adds two identical fields)
+
+### Files Changed
+
+- `AstroTriage/Engine/QualityEstimator.swift` — GroupKey + sensorWidth/sensorHeight
+- `AstroTriage/Engine/TriageViewModel.swift` — OrientationRef dimensions, dimension guard, mixed-dimension warning
+- `AstroTriage/Model/FrameRecord.swift` — `kAlgorithmVersion` 21 → 22
+
+---
+
 ## Version 21 — v5.25.0 (2026-04-17)
 
 **Peak-SNR quality gate: filter noise peaks from FWHM/HFR aggregation on moonlit frames.**

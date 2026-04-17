@@ -14,13 +14,12 @@ Nice side effect: Finally you have a native XISF and FITS Quicklook for macOS. (
 
 ---
 
-## What's New in v5.25.0 (Build 78)
+## What's New in v5.25.2 (Build 80)
 
-- **FWHM/HFR Accuracy Fix (Algorithm v21)** — Full-resolution saturation filter prevents measuring clipped stars. Peak-SNR quality gate filters noise peaks on bright backgrounds. GPU PSF fit initial guess fixed (was using bin2x brightness instead of actual stamp peak). Fixes bogus FWHM on moonlit broadband frames with bright open clusters.
-- **AIsaac Newton Icon** — Custom purple Newton silhouette with stars replaces the sparkles SF Symbol. Used in toolbar, chat window, message bubbles, and inspector buttons.
-- **Quality Assessment Incomplete UX** — When FWHM/HFR can't be measured (e.g. saturated stars), shows a "!" indicator with tooltip, inspector explanation section, and an "Ask AIsaac for details" button that auto-fires a diagnostic question.
-- **AIsaac Context Improvements** — Per-frame data now includes SNR, moon%, moonDist, object, and night. Metrics-first analysis rule: AIsaac examines local data before external research. Frame references use hash IDs matching the visible # column.
-- **Toolbar Polish** — VLM Check icon changed to grid with lighter grey. Auto-Mark purple with white glow. Delete button removed (Cmd+Backspace still works). Night mode defaults to system appearance.
+- **Mixed-Sensor Scoring Fix (Algorithm v22)** — Sessions with multiple cameras (e.g. ASI6200MM full-frame + ASI2600MC APS-C on the same telescope) now correctly separate quality scoring by sensor resolution. Previously, the smaller sensor's frames were unfairly compared against the larger sensor's star counts, producing false trash marks. Each camera is now scored against its own peers.
+- **Mixed-Dimension Warning** — Detects when a session contains images with different resolutions and shows an informative alert listing each sensor group with camera names and frame counts.
+- **Auto-Rotate Dimension Guard** — Meridian flip rotation is skipped for frames with different sensor dimensions than the reference, preventing meaningless 180° flips across cameras.
+- **1-Star Garbage UX** — 1-star rating displays as outline star (☆) to visually distinguish garbage. Pressing 1 auto-marks for pre-delete, saving the extra Space press.
 
 ---
 

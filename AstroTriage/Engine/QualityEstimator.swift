@@ -1977,6 +1977,8 @@ struct GroupKey: Hashable {
     let exposure:    Int
     let focalLength: Int     // Rounded FL in mm — prevents cross-setup comparison
     let night:       String? // observingNight for multi-night sessions, nil for single-night
+    let sensorWidth: Int     // Image width — separates different camera sensors (e.g. ASI6200 vs ASI2600)
+    let sensorHeight: Int    // Image height — prevents cross-sensor z-score contamination
 
     init(entry: ImageEntry, useNight: Bool = false) {
         filter      = (entry.filter   ?? "").uppercased().trimmingCharacters(in: .whitespaces)
@@ -1988,5 +1990,10 @@ struct GroupKey: Hashable {
         // Round to nearest 50mm to tolerate minor FL reporting differences between sessions.
         focalLength = entry.focalLength.map { Int(($0 / 50).rounded()) * 50 } ?? 0
         night       = useNight ? entry.observingNight : nil
+        // Sensor dimensions prevent cross-camera contamination: ASI6200 (9576×6388) and
+        // ASI2600 (6248×4176) have vastly different star counts and FOV — comparing them
+        // in one group produces false trash marks on the smaller sensor.
+        sensorWidth  = entry.width ?? 0
+        sensorHeight = entry.height ?? 0
     }
 }

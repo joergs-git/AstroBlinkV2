@@ -693,10 +693,11 @@ struct FileListView: NSViewRepresentable {
             }
 
             let conf = entry.userConfidence
-            cellView.textField?.stringValue = conf > 0 ? String(repeating: "★", count: conf) : ""
+            // 1-star uses outline ☆ to visually distinguish garbage from real ratings
+            cellView.textField?.stringValue = conf == 1 ? "☆" : (conf > 1 ? String(repeating: "★", count: conf) : "")
             cellView.textField?.textColor = conf > 0 ? .systemYellow : .secondaryLabelColor
             cellView.toolTip = conf > 0
-                ? "\(conf)-star confidence (press 1/2/3 to change, same key to clear)"
+                ? "\(conf)-star confidence (press 1/2/3 to change, same key to clear)\(conf == 1 ? " — garbage, auto-marked for deletion" : "")"
                 : "Unrated (press 1/2/3 to rate)"
 
             return cellView

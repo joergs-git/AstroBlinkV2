@@ -4,6 +4,18 @@ All notable changes to AstroBlink & AIsaac will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [5.25.2] — 2026-04-17
+
+### Fixed
+- **Mixed-sensor scoring separation (Algorithm v22)** — Sessions with multiple cameras (e.g. ASI6200MM full-frame + ASI2600MC APS-C on the same scope) now correctly partition quality scoring by sensor resolution. Previously, the smaller sensor's frames were compared against the larger sensor's star counts and noise, producing false trash marks. GroupKey now includes image dimensions so each camera gets scored against its own peers.
+- **Auto-rotate dimension guard** — Meridian flip rotation is now skipped for frames with different dimensions than the reference. Prevents meaningless 180° UV flips when mixing full-frame and APS-C images.
+
+### Added
+- **Mixed-dimension warning** — When loading a session with multiple sensor resolutions, a non-blocking alert lists each dimension group with camera names and frame counts, recommending separate folders for best results.
+- **1-star garbage UX** — 1-star rating now displays as outline star (☆) instead of filled (★) to visually distinguish garbage from real quality ratings. Pressing 1 auto-marks the frame for pre-delete, saving an extra Space press. Tooltip updated to indicate auto-mark behavior.
+
+---
+
 ## [5.25.0] — 2026-04-16
 
 ### Fixed
