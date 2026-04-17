@@ -515,3 +515,21 @@
 - **Root cause:** Chain detection only checked spatial pattern (fraction of stars in close directional chains) without verifying the stars themselves show elongation. True tracking hops produce both chain patterns AND elongated stars.
 - **Rule:** Chain detection must require trailing > 0.15 OR eccentricity > FL-baseline + 0.15 in addition to chain fraction exceeding threshold. Raise base threshold from 0.08 to 0.10.
 - **Applies to:** QualityEstimator Rule 9, any pattern-based detection that should correlate with star shape
+
+## [2026-04-17] — Bin2x saturation filter misses stars saturated in full resolution
+- **Mistake:** FWHM 11.88 reported for a moonlit B-filter frame. The value came from a single saturated star (65535 in full-res but ~62000 in bin2x, below the 64224 saturation threshold). Only 2 stars survived filtering on this frame; the saturated one dominated the median.
+- **Root cause:** Star candidates are filtered for saturation using brightness from the bin2x detector image. Bin2x averages 4 pixels, which reduces apparent brightness below the saturation threshold. But the Gaussian FWHM fit runs on the FULL-RES stamp where the peak pixel IS saturated (flat-topped). Saturated flat-top PSFs produce wildly inflated FWHM.
+- **Rule:** Always check saturation against full-resolution peak pixels, not bin2x brightness. Filter saturated stars BEFORE prefix(60) candidate selection so medium-brightness unsaturated stars get measured instead. When no unsaturated stars exist, return partial StarMetrics (with totalStarCount but zero FWHM/HFR) rather than nil, so the UI can show "Quality Assessment Incomplete" instead of nothing.
+- **Applies to:** StarMetricsCalculator.measure(), any pipeline where detection resolution differs from measurement resolution
+
+## [2026-04-17] — GPU PSF fit initial guess must use stamp pixels, not detector brightness
+- **Mistake:** GPU circular + elliptical PSF fit used `star.peakVal` (from bin2x detector) as initial amplitude A. On high-background frames (moonlit broadband, bg ~50000), A+B >> actual pixel value → Gauss-Newton diverged with chi² in the millions. GPU fits failed for 100% of stars on this setup.
+- **Root cause:** `star.brightness` from DetectedStar is a raw value from the bin2x image. The GPU fit reads a full-res 11×11 stamp. The initial guess A should come from the stamp's own peak pixel minus background, not from a different-resolution image.
+- **Rule:** Compute GPU PSF fit initial amplitude from the actual stamp center pixels: `stampPeak = max(center 5×5 pixels); A = stampPeak - B`. Never use cross-resolution values for initial guesses.
+- **Applies to:** Shaders.metal psf_fit_gaussian, psf_fit_elliptical, any GPU fit kernel with initial parameter guesses
+
+## [2026-04-17] — Investigate measurement artifacts by adding diagnostics first
+- **Mistake:** Spent iterations trying fixes (tilted-plane gradient model, peak-SNR gate) without understanding what was actually happening. The tilted-plane model made things WORSE (11.88 → 13.20). Only after adding diagnostic prints did we discover: GPU fit chi² was in the millions (initial guess bug), only 2 stars survived filtering (saturation gap), and the 11.88 came from a single clipped star.
+- **Root cause:** Assumed the root cause (gradient) without data. Each iteration changed code and rebuilt, taking 5-10 minutes, before testing on 2 frames.
+- **Rule:** When a metric value looks wrong, add diagnostic logging FIRST (per-star values, chi², peak SNR, candidate counts). Understand the actual data before proposing any fix. One diagnostic run saves multiple blind iteration cycles.
+- **Applies to:** Any measurement pipeline debugging, especially StarMetricsCalculator and GPU PSF fitting

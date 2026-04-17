@@ -4,6 +4,24 @@ All notable changes to AstroBlink & AIsaac will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [5.25.0] — 2026-04-16
+
+### Fixed
+- **Full-res saturation filter for FWHM/HFR** (Algorithm v21) — Star metric measurement now rejects saturated stars at full resolution before computing FWHM and HFR. Previously, a single clipped star on a moonlit B-filter open cluster frame (NGC 2251, ASI6200MM @ 504mm, 120s gain 100) inflated FWHM to 11.88px — wildly above the true session median. The saturation filter checks peak pixel intensity against a configurable ceiling and excludes stars whose cores are clipped, ensuring only well-exposed stars contribute to the final FWHM/HFR values. External user report from first beta tester (Mac Studio M3 Ultra, Virginia USA).
+- **Peak-SNR quality gate** — Filters noise measurement peaks on bright moonlit backgrounds that produced spurious noise MAD spikes, preventing false quality demotion on frames with elevated but uniform sky background.
+- **GPU PSF fit initial guess** — `psf_fit_gaussian` and `psf_fit_elliptical` Metal kernels now use the stamp peak pixel for the amplitude initial guess instead of the bin2x peak. The bin2x value underestimated amplitude on undersampled stars, causing slow convergence or fit failure.
+
+### Added
+- **AIsaac Newton custom icon** — Purple silhouette with stars replaces the SF Symbol sparkles icon across toolbar button, chat window, and header inspector. Distinctive branding for the AI assistant.
+- **Quality Assessment Incomplete UX** — When FWHM or HFR measurement is incomplete (e.g. too few unsaturated stars), the file list cell shows "!" with a tooltip explaining why. The Header Inspector's Quality Metrics section displays a detailed explanation. A dedicated "Ask AIsaac" button auto-fires a context-rich query about the specific frame's measurement issue.
+- **AIsaac per-frame context enrichment** — System prompt now includes SNR, moon illumination %, moon distance, object name, and night identifier for the currently selected frame. AIsaac references frames by their deterministic `#XX-NNNN` hash ID. Metrics-first analysis rule ensures data-driven responses.
+- **"Ask AIsaac about this frame" button** — Available on ALL quality metric sections in the Header Inspector, not just incomplete assessments. One-click to get AI analysis of any frame's quality metrics in context.
+
+### Changed
+- **Toolbar polish** — VLM Check button uses grid icon (grey). Auto-Mark button uses purple tint with white glow effect. Delete button removed from toolbar. Night mode now follows system appearance setting. Top padding adjusted for cleaner layout.
+
+---
+
 ## [5.24.0] — 2026-04-14
 
 ### Added

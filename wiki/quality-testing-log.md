@@ -240,6 +240,65 @@ Asserts NOT flagged as dark frame (FL-dependent threshold).
 
 ---
 
+---
+
+## v5.25.0 — Full-Res Saturation Filter for FWHM/HFR (2026-04-16, Algorithm v21)
+
+### Problem Statement
+
+External user report (first beta tester, Mac Studio M3 Ultra 256GB, Virginia USA):
+NGC 2251 session — ASI6200MM @ 504mm FL, B-filter 120s gain 100, moonlit open cluster.
+FWHM measured as **11.88px** from a single saturated star whose clipped core inflated the
+Gaussian fit. The true session median FWHM was dramatically lower. The inflated value
+cascaded into quality scoring, producing incorrect tier assignments.
+
+**Root cause:** Star metric measurement (FWHM, HFR) operated on all detected stars without
+checking for pixel saturation. Saturated (clipped) stars have flattened cores that defeat
+the Gaussian fit, producing wildly inflated FWHM values. On moonlit broadband frames with
+few bright stars in an open cluster field, a single clipped star can dominate the median.
+
+### Fix: Three-Layer Correction
+
+**Layer 1: Full-Res Saturation Filter (StarMetricsCalculator.swift)**
+- Before computing FWHM/HFR, each star's peak pixel intensity is checked against a
+  saturation ceiling at full resolution
+- Stars with clipped cores are excluded from the measurement set
+- Ensures only well-exposed, unsaturated stars contribute to final metrics
+
+**Layer 2: Peak-SNR Quality Gate (QualityEstimator.swift)**
+- Filters noise measurement peaks on bright moonlit backgrounds
+- Prevents spurious noise MAD spikes from producing false quality demotion
+- Targets the specific failure mode of elevated but uniform sky background
+
+**Layer 3: GPU PSF Fit Initial Guess (Shaders.metal)**
+- `psf_fit_gaussian` and `psf_fit_elliptical` kernels now use stamp peak pixel
+  for amplitude initial guess instead of bin2x peak
+- bin2x underestimated amplitude on undersampled stars (short FL + large pixels)
+- Improves convergence speed and fit accuracy
+
+### Validation Results
+
+**Test Suite: 263 tests, all PASS**
+
+| Test Suite | Tests | Status |
+|---|---|---|
+| QualityEstimatorTests | 49+ | PASS |
+| ScoringValidationTests | 41+ | PASS |
+| ScoringRegressionTests | 9+ | PASS |
+| CalibrationDatabaseTests | 11 | PASS |
+| ConvergenceDetectorTests | 11 | PASS |
+| All other suites | remaining | PASS |
+
+**Golden Set Regression: PASS** — All 7 setups within ±2% tolerance.
+
+### Impact
+- Eliminates false FWHM/HFR inflation on moonlit broadband frames with saturated stars
+- Particularly important for open cluster targets (many bright stars prone to saturation)
+- B-filter most affected (shorter wavelength → brighter star peaks at same gain)
+- No behavioral change on sessions without saturated stars (filter is a no-op)
+
+---
+
 *This log is maintained as part of the AstroTriage/AstroBlink quality assurance process.
 Each new detection feature or threshold change requires a full regression test across all
 7 setups before release.*
