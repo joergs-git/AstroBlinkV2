@@ -360,16 +360,26 @@ class AIsaacWindowController: NSWindowController {
             case .uncertain: tierStr = "uncertain"
             case .none: tierStr = "unscored"
             }
+            // Compute SNR: noiseMedian / noiseMAD (same as displayed in SNR column)
+            let snr: Double? = {
+                guard let median = img.noiseMedian, let mad = img.noiseMAD, mad > 0 else { return nil }
+                return Double(median) / Double(mad)
+            }()
+
             return AIsaacSessionContext.FrameMetric(
                 index: img.sessionIndex,  // use stable session index, not current sort position
+                shortId: img.shortId ?? "\(img.sessionIndex)",
                 filename: img.filename,
                 filter: img.filter ?? "?",
                 exposure: img.exposure ?? 0,
+                object: img.target,
+                night: img.observingNight,
                 tier: tierStr,
                 zScore: img.qualityBreakdown?.combinedZScore,
                 fwhm: img.computedFWHM ?? img.fwhm.map { Double($0) },
                 hfr: img.computedHFR ?? img.hfr,
                 stars: img.computedStarCount ?? img.starCount,
+                snr: snr,
                 noise: img.noiseMAD.map { Double($0) },
                 ecc: img.computedEccentricity,
                 trailing: img.trailingScore,
@@ -379,7 +389,9 @@ class AIsaacWindowController: NSWindowController {
                     return reasons.map { $0.rawValue }.joined(separator: " + ")
                 }(),
                 reasoning: img.qualityBreakdown?.reasoningText,
-                twilight: img.twilightPhase?.rawValue
+                twilight: img.twilightPhase?.rawValue,
+                moonPct: img.moonIllumination.map { $0 * 100 },
+                moonDist: img.moonDistance
             )
         }
     }

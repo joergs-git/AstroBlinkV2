@@ -52,6 +52,19 @@ struct AIsaacContextBuilder {
         Use bullet lists or "• Filter: value" pairs instead. For per-frame data use \
         "• #19 L 180s — trash, SNR catastrophically low" format.
 
+        METRICS-FIRST ANALYSIS (CRITICAL):
+        - When asked about a specific frame's quality, ALWAYS examine its per-frame metrics FIRST \
+        (FWHM, HFR, stars, SNR, eccentricity, trailing, moon%, moonDist, tier, z-score, garbage reasons) \
+        before searching external sources or giving general advice.
+        - The per-frame data table below contains computed metrics for every frame. Use it.
+        - If a metric is "-" (nil/missing), explain WHY it might be missing: \
+        saturated stars (broadband + bright cluster + high gain), too few unsaturated candidates, \
+        undersampled plate scale, or insufficient stars in center crop.
+        - Cross-reference multiple metrics: e.g., high FWHM + low stars + high moon% = moonlit degradation. \
+        Don't analyze one metric in isolation.
+        - Only AFTER examining the local metrics, use external knowledge (seeing conditions, \
+        target characteristics, equipment limitations) to complete the picture.
+
         IMAGE CONTEXT:
         - When you see an image in the conversation, it IS the currently displayed frame in the app. \
         It is NOT an external upload. It is the frame the user is looking at right now.
@@ -516,8 +529,8 @@ struct AIsaacContextBuilder {
           * R3 High FWHM: FWHM > 2× median → "severe defocus/tracking"
           * R4 High HFR: HFR > 2× median → "severe defocus"
           * R5 Extreme eccentricity: ecc > 2× FL baseline → "star trailing/elongation" (severity-dependent threshold)
-          * R6a Absolute trailing ceiling: score > 0.50 + consensus > 0.50 + trailing outlier (z > 1.0σ) \
-          → "star trailing/elongation" (filter-independent, bypasses FWHM cross-check)
+          * R6a Absolute trailing ceiling: score > 0.60 + consensus > 0.50 + trailing outlier (z > 1.0σ) \
+          → "star trailing/elongation" (filter-independent, bypasses FWHM cross-check) [ceiling raised 0.50→0.60 in v20]
           * R6 Trailing (consensus): score > 0.7/effectiveMult (FWHM cross-checked) → "star trailing/elongation"
           * R7 Star count anomaly: stars > 1.8× median + elevated FWHM/HFR → "doubled stars"
           * R7b Star count drop: stars < 65% median + SNR < 65% median + FWHM OK → "atmospheric attenuation" \
@@ -562,6 +575,22 @@ struct AIsaacContextBuilder {
         - Stage 3 — Rescue Rules (only promote, never demote):
           * A: FWHM + noise OK → Good. B: Star dip + sharp → Good. C: FWHM-only → Borderline.
         - Stage 4 — Sanity Check: z-score trash with FWHM in Good range → Borderline
+
+        METRICS EXPLAINED:
+        MEASUREMENT LIMITATIONS (v5.25.0, algorithm v21):
+        - FWHM/HFR can be nil when all measurable star candidates are saturated in full-resolution. \
+        This happens on broadband filters (B, R, G, L) at high gain with bright targets (open clusters, \
+        star-rich fields) — especially combined with moonlight which raises background into saturation. \
+        Nil FWHM is honest: "we can't reliably measure this frame" vs reporting a wrong value.
+        - Saturated (flat-topped) stars produce wildly inflated FWHM from Gaussian fits. \
+        Stars are filtered by full-resolution peak brightness (< 98% of 65535) before measurement. \
+        The brightest unsaturated stars are selected for measurement.
+        - On undersampled setups (>1 arcsec/pixel, e.g. 504mm FL + 3.76μm pixels = 1.54"/px), \
+        real stars occupy only 2-3 pixels. FWHM fitting has fewer qualifying pixels and may be less precise.
+        - When FWHM is nil, quality scoring falls back to other metrics (stars, SNR, noise, trailing). \
+        The frame is not penalized for missing FWHM — it just gets a less complete assessment.
+        - Moon illumination and moon distance are shown per frame. High moon% + broadband = bright \
+        background → more saturation → potentially fewer measurable stars.
 
         METRICS EXPLAINED:
         - FWHM: star size in pixels. Lower = sharper. Measured from center 70% crop.
@@ -961,23 +990,27 @@ struct AIsaacContextBuilder {
         }
 
         var lines: [String] = ["PER-FRAME DATA (use for deep analysis):"]
-        lines.append("The '#' column shows session index (1-based). ALWAYS use the 1-based # number in BOTH text AND commands. The app resolves # to the correct frame regardless of sort order.")
-        lines.append("#|filename|filter|exp|tier|z|fwhm|hfr|stars|noise|ecc|trail|marked|reason|twilight")
+        lines.append("The 'id' column shows the hash-based short ID visible in the # column (e.g. '4A-7566'). ALWAYS use this ID when referencing specific frames in text. For app commands, use the session index in the 'idx' column.")
+        lines.append("id|idx|filename|filter|exp|object|night|tier|z|fwhm|hfr|stars|snr|noise|ecc|trail|moon%|moonDist|marked|reason|twilight")
 
         for f in framesToInclude {
             let z = f.zScore.map { String(format: "%+.2f", $0) } ?? "-"
             let fwhm = f.fwhm.map { String(format: "%.2f", $0) } ?? "-"
             let hfr = f.hfr.map { String(format: "%.2f", $0) } ?? "-"
             let stars = f.stars.map { String($0) } ?? "-"
+            let snr = f.snr.map { String(format: "%.1f", $0) } ?? "-"
             let noise = f.noise.map { String(format: "%.5f", $0) } ?? "-"
             let ecc = f.ecc.map { String(format: "%.3f", $0) } ?? "-"
             let trail = f.trailing.map { String(format: "%.2f", $0) } ?? "-"
+            let moonPct = f.moonPct.map { String(format: "%.0f", $0) } ?? "-"
+            let moonDist = f.moonDist.map { String(format: "%.0f", $0) } ?? "-"
             let marked = f.isMarked ? "YES" : ""
             let reason = f.garbageReason ?? ""
             let twilight = f.twilight ?? ""
+            let object = f.object ?? "-"
+            let night = f.night ?? "-"
 
-            // f.index IS the sessionIndex (1-based, stable across sorting)
-            lines.append("\(f.index)|\(f.filename)|\(f.filter)|\(Int(f.exposure))|\(f.tier)|\(z)|\(fwhm)|\(hfr)|\(stars)|\(noise)|\(ecc)|\(trail)|\(marked)|\(reason)|\(twilight)")
+            lines.append("\(f.shortId)|\(f.index)|\(f.filename)|\(f.filter)|\(Int(f.exposure))|\(object)|\(night)|\(f.tier)|\(z)|\(fwhm)|\(hfr)|\(stars)|\(snr)|\(noise)|\(ecc)|\(trail)|\(moonPct)|\(moonDist)|\(marked)|\(reason)|\(twilight)")
         }
 
         if truncated {

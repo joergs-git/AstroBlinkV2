@@ -116,14 +116,18 @@ struct AIsaacSessionContext {
 
     struct FrameMetric {
         let index: Int
+        let shortId: String     // Hash-based ID visible in # column (e.g. "4A-7566")
         let filename: String
         let filter: String
         let exposure: Double
+        let object: String?     // Target name (OBJECT header)
+        let night: String?      // Observing night (date group)
         let tier: String        // "excellent", "good", "borderline", "trash", "unscored"
         let zScore: Double?
         let fwhm: Double?
         let hfr: Double?
         let stars: Int?
+        let snr: Double?        // Signal-to-noise ratio (noiseMedian / noiseMAD)
         let noise: Double?      // noiseMAD
         let ecc: Double?        // eccentricity
         let trailing: Double?   // trailing score
@@ -131,6 +135,8 @@ struct AIsaacSessionContext {
         let garbageReason: String?
         let reasoning: String?
         let twilight: String?   // Twilight phase at capture time (Night, Astro twilight, etc.)
+        let moonPct: Double?    // Moon illumination 0-100%
+        let moonDist: Double?   // Angular distance from moon in degrees
     }
 
     struct FilterStat {
