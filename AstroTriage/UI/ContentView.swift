@@ -450,6 +450,7 @@ struct ContentView: View {
     private var toolbarArea: some View {
         VStack(spacing: 2) {
             toolbarButtonsRow
+                .padding(.top, 5)
                 .padding(.bottom, 2)
             Rectangle().fill(nightDivider).frame(height: 1)
             imageSettingsRow
@@ -465,6 +466,7 @@ struct ContentView: View {
         HStack(spacing: 4) {
             // ── Group 1: File operations ──
             sfToolbarButton("folder", "Open", "Open Folder (⌘O)") { viewModel.openFolder() }
+                .padding(.leading, 4)
             sfToolbarButton("list.bullet.rectangle", "Inspector", "Show FITS/XISF header keywords for selected image (I)") { viewModel.toggleHeaderInspector() }
             sfToolbarButton("chart.bar", "Session", "Session overview — group stats by filter, night, and target") {
                 viewModel.showSessionOverview.toggle()
@@ -482,18 +484,17 @@ struct ContentView: View {
             toolbarDivider
 
             // ── Group 2: Actions ──
-            autoMarkToolbarButton
             sfToolbarButton("tablecells", "VLM\nCheck",
                 "ALPHA — Generate mosaic for AI anomaly detection.\nHighlighted files: uses selection (any status).\nNo selection: uses all unmarked frames.",
                 iconColor: .gray.opacity(0.5)) {
                 showVlmAlphaWarning = true
             }
+            autoMarkToolbarButton
             aisaacToolbarButton
             sfToolbarButton("square.and.arrow.up", "SSWEIGHT\nExport",
                 "Export quality weights to FITS/XISF headers for WBPP.\nOperates on highlighted files (or all if none selected).\nAlso creates CSV backup.\nUse Batch Rename to remove SSWEIGHT keywords.") {
                 viewModel.exportSSWEIGHT()
             }
-            sfToolbarButton("trash", "Delete", "Move spacebar-marked files to _predel/ staging folder (⌘⌫)\nFiles are NOT permanently deleted") { viewModel.moveMarkedToPreDelete() }
             if viewModel.canUndoPreDelete {
                 sfToolbarButton("arrow.uturn.backward", "Undo", "Undo last Pre-Delete (⌘Z)") { viewModel.undoPreDelete() }
             }
@@ -979,11 +980,11 @@ struct ContentView: View {
     private var autoMarkToolbarButton: some View {
         Button(action: { showAutoMarkPopover.toggle() }) {
             VStack(spacing: 2) {
-                // Racing finish-line flag — red/white checkered via palette rendering
                 Image(systemName: "flag.checkered")
                     .font(.system(size: 24, weight: .regular))
                     .symbolRenderingMode(.palette)
-                    .foregroundStyle(.red, .white)
+                    .foregroundStyle(.purple, .white)
+                    .shadow(color: .white.opacity(0.6), radius: 3)
                 Spacer(minLength: 0)
                 Text("Auto-Mark")
                     .font(.system(size: 8, weight: .medium))
@@ -1011,18 +1012,22 @@ struct ContentView: View {
         }) {
             VStack(spacing: 2) {
                 ZStack {
-                    // Base sparkles icon
-                    Image(systemName: "sparkles")
-                        .font(.system(size: 24, weight: .light))
+                    // AIsaac Newton icon
+                    Image("AIsaacIcon")
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: 32, height: 32)
                         .foregroundColor(.purple)
+                        .shadow(color: .white.opacity(0.6), radius: 3)
 
-                    // Glow pulse overlay
-                    Image(systemName: "sparkles")
-                        .font(.system(size: 24, weight: .light))
+                    // Subtle pulse overlay (no blur/glow — just gentle scale)
+                    Image("AIsaacIcon")
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: 32, height: 32)
                         .foregroundColor(.purple)
-                        .opacity(aisaacGlow ? 0.9 : 0.1)
-                        .scaleEffect(aisaacGlow ? 1.25 : 0.9)
-                        .blur(radius: aisaacGlow ? 3.5 : 0.0)
+                        .opacity(aisaacGlow ? 0.4 : 0.0)
+                        .scaleEffect(aisaacGlow ? 1.15 : 1.0)
                 }
                 Spacer(minLength: 0)
                 Text("Ask\nAIsaac")

@@ -645,7 +645,12 @@ class TriageViewModel: ObservableObject {
         if let v = AppSettings.loadFloat(for: .sharpening) { sharpening = v }
         if let v = AppSettings.loadFloat(for: .contrast) { contrast = v }
         if let v = AppSettings.loadFloat(for: .darkLevel) { darkLevel = v }
-        if let v = AppSettings.loadBool(for: .nightMode) { nightMode = v }
+        if let v = AppSettings.loadBool(for: .nightMode) {
+            nightMode = v
+        } else {
+            // Default night mode to match system dark/light appearance
+            nightMode = NSApp.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        }
         if let v = AppSettings.loadBool(for: .debayerEnabled) { debayerEnabled = v }
         if let v = AppSettings.loadBool(for: .skipMarked) { skipMarked = v }
         if let v = AppSettings.loadBool(for: .hideMarked) { hideMarked = v }

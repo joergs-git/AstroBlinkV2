@@ -492,8 +492,10 @@ struct HeaderInspectorContentView: View {
                         )
                     }) {
                         HStack(spacing: 4) {
-                            Image(systemName: "sparkles")
-                                .font(.system(size: fs(10)))
+                            Image("AIsaacIcon")
+                                .resizable()
+                                .aspectRatio(contentMode: .fit)
+                                .frame(width: 14, height: 14)
                             Text("Ask AIsaac for details")
                                 .font(.system(size: fs(10), weight: .medium))
                         }
@@ -569,6 +571,28 @@ struct HeaderInspectorContentView: View {
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                     }
+
+                    // Ask AIsaac button — available on all quality sections
+                    Button(action: {
+                        AIsaacWindowController.shared.askQuestion(
+                            "Analyze this frame's quality metrics in detail. Look at the per-frame data (FWHM, HFR, stars, SNR, eccentricity, trailing, moon%, filter). Explain the quality tier and z-scores. What is good, what is problematic, and what could improve it?"
+                        )
+                    }) {
+                        HStack(spacing: 4) {
+                            Image("AIsaacIcon")
+                                .resizable()
+                                .aspectRatio(contentMode: .fit)
+                                .frame(width: 14, height: 14)
+                            Text("Ask AIsaac about this frame")
+                                .font(.system(size: fs(10), weight: .medium))
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.purple.opacity(0.15))
+                        .cornerRadius(6)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.top, 4)
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)

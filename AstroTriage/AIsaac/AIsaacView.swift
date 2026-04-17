@@ -360,11 +360,13 @@ struct AIsaacView: View {
 
     private var headerBar: some View {
         HStack(spacing: 8) {
-            // AIsaac icon — sparkles with glow effect
-            Image(systemName: "sparkles")
-                .font(.system(size: 20, weight: .medium))
+            // AIsaac Newton icon
+            Image("AIsaacIcon")
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(width: 36, height: 36)
                 .foregroundColor(accentColor)
-                .shadow(color: accentColor.opacity(0.6), radius: 4)
+                .shadow(color: .white.opacity(0.6), radius: 3)
 
             VStack(alignment: .leading, spacing: 1) {
                 Button(action: { withAnimation(.easeInOut(duration: 0.2)) { model.isCollapsed.toggle() } }) {
@@ -424,11 +426,12 @@ struct AIsaacView: View {
 
     private func assistantBubble(_ text: String, id: String) -> some View {
         HStack(alignment: .top, spacing: 8) {
-            // Small sparkles icon for assistant
-            Image(systemName: "sparkles")
-                .font(.system(size: 11))
-                .foregroundColor(accentColor)
+            // Small AIsaac icon for assistant messages
+            Image("AIsaacIcon")
+                .resizable()
+                .aspectRatio(contentMode: .fit)
                 .frame(width: 16, height: 16)
+                .foregroundColor(accentColor)
                 .padding(.top, 4)
 
             Text(parseMarkdown(text))
@@ -484,8 +487,10 @@ struct AIsaacView: View {
 
     private var thinkingIndicator: some View {
         HStack(alignment: .top, spacing: 8) {
-            Image(systemName: "sparkles")
-                .font(.system(size: 11))
+            Image("AIsaacIcon")
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(width: 16, height: 16)
                 .foregroundColor(accentColor)
                 .frame(width: 16, height: 16)
                 .padding(.top, 4)
