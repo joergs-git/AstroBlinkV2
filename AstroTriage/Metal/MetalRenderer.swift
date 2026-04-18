@@ -548,11 +548,13 @@ class MetalRenderer: NSObject, MTKViewDelegate {
     /// Source priority: cachedPreviewTexture (already BGRA8 + stretched) → normalizedTexture
     /// (stretched full-res) → currentImage (raw — needs compute pass, skipped).
     ///
-    /// Uses CoreImage end-to-end (CIImage → CIContext.createCGImage) instead of
-    /// `MTLTexture.getBytes`. The direct readback path crashes in AGX when the
-    /// texture uses a GPU-private tile-swizzled layout (observed: SIGSEGV inside
-    /// `agxsTwiddleAddressCommon` on Apple M2). CIContext handles storage-mode
-    /// translation and detiling internally and is safe for any MTLTexture.
+    /// Readback is done via `blit → MTLBuffer` (always row-major linear), NOT
+    /// `MTLTexture.getBytes`. Direct `getBytes` on a `.storageMode = .private`
+    /// tile-swizzled texture crashes the AGX detiler on Apple Silicon (observed:
+    /// SIGSEGV inside `agxsTwiddleAddressCommon` on M2 Ultra after long idle).
+    /// CoreImage's `createCGImage` / `render(toBitmap:)` paths also end up
+    /// calling `getBytes` internally — they are NOT safe for private textures.
+    /// Blitting to a linear MTLBuffer is the documented safe GPU→CPU path.
     ///
     /// - Parameter maxDimension: longest-side target size in points (width or height).
     ///   The overlay uses ~200pt. The method preserves aspect ratio.
@@ -561,30 +563,92 @@ class MetalRenderer: NSObject, MTKViewDelegate {
         return makeNSImage(from: sourceTex, maxDimension: maxDimension)
     }
 
-    /// Build an aspect-preserving `NSImage` from an `MTLTexture` of any storage
-    /// mode. CoreImage does the GPU→CGImage copy; we then hand the CGImage to
-    /// NSImage at the requested display size and let AppKit scale it.
+    /// Build an aspect-preserving `NSImage` from any `MTLTexture`, including
+    /// tile-swizzled `.private` textures. CoreImage downsamples into a small
+    /// `.private` intermediate; a blit then copies that intermediate into a
+    /// `.shared` MTLBuffer, which is guaranteed linear row-major. From the
+    /// buffer we build a CGImage without ever calling `getBytes` on a
+    /// tile-swizzled source.
     private func makeNSImage(from texture: MTLTexture, maxDimension: CGFloat) -> NSImage? {
-        let width = texture.width
-        let height = texture.height
-        guard width > 0, height > 0, maxDimension > 0 else { return nil }
+        let srcW = texture.width
+        let srcH = texture.height
+        guard srcW > 0, srcH > 0, maxDimension > 0 else { return nil }
 
-        // CIImage from MTLTexture: the origin convention is bottom-left, so we
-        // flip vertically to match AppKit's top-left expectations.
-        let options: [CIImageOption: Any] = [
-            .colorSpace: CGColorSpaceCreateDeviceRGB()
-        ]
+        // Target thumbnail pixel dimensions (aspect-preserving, longest side = maxDimension).
+        let scale = maxDimension / CGFloat(max(srcW, srcH))
+        let dstW = max(1, Int((CGFloat(srcW) * scale).rounded()))
+        let dstH = max(1, Int((CGFloat(srcH) * scale).rounded()))
+
+        // Small intermediate render target — only dstW × dstH, so memory is negligible.
+        // `.private` is fine because we never read from it via getBytes; we blit it out.
+        let interDesc = MTLTextureDescriptor.texture2DDescriptor(
+            pixelFormat: .bgra8Unorm, width: dstW, height: dstH, mipmapped: false
+        )
+        interDesc.storageMode = .private
+        interDesc.usage = [.renderTarget, .shaderRead]
+        guard let intermediate = device.makeTexture(descriptor: interDesc) else { return nil }
+
+        // Wrap the source in a CIImage, scale + Y-flip in a single transform.
+        // CIImage origin is bottom-left; AppKit wants top-left, so we flip Y.
+        let options: [CIImageOption: Any] = [.colorSpace: CGColorSpaceCreateDeviceRGB()]
         guard let ciImage = CIImage(mtlTexture: texture, options: options) else { return nil }
-        let flipped = ciImage.transformed(by: CGAffineTransform(scaleX: 1, y: -1)
-                                            .translatedBy(x: 0, y: -ciImage.extent.height))
+        let transform = CGAffineTransform(scaleX: scale, y: -scale)
+            .translatedBy(x: 0, y: -CGFloat(srcH))
+        let scaledFlipped = ciImage.transformed(by: transform)
 
-        let extent = CGRect(x: 0, y: 0, width: width, height: height)
-        guard let cgImage = thumbnailCIContext.createCGImage(flipped, from: extent) else { return nil }
+        // Linear destination buffer (row-major BGRA8). MTLBuffer is always linear,
+        // so the blit below forces the AGX driver through its safe detile path.
+        let bytesPerRow = dstW * 4
+        let totalBytes = dstH * bytesPerRow
+        guard let readback = device.makeBuffer(length: totalBytes, options: .storageModeShared),
+              let cmdBuf = commandQueue.makeCommandBuffer() else { return nil }
 
-        // Aspect-preserving display size; NSImage scales lazily when drawn.
-        let scale = maxDimension / CGFloat(max(width, height))
-        let targetW = max(1, Int(CGFloat(width) * scale))
-        let targetH = max(1, Int(CGFloat(height) * scale))
-        return NSImage(cgImage: cgImage, size: NSSize(width: targetW, height: targetH))
+        // 1. CoreImage renders the (possibly tile-swizzled) source into `intermediate`.
+        thumbnailCIContext.render(
+            scaledFlipped,
+            to: intermediate,
+            commandBuffer: cmdBuf,
+            bounds: CGRect(x: 0, y: 0, width: dstW, height: dstH),
+            colorSpace: CGColorSpaceCreateDeviceRGB()
+        )
+
+        // 2. Blit the small intermediate into the linear shared buffer.
+        guard let blit = cmdBuf.makeBlitCommandEncoder() else { return nil }
+        blit.copy(
+            from: intermediate, sourceSlice: 0, sourceLevel: 0,
+            sourceOrigin: MTLOrigin(x: 0, y: 0, z: 0),
+            sourceSize: MTLSize(width: dstW, height: dstH, depth: 1),
+            to: readback, destinationOffset: 0,
+            destinationBytesPerRow: bytesPerRow,
+            destinationBytesPerImage: totalBytes
+        )
+        blit.endEncoding()
+        cmdBuf.commit()
+        cmdBuf.waitUntilCompleted()
+
+        // If GPU reported an error, bail — don't hand back a CGImage of garbage pixels.
+        if cmdBuf.status != .completed { return nil }
+
+        // 3. Copy buffer contents into a CFData-owned byte block so the CGImage
+        // doesn't alias MTLBuffer memory that Metal may reuse.
+        let contents = readback.contents().assumingMemoryBound(to: UInt8.self)
+        guard let cfData = CFDataCreate(nil, contents, totalBytes),
+              let provider = CGDataProvider(data: cfData) else { return nil }
+
+        let bitmapInfo = CGBitmapInfo(rawValue:
+            CGBitmapInfo.byteOrder32Little.rawValue |
+            CGImageAlphaInfo.premultipliedFirst.rawValue)
+        guard let cgImage = CGImage(
+            width: dstW, height: dstH,
+            bitsPerComponent: 8, bitsPerPixel: 32,
+            bytesPerRow: bytesPerRow,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: bitmapInfo,
+            provider: provider,
+            decode: nil, shouldInterpolate: false,
+            intent: .defaultIntent
+        ) else { return nil }
+
+        return NSImage(cgImage: cgImage, size: NSSize(width: dstW, height: dstH))
     }
 }

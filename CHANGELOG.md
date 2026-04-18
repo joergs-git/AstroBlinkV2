@@ -4,6 +4,13 @@ All notable changes to AstroBlink & AIsaac will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [5.26.2] — 2026-04-18
+
+### Fixed
+- **Overlay Thumbnail SIGSEGV after long idle** — The viewer overlay's mini-map crashed the app (`EXC_BAD_ACCESS` / `KERN_INVALID_ADDRESS` inside `agxsTwiddleAddressCommon` on Apple M2) whenever SwiftUI fired an `updateNSView` against a `.storageMode = .private` tile-swizzled display texture — most visibly after the app had been idle for several hours and macOS re-drove the window on wake. The v5.26.1 CoreImage fallback turned out not to help: `CIImage(mtlTexture:)` + `CIContext.createCGImage(...)` still ends up calling `MTLTexture.getBytes` internally on the private texture, tripping the same AGX detiler bug. The thumbnail path now routes through a CoreImage downsample into a small `.private` intermediate, then **blits that intermediate into a `.shared` `MTLBuffer`** (row-major linear by definition). The CGImage is built from the buffer — `getBytes` is never called on a tile-swizzled texture. Side benefit: the intermediate is allocated at thumbnail size (~200 px longest side) instead of full sensor resolution, so the CGImage is no longer a 200 MB+ transient allocation on high-resolution sensors.
+
+---
+
 ## [5.26.1] — 2026-04-18
 
 ### Added
