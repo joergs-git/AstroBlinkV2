@@ -34,6 +34,11 @@ class ReleaseNotesWindowController {
 // MARK: - Release notes data (shared between view and copy)
 
 private let allReleases: [(version: String, date: String, items: [(ReleaseNotesView.ChangeType, String, String)])] = [
+    ("5.26.1", "April 18, 2026", [
+        (.added, "Floating Image Overlay", "New always-accessible overlay in the top-left of the image viewer: big filter letter (Ha / L / OIII …), capture time + observing-night date, a 5%-size mini-map of the full image, and your current 1-3 star rating. Anchored in viewport space so it stays pinned while you zoom and pan. Default on; toggle with ⌘⇧O or View → Show Image Overlay. Auto-enabled in Blind Curation."),
+        (.added, "Live Viewport Indicator on Mini-Map", "A thin white dashed rectangle on the mini-map tracks the currently visible region in real time as you zoom and pan. Hides automatically when the whole image fits the viewer."),
+        (.changed, "Mini-Map Thumbnail via CoreImage", "Thumbnail generation switched from direct MTLTexture.getBytes to CIImage → CIContext to avoid a SIGSEGV in AGX when the display texture uses a GPU-private tile-swizzled layout."),
+    ]),
     ("5.26.0", "April 18, 2026", [
         (.fixed, "Stage 1.5 Severe-FWHM False Positives (Algorithm v23)", "Removed the single-flag 'severe FWHM' demote path. Empirical validation against 4540 user-rated frames showed this path uniquely triggered on frames where FWHM was the only flag at ~34% precision — 65 false positives for every 33 true garbage catches. The 2-flag rule catches genuinely bad frames via co-occurring metric flags. Net +32 frames correctly classified on the curated set."),
         (.fixed, "Stage 4 Rescue Preserves Session-Sanity Reasons", "When the Stage 4 FWHM-sanity pass lifts a z-score-trash frame to borderline, it now preserves session-sanity and historical-baseline reasons. Rescued borderline frames now surface 'REVIEW — <reason>' in the recommendation label and tooltips instead of showing generic reasoning. Better Autopilot decisions, clearer user feedback."),

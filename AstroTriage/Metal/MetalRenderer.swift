@@ -2,6 +2,7 @@
 import Metal
 import MetalKit
 import AppKit
+import CoreImage
 
 // Metal renderer: compute-based STF auto-stretch + render pipeline for display
 // Supports fit-to-view scaling and Photoshop-style click-drag zoom
@@ -533,5 +534,57 @@ class MetalRenderer: NSObject, MTKViewDelegate {
 
         commandBuffer.present(drawable)
         commandBuffer.commit()
+    }
+
+    // MARK: - Thumbnail rendering (for viewer overlay mini-map)
+
+    /// Shared CIContext for thumbnail generation. Re-uses the Metal device so the
+    /// CPU→CGImage conversion doesn't allocate a second GPU context.
+    private lazy var thumbnailCIContext: CIContext = {
+        CIContext(mtlDevice: device, options: [.workingColorSpace: CGColorSpaceCreateDeviceRGB()])
+    }()
+
+    /// Render a downsampled NSImage of the currently-displayed content.
+    /// Source priority: cachedPreviewTexture (already BGRA8 + stretched) → normalizedTexture
+    /// (stretched full-res) → currentImage (raw — needs compute pass, skipped).
+    ///
+    /// Uses CoreImage end-to-end (CIImage → CIContext.createCGImage) instead of
+    /// `MTLTexture.getBytes`. The direct readback path crashes in AGX when the
+    /// texture uses a GPU-private tile-swizzled layout (observed: SIGSEGV inside
+    /// `agxsTwiddleAddressCommon` on Apple M2). CIContext handles storage-mode
+    /// translation and detiling internally and is safe for any MTLTexture.
+    ///
+    /// - Parameter maxDimension: longest-side target size in points (width or height).
+    ///   The overlay uses ~200pt. The method preserves aspect ratio.
+    func renderThumbnail(maxDimension: CGFloat) -> NSImage? {
+        guard let sourceTex = cachedPreviewTexture ?? normalizedTexture else { return nil }
+        return makeNSImage(from: sourceTex, maxDimension: maxDimension)
+    }
+
+    /// Build an aspect-preserving `NSImage` from an `MTLTexture` of any storage
+    /// mode. CoreImage does the GPU→CGImage copy; we then hand the CGImage to
+    /// NSImage at the requested display size and let AppKit scale it.
+    private func makeNSImage(from texture: MTLTexture, maxDimension: CGFloat) -> NSImage? {
+        let width = texture.width
+        let height = texture.height
+        guard width > 0, height > 0, maxDimension > 0 else { return nil }
+
+        // CIImage from MTLTexture: the origin convention is bottom-left, so we
+        // flip vertically to match AppKit's top-left expectations.
+        let options: [CIImageOption: Any] = [
+            .colorSpace: CGColorSpaceCreateDeviceRGB()
+        ]
+        guard let ciImage = CIImage(mtlTexture: texture, options: options) else { return nil }
+        let flipped = ciImage.transformed(by: CGAffineTransform(scaleX: 1, y: -1)
+                                            .translatedBy(x: 0, y: -ciImage.extent.height))
+
+        let extent = CGRect(x: 0, y: 0, width: width, height: height)
+        guard let cgImage = thumbnailCIContext.createCGImage(flipped, from: extent) else { return nil }
+
+        // Aspect-preserving display size; NSImage scales lazily when drawn.
+        let scale = maxDimension / CGFloat(max(width, height))
+        let targetW = max(1, Int(CGFloat(width) * scale))
+        let targetH = max(1, Int(CGFloat(height) * scale))
+        return NSImage(cgImage: cgImage, size: NSSize(width: targetW, height: targetH))
     }
 }

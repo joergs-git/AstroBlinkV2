@@ -163,6 +163,16 @@ class TriageViewModel: ObservableObject {
     // Skip marked images during arrow-key navigation
     @Published var skipMarked: Bool = false
 
+    // Image viewer overlay — big filter letter, time, and 5%-size mini-map
+    // pinned to the top-left of the image viewer. Anchored in viewport space
+    // (zoom/pan do not affect it). Auto-enabled when entering Blind Curation,
+    // restored on exit. Default ON for new installs (see AppSettings.registerDefaults);
+    // persisted via AppSettings + iCloud once the user toggles.
+    @Published var showViewerOverlay: Bool = true
+    // Remembers the user's explicit overlay preference so Blind Curation can
+    // auto-enable it and restore the prior value when the user exits blind mode.
+    private var preBlindViewerOverlay: Bool = false
+
     // Live SNR retention: percentage of total stack SNR retained after removing marked frames.
     // 100% = nothing marked, decreases as frames are marked. Updated on every mark toggle.
     @Published var snrRetention: Double = 100.0
@@ -661,6 +671,7 @@ class TriageViewModel: ObservableObject {
         // Right-side Session Overview panel: user-controlled, persists across sessions & iCloud.
         // First-run default remains false (clean single-column layout until user opens it once).
         if let v = AppSettings.loadBool(for: .showSessionOverviewPanel) { showSessionOverview = v }
+        if let v = AppSettings.loadBool(for: .showViewerOverlay) { showViewerOverlay = v }
 
         // Start lightweight system stats polling (CPU + memory every 2s)
         startStatsPolling()
@@ -5099,6 +5110,11 @@ class TriageViewModel: ObservableObject {
             preBlindInspectorShown = showInspector
             showInspector = false
             pendingColumnVisibility = Set(Self.blindCurationColumnIds)
+            // Force the viewer overlay on for blind curation — the user can't see
+            // column metadata, so they need filter + time + mini-map floating over
+            // the image. Remember the prior state so we can restore on exit.
+            preBlindViewerOverlay = showViewerOverlay
+            showViewerOverlay = true
             isBlindCurationMode = true
             needsTableRefresh = true
             statusMessage = "Blind Curation ON — rate frames with 1/2/3, ⌘⇧B to exit"
@@ -5109,11 +5125,23 @@ class TriageViewModel: ObservableObject {
             pendingColumnVisibility = Set(prior)
             isBlindCurationMode = false
             showInspector = preBlindInspectorShown
+            showViewerOverlay = preBlindViewerOverlay
             preBlindVisibleColumns = nil
             needsTableRefresh = true
             let rated = images.filter { $0.userConfidence > 0 }.count
             statusMessage = "Blind Curation OFF — rated \(rated)/\(images.count) frames"
         }
+    }
+
+    /// Toggle the floating viewer overlay (filter letter / time / mini-map, top-left).
+    /// Independent of Blind Curation — useful at any time for at-a-glance context
+    /// while zoomed in.
+    func toggleViewerOverlay() {
+        showViewerOverlay.toggle()
+        AppSettings.saveBool(showViewerOverlay, for: .showViewerOverlay)
+        statusMessage = showViewerOverlay
+            ? "Image overlay ON — filter / time / mini-map"
+            : "Image overlay OFF"
     }
 
     // MARK: - Lock STF + Apply All

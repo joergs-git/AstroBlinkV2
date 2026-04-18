@@ -14,7 +14,13 @@ Nice side effect: Finally you have a native XISF and FITS Quicklook for macOS. (
 
 ---
 
-## What's New in v5.26.0 (Build 82)
+## What's New in v5.26.1 (Build 83)
+
+- **Floating Image Overlay** — Top-left overlay pinned to the viewer showing the big filter letter, capture time + observing-night date, a 5%-size mini-map of the full image, and your current 1-3 star rating. Stays in viewport space while you zoom and pan. Default on; toggle with ⌘⇧O or View → Show Image Overlay. Auto-on in Blind Curation.
+- **Live Viewport Indicator** — A white dashed rectangle on the mini-map tracks the currently-visible sub-region in real time while you zoom and pan. Hides when the whole image fits the viewer.
+- **Mini-map thumbnail via CoreImage** — Fixes a SIGSEGV in AGX when the display texture uses a GPU-private tile-swizzled layout.
+
+## Previously in v5.26.0 (Build 82)
 
 - **Stage 1.5 Severe-FWHM False-Positive Fix (Algorithm v23)** — Systematic 10-finding code review of the quality pipeline followed by empirical validation against **4540 user-rated frames** from the Frame History DB. The Stage 1.5 session-sanity check's single-flag "severe FWHM" demote path was removed after the data showed it uniquely fired on frames where FWHM was the only issue at ~34% precision (65 false positives per 33 true catches). Net +32 frames correctly classified on the curated set; genuinely bad frames continue to fail multiple metrics and are caught by the 2-flag rule.
 - **Stage 4 Rescue Preserves Session-Sanity Reasons** — When the FWHM-sanity pass lifts a z-score-trash frame back to borderline, the original session-sanity and historical-baseline reasons now carry over. Rescued borderline frames show "REVIEW — <reason>" in the recommendation label and tooltips, giving Autopilot and manual culling clearer context.

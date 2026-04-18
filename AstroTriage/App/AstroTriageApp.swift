@@ -111,6 +111,13 @@ struct AstroBlinkV2App: App {
 
                 Divider()
 
+                Button("Show Image Overlay") {
+                    NotificationCenter.default.post(name: .toggleViewerOverlay, object: nil)
+                }
+                .keyboardShortcut("o", modifiers: [.command, .shift])
+
+                Divider()
+
                 Button("Increase Font Size") {
                     NotificationCenter.default.post(name: .fontScaleIncrease, object: nil)
                 }
@@ -947,6 +954,7 @@ extension Notification.Name {
     static let resetFrameHistory = Notification.Name("resetFrameHistory")
     static let destroyAllData = Notification.Name("destroyAllData")
     static let toggleBlindCuration = Notification.Name("toggleBlindCuration")
+    static let toggleViewerOverlay = Notification.Name("toggleViewerOverlay")
     static let exportCuratedDataset = Notification.Name("exportCuratedDataset")
     static let syncCuratedToSupabase = Notification.Name("syncCuratedToSupabase")
     static let checkAppMessages = Notification.Name("checkAppMessages")

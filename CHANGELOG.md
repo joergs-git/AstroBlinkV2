@@ -4,6 +4,18 @@ All notable changes to AstroBlink & AIsaac will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [5.26.1] — 2026-04-18
+
+### Added
+- **Floating Image Overlay** — Top-left overlay on the image viewer with four pieces stacked vertically: large filter letter (Ha / L / OIII / …), capture time + observing-night date, a 5%-size mini-map of the full image, and the current 1-3 star rating (1★ = outline, 2/3★ = filled; all monochrome white). Anchored in viewport space so it stays pinned during zoom and pan. Default on for new installs (persisted via AppSettings + iCloud); toggle with ⌘⇧O or View → Show Image Overlay. Auto-enabled on entering Blind Curation, restored to prior state on exit.
+- **Live Viewport Indicator** — A thin white dashed rectangle (2pt dashes, 1pt gaps) on the mini-map tracks the currently-visible sub-region of the full image in real time while you zoom and pan the main viewer. Hides automatically when the whole image fits (no cropping). Works with click-drag zoom, ⌥-drag pan, and scroll-wheel pan.
+
+### Fixed
+- **Mini-map thumbnail SIGSEGV on AGX** — The direct `MTLTexture.getBytes` readback path crashed inside `agxsTwiddleAddressCommon` when the display texture used a GPU-private tile-swizzled layout. Thumbnail generation now goes through CoreImage (`CIImage` + `CIContext.createCGImage`) which handles storage-mode translation and detiling internally.
+- **Viewport indicator Y sign / pan lag** — Initial implementation used the wrong sign for Y (indicator showed a position above the actual visible region) and only refreshed on zoom, not on pan or scroll. Both are now corrected: viewport center derives from `renderQuad`'s NDC convention (panOffset.y is negated in NDC, so both X and Y use `0.5 - panOffset/(imgDim·effScale)`), and the pan-drag and scroll-wheel paths now refresh the indicator live.
+
+---
+
 ## [5.26.0] — 2026-04-18
 
 ### Fixed

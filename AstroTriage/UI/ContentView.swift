@@ -1247,6 +1247,9 @@ struct ContentViewModifiers: ViewModifier {
             .onReceive(NotificationCenter.default.publisher(for: .openFolderRequest)) { _ in
                 viewModel.openFolder()
             }
+            .onReceive(NotificationCenter.default.publisher(for: .toggleViewerOverlay)) { _ in
+                viewModel.toggleViewerOverlay()
+            }
             .onReceive(NotificationCenter.default.publisher(for: .openFolderAtPath)) { notification in
                 guard let folderURL = notification.object as? URL else { return }
                 // Show NSOpenPanel pre-navigated to the folder — sandbox requires user selection

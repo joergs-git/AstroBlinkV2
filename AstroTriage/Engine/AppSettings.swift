@@ -62,12 +62,14 @@ struct AppSettings {
         case snoozedMessages      // Data — encoded [String: Date] of snoozed message ID → snooze-until date
         case seenDefaultColumns   // [String] — default-visible column ids seen by user (tracks auto-migration of new columns)
         case showSessionOverviewPanel  // Bool — right-side Session Overview panel visibility (persisted across sessions & iCloud)
+        case showViewerOverlay    // Bool — filter letter / time / mini-map overlay in image viewer (top-left)
     }
 
     // Register defaults for new installs (call once at app launch, before startCloudSync)
     static func registerDefaults() {
         defaults.register(defaults: [
-            Key.communityLearning.rawValue: true   // opt-in by default so new users contribute data
+            Key.communityLearning.rawValue: true,   // opt-in by default so new users contribute data
+            Key.showViewerOverlay.rawValue:  true,  // overlay on by default; user can dismiss via ⌘⇧O
         ])
     }
 
