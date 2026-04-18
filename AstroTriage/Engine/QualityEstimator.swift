@@ -1,10 +1,28 @@
 // v4.3.0
 import Foundation
 
-// Five-tier quality system with sub-tiers for borderline:
-// Stage 1 ("garbage"): absolute outlier → red (any single metric catastrophically bad)
-// Stage 1.5 ("session sanity"): cross-group comparison → demote if far below session norm
-// Stage 2 ("relative"): weighted z-score within group → excellent/good/borderline/poor
+// Five-tier quality system with sub-tiers for borderline.
+//
+// PIPELINE EXECUTION ORDER (note: numbering is historical, not strictly sequential):
+//   1. Pre-processing: solar-system exclusion, group formation (combined + per-night)
+//   2. Per-group loop iterates combined groups first, then per-night groups (overrides):
+//      a. Dark-frame pre-pass (nulls hot-pixel frames from group statistics)
+//      b. Stage 1 "garbage"   — absolute outliers (noData, noStars, trailing, etc.)
+//      c. Absolute quality floor (isLockedKeep from CalibrationDatabase)
+//      d. Stage 2 "relative"  — weighted z-score → excellent/good/borderline/trash
+//      e. Stage 3 "rescue"    — promotion rules (never demotion) for borderline/trash
+//      f. Community floor     — cold-start rescue to .good when local calibration absent
+//      g. Uncertain override  — small group + ambiguous z-score → .uncertain
+//   3. Session-wide post-passes (after all groups scored):
+//      a. Stage 1.5  "session sanity"      — cross-group demote to trash
+//      b. Stage 1.5b "historical baseline" — demote vs learned per-setup baselines
+//      c. Low-confidence-scoring flag      — single-night + no history
+//      d. Stage 4    "FWHM sanity rescue"  — lift z-score trash to borderline when
+//                                            FWHM is within the good-frame P90
+//      e. Historical annotation            — attach historical z-score to each breakdown
+//
+// Side-lane overrides: isLockedKeep (≥30 learned frames), isCommunityFloorLocked
+// (community baseline), lowConfidenceScoring (no historical reference).
 enum QualityTier: Int {
     case trash      = 0   // Red X: catastrophic garbage (Stage 1) or statistically worst
     case borderline = 1   // Orange: on the edge — worth visual inspection before keeping
@@ -202,9 +220,7 @@ struct QualityEstimator {
     // Genuinely bad frames are already caught by Stage 1 garbage detection.
     static let zscoreCap: Double = 3.0
 
-    // Stage 1: absolute garbage detection thresholds (percentile of group)
-    // If a metric is below this percentile of the group, it's garbage regardless of other metrics
-    static let garbagePercentile: Double = 0.10  // Bottom 10% is suspicious
+    // Stage 1: absolute garbage detection threshold (relative to group median).
     static let garbageDropFactor: Double = 0.50  // Value < 50% of group median → definite garbage
 
     // Broadband filters where star count is a reliable quality indicator.
@@ -296,6 +312,17 @@ struct QualityEstimator {
         // This ensures frames in small per-night groups (e.g. 3 B frames from one night)
         // still get scored via the combined group, while large per-night groups get
         // more accurate per-night scoring.
+        //
+        // INTENTIONAL: The per-night pass overwrites the combined-pass breakdown
+        // wholesale, including any Stage 1 garbage flags that were set from combined
+        // medians but would NOT fire against the per-night medians. Empirical
+        // validation on the 4540-frame curated dataset (2026-04-18) confirmed the
+        // overwrite is net-correct: 49 affected frames split into 15 human-garbage
+        // (where we'd correctly preserve the flag) vs 19 human-keep (where we'd
+        // incorrectly keep the flag), net −4. Per-night normalization handles
+        // legitimately-dim-but-OK nights better than merging. Absolute rules
+        // (Rule 0/0b no-data, Rule 1a <10 stars, Rule 10 twilight) fire
+        // deterministically in both passes — overwrite is irrelevant for those.
         let uniqueNights = Set(entries.compactMap { $0.observingNight })
         let useNight = uniqueNights.count > 1
 
@@ -625,6 +652,13 @@ struct QualityEstimator {
                         // (c) P90 floor — catches clouded frames in bimodal groups where
                         // CV > 1.0 disabled starWeight. If P90 is 5000 and frame has 500,
                         // that's 10% of the best frames → clearly clouded.
+                        //
+                        // Index note: Int(count * 0.9) collapses to the last element
+                        // (i.e. max) for counts 5..10. The bound is thus effectively
+                        // "15% of the group max" at small n. Empirical check on the
+                        // 4540-frame curated set (2026-04-18) showed switching to an
+                        // interpolated percentile changed only 3 classifications, 2 of
+                        // which were correct catches that would be lost. Kept as-is.
                         let sortedStars = cleanStarsValues.compactMap { $0 }.sorted()
                         if sortedStars.count >= 5 {
                             let p90 = sortedStars[Int(Double(sortedStars.count) * 0.9)]
@@ -746,6 +780,13 @@ struct QualityEstimator {
                 // the frame has atmospheric issues regardless of FWHM.
                 // Cross-check: FWHM must be normal (< median×1.3) to confirm it's NOT defocus.
                 // Requires ≥8 frames for reliable median.
+                //
+                // The `starWeight > 0` guard disables this rule when the CV check
+                // (line ~496) marked star counts as bimodal (galaxy/nebula groups).
+                // Empirical check on the 4540-frame curated dataset (2026-04-18):
+                // only 4 bimodal groups exist, and Rule 7b would fire on 0 additional
+                // frames if the guard were removed. Guard kept as a safety net against
+                // false positives on genuinely variable-detection groups.
                 if starWeight > 0, let stars = starsValues[localIdx], let median = starsMedian,
                    indices.count >= 8, median > 20 {
                     let starRatio = stars / median
@@ -766,6 +807,16 @@ struct QualityEstimator {
                 // Rule 8: Background anomaly — clouds, light pollution gradient, or fog
                 // Moon-aware: bright moon near target raises legitimate background for broadband.
                 // Narrowband is mostly immune to moonlight — don't relax threshold.
+                //
+                // UNITS: bgMAD comes from medianAbsoluteDeviation() which returns RAW
+                // MAD (no 1.4826 σ-normalization — that's only applied in zscores()).
+                // 5 raw MADs ≈ 7.4σ for normal distributions. Background levels are
+                // non-normal (cloud tails skew them), so σ intuition doesn't fully
+                // apply; threshold empirically calibrated. Empirical check on the
+                // 4540-frame curated set (2026-04-18): lowering to 3.3 raw MADs
+                // (≈5σ) added 26 human-garbage catches but 18/26 were already flagged
+                // by other Stage 1 rules, and precision dropped from 54% to 34%.
+                // Current 5.0 floor retained.
                 if let bg = bgValues[localIdx],
                    let median = bgMedian, let mad = bgMAD, mad > 0 {
                     var bgThreshold = max(5.0, 5.0 + (20.0 - Double(min(groupEntries.count, 20))) * 0.15)
@@ -923,7 +974,25 @@ struct QualityEstimator {
                     wSum += trailW
                 }
 
-                guard wSum > 0 else { continue }
+                // Frame has no comparable metric z-scores (all nil). This happens when the
+                // frame is the only one in its group with any measured metric — zscores()
+                // requires ≥2 values to produce anything non-nil. Instead of silently
+                // dropping the frame from the result dict (which hides it from UI/downstream
+                // stages), surface it as .uncertain with explicit "isolated" reasoning.
+                guard wSum > 0 else {
+                    result[entry.url] = QualityBreakdown(
+                        tier: .uncertain,
+                        combinedZScore: 0,
+                        starsZ: nil, fwhmZ: nil, hfrZ: nil,
+                        noiseZ: nil, trailingZ: nil, psfFluxZ: nil,
+                        snrContribution: nil, snrSquared: snrSq,
+                        garbageReasons: [],
+                        isLockedKeep: false,
+                        reasoningText: "No comparable frames in group — metrics unmeasured or isolated",
+                        filterTrailingMultiplier: effectiveTrailMult
+                    )
+                    continue
+                }
 
                 let combinedZ = zSum / wSum
 
@@ -959,8 +1028,10 @@ struct QualityEstimator {
                         && starsValues[localIdx]! < starsMedian! * 0.75
                     let trailingOK = (entry.trailingScore ?? 0) < (0.3 / effectiveTrailMult)
 
-                    // Rule A: Good FWHM + acceptable noise → frame is fundamentally sound
-                    if fwhmOK && noiseOK && trailingOK {
+                    // Rule A: Good FWHM + acceptable noise + normal star count → fundamentally sound.
+                    // The !starsLow guard lets Rule B own the "star dip" narrative below
+                    // (same .good tier, more accurate reasoning label for tooltips/telemetry).
+                    if fwhmOK && noiseOK && trailingOK && !starsLow {
                         tier = .good
                         rescueReason = "FWHM and noise within group norm"
                     }
@@ -1023,6 +1094,14 @@ struct QualityEstimator {
                     tier = .uncertain
                 }
 
+                // `reasoning` was built with the pre-uncertain tier and may reference a
+                // rescue that no longer applies (e.g. a borderline-→good rescue narrative
+                // for a frame now downgraded to uncertain). Override in that narrow case
+                // so the tooltip text matches the final tier.
+                let finalReasoning: String? = (tier == .uncertain)
+                    ? "Small group — low confidence"
+                    : reasoning
+
                 var breakdown = QualityBreakdown(
                     tier: tier,
                     combinedZScore: combinedZ,
@@ -1036,7 +1115,7 @@ struct QualityEstimator {
                     snrSquared: snrSq,
                     garbageReasons: [],
                     isLockedKeep: lockedKeep,
-                    reasoningText: reasoning,
+                    reasoningText: finalReasoning,
                     filterTrailingMultiplier: effectiveTrailMult
                 )
                 breakdown.isCommunityFloorLocked = communityLocked
@@ -1080,12 +1159,21 @@ struct QualityEstimator {
         }
 
         // ── Stage 4: FWHM sanity check for z-score trash ──
-        // Z-score trash frames (not Stage 1 garbage) may have FWHM comparable to
-        // GOOD frames. This happens when a peak-quality block in the session pulls
-        // the median down, making "normal" frames look worse than they are.
-        // If a z-score-trash frame's FWHM falls within the range of GOOD frames,
-        // its seeing was comparable — rescue to borderline.
-        // Dawn/cloud frames are unaffected (they have Stage 1 garbage reasons).
+        // Lifts z-score-trash frames back to .borderline when their FWHM is within
+        // the good-frame 90th percentile of the group — i.e. their "trash" label was
+        // driven by an exceptional peak-quality block pulling down the median, not by
+        // actual seeing degradation. Dawn/cloud frames have Stage 1 garbageReasons and
+        // are NOT matched here (the `where` clause excludes them).
+        //
+        // Session-sanity-demoted (Stage 1.5) and historical-baseline-demoted (Stage 1.5b)
+        // frames ALSO have empty garbageReasons — their reasons live in
+        // sessionSanityReasons / historicalBaselineReasons. They WILL match the `.trash
+        // where bd.garbageReasons.isEmpty` case and be promoted to borderline. Empirical
+        // validation on the curated dataset (2026-04-18) showed this is net helpful
+        // (87 human-keep vs 65 human-garbage among 220 candidates). The previous
+        // implementation lost the reason strings when rebuilding the breakdown; the
+        // `var demoted = oldBD` + mutate pattern below preserves them so the UI shows
+        // "REVIEW — [session sanity reason]" via QualityBreakdown.recommendationLabel.
         for (_, indices) in groupsList {
             guard indices.count >= minGroupSize else { continue }
 
@@ -1125,7 +1213,16 @@ struct QualityEstimator {
                 guard fwhm <= goodFWHM90th else { continue }
                 guard let oldBD = result[url] else { continue }
 
-                result[url] = QualityBreakdown(
+                // Preserve sessionSanityReasons / historicalBaselineReasons so the
+                // recommendationLabel still shows "REVIEW — <reason>" (see
+                // QualityBreakdown.recommendationLabel, lines 110-112).
+                let hasSanityReason = !oldBD.sessionSanityReasons.isEmpty
+                    || !oldBD.historicalBaselineReasons.isEmpty
+                let rescueText: String? = hasSanityReason
+                    ? nil   // Keep the sanity reasons visible via recommendationLabel
+                    : "FWHM comparable to good frames — penalized by session peak quality, not actual degradation"
+
+                var demoted = QualityBreakdown(
                     tier: .borderline,
                     combinedZScore: oldBD.combinedZScore,
                     starsZ: oldBD.starsZ,
@@ -1138,9 +1235,16 @@ struct QualityEstimator {
                     snrSquared: oldBD.snrSquared,
                     garbageReasons: [],
                     isLockedKeep: oldBD.isLockedKeep,
-                    reasoningText: "FWHM comparable to good frames — penalized by session peak quality, not actual degradation",
+                    reasoningText: rescueText,
                     filterTrailingMultiplier: oldBD.filterTrailingMultiplier
                 )
+                demoted.isCommunityFloorLocked = oldBD.isCommunityFloorLocked
+                demoted.sessionSanityReasons = oldBD.sessionSanityReasons
+                demoted.historicalZScore = oldBD.historicalZScore
+                demoted.historicalPercentile = oldBD.historicalPercentile
+                demoted.historicalBaselineReasons = oldBD.historicalBaselineReasons
+                demoted.lowConfidenceScoring = oldBD.lowConfidenceScoring
+                result[url] = demoted
             }
         }
 
@@ -1635,6 +1739,11 @@ struct QualityEstimator {
             // from uniformly-bad nights. The best 10% defines what "good" looks like.
             // FWHM/Ecc/Trailing: lower is better → use 10th percentile (P10)
             // SNR/Stars: higher is better → use 90th percentile (P90)
+            // Index note: fwhms.count / 10 collapses to 0 (minimum) for count < 10
+            // and to floor-n/10 elsewhere. Strictly a "best sample" estimate at small
+            // counts, not mathematical P10. Empirical check on the 4540-frame curated
+            // set (2026-04-18) showed switching to interpolated P10 produced tiny
+            // deltas (median 0.02px FWHM) with no clear accuracy gain. Kept as-is.
             let fwhmP10 = fwhms[max(0, fwhms.count / 10)]                         // Best 10% FWHM
             let snrP90 = snrs.isEmpty ? 0 : snrs[min(snrs.count - 1, snrs.count * 9 / 10)]  // Best 10% SNR
             let starsP90 = stars.isEmpty ? 0 : stars[min(stars.count - 1, stars.count * 9 / 10)]
@@ -1658,8 +1767,6 @@ struct QualityEstimator {
                     return 1.3   // Standard: galaxies, clusters, unknown
                 }
             }()
-            let severeFwhmMultiplier = fwhmSanityMultiplier + 0.1  // Severe = slightly above normal threshold
-
             // Check each frame against session-wide best-decile benchmarks
             // Tighter than median: P10 for FWHM/Ecc (lower=better), P90 for SNR/Stars (higher=better)
             for i in indices {
@@ -1713,20 +1820,19 @@ struct QualityEstimator {
                     }
                 }
 
-                // Severe single-metric outlier: FWHM so far above session P10 that
-                // it's unambiguous garbage even without a second flag.
-                // This catches L-filter frames where SNR is acceptable (L captures
-                // more photons than RGB) but seeing is catastrophically worse.
-                // Same arcsec/pixel unit convention as the normal FWHM check above.
-                var isSevereOutlier = false
-                if let fwhm = frameFWHMForPool, fwhmP10 > 0 {
-                    if fwhm > fwhmP10 * severeFwhmMultiplier { isSevereOutlier = true }
-                }
-
-                guard flags.count >= 2 || (flags.count >= 1 && isSevereOutlier) else { continue }
+                // Demote criterion: require 2+ independent flags.
+                //
+                // Earlier versions also fired on a single flag when FWHM exceeded
+                // fwhmSanityMultiplier + 0.1 (the "severe single-FWHM-outlier" path).
+                // Empirical validation on a 4540-frame curated dataset (2026-04-18)
+                // showed that path uniquely triggered on frames where FWHM was the
+                // ONLY flag; precision on those was ~34% and removing it netted +32
+                // correctly-classified frames (33 TP lost / 65 FP avoided). Frames
+                // with catastrophic seeing that are genuinely bad almost always fail
+                // another metric too, so the 2-flag rule catches them anyway.
+                guard flags.count >= 2 else { continue }
 
                 // 2+ session sanity flags = unambiguous garbage.
-                // Also: a single extreme outlier (>1.6× P10) is trash by itself.
                 let newTier: QualityTier = .trash
 
                 // Only demote (never promote)
@@ -1854,7 +1960,11 @@ struct QualityEstimator {
         return present[present.count / 2]
     }
 
-    /// Compute MAD (median absolute deviation) from a median
+    /// Compute MAD (median absolute deviation) from a median.
+    /// Returns RAW MAD — NOT multiplied by 1.4826 for σ-equivalence.
+    /// zscores() normalizes separately; callers of this function that want a σ
+    /// estimate must multiply themselves. Rule 8 (background anomaly) deliberately
+    /// compares against raw MADs.
     private static func medianAbsoluteDeviation(_ values: [Double?], median: Double?) -> Double? {
         guard let med = median else { return nil }
         let deviations = values.compactMap { $0 }.map { Swift.abs($0 - med) }.sorted()

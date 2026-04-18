@@ -4,6 +4,25 @@ All notable changes to AstroBlink & AIsaac will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [5.26.0] — 2026-04-18
+
+### Fixed
+- **Stage 1.5 Severe-FWHM False Positives (Algorithm v23)** — The Stage 1.5 session-sanity check's single-flag "severe FWHM" demote path has been removed after empirical validation against 4540 user-rated frames from the Frame History DB. That path uniquely fired on frames where FWHM was the only flag at ~34% precision — 65 false positives for every 33 true catches. Genuinely bad frames still fail multiple metrics simultaneously and are caught by the 2-flag rule. Net impact: +32 frames correctly classified on the curated set; the biggest wins expected on broadband sessions with moderate-seeing nights that previously got over-aggressively demoted.
+- **Stage 4 FWHM-Rescue Preserves Session-Sanity Reasons** — When a frame demoted by Stage 1.5 or Stage 1.5b (historical baseline) has FWHM within the good-frame 90th percentile and gets rescued back to borderline, the original `sessionSanityReasons` and `historicalBaselineReasons` now carry through to the new breakdown. The recommendation label renders "REVIEW — <reason>" so the user still sees why the frame was originally flagged. Previously the reasons were silently dropped during the rescue's breakdown reconstruction.
+- **Uncertain Tier Reasoning Coherence** — When the small-group uncertain override flips a rescued frame from `.good`/`.borderline` to `.uncertain`, the tooltip now reads "Small group — low confidence" instead of the stale rescue narrative ("FWHM and noise within group norm" etc.). Cosmetic but noticeable in tooltips and Autopilot decisions.
+- **Isolated-Frame Silent Drop** — A frame that passed the measurement guard but couldn't produce any z-score (e.g. the only measured frame in a 6-frame group — `zscores()` needs ≥2 values) was silently dropped from the scoring result. No quality icon, no tooltip, no downstream stage saw it. Now produces an uncertain breakdown with explicit "No comparable frames in group — metrics unmeasured or isolated" reasoning.
+
+### Changed
+- **Stage 3 Rescue Rule Discrimination** — Rescue Rule A (`fwhmOK && noiseOK && trailingOK` → good) now additionally requires the star count to be within normal range, so Rule B (star-dip rescue) can own the "Star count dip with normal FWHM — likely transient event" narrative. Tier outcome is identical (both rules → `.good`); reasoning text is now more accurate for the ~63 frames per curated session where stars dropped but other metrics stayed fine.
+- **Algorithm Version Documentation** — Added inline code comments documenting empirically-validated intentional behavior at four sites: per-night overwrite of combined-pass breakdowns, P90/P10 small-array index convention in Rule 1c and Stage 1.5, Rule 7b `starWeight > 0` guard, and Rule 8's raw-MAD threshold. These are changes that a static review might want to "fix" but empirical data shows they are net-correct — the comments prevent future reviewers from re-deriving the evidence.
+- **QualityEstimator Header Comment** — Top-of-file pipeline description now lists the full execution order (stages 1, 1.5, 1.5b, 2, 3, 4 + side-lanes) instead of only stages 1, 1.5, 2.
+
+### Added
+- **Quality Pipeline Review Document** — `wiki/quality-pipeline-review-2026-04-18.md` captures the full 10-finding code review, empirical validation methodology (4540-frame confusion matrix: 22.1% FP rate + 19.1% FN rate at v22 entry), per-finding decision rationale, and a 5-step re-review checklist for future reviewers. Includes documentation of three findings explicitly rejected as empirically net-negative (per-night overwrite, P90 small-array indexing, Rule 7b bimodal guard) with the numbers that justify keeping current behavior.
+- **4 Regression Tests** — New tests in `QualityEstimatorTests.swift` guarding the v23 changes: single-FWHM-flag-does-not-demote, Stage-4-preserves-sanity-reasons, uncertain-reasoning-coherence, wSum==0-produces-uncertain-not-silent-drop.
+
+---
+
 ## [5.25.2] — 2026-04-17
 
 ### Fixed

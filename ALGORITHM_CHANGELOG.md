@@ -12,6 +12,111 @@ Records with `algorithmVersion < kAlgorithmVersion` are candidates for re-analys
 
 ---
 
+## Version 23 — v5.26.0 (2026-04-18)
+
+**Curation-driven scoring pipeline tune-up: remove lossy Stage 1.5 severe path,
+preserve session-sanity reasons through Stage 4 rescue, plus targeted bug fixes.**
+
+Driven by a systematic code review (`stagingcheckundpruefanweisungsdatei.md`,
+10 findings) followed by empirical validation against 4540 user-rated frames
+from the Frame History DB. Confusion matrix at entry: 566 false positives
+(algo=trash, user=keep), 169 false negatives (algo=good/excellent, user=garbage).
+
+### Changes
+
+1. **Stage 1.5 severe single-FWHM-outlier path REMOVED** — `QualityEstimator.swift`:
+   Previously, a frame with only the "FWHM far above session norm" flag could be
+   demoted to trash if `fwhm > fwhmP10 * severeFwhmMultiplier` (sanity multiplier
+   + 0.1, e.g. 1.4× P10 for galaxies). Curation data showed this path fires
+   exclusively on frames where FWHM is the sole flag, at ~34% precision (65 FPs
+   for every 33 TPs). The 2-flag demote rule catches the same genuinely-bad
+   frames via co-occurring SNR/star/ecc/trail flags. Net +32 frames correctly
+   classified. Deleted the `severeFwhmMultiplier` local constant and the
+   `isSevereOutlier` guard.
+
+2. **Stage 4 FWHM-sanity rescue preserves sanity/historical reasons** —
+   `QualityEstimator.swift`:
+   When Stage 4 lifts a z-score-trash frame to `.borderline` because its FWHM is
+   within the good-frame 90th percentile, the new breakdown now carries over
+   `sessionSanityReasons`, `historicalBaselineReasons`, `historicalZScore`,
+   `historicalPercentile`, `isCommunityFloorLocked`, and `lowConfidenceScoring`
+   from the pre-rescue breakdown. The previous positional init silently
+   discarded these fields. The `recommendationLabel` computed property
+   (lines 110-112) renders "REVIEW — <reason>" when sanity reasons are present,
+   so rescued borderline frames now surface the original sanity signal in the
+   UI and tooltips.
+
+3. **Stage 3 rescue Rule A requires `!starsLow`** — `QualityEstimator.swift`:
+   Rule A (fwhmOK + noiseOK + trailingOK → rescue to .good) previously ignored
+   the star count, which meant Rule B ("star count dip with normal FWHM —
+   likely transient event") was unreachable whenever Rule A fired. Tier
+   assignment is unchanged (both rules promote to `.good`); the fix routes the
+   rescue through Rule B when the dominant signal is a star-count dip, so the
+   reasoningText + telemetry label accurately reflect the cause.
+
+4. **Uncertain-override reasoning coherence** — `QualityEstimator.swift`:
+   When the small-group uncertain override flips `tier` from `.good` /
+   `.borderline` to `.uncertain`, the breakdown now uses "Small group —
+   low confidence" instead of the stale rescue-era reasoning. Fixes tooltips
+   like "FWHM and noise within group norm" appearing on uncertain-tier frames.
+
+5. **wSum == 0 no longer silently drops frames** — `QualityEstimator.swift`:
+   A frame that passes the measurement guard at line 539 but can't compute
+   any z-score (e.g. the only measured frame in a 6-frame group — `zscores()`
+   needs ≥2 values) previously hit `guard wSum > 0 else { continue }` and
+   vanished from the result dict, leaving no quality icon in the UI. Now
+   produces a `.uncertain` breakdown with "No comparable frames in group —
+   metrics unmeasured or isolated" reasoning.
+
+6. **Dead `garbagePercentile` constant deleted** — `QualityEstimator.swift`:
+   Static property declared but never read across the codebase (grep confirmed
+   zero call sites). Removed to reduce surface area.
+
+7. **Comments documenting empirically-validated intentional behavior** —
+   `QualityEstimator.swift`:
+   - Header comment now lists the full pipeline execution order (stages 1,
+     1.5, 1.5b, 2, 3, 4 plus side-lanes). Previous header mentioned only
+     stages 1, 1.5, 2.
+   - Per-night overwrite of combined-pass breakdown: documented as
+     net-correct (49 affected frames, net −4 if "fixed").
+   - Rule 1c P90 small-array index collapse: documented as empirically kept.
+   - Stage 1.5 fwhmP10 index: same note.
+   - Rule 7b `starWeight > 0` guard: documented as empirically harmless.
+   - Rule 8 raw-MAD units: documented (5 raw MADs ≈ 7.4σ-equivalent, kept).
+   - `medianAbsoluteDeviation()` doc-comment now calls out the raw-MAD
+     convention to prevent future confusion vs `zscores()`' σ-normalization.
+
+### Impact
+
+- **Fixed:** Stage 1.5 no longer loses ~65 human-keep frames to single-FWHM-flag
+  demotes (empirical net +32 frames reclassified correctly)
+- **Fixed:** Rescued borderline frames now surface their sanity reasons in
+  tooltips and recommendationLabel (critical for Autopilot decisions)
+- **Fixed:** Four edge-case bugs (Rule A/B discrimination, stale uncertain
+  reasoning, silent wSum==0 drop, dead constant)
+- **Unchanged:** Confirmed-intentional behaviors (per-night overwrite,
+  percentile indexing, Rule 7b guard, Rule 8 raw-MAD threshold) — documented
+  in-code so future reviews can skip re-validating them
+
+### Validation
+
+Empirical analysis was performed against 4540 user-rated frames in the Frame
+History DB spanning 5 algorithm versions, multiple telescopes (RC12, RASA, WO
+refractors), cameras (ASI6200MM, ASI2600MC), focal lengths (140mm–2423mm),
+filters (L/R/G/B/Ha/OIII/SII). Full analysis is preserved in
+`wiki/quality-pipeline-review-2026-04-18.md` — including confusion matrix,
+per-finding methodology, data inputs/outputs, and decision rationale for
+every finding (implemented, deferred, and rejected).
+
+### Files Changed
+
+- `AstroTriage/Engine/QualityEstimator.swift` — all scoring/rescue changes + comments
+- `AstroTriage/Model/FrameRecord.swift` — `kAlgorithmVersion` 22 → 23
+- `Tests/QualityEstimatorTests.swift` — 4 regression tests added
+- `wiki/quality-pipeline-review-2026-04-18.md` — full analysis document
+
+---
+
 ## Version 22 — v5.25.2 (2026-04-17)
 
 **Mixed-sensor GroupKey: prevent cross-camera z-score contamination.**

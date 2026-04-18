@@ -28,7 +28,9 @@ Absolute thresholds catch catastrophic failures immediately. Any single metric f
 
 ### Stage 1.5 — Session-Wide Sanity Check
 
-Cross-group comparison using P10/P90 benchmarks. Pools frames by object+exposure (ignoring filter/night) and compares each frame against the session's best decile. If 2+ metrics are dramatically worse than the best 10%, the frame is demoted to trash. A severe single-metric outlier (e.g. FWHM >1.4x P10) plus one more flag also triggers demotion. Requires at least 2 distinct observing nights and ≥6 frames in the pool to activate. FWHM threshold is target-type-aware (emission nebulae get 1.6x multiplier, IFN gets 1.8x, default 1.3x).
+Cross-group comparison using P10/P90 benchmarks. Pools frames by object+exposure (ignoring filter/night) and compares each frame against the session's best decile. If 2+ metrics are dramatically worse than the best 10%, the frame is demoted to trash. Requires at least 2 distinct observing nights and ≥6 frames in the pool to activate. FWHM threshold is target-type-aware (emission nebulae get 1.6x multiplier, IFN gets 1.8x, default 1.3x).
+
+**v23 (2026-04-18)**: The single-flag "severe FWHM outlier" demote path (previously allowed a lone FWHM flag at > sanityMultiplier + 0.1× P10 to trash a frame) was removed after empirical validation against 4540 user-rated frames. It uniquely fired on frames where FWHM was the only flag at ~34% precision — 65 false positives per 33 true catches. The 2-flag rule still catches genuinely bad frames because real catastrophic seeing almost always also fails SNR/stars/eccentricity/trailing. See [Quality Pipeline Review 2026-04-18](quality-pipeline-review-2026-04-18) for the full analysis.
 
 ### Stage 2 — Relative Z-Score Ranking
 
@@ -65,13 +67,13 @@ Pre-pass identifies dark/dome/cap frames before group statistics. Three cross-ch
 
 Pattern-based rules rescue frames that z-scores unfairly penalize:
 
-- **Rule A:** Good FWHM + acceptable noise → rescued to Good (even if star count dipped)
-- **Rule B:** Star count dip + sharp stars → recognized as transient event (clouds, dew), not quality issue
+- **Rule A:** Good FWHM + acceptable noise + normal star count → rescued to Good (v23 added the star-count guard so Rule B can own the "star dip" narrative)
+- **Rule B:** Star count dip + sharp stars + normal trailing → recognized as transient event (clouds, dew), not quality issue
 - **Rule C:** FWHM-only penalty → promoted to Borderline with lower SSWEIGHT (softer seeing still adds signal)
 
-### Stage 4 — Sanity Check
+### Stage 4 — FWHM Sanity Rescue
 
-Z-score trash with FWHM actually in the Good range → promoted to Borderline. Catches the rare case where overall z-score dips below threshold but stars are perfectly sharp.
+Z-score trash with FWHM actually in the Good range → promoted to Borderline. Catches the rare case where overall z-score dips below threshold but stars are perfectly sharp. **v23 (2026-04-18)**: when the rescued frame originally carried a Stage 1.5 session-sanity reason or a Stage 1.5b historical-baseline reason, the reason is now preserved on the promoted breakdown and surfaces as "REVIEW — &lt;reason&gt;" in the recommendation label. Previously these reasons were silently dropped when the rescue rebuilt the breakdown.
 
 ## Adaptive Thresholds
 

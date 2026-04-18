@@ -14,12 +14,20 @@ Nice side effect: Finally you have a native XISF and FITS Quicklook for macOS. (
 
 ---
 
-## What's New in v5.25.2 (Build 80)
+## What's New in v5.26.0 (Build 82)
 
-- **Mixed-Sensor Scoring Fix (Algorithm v22)** — Sessions with multiple cameras (e.g. ASI6200MM full-frame + ASI2600MC APS-C on the same telescope) now correctly separate quality scoring by sensor resolution. Previously, the smaller sensor's frames were unfairly compared against the larger sensor's star counts, producing false trash marks. Each camera is now scored against its own peers.
-- **Mixed-Dimension Warning** — Detects when a session contains images with different resolutions and shows an informative alert listing each sensor group with camera names and frame counts.
-- **Auto-Rotate Dimension Guard** — Meridian flip rotation is skipped for frames with different sensor dimensions than the reference, preventing meaningless 180° flips across cameras.
-- **1-Star Garbage UX** — 1-star rating displays as outline star (☆) to visually distinguish garbage. Pressing 1 auto-marks for pre-delete, saving the extra Space press.
+- **Stage 1.5 Severe-FWHM False-Positive Fix (Algorithm v23)** — Systematic 10-finding code review of the quality pipeline followed by empirical validation against **4540 user-rated frames** from the Frame History DB. The Stage 1.5 session-sanity check's single-flag "severe FWHM" demote path was removed after the data showed it uniquely fired on frames where FWHM was the only issue at ~34% precision (65 false positives per 33 true catches). Net +32 frames correctly classified on the curated set; genuinely bad frames continue to fail multiple metrics and are caught by the 2-flag rule.
+- **Stage 4 Rescue Preserves Session-Sanity Reasons** — When the FWHM-sanity pass lifts a z-score-trash frame back to borderline, the original session-sanity and historical-baseline reasons now carry over. Rescued borderline frames show "REVIEW — <reason>" in the recommendation label and tooltips, giving Autopilot and manual culling clearer context.
+- **Uncertain-Tier Reasoning Coherence** — Frames flipped to the uncertain tier after a rescue now display "Small group — low confidence" instead of stale rescue narrative.
+- **No More Silent Frame Drops** — A frame that couldn't produce any z-score (e.g. the only measured frame in its group) previously vanished silently from the result. Now surfaces as an uncertain breakdown with explicit "No comparable frames in group" reasoning.
+- **Full Analysis Document** — `wiki/quality-pipeline-review-2026-04-18.md` captures the methodology, confusion matrix (566 FP / 169 FN at entry), per-finding empirical numbers, and decision rationale — including three findings explicitly rejected as empirically net-negative. Re-review-ready for future contributors.
+
+## Previously in v5.25.2 (Build 80)
+
+- **Mixed-Sensor Scoring Fix (Algorithm v22)** — Sessions with multiple cameras (e.g. ASI6200MM full-frame + ASI2600MC APS-C on the same telescope) now correctly separate quality scoring by sensor resolution.
+- **Mixed-Dimension Warning** — Detects sessions with different resolutions and shows an informative alert per sensor group.
+- **Auto-Rotate Dimension Guard** — Meridian flip rotation skipped for frames with different sensor dimensions than the reference.
+- **1-Star Garbage UX** — 1-star rating displays as outline star (☆); pressing 1 auto-marks for pre-delete.
 
 ---
 

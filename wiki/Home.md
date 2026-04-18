@@ -15,6 +15,7 @@ AIsaac is your built-in AI astrophotography assistant, named after **Isaac Newto
 - **[Getting Started](Getting-Started)** — First-time setup and workflow
 - **[Target Catalog](Target-Catalog)** — Browse 533+ deep-sky objects, visibility charts, weather, FOV simulation, filter gap analysis
 - **[SmartCull Algorithm](SmartCull-Algorithm)** — The 5-stage quality scoring pipeline explained
+- **[Quality Pipeline Review 2026-04-18](quality-pipeline-review-2026-04-18)** — Algorithm v23 curation-driven tune-up, methodology, and per-finding decisions
 - **[VLM Check](VLM-Check)** — AI visual anomaly detection: ice crystals, dew, clouds, obstructions
 - **[AIsaac Guide](AIsaac-Guide)** — How to use the AI assistant, all presets, voice, Opus upgrade
 - **[Keyboard Shortcuts](Keyboard-Shortcuts)** — Complete keyboard reference

@@ -544,10 +544,14 @@ struct AIsaacContextBuilder {
         - Stage 1.5 — Session-Wide Sanity Check (cross-group comparison):
           * After within-group scoring, each frame is compared against session-wide P10/P90 benchmarks \
           (best-decile / worst-decile across ALL groups in the session).
-          * If 2+ metrics (FWHM, SNR, stars, eccentricity) are dramatically worse than the session's \
+          * If 2+ metrics (FWHM, SNR, stars, eccentricity, trailing) are dramatically worse than the session's \
           best-decile values, the frame is demoted to trash regardless of within-group z-score.
           * This catches frames that look "OK" within a weak group but are objectively terrible compared \
           to the rest of the session (e.g., a cloudy group where ALL frames are bad).
+          * v23 (2026-04-18): the single-flag "severe FWHM outlier" demote path was removed after \
+          empirical validation against 4540 user-rated frames — it had ~34% precision (65 FPs for every \
+          33 TPs) and only fired on frames where FWHM was the sole flag. Genuinely bad frames fail \
+          multiple metrics simultaneously and are caught by the 2-flag rule.
         - MINIMUM GROUP SIZE: Groups with < 6 frames get NO quality score — too few for statistics. \
         These frames are NOT bad — just in a group too small to compare. \
         Groups with 6-7 frames that have ambiguous quality may receive the "uncertain" tier (blue "?" icon) \
@@ -574,7 +578,11 @@ struct AIsaacContextBuilder {
           * Tiers: Excellent (z > 0.5), Good (z > -0.5), Borderline (z > -2.0), Trash (z ≤ -2.0)
         - Stage 3 — Rescue Rules (only promote, never demote):
           * A: FWHM + noise OK → Good. B: Star dip + sharp → Good. C: FWHM-only → Borderline.
-        - Stage 4 — Sanity Check: z-score trash with FWHM in Good range → Borderline
+        - Stage 4 — FWHM Sanity Rescue: lifts z-score-trash frames back to Borderline when their FWHM \
+        is within the 90th percentile of the group's Good/Excellent frames. v23 (2026-04-18): session-sanity \
+        and historical-baseline reasons are now preserved on rescued breakdowns — rescued-borderline frames \
+        surface "REVIEW — <reason>" in the recommendation label so the user still sees why the frame was \
+        initially flagged. This helps Autopilot and manual culling decisions.
 
         METRICS EXPLAINED:
         MEASUREMENT LIMITATIONS (v5.25.0, algorithm v21):
