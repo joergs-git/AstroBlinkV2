@@ -119,7 +119,8 @@ class PrefetchCache {
         postProcessParams: (sharpening: Float, contrast: Float, darkLevel: Float)? = nil,
         onNoiseStats: ((URL, STFCalculator.NoiseStats) -> Void)? = nil,
         onStarMetrics: ((URL, StarMetrics) -> Void)? = nil,
-        onFileHash: ((URL, String) -> Void)? = nil
+        onFileHash: ((URL, String) -> Void)? = nil,
+        onOrientationFingerprint: ((URL, [UInt8]) -> Void)? = nil
     ) {
         // Cancel any previous priority operations — new navigation supersedes old
         priorityQueue?.cancelAllOperations()
@@ -197,6 +198,14 @@ class PrefetchCache {
                     imageForSTF = generator?.debayer(image: decoded, pattern: pattern) ?? decoded
                 } else {
                     imageForSTF = decoded
+                }
+
+                // Pixel-based orientation fingerprint — cheap (<1 ms on M-series
+                // for 50 MP). Runs on the RAW decoded buffer so it's consistent
+                // across OSC/mono and doesn't depend on debayer availability.
+                var fingerprintResult: [UInt8]?
+                if onOrientationFingerprint != nil {
+                    fingerprintResult = OrientationFingerprint.compute(from: decoded)
                 }
 
                 // Compute metrics synchronously on background thread
@@ -279,6 +288,7 @@ class PrefetchCache {
                 // Single MainActor task: deliver ALL results atomically
                 Task { @MainActor [weak self] in
                     if let hash = fileHashResult { onFileHash?(url, hash) }
+                    if let fp = fingerprintResult { onOrientationFingerprint?(url, fp) }
                     if let stats = noiseStatsResult { onNoiseStats?(url, stats) }
                     if let metrics = starMetricsResult { onStarMetrics?(url, metrics) }
                     if let transform = alignmentResult { onAligned?(url, transform) }
@@ -310,7 +320,8 @@ class PrefetchCache {
         onProgress: @escaping (Int, Int) -> Void,
         onNoiseStats: ((URL, STFCalculator.NoiseStats) -> Void)? = nil,
         onStarMetrics: ((URL, StarMetrics) -> Void)? = nil,
-        onFileHash: ((URL, String) -> Void)? = nil
+        onFileHash: ((URL, String) -> Void)? = nil,
+        onOrientationFingerprint: ((URL, [UInt8]) -> Void)? = nil
     ) {
         // Build lookup for Bayer patterns by URL (only used when debayer is enabled)
         let bayerPatterns: [URL: String]
@@ -434,6 +445,14 @@ class PrefetchCache {
                         imageForSTF = decoded
                     }
 
+                    // 2a. Pixel-based orientation fingerprint (<1 ms). Used as the
+                    // last-resort signal for auto-rotate when headers are silent
+                    // and star matching fails (RASA, rotation-invariant fields).
+                    var fingerprintResult: [UInt8]?
+                    if onOrientationFingerprint != nil {
+                        fingerprintResult = OrientationFingerprint.compute(from: decoded)
+                    }
+
                     // 2b. Measure noise stats (uses same 5% subsample as STF — ~2ms)
                     // Computed synchronously on background thread; dispatched to MainActor
                     // together with star metrics and progress in a single Task to guarantee
@@ -518,6 +537,7 @@ class PrefetchCache {
                     let completed = completedCount.increment()
                     Task { @MainActor in
                         if let hash = fileHashResult { onFileHash?(url, hash) }
+                        if let fp = fingerprintResult { onOrientationFingerprint?(url, fp) }
                         if let stats = noiseStatsResult { onNoiseStats?(url, stats) }
                         if let metrics = starMetricsResult { onStarMetrics?(url, metrics) }
                         if let transform = alignmentResult { onAligned?(url, transform) }

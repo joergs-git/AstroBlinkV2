@@ -123,6 +123,16 @@ struct ImageEntry: Identifiable, Hashable {
     // Nil = not yet computed or alignment failed (display falls back to header flip).
     var alignmentTransform: AffineTransform2D?
 
+    // Lightweight 32×32 spatial fingerprint (1024 bytes, transient / session-
+    // scoped — not persisted to Frame History DB). Used as the last-resort
+    // signal in auto-rotate when headers are silent and star matching fails:
+    // a 180° rotation mirrors the fingerprint index order, so comparing SAD
+    // direct vs 180°-rotated gives a robust binary "is this frame flipped?"
+    // signal that works on RASA setups (no PIERSIDE/rotator) and on rotation-
+    // invariant star fields where triangle matching can produce spurious
+    // identity matches. See `OrientationFingerprint`.
+    var orientationFingerprint: [UInt8]?
+
     // File identity hash (SHA256 of first 64KB) — for Frame History Database
     var fileHash: String?
     // Human-readable short ID derived from fileHash (e.g. "A3-2917")

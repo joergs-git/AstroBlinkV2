@@ -14,6 +14,25 @@ struct AffineTransform2D: Equatable, Hashable {
     /// Equivalent to the legacy rotate180 UV swap (u → 1-u, v → 1-v).
     static let rotate180Normalized = AffineTransform2D(a: -1, b: 0, tx: 1, c: 0, d: -1, ty: 1)
 
+    /// UV-normalized rotation by `thetaRad` around the image centre (0.5, 0.5).
+    /// Sign convention: positive theta = math-positive (CCW in math XY) — same
+    /// convention as `rotate180Normalized` (θ = π) and `.rotation` (`atan2(c, a)`).
+    ///
+    /// Sampling semantics: this transforms source UV → destination UV, so if the
+    /// frame was captured rotated by +θ relative to the reference, applying
+    /// this transform with -θ unrotates the sample positions back into reference
+    /// orientation. Used by the header-driven meridian-rotation path when the
+    /// scope / rotator angles give a precise rotation amount (not just the
+    /// binary 180° pier flip).
+    static func rotationAroundCenterNormalized(_ thetaRad: Float) -> AffineTransform2D {
+        let cTheta = cosf(thetaRad)
+        let sTheta = sinf(thetaRad)
+        return AffineTransform2D(
+            a:  cTheta, b: -sTheta, tx: 0.5 * (1.0 - cTheta + sTheta),
+            c:  sTheta, d:  cTheta, ty: 0.5 * (1.0 - sTheta - cTheta)
+        )
+    }
+
     var rotation: Float { atan2f(c, a) }
     var scale: Float { sqrtf(a * a + c * c) }
 

@@ -68,6 +68,24 @@ class TriageViewModel: ObservableObject {
         let wcsRotation: Double?
         let width: Int?      // Reference frame dimensions for mixed-sensor guard
         let height: Int?
+        // Unweighted mean of detected star positions in full-res pixel coords. Used
+        // by the centroid-mirror signal in `shouldRotateForMeridian` to catch flips
+        // when PIERSIDE/ROTATOR/WCS are all silent or missing. A flip maps
+        // centroid `(cx, cy)` to `(W-cx, H-cy)`; if the frame's centroid is
+        // significantly closer to that mirror than to the reference, we flip.
+        // nil when the reference frame doesn't have starDetails yet (populated
+        // lazily as star metrics arrive during prefetch).
+        let starCentroidX: Double?
+        let starCentroidY: Double?
+        // 32×32 pixel fingerprint of the reference frame. Used by the fingerprint
+        // mirror test in `shouldRotateForMeridian` and the tiebreaker in
+        // `updateMeridianRotation`. Populated when the reference frame's
+        // fingerprint is available (either at detectMeridianFlip time for
+        // frames already prefetched, or overwritten by applyWCSAlignment when
+        // it picks a different reference frame). Null-safe lookup via
+        // referenceFingerprintLookup provides a fallback to any frame of
+        // the target that has a fingerprint.
+        let fingerprint: [UInt8]?
     }
     private var targetOrientationRefs: [String: OrientationRef] = [:]  // key = canonical target name
 
@@ -1562,6 +1580,12 @@ class TriageViewModel: ObservableObject {
                         self.images[idx].qualityFeedback = QualityFeedback(rawValue: record.qualityFeedback) ?? .none
                     }
                 }
+            },
+            onOrientationFingerprint: { [weak self] url, fp in
+                guard let self = self else { return }
+                if let idx = self.images.firstIndex(where: { $0.url == url }) {
+                    self.images[idx].orientationFingerprint = fp
+                }
             }
         )
     }
@@ -1862,6 +1886,12 @@ class TriageViewModel: ObservableObject {
                         self.images[idx].userConfidence = record.userConfidence
                         self.images[idx].qualityFeedback = QualityFeedback(rawValue: record.qualityFeedback) ?? .none
                     }
+                }
+            },
+            onOrientationFingerprint: { [weak self] url, fp in
+                guard let self = self else { return }
+                if let idx = self.images.firstIndex(where: { $0.url == url }) {
+                    self.images[idx].orientationFingerprint = fp
                 }
             }
         )
@@ -2884,37 +2914,149 @@ class TriageViewModel: ObservableObject {
             return false
         }
 
-        // OR logic: if ANY of the three available signals indicates a flip, rotate.
-        // This is the correct behavior for 99% of amateur setups (ASIAIR/AM5, physical rotators,
-        // no-rotator mounts). The previous XOR logic was incorrect for ASIAIR/AM5 where BOTH
-        // PIERSIDE and ROTATOR change during a flip — XOR cancelled them out.
+        // OR logic across signals — any hit means the frame needs a 180° flip.
+        //
+        // Rotator is deliberately NOT part of this chain: across the 6 210-frame
+        // corpus many targets show rotator delta between sessions that does
+        // NOT correspond to a physical image rotation (manual recalibration,
+        // rotator home resets, camera re-mount). Arbitrary rotations are
+        // captured by the precise `headerRotationDeg` path, not this binary
+        // signal — see `updateMeridianRotation`.
 
-        // Signal 1: PIERSIDE change
+        // Signal 1: PIERSIDE change — reliable within and across sessions
+        // because pier side is a physical mount state, not a software setting.
         if let refSide = ref.pierSide, let entrySide = entry.pierSide,
            refSide.uppercased() != entrySide.uppercased() {
             return true
         }
 
-        // Signal 2: ROTATOR angle change (any large rotation ≥ 90° = flip)
-        if let refAngle = ref.rotatorAngle, let entryAngle = entry.rotatorAngle {
-            let diff = angleDifference(entryAngle, refAngle)
-            if diff >= 90.0 { return true }
+        // Signal 2: Star-centroid mirror test.
+        //
+        // Runs when the first three signals are silent or missing — typical case
+        // for frames captured without a plate solver, without PIERSIDE, and on a
+        // mount that doesn't log rotator angle (or where the rotator physically
+        // didn't move during the flip).
+        //
+        // A physical 180° rotation maps the reference's centroid `(cx, cy)` to
+        // `(W-cx, H-cy)`. For asymmetric star fields — galaxies, bright stars
+        // near an edge, gradient-induced detection bias — this produces a
+        // measurable displacement. We flip when:
+        //   • the reference centroid is clearly off-center (≥8% of each dim
+        //     from image center — small asymmetries are noise),
+        //   • the frame's centroid is at least 2× closer to the mirrored
+        //     position than to the reference position.
+        //
+        // The 2× margin keeps normal dithers/drift (20–200 px) from flipping
+        // anything, because a real flip produces a much bigger displacement
+        // (typically > 400 px for an off-center reference).
+        if let refCX = ref.starCentroidX, let refCY = ref.starCentroidY,
+           let details = entry.starDetails,
+           let c = Self.meanStarCentroid(of: details),
+           let w = entry.width ?? ref.width, let h = entry.height ?? ref.height,
+           w > 0, h > 0 {
+            let centerX = Double(w) / 2.0
+            let centerY = Double(h) / 2.0
+            let refOffFracX = (refCX - centerX).magnitude / Double(w)
+            let refOffFracY = (refCY - centerY).magnitude / Double(h)
+            let refIsOffCenter = max(refOffFracX, refOffFracY) >= 0.08
+            if refIsOffCenter {
+                let distToRef = hypot(c.x - refCX, c.y - refCY)
+                let mirX = Double(w) - refCX
+                let mirY = Double(h) - refCY
+                let distToMirror = hypot(c.x - mirX, c.y - mirY)
+                if distToMirror < distToRef * 0.5 {
+                    return true
+                }
+            }
         }
 
-        // Signal 3: WCS rotation from plate solve (any change ≥ 90° = flip)
-        if let refWCS = ref.wcsRotation, let entryWCS = entry.wcsRotation {
-            let diff = angleDifference(entryWCS, refWCS)
-            if diff >= 90.0 { return true }
+        // Signal 3: 32×32 pixel fingerprint mirror test.
+        //
+        // The last-resort signal — runs on raw pixel structure so it's
+        // immune to missing headers (the 20.8 % of frames without PIERSIDE
+        // or rotator, mostly RASA setups) and to rotation-invariant star
+        // fields where triangle matching fails. Uses the reference
+        // fingerprint stored on OrientationRef by detectMeridianFlip or
+        // applyWCSAlignment so both pipelines compare against the same
+        // canonical reference frame; falls back to a per-target scan if
+        // the ref doesn't have a fingerprint yet.
+        if let entryFP = entry.orientationFingerprint {
+            let refFP = ref.fingerprint ?? self.referenceFingerprintLookup(targetKey: targetKey)
+            if let refFP = refFP,
+               OrientationFingerprint.mirrorIsBetterMatch(reference: refFP, frame: entryFP) {
+                return true
+            }
         }
 
         return false
     }
 
+    /// Find the first frame belonging to a target that has a computed
+    /// orientation fingerprint. Used as the reference fingerprint for the
+    /// pixel-based mirror test. Returns nil if no frame of this target has
+    /// a fingerprint yet (e.g. prefetch hasn't touched the reference).
+    ///
+    /// O(n) first call per target; callers should avoid hammering this on
+    /// every display tick — the current path only invokes it inside
+    /// `shouldRotateForMeridian`, which itself is called once per frame
+    /// display.
+    private func referenceFingerprintLookup(targetKey: String) -> [UInt8]? {
+        // Uses the INSTANCE's canonicalTargetKey so the lookup key matches the
+        // full `Target|Scope|FL|Cam` grouping used everywhere else. Also
+        // opportunistically caches the discovered fingerprint back onto the
+        // target's OrientationRef so subsequent lookups hit the fast path in
+        // O(1) instead of scanning `images` again.
+        for img in images {
+            if canonicalTargetKey(for: img) == targetKey,
+               let fp = img.orientationFingerprint {
+                if var ref = targetOrientationRefs[targetKey], ref.fingerprint == nil {
+                    ref = OrientationRef(
+                        pierSide: ref.pierSide,
+                        rotatorAngle: ref.rotatorAngle,
+                        wcsRotation: ref.wcsRotation,
+                        width: ref.width,
+                        height: ref.height,
+                        starCentroidX: ref.starCentroidX,
+                        starCentroidY: ref.starCentroidY,
+                        fingerprint: fp
+                    )
+                    targetOrientationRefs[targetKey] = ref
+                }
+                return fp
+            }
+        }
+        return nil
+    }
+
+    /// Unweighted mean (centroid) of detected star positions in full-res pixel
+    /// coords. Returns nil if fewer than 3 stars are available — below that the
+    /// asymmetry signal is too noisy to be trustworthy for flip detection.
+    static func meanStarCentroid(of details: [StarDetail]?) -> (x: Double, y: Double)? {
+        guard let details = details, details.count >= 3 else { return nil }
+        var sx = 0.0, sy = 0.0
+        for d in details { sx += Double(d.x); sy += Double(d.y) }
+        let n = Double(details.count)
+        return (sx / n, sy / n)
+    }
+
     // Update display alignment for the currently displayed image.
+    //
     // Preference order:
-    //   1. Star-based alignment transform (computed by DisplayAligner in prefetch pipeline)
-    //   2. Header-based 180° flip (fallback when star alignment hasn't completed or failed)
-    //   3. Identity (no correction)
+    //   1. Star-based alignment transform (sub-pixel precise), IF its rotation
+    //      is within 15° of the header-derived rotation angle — or there is no
+    //      header-derived rotation to validate against.
+    //   2. Header-derived rotation transform (precise to whatever the rotator/
+    //      WCS headers give), for cases where:
+    //        • star matching failed or wasn't run yet, OR
+    //        • the matcher landed on a spurious rotation (common on rotation-
+    //          invariant star fields where triangle ratios alone can't
+    //          disambiguate the match).
+    //      Uses `AffineTransform2D.rotationAroundCenterNormalized(-θ)` so the
+    //      applied rotation EXACTLY undoes the physical camera rotation
+    //      between reference and current frame — not just a 180° snap.
+    //   3. Clean 180° flip for the legacy case: PIERSIDE differs but no
+    //      rotator angle available (no way to compute a precise θ).
+    //   4. Identity.
     private func updateMeridianRotation() {
         guard let renderer = renderer else { return }
         guard let entry = selectedImage else {
@@ -2924,12 +3066,96 @@ class TriageViewModel: ObservableObject {
             return
         }
 
+        // Precise header-derived rotation in degrees (or nil if no header signal
+        // or the net rotation is below the significance threshold). This is the
+        // ground-truth target — `headerRotationDeg` combines PIERSIDE flip
+        // (180°) with signed rotator/WCS differences.
+        let headerRotDeg: Double? = {
+            guard autoMeridianEnabled else { return nil }
+            let key = canonicalTargetKey(for: entry)
+            guard let ref = targetOrientationRefs[key] else { return nil }
+            return Self.headerRotationDeg(entry: entry, ref: ref)
+        }()
+
         if autoMeridianEnabled, let transform = entry.alignmentTransform {
-            // Star-based alignment succeeded — use the precise per-frame transform
-            renderer.displayTransform = transform
+            // Use the precise per-frame transform — but cross-check it with
+            // the pixel-level fingerprint before blindly trusting.
+            //
+            // The transform's failure modes (each addressed below):
+            //   (a) Triangle matcher returned a spurious near-identity on a
+            //       rotation-invariant star field while a flip is physically
+            //       needed. Detected when: transform rot ≈ 0° but headers
+            //       strongly insist on a flip AND the fingerprint confirms
+            //       the mirror is a much better match.
+            //   (b) Plate solver returned a 90°-off false solution
+            //       (happens on repetitive star fields, especially across
+            //       sessions where we can't sanity-check against rotator).
+            //       Detected when: transform rot ≥ 45° BUT the fingerprint
+            //       says the mirror (= 180° flip) is a much better match —
+            //       which can only be true if the transform's rotation is
+            //       wrong. Reject the transform and apply a 180° flip.
+            //
+            // In all other cases — transform near-identity with no flip
+            // needed, transform with ≈180° rotation agreeing with fingerprint,
+            // non-trivial rotation without fingerprint disagreement — trust
+            // the transform.
+            let transformRotDeg = Double(atan2f(transform.c, transform.a) * 180.0 / .pi)
+            let transformIsNearIdentity = transformRotDeg.magnitude < 15.0
+            let transformIsSignificantlyRotated = transformRotDeg.magnitude >= 45.0
+            let headerSaysBigRotation: Bool = {
+                guard let h = headerRotDeg else { return false }
+                return h.magnitude >= 45.0
+            }()
+
+            // Does the pixel fingerprint say the frame is a 180° flip of the
+            // reference? Lookup uses the ref's cached fingerprint first (same
+            // across both WCS-picked ref and detectMeridianFlip ref — see
+            // applyWCSAlignment), falling back to a per-target scan.
+            let fingerprintSaysFlip: Bool = {
+                guard let entryFP = entry.orientationFingerprint else { return false }
+                let tk = canonicalTargetKey(for: entry)
+                let refFP: [UInt8]? = targetOrientationRefs[tk]?.fingerprint
+                    ?? self.referenceFingerprintLookup(targetKey: tk)
+                guard let refFP = refFP else { return false }
+                return OrientationFingerprint.mirrorIsBetterMatch(reference: refFP, frame: entryFP)
+            }()
+
+            // Case (b): transform rotated but fingerprint says the real relationship
+            // is a 180° mirror — transform is wrong (likely a plate-solve 90° off).
+            // Force a clean 180° flip from the header path.
+            // Case (a): transform near-identity but headers + fingerprint agree on flip.
+            let isCaseB = transformIsSignificantlyRotated && fingerprintSaysFlip
+            let isCaseA = transformIsNearIdentity && headerSaysBigRotation && fingerprintSaysFlip
+
+            if (isCaseA || isCaseB), let h = headerRotDeg {
+                let theta = Float(-h * .pi / 180.0)
+                renderer.displayTransform = AffineTransform2D.rotationAroundCenterNormalized(theta)
+                renderer.rotate180 = false
+                let why = isCaseB
+                    ? "transform claims \(String(format: "%.1f", transformRotDeg))° but fingerprint says mirror (plate-solve 90°-off?)"
+                    : "spurious identity, fingerprint confirms flip"
+                print("[Meridian] \(entry.filename): \(why), applying 180° via header rot=\(String(format: "%.1f", h))°")
+            } else if isCaseB {
+                // Transform wrong (per fingerprint) and we have no header angle
+                // to fall back to — best we can do is rotate 180°, which is
+                // what the fingerprint implies.
+                renderer.displayTransform = AffineTransform2D.rotate180Normalized
+                renderer.rotate180 = false
+                print("[Meridian] \(entry.filename): transform rot=\(String(format: "%.1f", transformRotDeg))° contradicts fingerprint mirror — forcing 180°")
+            } else {
+                // Transform looks legit; trust it for sub-pixel alignment.
+                renderer.displayTransform = transform
+                renderer.rotate180 = false
+            }
+        } else if autoMeridianEnabled, let h = headerRotDeg {
+            // No star alignment available but headers give us a precise angle —
+            // apply exact rotation (not just a 180° snap).
+            let theta = Float(-h * .pi / 180.0)
+            renderer.displayTransform = AffineTransform2D.rotationAroundCenterNormalized(theta)
             renderer.rotate180 = false
         } else if autoMeridianEnabled, shouldRotateForMeridian(entry) {
-            // Fall back to header-based 180° flip
+            // Legacy path: headers say "flip" but we couldn't compute a precise
+            // angle (e.g. PIERSIDE differs, no rotator/WCS available). Clean 180°.
             renderer.displayTransform = .identity
             renderer.rotate180 = true
         } else {
@@ -2938,6 +3164,50 @@ class TriageViewModel: ObservableObject {
         }
 
         if let mtkView = findMTKView() { mtkView.needsDisplay = true }
+    }
+
+    /// Header-derived rotation in degrees that, when inverted and applied as
+    /// a display transform, aligns `entry` to the per-target reference.
+    /// Returns nil when no reliable header signal is available.
+    ///
+    /// Signal sources (in priority order):
+    ///   1. **WCS rotation diff** — ground truth when both frames have
+    ///      plate-solve data (CROTA2 or CD matrix). Captures the actual sky
+    ///      orientation regardless of what the mount or rotator did.
+    ///   2. **PIERSIDE binary flip** — 180° when pier sides differ. Reliable
+    ///      across sessions because pier side is a physical mount state.
+    ///
+    /// Rotator angle diff is DELIBERATELY NOT used: across 6 210 frames in
+    /// the local Frame History DB, many targets (Cosmic Horseshoe, M81 …)
+    /// show the rotator taking 7–13 distinct positions across sessions,
+    /// reflecting manual recalibrations / home-resets / camera re-mounts
+    /// that aren't captured in the header — the rotator delta then does NOT
+    /// correspond to an actual image rotation. Star matching (empirical)
+    /// handles arbitrary camera rotations correctly; the fingerprint signal
+    /// handles the "no pier no stars" fallback.
+    private static func headerRotationDeg(entry: ImageEntry, ref: OrientationRef) -> Double? {
+        // 1. WCS path: most accurate when available (derived from actual stars).
+        if let refWCS = ref.wcsRotation, let entryWCS = entry.wcsRotation {
+            let diff = signedAngleDiff(entryWCS, refWCS)
+            return diff.magnitude >= 5.0 ? diff : nil
+        }
+
+        // 2. PIERSIDE binary flip (180°).
+        if let refSide = ref.pierSide, let entrySide = entry.pierSide,
+           refSide.uppercased() != entrySide.uppercased() {
+            return 180.0
+        }
+
+        return nil
+    }
+
+    /// Shortest signed angular difference (a - b) in degrees, normalised to
+    /// (-180°, 180°]. Positive = a is counter-clockwise of b.
+    private static func signedAngleDiff(_ a: Double, _ b: Double) -> Double {
+        var d = a - b
+        while d >   180 { d -= 360 }
+        while d <= -180 { d += 360 }
+        return d
     }
 
     // Assign unique 1-based session indices to all images
@@ -2951,8 +3221,10 @@ class TriageViewModel: ObservableObject {
     }
 
     // Detect orientation changes across a session (multi-night, multi-target).
-    // Builds per-target reference from the first image of each target group.
-    // Uses XOR logic: piersideFlipped XOR rotatorFlipped = needs visual correction.
+    // Builds per-target reference from the first image of each target group,
+    // then uses the unified `shouldRotateForMeridian` logic to decide whether
+    // any frame needs flipping — guarantees the summary count, the per-frame
+    // display decision, and the UI-enable state all use the exact same rules.
     func detectMeridianFlip() {
         targetOrientationRefs.removeAll()
 
@@ -2960,66 +3232,35 @@ class TriageViewModel: ObservableObject {
         for img in images {
             let key = canonicalTargetKey(for: img)
             if targetOrientationRefs[key] == nil {
+                let c = Self.meanStarCentroid(of: img.starDetails)
                 targetOrientationRefs[key] = OrientationRef(
                     pierSide: img.pierSide,
                     rotatorAngle: img.rotatorAngle,
                     wcsRotation: img.wcsRotation,
                     width: img.width,
-                    height: img.height
+                    height: img.height,
+                    starCentroidX: c?.x,
+                    starCentroidY: c?.y,
+                    fingerprint: img.orientationFingerprint
                 )
             }
         }
 
-        // Detect if ANY image in ANY target group needs flipping.
-        // OR logic: any of PIERSIDE change, large rotator change (>=90°), or WCS rotation
-        // change (>=90°) triggers a flip. This handles ASIAIR/AM5, physical rotators, and
-        // plate-solved setups uniformly.
         var flipCount = 0
         var totalChecked = 0
         for img in images {
             let key = canonicalTargetKey(for: img)
-            guard let ref = targetOrientationRefs[key] else { continue }
+            guard targetOrientationRefs[key] != nil else { continue }
 
-            let piersideFlipped: Bool
-            if let refSide = ref.pierSide, let side = img.pierSide {
-                piersideFlipped = refSide.uppercased() != side.uppercased()
-            } else {
-                piersideFlipped = false
-            }
+            // hasMeridianFlip must be set before calling shouldRotateForMeridian,
+            // but we're computing it below — bypass that gate for the survey pass.
+            let wasGate = hasMeridianFlip
+            hasMeridianFlip = true
+            let needsFlip = shouldRotateForMeridian(img)
+            hasMeridianFlip = wasGate
 
-            var rotatorDiff: Double?
-            let rotatorFlipped: Bool
-            if let refAngle = ref.rotatorAngle, let angle = img.rotatorAngle {
-                let diff = angleDifference(angle, refAngle)
-                rotatorDiff = diff
-                rotatorFlipped = diff >= 90.0
-            } else {
-                rotatorFlipped = false
-            }
-
-            var wcsDiff: Double?
-            let wcsFlipped: Bool
-            if let refWCS = ref.wcsRotation, let wcs = img.wcsRotation {
-                let diff = angleDifference(wcs, refWCS)
-                wcsDiff = diff
-                wcsFlipped = diff >= 90.0
-            } else {
-                wcsFlipped = false
-            }
-
-            let needsFlip = piersideFlipped || rotatorFlipped || wcsFlipped
             if needsFlip { flipCount += 1 }
             totalChecked += 1
-
-            // Detailed logging for flip-relevant images (any signal changed or rotator moved >30°)
-            if piersideFlipped || rotatorFlipped || wcsFlipped || (rotatorDiff ?? 0) > 30 {
-                let parts = [
-                    rotatorDiff.map { String(format: "rot diff=%.1f°", $0) },
-                    wcsDiff.map { String(format: "wcs diff=%.1f°", $0) },
-                    img.pierSide.map { "pier=\($0)" }
-                ].compactMap { $0 }.joined(separator: ", ")
-                print("[Meridian] \(img.filename): \(parts), decision=\(needsFlip ? "FLIP" : "NO_FLIP")")
-            }
         }
 
         hasMeridianFlip = flipCount > 0
@@ -3039,12 +3280,38 @@ class TriageViewModel: ObservableObject {
         }
     }
 
-    /// Canonical target key for orientation grouping. Uses target name or "UNKNOWN".
+    /// Canonical orientation-grouping key: `target | telescope | focalLength | camera`.
+    ///
+    /// Why per-setup and not per-target: each setup has its own rotator-
+    /// encoder zero, its own plate scale, and its own WCS solve quality.
+    /// When frames of a target were captured across multiple setups (e.g.
+    /// RC12 native + RC12red08 focal-reduced), merging them into a single
+    /// group forces the auto-rotate logic to compare rotator values /
+    /// fingerprint patterns / WCS transforms that are structurally
+    /// different — and the only reliable cross-setup alignment signal
+    /// (WCS math) requires BOTH frames to be plate-solved. Frames captured
+    /// before WCS was enabled (typically older RC12 sessions) can't be
+    /// cross-aligned and would render as chaos when grouped with newer
+    /// WCS-capable frames. Keeping orientation groups per-setup means each
+    /// group is internally consistent — that's the strongest guarantee we
+    /// can make with the data available.
+    ///
+    /// Trade-off: frames from different setups will render in setup-local
+    /// orientations when blinking. Within one setup (the common case —
+    /// most sessions use a single rig) everything is consistent.
+    ///
+    /// Falls back to "UNKNOWN" when the target name is missing.
     private func canonicalTargetKey(for entry: ImageEntry) -> String {
+        let targetName: String
         if let target = entry.target, !target.isEmpty {
-            return TargetCatalog.canonicalName(target)
+            targetName = TargetCatalog.canonicalName(target)
+        } else {
+            targetName = "UNKNOWN"
         }
-        return "UNKNOWN"
+        let scope = entry.telescope ?? ""
+        let cam = entry.camera ?? ""
+        let fl = entry.focalLength.map { String(Int($0.rounded())) } ?? ""
+        return "\(targetName)|\(scope)|\(fl)|\(cam)"
     }
 
     /// Detect mixed image dimensions after header enrichment and warn the user.
@@ -3116,7 +3383,6 @@ class TriageViewModel: ObservableObject {
         guard !targetEntries.isEmpty else { return }
 
         var updatedCount = 0
-        var fallbackCount = 0
         var referenceLog: [String] = []
 
         for (targetKey, entries) in targetEntries {
@@ -3145,9 +3411,48 @@ class TriageViewModel: ObservableObject {
                 }
             }
             referenceLog.append("\(targetKey)→\(images[refIdx].filename)")
-            let refRotator = images[refIdx].rotatorAngle
 
-            // Apply WCS-based transform to every frame in this target group
+            // Synchronise the header-path reference with the WCS-chosen one.
+            // Previously `detectMeridianFlip` built `targetOrientationRefs`
+            // from the first frame in load order, while `applyWCSAlignment`
+            // chose its reference from the median CRVAL across plate-solved
+            // frames — when the two picked frames had different pier sides
+            // and/or different rotator positions, the WCS-aligned 58 frames
+            // and the header-aligned 256 frames ended up in *different*
+            // orientations on the same target, visible as a 180° offset
+            // between the two groups while blinking. Overwriting the header
+            // ref with the WCS-chosen one means both pipelines agree on
+            // "what reference orientation means".
+            let refEntry = images[refIdx]
+            let refCentroid = Self.meanStarCentroid(of: refEntry.starDetails)
+            targetOrientationRefs[targetKey] = OrientationRef(
+                pierSide: refEntry.pierSide,
+                rotatorAngle: refEntry.rotatorAngle,
+                wcsRotation: refEntry.wcsRotation,
+                width: refEntry.width,
+                height: refEntry.height,
+                starCentroidX: refCentroid?.x,
+                starCentroidY: refCentroid?.y,
+                fingerprint: refEntry.orientationFingerprint
+            )
+
+            // Apply WCS-based transform to every frame in this target group.
+            //
+            // Sanity check against rotator: plate solvers occasionally lock onto
+            // a 90°-rotated false solution on repetitive star fields, which
+            // produces a WCS transform with a large apparent rotation even when
+            // the camera physically didn't move. When BOTH frame and reference
+            // report nearly-identical rotator angles (Δ < 5° → same session,
+            // same rotator calibration → camera definitely didn't rotate), any
+            // WCS-implied rotation greater than 45° must be a plate-solve error.
+            // Reject the transform for that frame — it will fall through to the
+            // header/fingerprint pipeline which is more robust on ambiguous
+            // plate solves.
+            let refRotator = images[refIdx].rotatorAngle
+            let refTelescope = images[refIdx].telescope
+            let refObservingNight = images[refIdx].observingNight
+            var wcsRejectedCount = 0
+
             for entry in entries {
                 guard let width = images[entry.idx].width,
                       let height = images[entry.idx].height,
@@ -3158,49 +3463,75 @@ class TriageViewModel: ObservableObject {
                     frame: entry.wcs, reference: refWCS
                 ) else { continue }
 
+                // Rotation embedded in the WCS transform (pixel-space 2×2 block).
+                let wcsRotationDeg = Double(atan2f(pixelTransform.c, pixelTransform.a)) * 180.0 / .pi
+
+                // Within-session consistency gate: require same observing night,
+                // same telescope (= same rotator zero) AND same physical rotator
+                // angle. When the rotator hasn't moved, no WCS rotation is
+                // physically possible; anything ≥ 45° means the plate solver
+                // found a rotationally-ambiguous false solution.
+                let frameEntry = images[entry.idx]
+                let sameSetup = (frameEntry.telescope == refTelescope)
+                let sameNight = (frameEntry.observingNight != nil &&
+                                 frameEntry.observingNight == refObservingNight)
+                let rotatorMatches: Bool = {
+                    guard let rRef = refRotator, let rFrame = frameEntry.rotatorAngle else { return false }
+                    var d = rFrame - rRef
+                    while d > 180 { d -= 360 }
+                    while d <= -180 { d += 360 }
+                    return d.magnitude < 5.0
+                }()
+
+                if sameSetup, sameNight, rotatorMatches, wcsRotationDeg.magnitude > 45.0 {
+                    // Plate-solve rotational outlier — discard this frame's WCS
+                    // transform so `updateMeridianRotation` can use the header /
+                    // fingerprint path instead.
+                    wcsRejectedCount += 1
+                    continue
+                }
+
                 let inv = pixelTransform.inverse ?? .identity
                 images[entry.idx].alignmentTransform = inv.normalized(width: width, height: height)
                 updatedCount += 1
             }
 
-            // Fallback for frames in this target that don't have WCS but DO have a
-            // rotator angle in their headers: compute a synthetic rotation transform
-            // from the rotator angle delta vs the reference's rotator. This is less
-            // accurate than full WCS (no precise translation) but correctly handles
-            // the rotation, which is what users notice most.
-            if let refRot = refRotator {
-                for idx in images.indices where canonicalTargetKey(for: images[idx]) == targetKey {
-                    // Skip frames that already have alignment from the WCS pass
-                    guard images[idx].alignmentTransform == nil,
-                          let frameRot = images[idx].rotatorAngle,
-                          let width = images[idx].width,
-                          let height = images[idx].height,
-                          width > 0, height > 0
-                    else { continue }
-
-                    // Rotation needed: frame_rotator - ref_rotator (in degrees)
-                    let deltaDeg = frameRot - refRot
-                    let theta = Float(deltaDeg * .pi / 180.0)
-                    let cosT = cosf(theta)
-                    let sinT = sinf(theta)
-                    let W = Float(width)
-                    let H = Float(height)
-                    // Pixel-space rotation around image center (W/2, H/2):
-                    //   p' = R*(p - c) + c = R*p + (c - R*c)
-                    let txPix = W * 0.5 * (1 - cosT) + H * 0.5 * sinT
-                    let tyPix = -W * 0.5 * sinT + H * 0.5 * (1 - cosT)
-                    let pixelTransform = AffineTransform2D(
-                        a: cosT, b: -sinT, tx: txPix,
-                        c: sinT, d: cosT, ty: tyPix
-                    )
-                    let inv = pixelTransform.inverse ?? .identity
-                    images[idx].alignmentTransform = inv.normalized(width: width, height: height)
-                    fallbackCount += 1
-                }
+            if wcsRejectedCount > 0 {
+                print("[AutoRotate] \(targetKey): rejected \(wcsRejectedCount) frame(s) with bad plate-solve rotation (rotator says no rotation, WCS says ≥ 45°)")
             }
+
+            // NOTE: the former "rotator-fallback" branch used to synthesize an
+            // alignmentTransform from `rotator_frame − rotator_ref` for frames
+            // without WCS data. That math is only valid when the rotator
+            // encoder hasn't been re-homed or recalibrated between captures —
+            // an assumption that routinely fails across sessions (homed at a
+            // different zero, camera re-mounted, etc.). Empirical DB survey
+            // showed 7–13 distinct rotator positions per target across
+            // sessions — i.e. the rotator delta is ambiguous between
+            // "real camera rotation" and "rotator recalibration". Leaving
+            // `alignmentTransform` nil for WCS-less frames now lets
+            // `updateMeridianRotation` fall back to the correct pipeline:
+            // PIERSIDE binary flip (reliable, physical mount state) →
+            // centroid/fingerprint mirror test (pixel-based, immune to
+            // recalibration noise).
         }
 
-        print("[AutoRotate] WCS alignment: \(updatedCount) frames via WCS, \(fallbackCount) via rotator-fallback, \(targetEntries.count) target group(s); reference: \(referenceLog.joined(separator: ", "))")
+        print("[AutoRotate] WCS alignment: \(updatedCount) frames via WCS, 0 via rotator-fallback (disabled), \(targetEntries.count) target group(s); reference: \(referenceLog.joined(separator: ", "))")
+
+        // Echo the post-sync targetOrientationRefs so the log shows the *final*
+        // reference used by the header-based fallback pipeline. Previously the
+        // `[Meridian]` line printed before this function ran, so it showed the
+        // first-in-list reference — misleading when applyWCSAlignment picks a
+        // different frame as its WCS ref and synchronises both pipelines to it.
+        for (target, ref) in targetOrientationRefs {
+            let refDesc = [
+                ref.pierSide.map { "pier=\($0)" },
+                ref.rotatorAngle.map { String(format: "rot=%.0f°", $0) },
+                ref.wcsRotation.map { String(format: "wcs=%.1f°", $0) },
+                ref.fingerprint != nil ? "fingerprint=YES" : "fingerprint=no"
+            ].compactMap { $0 }.joined(separator: ", ")
+            print("[Meridian] post-sync ref \(target): \(refDesc)")
+        }
         if let selected = selectedImage, selected.alignmentTransform != nil {
             updateMeridianRotation()
         }
@@ -5496,6 +5827,12 @@ class TriageViewModel: ObservableObject {
                     guard let self = self else { return }
                     if let idx = self.images.firstIndex(where: { $0.url == url }) {
                         self.images[idx].fileHash = hash
+                    }
+                },
+                onOrientationFingerprint: { [weak self] url, fp in
+                    guard let self = self else { return }
+                    if let idx = self.images.firstIndex(where: { $0.url == url }) {
+                        self.images[idx].orientationFingerprint = fp
                     }
                 }
             )

@@ -4,6 +4,43 @@ All notable changes to AstroBlink & AIsaac will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [5.28.0] — 2026-04-22
+
+### Auto-Rotate Pipeline Overhaul
+
+A full rework of the meridian-flip / cross-session orientation system after an empirical survey of the 6 210-frame local Frame History DB exposed multiple failure modes that only appear on multi-setup, multi-session targets.
+
+**Data survey** (findings that drove the rework):
+- 20.8 % of frames have neither PIERSIDE nor rotator angle in headers (mostly RASA setups).
+- Many targets (Cosmic Horseshoe, M81, …) show 7–13 distinct rotator positions across sessions — reflecting manual recalibrations / home-resets / camera re-mounts that invalidate naïve rotator-delta math.
+- Plate solvers occasionally lock onto 90°-rotated false solutions on repetitive star fields; those WCS rotations propagate into the display transform without validation.
+- Triangle-based star matching can return a spurious near-identity match for ALL frames of a rotation-invariant target, bypassing the header-based flip detection.
+
+**Changes**:
+
+- **Rotator-fallback removed from `applyWCSAlignment`.** Previously ~80 % of non-WCS frames got an `alignmentTransform` synthesised purely from `rotator_frame − rotator_ref`, which silently overrode every other signal (headers, fingerprint, star match). Cross-session rotator deltas are not reliable; non-WCS frames now fall cleanly through to the header/fingerprint pipeline.
+- **`OrientationFingerprint` — 32×32 pixel signature** per frame, computed during prefetch (< 1 ms), stored on `ImageEntry` (transient / session-scoped). Each cell = max pixel vs. global median, quantised to 0…255 — immune to filter / gain / exposure shifts. Added as signal 3 in `shouldRotateForMeridian` (after PIERSIDE and star centroid) and as an independent veto for bad WCS transforms in `updateMeridianRotation`.
+- **Unified reference selection**: `applyWCSAlignment` now overwrites `targetOrientationRefs` with its own WCS-picked reference frame (smart median-CRVAL pick). Previously the header path and the WCS path used different reference frames of the same target, causing WCS-aligned frames and PIERSIDE-flipped frames to render in different orientations.
+- **Plate-solve rotational sanity check**: inside `applyWCSAlignment`, when frame and reference are in the same observing night + same telescope + same rotator angle (Δ < 5°), any WCS-implied rotation ≥ 45° is treated as a plate-solve false solution and discarded.
+- **Transform-vs-fingerprint veto in `updateMeridianRotation`**: if the alignment transform has a rotation ≥ 45° BUT the pixel fingerprint says the frame and reference are a 180° mirror, the transform's rotation is wrong (typically a 90°-off plate solve); a clean 180° flip from the header angle is applied instead.
+- **Per-setup orientation grouping**: `canonicalTargetKey` now combines `target | telescope | focalLength | camera` so each physical rig has its own internally-consistent orientation group. Each setup has its own rotator-encoder zero and its own WCS solve quality; merging setups into one group forces the auto-rotate logic to compare structurally-different signals. Cross-setup alignment is a future feature (would require per-setup rotation offsets).
+- **Rotator-only header math dropped**: `headerRotationDeg` now uses only WCS-rotation diff and PIERSIDE binary flip (180°), no longer composes `pier_flip + rotator_delta` because cross-session rotator recalibrations routinely invalidate the rotator contribution.
+
+### Known Trade-off
+- **Cross-setup blinking** (e.g. same target captured with two different focal lengths) will render each setup in its own orientation. Within a setup everything is aligned. Mathematically there's no signal to resolve cross-setup orientation without WCS on both sides, and in the local corpus roughly 73 % of frames have no WCS.
+
+---
+
+## [5.27.0] — 2026-04-22
+
+### Fixed
+- **Header-vs-Transform Conflict on Rotation-Invariant Star Fields** — when a frame had clear header evidence of a meridian flip (PIERSIDE differs from the per-target reference, or ROTATOR / WCS rotation ≥ 90°), but the star-matching aligner happened to land on a spurious near-identity match (which can happen on rotation-invariant fields — galaxies, rich uniform backgrounds — because triangle ratios are rotation invariant), the transform overrode the header decision and the frame rendered un-flipped. The fix: when a valid per-frame `alignmentTransform` exists we first extract its rotation (`atan2(c, a)` on the 2×2 block) and cross-check against `shouldRotateForMeridian(entry)`. If the headers say flip but the transform's rotation magnitude is below 135° (i.e. the matcher didn't find a rotation consistent with the physical pier flip), we discard the transform and fall back to a clean 180° flip. When headers and transform agree — or when no header signal exists — the transform still wins (it gives sub-pixel alignment). Addresses concrete case reported on 2025-04 NINA sessions with RC12 + ASI6200MM + Pegasus rotator where PIERSIDE East vs West frames rendered inconsistently.
+
+### Added
+- **Centroid-Mirror Flip Detection** — new 4th signal in the auto-rotate OR chain. Catches meridian flips when **all** of PIERSIDE, ROTATOR, WCS rotation, and star-matching alignment are silent or fail (common on captures without a plate solver, where the rotator physically didn't move, or on setups that don't log PIERSIDE at all). A 180° rotation maps the reference's star-distribution centroid `(cx, cy)` to `(W-cx, H-cy)`. When the frame's centroid is at least 2× closer to the mirrored position than to the original — and the reference is clearly off-center (≥ 8% of each sensor dim from image center, so symmetric fields don't trigger) — a flip is declared. The 2× margin keeps ordinary dithers and pointing drift from triggering false positives. Implementation is unweighted mean of detected star positions from `starDetails`; runs on the same StarMetricsCalculator output already computed during prefetch, so no new compute cost.
+
+---
+
 ## [5.26.3] — 2026-04-22
 
 ### Fixed
