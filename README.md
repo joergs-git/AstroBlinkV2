@@ -14,7 +14,24 @@ Nice side effect: Finally you have a native XISF and FITS Quicklook for macOS. (
 
 ---
 
-## What's New in v5.26.1 (Build 83)
+## What's New in v5.28.0 (Build 87)
+
+- **Auto-Rotate Pipeline Overhaul** — Full rework after an empirical survey of 6,210 local frames exposed multiple failure modes on multi-setup, multi-session targets. The rotator-delta fallback (which covered ~80% of non-WCS frames) turned out to be unreliable because cross-session recalibrations invalidate naïve rotator math — it was silently overriding every other signal. Removed.
+- **New Pixel Fingerprint Signal** — A 32×32 spatial signature computed from the raw decoded buffer (< 1 ms per frame, 1024 bytes, session-scoped). Works as the last-resort orientation detector when headers are silent (20.8% of frames — mostly RASA), and as an independent veto against bad WCS plate-solve transforms (catches 90°-off false solutions).
+- **Unified Reference Between Header + WCS Pipelines** — Previously the two paths picked different reference frames of the same target; WCS-aligned frames and PIERSIDE-flipped frames rendered in different orientations. Both pipelines now use the same WCS-median reference.
+- **Per-Setup Orientation Grouping** — Each physical rig (telescope + focal length + camera) has its own internally-consistent orientation group. Cross-setup frames render in setup-local orientation — a limitation we hit when there's no plate-solve data on one side.
+
+## Previously in v5.27.0 (Build 86)
+
+- **Transform-vs-Header Conflict Fix** — When a frame had clear header evidence of a meridian flip but the star-matching aligner landed on a spurious near-identity match (rotation-invariant fields), the transform overrode the headers and the frame rendered un-flipped. Now the transform's rotation is cross-checked against header signals; transforms that disagree get discarded in favour of a clean 180° flip.
+- **Centroid-Mirror Flip Detection** — 4th signal in the auto-rotate OR chain: star-distribution centroid mapped to its 180° mirror position; fires when headers are silent but the star field is asymmetric enough to disambiguate.
+
+## Previously in v5.26.3 (Build 85)
+
+- **Overlay mini-map pink tint fix** — Bypassed CoreImage, rendered via direct Metal pipeline, CGImage built with `noneSkipFirst` so alpha byte is ignored. Mini-map colors now match main viewer for both OSC (post-debayer RGB) and mono frames.
+- **Filter + exposure label** — Overlay shows `Ha  —  300s` / `L  —  0.5s` in mixed-size attributed string (whole seconds / sub-second formatting).
+
+## Previously in v5.26.1 (Build 83)
 
 - **Floating Image Overlay** — Top-left overlay pinned to the viewer showing the big filter letter, capture time + observing-night date, a 5%-size mini-map of the full image, and your current 1-3 star rating. Stays in viewport space while you zoom and pan. Default on; toggle with ⌘⇧O or View → Show Image Overlay. Auto-on in Blind Curation.
 - **Live Viewport Indicator** — A white dashed rectangle on the mini-map tracks the currently-visible sub-region in real time while you zoom and pan. Hides when the whole image fits the viewer.
