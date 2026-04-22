@@ -34,6 +34,9 @@ class ReleaseNotesWindowController {
 // MARK: - Release notes data (shared between view and copy)
 
 private let allReleases: [(version: String, date: String, items: [(ReleaseNotesView.ChangeType, String, String)])] = [
+    ("5.26.3", "April 22, 2026", [
+        (.fixed, "Overlay Mini-Map Pink Box", "The floating overlay's mini-map thumbnail rendered as a flat pink/magenta rectangle on both OSC and monochrome frames instead of a downsampled preview. The readback path no longer routes through CoreImage — it renders the source texture directly through the same Metal quad pipeline the main viewer uses, then blits into a shared linear MTLBuffer and builds the CGImage with the alpha channel explicitly skipped. Thumbnail colors now match what you see in the main image, for OSC (post-debayer RGB) and mono alike."),
+    ]),
     ("5.26.1", "April 18, 2026", [
         (.added, "Floating Image Overlay", "New always-accessible overlay in the top-left of the image viewer: big filter letter (Ha / L / OIII …), capture time + observing-night date, a 5%-size mini-map of the full image, and your current 1-3 star rating. Anchored in viewport space so it stays pinned while you zoom and pan. Default on; toggle with ⌘⇧O or View → Show Image Overlay. Auto-enabled in Blind Curation."),
         (.added, "Live Viewport Indicator on Mini-Map", "A thin white dashed rectangle on the mini-map tracks the currently visible region in real time as you zoom and pan. Hides automatically when the whole image fits the viewer."),

@@ -309,11 +309,17 @@ final class ViewerOverlayContainer: NSView {
 
         // Filter: prefer the full name as-shown in the UI (e.g. "Ha", "L", "OIII")
         // and render it big. A single-letter fallback handles unknown/empty values.
+        // Exposure (e.g. "300s", "0.5s") is appended at the time-label's font size
+        // so the user can see filter + exposure at a glance without looking at the
+        // header inspector. Mixed-size attributed string keeps both on one baseline.
         let filterText: String = {
             let f = (entry.filter ?? "").trimmingCharacters(in: .whitespaces)
             return f.isEmpty ? "—" : f
         }()
-        filterLabel.stringValue = filterText
+        filterLabel.attributedStringValue = Self.filterExposureString(
+            filter: filterText,
+            exposureSeconds: entry.exposure
+        )
 
         // Time · observing-night date — e.g. "22:31:58  ·  2026-03-15". The
         // observing-night convention (ImageEntry.observingNight) handles the
@@ -353,6 +359,31 @@ final class ViewerOverlayContainer: NSView {
             thumbnailView.image = nil
             lastThumbnailKey = nil
         }
+    }
+
+    /// Build the "Filter  300s" display string: the filter name at the big
+    /// filter-label size, followed by a thin space + em-dash + thin space +
+    /// exposure in the same font/weight as the time label. Exposure is
+    /// rendered with no decimals for whole seconds ("300s") and a single
+    /// decimal otherwise ("0.5s"). When no exposure is known, only the
+    /// filter is shown so we never leave a dangling dash.
+    private static func filterExposureString(filter: String, exposureSeconds: Double?) -> NSAttributedString {
+        let big: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 68, weight: .heavy),
+            .foregroundColor: NSColor.white.withAlphaComponent(0.55),
+        ]
+        let small: [NSAttributedString.Key: Any] = [
+            .font: NSFont.monospacedDigitSystemFont(ofSize: 28, weight: .bold),
+            .foregroundColor: NSColor.white.withAlphaComponent(0.55),
+        ]
+        let out = NSMutableAttributedString(string: filter, attributes: big)
+        if let exp = exposureSeconds, exp > 0, exp.isFinite {
+            let delta: Double = (exp - exp.rounded()).magnitude
+            let format: String = (delta < 0.05) ? "%.0fs" : "%.1fs"
+            let expStr = String(format: format, exp)
+            out.append(NSAttributedString(string: "  —  \(expStr)", attributes: small))
+        }
+        return out
     }
 
     /// Build the star-rating display string.

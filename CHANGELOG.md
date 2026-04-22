@@ -4,6 +4,13 @@ All notable changes to AstroBlink & AIsaac will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [5.26.3] — 2026-04-22
+
+### Fixed
+- **Overlay mini-map rendered as a pink box** — the floating viewer overlay's mini-map thumbnail showed a flat magenta/pink rectangle on OSC *and* monochrome frames instead of a downsampled image preview. Two causes: (1) the v5.26.1/v5.26.2 readback path routed through `CIImage` → `CIContext.render(_:to:...)`, which reinterpreted the source texture's color space and alpha in ways that diverged from the main viewer's pixel output; (2) the CGImage was built with `CGImageAlphaInfo.premultipliedFirst`, so when the main-viewer pipeline left the alpha channel undefined (CAMetalLayer is opaque, so the display discards alpha) the CG de-premultiply step produced the classic pink/magenta artifact. The thumbnail path now renders the source texture directly through Metal's existing `quad_vertex` / `quad_fragment` pipeline — bit-identical to the main viewer — into a small `.private` intermediate, blits that intermediate into a `.shared` linear `MTLBuffer` as before, and builds the CGImage with `CGImageAlphaInfo.noneSkipFirst` so the alpha byte is ignored entirely. Colors on the mini-map now match what the user is actually looking at, for both OSC (post-debayer RGB) and mono sources. No CoreImage dependency on the thumbnail path.
+
+---
+
 ## [5.26.2] — 2026-04-18
 
 ### Fixed

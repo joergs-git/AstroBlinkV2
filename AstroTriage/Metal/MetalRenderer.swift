@@ -2,7 +2,6 @@
 import Metal
 import MetalKit
 import AppKit
-import CoreImage
 
 // Metal renderer: compute-based STF auto-stretch + render pipeline for display
 // Supports fit-to-view scaling and Photoshop-style click-drag zoom
@@ -538,23 +537,26 @@ class MetalRenderer: NSObject, MTKViewDelegate {
 
     // MARK: - Thumbnail rendering (for viewer overlay mini-map)
 
-    /// Shared CIContext for thumbnail generation. Re-uses the Metal device so the
-    /// CPU→CGImage conversion doesn't allocate a second GPU context.
-    private lazy var thumbnailCIContext: CIContext = {
-        CIContext(mtlDevice: device, options: [.workingColorSpace: CGColorSpaceCreateDeviceRGB()])
-    }()
-
     /// Render a downsampled NSImage of the currently-displayed content.
-    /// Source priority: cachedPreviewTexture (already BGRA8 + stretched) → normalizedTexture
-    /// (stretched full-res) → currentImage (raw — needs compute pass, skipped).
+    /// Source priority: cachedPreviewTexture (already BGRA8 + stretched, debayered
+    /// for OSC) → normalizedTexture (stretched full-res). Both carry the same
+    /// color data the main viewer is showing, so the overlay mini-map matches
+    /// what the user sees — including correct colors for OSC sessions.
     ///
-    /// Readback is done via `blit → MTLBuffer` (always row-major linear), NOT
-    /// `MTLTexture.getBytes`. Direct `getBytes` on a `.storageMode = .private`
-    /// tile-swizzled texture crashes the AGX detiler on Apple Silicon (observed:
-    /// SIGSEGV inside `agxsTwiddleAddressCommon` on M2 Ultra after long idle).
-    /// CoreImage's `createCGImage` / `render(toBitmap:)` paths also end up
-    /// calling `getBytes` internally — they are NOT safe for private textures.
-    /// Blitting to a linear MTLBuffer is the documented safe GPU→CPU path.
+    /// Pipeline:
+    ///   1. Metal render pass draws the source texture as a fullscreen quad
+    ///      into a small `.private` intermediate (same `quad_vertex`/
+    ///      `quad_fragment` the main viewer uses → identical color path).
+    ///   2. Blit that intermediate into a `.shared` MTLBuffer (always
+    ///      row-major linear — the safe GPU→CPU path for tile-swizzled
+    ///      private textures, which would otherwise crash `MTLTexture.getBytes`
+    ///      inside `agxsTwiddleAddressCommon` on Apple Silicon).
+    ///   3. Build a CGImage from the buffer with `noneSkipFirst` so CG ignores
+    ///      the alpha byte entirely (the display pipeline never writes a
+    ///      meaningful alpha — `CAMetalLayer.isOpaque` defaults to true, so
+    ///      the main viewer's alpha channel is effectively undefined; treating
+    ///      it as `premultipliedFirst` previously produced pink/magenta for
+    ///      both mono and OSC frames).
     ///
     /// - Parameter maxDimension: longest-side target size in points (width or height).
     ///   The overlay uses ~200pt. The method preserves aspect ratio.
@@ -564,11 +566,10 @@ class MetalRenderer: NSObject, MTKViewDelegate {
     }
 
     /// Build an aspect-preserving `NSImage` from any `MTLTexture`, including
-    /// tile-swizzled `.private` textures. CoreImage downsamples into a small
-    /// `.private` intermediate; a blit then copies that intermediate into a
-    /// `.shared` MTLBuffer, which is guaranteed linear row-major. From the
-    /// buffer we build a CGImage without ever calling `getBytes` on a
-    /// tile-swizzled source.
+    /// tile-swizzled `.private` ones. A Metal render pass downsamples the
+    /// source into a `.private` intermediate, a blit copies that intermediate
+    /// into a `.shared` linear MTLBuffer, and the CGImage reads from the
+    /// buffer with alpha skipped.
     private func makeNSImage(from texture: MTLTexture, maxDimension: CGFloat) -> NSImage? {
         let srcW = texture.width
         let srcH = texture.height
@@ -588,32 +589,49 @@ class MetalRenderer: NSObject, MTKViewDelegate {
         interDesc.usage = [.renderTarget, .shaderRead]
         guard let intermediate = device.makeTexture(descriptor: interDesc) else { return nil }
 
-        // Wrap the source in a CIImage, scale + Y-flip in a single transform.
-        // CIImage origin is bottom-left; AppKit wants top-left, so we flip Y.
-        let options: [CIImageOption: Any] = [.colorSpace: CGColorSpaceCreateDeviceRGB()]
-        guard let ciImage = CIImage(mtlTexture: texture, options: options) else { return nil }
-        let transform = CGAffineTransform(scaleX: scale, y: -scale)
-            .translatedBy(x: 0, y: -CGFloat(srcH))
-        let scaledFlipped = ciImage.transformed(by: transform)
+        guard let cmdBuf = commandQueue.makeCommandBuffer() else { return nil }
 
-        // Linear destination buffer (row-major BGRA8). MTLBuffer is always linear,
-        // so the blit below forces the AGX driver through its safe detile path.
+        // --- 1. Render pass: source texture → intermediate (fullscreen quad).
+        // We reuse the main viewer's `quad_vertex` / `quad_fragment` pipeline
+        // so thumbnail colors stay bit-identical to the main display. The
+        // clear color is irrelevant (the quad covers every pixel) but sets
+        // alpha = 1.0 as a defensive baseline.
+        let rpDesc = MTLRenderPassDescriptor()
+        rpDesc.colorAttachments[0].texture = intermediate
+        rpDesc.colorAttachments[0].loadAction = .clear
+        rpDesc.colorAttachments[0].clearColor = MTLClearColor(red: 0, green: 0, blue: 0, alpha: 1)
+        rpDesc.colorAttachments[0].storeAction = .store
+
+        guard let encoder = cmdBuf.makeRenderCommandEncoder(descriptor: rpDesc) else { return nil }
+        encoder.setRenderPipelineState(renderPipeline)
+        encoder.setViewport(MTLViewport(
+            originX: 0, originY: 0,
+            width: Double(dstW), height: Double(dstH),
+            znear: 0.0, zfar: 1.0
+        ))
+        // Fullscreen quad as a triangle strip. Metal render-target pixel (0,0)
+        // is top-left; source texture pixel (0,0) is also top-left; UV (0,0)
+        // samples top-left — so no Y flip is required.
+        // Layout per vertex: [ndcX, ndcY, u, v] (matches `quad_vertex`).
+        var vertices: [Float] = [
+            -1, -1, 0, 1,   // screen bottom-left  → UV (0, 1)
+             1, -1, 1, 1,   // screen bottom-right → UV (1, 1)
+            -1,  1, 0, 0,   // screen top-left     → UV (0, 0)
+             1,  1, 1, 0,   // screen top-right    → UV (1, 0)
+        ]
+        encoder.setVertexBytes(&vertices, length: vertices.count * MemoryLayout<Float>.size, index: 0)
+        encoder.setFragmentTexture(texture, index: 0)
+        encoder.setFragmentSamplerState(sampler, index: 0)
+        encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
+        encoder.endEncoding()
+
+        // --- 2. Blit the small intermediate into a shared linear buffer.
+        // MTLBuffer is always row-major by definition, so this bypasses the
+        // AGX detiler entirely — no `getBytes` on a tile-swizzled texture.
         let bytesPerRow = dstW * 4
         let totalBytes = dstH * bytesPerRow
         guard let readback = device.makeBuffer(length: totalBytes, options: .storageModeShared),
-              let cmdBuf = commandQueue.makeCommandBuffer() else { return nil }
-
-        // 1. CoreImage renders the (possibly tile-swizzled) source into `intermediate`.
-        thumbnailCIContext.render(
-            scaledFlipped,
-            to: intermediate,
-            commandBuffer: cmdBuf,
-            bounds: CGRect(x: 0, y: 0, width: dstW, height: dstH),
-            colorSpace: CGColorSpaceCreateDeviceRGB()
-        )
-
-        // 2. Blit the small intermediate into the linear shared buffer.
-        guard let blit = cmdBuf.makeBlitCommandEncoder() else { return nil }
+              let blit = cmdBuf.makeBlitCommandEncoder() else { return nil }
         blit.copy(
             from: intermediate, sourceSlice: 0, sourceLevel: 0,
             sourceOrigin: MTLOrigin(x: 0, y: 0, z: 0),
@@ -626,18 +644,23 @@ class MetalRenderer: NSObject, MTKViewDelegate {
         cmdBuf.commit()
         cmdBuf.waitUntilCompleted()
 
-        // If GPU reported an error, bail — don't hand back a CGImage of garbage pixels.
         if cmdBuf.status != .completed { return nil }
 
-        // 3. Copy buffer contents into a CFData-owned byte block so the CGImage
-        // doesn't alias MTLBuffer memory that Metal may reuse.
+        // --- 3. Copy buffer contents into a CFData-owned block so the CGImage
+        // doesn't alias MTLBuffer memory that Metal may recycle.
         let contents = readback.contents().assumingMemoryBound(to: UInt8.self)
         guard let cfData = CFDataCreate(nil, contents, totalBytes),
               let provider = CGDataProvider(data: cfData) else { return nil }
 
+        // `byteOrder32Little | noneSkipFirst` reads memory-order BGRA as
+        // logical-XRGB with the alpha byte skipped. The main viewer writes
+        // whatever alpha the STF/post-process stage produced — typically 1.0,
+        // but CAMetalLayer is opaque so nothing downstream consumes it, and
+        // using `premultipliedFirst` here would divide each RGB by alpha
+        // (pink/magenta when alpha drifted to 0 on cached previews).
         let bitmapInfo = CGBitmapInfo(rawValue:
             CGBitmapInfo.byteOrder32Little.rawValue |
-            CGImageAlphaInfo.premultipliedFirst.rawValue)
+            CGImageAlphaInfo.noneSkipFirst.rawValue)
         guard let cgImage = CGImage(
             width: dstW, height: dstH,
             bitsPerComponent: 8, bitsPerPixel: 32,
