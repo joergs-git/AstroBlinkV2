@@ -182,6 +182,26 @@ Integration hours in the Target Catalog are filtered by the currently selected e
 **Q: Can I use the Target Catalog offline?**
 Yes. After the first successful Supabase fetch, the entire catalog is cached as JSON on disk. Subsequent launches load from cache instantly. Only weather and DSS thumbnails require an internet connection — everything else works fully offline.
 
+## iOS — AstroFileViewer
+
+**Q: What file formats does AstroFileViewer (iOS) support?**
+FITS (`.fits`, `.fit`, `.fts`), XISF (`.xisf`), and TIFF (`.tif`, `.tiff`). FITS and XISF are decoded via the same `cfitsio` and `libxisf` libraries as the macOS app. TIFF was added in v1.5.0 via system ImageIO — no new dependency.
+
+**Q: Which TIFF flavours work?**
+8-bit, 16-bit integer, and 32-bit float TIFFs, mono and RGB(A). LZW and Deflate compression are handled natively by ImageIO. Multi-page TIFFs use page 0. RGBA alpha is dropped (astro TIFFs almost never carry alpha — if they do, it's ignored).
+
+**Q: How does it handle PixInsight or GraxPert linear-range float TIFFs?**
+Auto-detected. The decoder samples the buffer's peak magnitude: peak ≤ 1.5 → values are normalized [0,1] and scaled by 65535 (PixInsight, GraxPert, Siril linear). Peak > 1.5 → values are pre-scaled DN, passed through and clamped at 65535. Same logic as the FITS float decoder (v5.14.0).
+
+**Q: Why is the header inspector empty for my TIFF?**
+TIFF has no FITS keywords. There's no standard for storing exposure, filter, gain, target name, plate-solve coordinates, or rotator angle inside a TIFF, so AstroFileViewer can't extract them. The image displays correctly and the entire post-processing pipeline (STF auto-stretch, denoise, gradient, dark, sharpen) works identically — only the metadata column is unavailable.
+
+**Q: Can I rotate / debayer a TIFF in AstroFileViewer?**
+Auto-rotate works (it's a UIImage orientation flag, not metadata-driven). Debayer does **not** work for TIFFs — Bayer pattern detection requires a `BAYERPAT` FITS header. Save your raw OSC subs as FITS or XISF if you want debayer; processed RGB TIFFs from PixInsight/Siril are already debayered and don't need it.
+
+**Q: My iPhone can't see my TIFFs in the share sheet — why?**
+You may need to install v1.5.0 or later. Versions prior to v1.5.0 don't advertise the `public.tiff` UTI in `CFBundleDocumentTypes`, so iOS doesn't know AstroFileViewer can open `.tif`/`.tiff`. The picker will skip them. Update from the App Store.
+
 ## VLM Check
 
 **Q: What is VLM Check?**

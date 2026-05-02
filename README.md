@@ -345,14 +345,15 @@ After a night of imaging you might have 200-600 sub-exposures. Some have clouds,
 
 ## AstroFileViewer — iOS Companion App
 
-**AstroFileViewer** is a companion iOS/iPadOS app for viewing FITS and XISF astrophotography files on your iPhone or iPad.
+**AstroFileViewer** is a companion iOS/iPadOS app for viewing FITS, XISF, and TIFF astrophotography files on your iPhone or iPad.
 
 <!-- TODO: Add App Store badge/link when available -->
 <!-- [![Download on the App Store](https://developer.apple.com/assets/elements/badges/download-on-the-app-store.svg)](https://apps.apple.com/app/astrofileviewer/idXXXXXXXXXX) -->
 
 ### Features
 
-- **Open FITS and XISF files** directly from the Files app, iCloud Drive, or any document provider
+- **Open FITS, XISF, and TIFF files** directly from the Files app, iCloud Drive, or any document provider
+- **TIFF support (v1.5.0)** — 8-bit, 16-bit, and 32-bit float `.tif`/`.tiff` files via system ImageIO, including PixInsight float32 exports, GraxPert linear output, ASTAP/Siril processed stacks, and 16-bit mono captures. Float-range auto-detected. The full STF + denoise + gradient + dark + sharpen pipeline works identically; only the FITS-keyword header inspector is unavailable for TIFF (the format has no astro metadata).
 - **Auto STF stretch** — same PixInsight-compatible algorithm as the macOS app
 - **Adjustable stretch strength** — slider from 0% (fully linear) to 100%
 - **Dark point slider** — raises the black point to clip faint background noise (same as macOS AstroBlink)
