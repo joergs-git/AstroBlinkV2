@@ -20,8 +20,8 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.joergsflow.AstroFileViewer
-        MARKETING_VERSION: "1.4.1"
-        CURRENT_PROJECT_VERSION: "17"
+        MARKETING_VERSION: "1.5.0"
+        CURRENT_PROJECT_VERSION: "18"
         SWIFT_VERSION: "5.9"
         TARGETED_DEVICE_FAMILY: "1,2"
         SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD: "NO"
@@ -58,6 +58,13 @@ targets:
             LSHandlerRank: Alternate
             LSItemContentTypes:
               - gov.nasa.gsfc.fits
+          # TIFF: system-defined UTI public.tiff covers .tif / .tiff
+          # Pixel-only viewer (no metadata extraction), so role is Viewer + Alternate.
+          - CFBundleTypeName: TIFF Image
+            CFBundleTypeRole: Viewer
+            LSHandlerRank: Alternate
+            LSItemContentTypes:
+              - public.tiff
         UTImportedTypeDeclarations:
           - UTTypeIdentifier: com.pixinsight.xisf
             UTTypeDescription: XISF Image

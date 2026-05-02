@@ -1,4 +1,4 @@
-// v0.1.0
+// v1.5.0 — TIFF dispatch added (Swift-only via ImageIO, no new C dep).
 import Foundation
 import Metal
 import ImageDecoderBridge
@@ -12,6 +12,13 @@ struct ImageDecoder {
     static func decode(url: URL, device: MTLDevice) -> Result<DecodedImage, DecoderError> {
         let path = url.path
         let ext = url.pathExtension.lowercased()
+
+        // TIFF goes through a pure-Swift ImageIO path. No FITS headers, but
+        // the pixel pipeline (STF, denoise, gradient, etc.) is purely
+        // pixel-driven and does not depend on header keywords.
+        if ext == "tif" || ext == "tiff" {
+            return TIFFDecoder.decode(url: url, device: device)
+        }
 
         var result: DecodeResult
         if ext == "xisf" {

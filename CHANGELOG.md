@@ -1059,6 +1059,17 @@ A full rework of the meridian-flip / cross-session orientation system after an e
 - Navigation: arrow keys stop at boundaries (no wrap-around).
 - Column order: checkbox, #, filename, object, filter, exp, amb, foc, temp, gain, size, fwhm, hfr, stars, subfolder.
 
+## [1.5.0] — 2026-05-02 (iOS AstroFileViewer)
+
+### Added
+- **TIFF support (.tif, .tiff)** — Open 8-bit, 16-bit, and 32-bit float TIFF files alongside FITS and XISF. Decoded via system ImageIO (no new dependency). Supports mono and RGB(A); alpha channel is dropped, multi-page TIFFs use page 0. 32-bit float TIFFs auto-detect range: values in [0,1] (PixInsight, GraxPert linear) are scaled by 65535; pre-scaled DN values are passed through and clamped. The full STF auto-stretch + denoise + gradient + dark + sharpen pipeline works identically to FITS/XISF.
+- **TIFF caveat** — TIFF files have no FITS keywords, so the header inspector shows nothing for them. Filter, exposure, gain, target, and plate-solve fields are unavailable. The image-quality controls work identically because they operate on pixel data, not headers.
+
+## [1.4.1] — 2026-04-08 (iOS AstroFileViewer)
+
+### Fixed
+- **Float FITS support** — Decoder now checks BITPIX before choosing read datatype. Float FITS (BITPIX=-32/-64, used by AstroPixelProcessor, PixInsight, and GraxPert) is read as TFLOAT with auto-range detection. Integer FITS unaffected.
+
 ## [1.4.0] — 2026-03-23 (iOS AstroFileViewer)
 
 ### Added

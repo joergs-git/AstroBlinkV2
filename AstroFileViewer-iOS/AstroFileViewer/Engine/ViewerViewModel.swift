@@ -218,6 +218,9 @@ class ViewerViewModel: ObservableObject {
         if let fits = UTType(filenameExtension: "fits") { types.append(fits) }
         if let fit = UTType(filenameExtension: "fit") { types.append(fit) }
         if let fts = UTType(filenameExtension: "fts") { types.append(fts) }
+        // TIFF (.tif, .tiff) — pixel data only, no FITS/XISF metadata.
+        // System UTType.tiff matches both extensions.
+        types.append(.tiff)
         types.append(.data)
         return types
     }()
@@ -269,7 +272,7 @@ class ViewerViewModel: ObservableObject {
     }
 
     // Supported file extensions
-    private static let validExtensions: Set<String> = ["xisf", "fits", "fit", "fts"]
+    private static let validExtensions: Set<String> = ["xisf", "fits", "fit", "fts", "tif", "tiff"]
 
     // Bayer pattern string to shader index mapping
     private static let bayerPatternMap: [String: Int] = [

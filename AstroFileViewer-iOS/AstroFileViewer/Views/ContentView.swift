@@ -450,7 +450,7 @@ struct HelpAboutView: View {
 
                     HelpRow(icon: "folder", color: .blue,
                             title: "Open Files",
-                            text: "Tap the folder icon to open FITS (.fits, .fit, .fts) or XISF (.xisf) files from the Files app, iCloud Drive, or any document provider.")
+                            text: "Tap the folder icon to open FITS (.fits, .fit, .fts), XISF (.xisf), or TIFF (.tif, .tiff) files from the Files app, iCloud Drive, or any document provider. TIFF files have no FITS metadata, but the auto-stretch and image controls work the same.")
 
                     HelpRow(icon: "sun.min", color: .yellow,
                             title: "Auto Stretch",
