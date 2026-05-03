@@ -260,7 +260,7 @@ struct FrameHistoryContentView: View {
         case .sessionScore:
             SessionScoreChart(model: model, theme: chartTheme)
         case .efficiency:
-            efficiencyChart
+            EfficiencyChart(model: model, theme: chartTheme)
         case .performance:
             equipmentHealthChart
         case .conditions:
@@ -275,113 +275,6 @@ struct FrameHistoryContentView: View {
     }
 
 
-    // KPI 2: Imaging Efficiency — retention rate per night with tier breakdown
-    private var efficiencyChart: some View {
-        let data = model.efficiencyData
-        return VStack(alignment: .leading, spacing: 4) {
-            Text("Imaging Efficiency — Frames Kept vs Lost")
-                .font(.system(size: fs(13), weight: .semibold))
-                .foregroundColor(fg)
-
-            if data.isEmpty {
-                noDataView
-            } else {
-                Chart(data) { point in
-                    BarMark(
-                        x: .value("Night", point.date, unit: .day),
-                        y: .value("Kept %", point.retentionPct)
-                    )
-                    .foregroundStyle(
-                        point.retentionPct >= 80 ? Color.green :
-                        point.retentionPct >= 60 ? Color.yellow :
-                        point.retentionPct >= 40 ? Color.orange : Color.red
-                    )
-                    if let hd = hoveredDate, point.date.timeIntervalSince(hd).magnitude < 30 * 86400 {
-                        RuleMark(x: .value("Hover", point.date, unit: .day))
-                            .foregroundStyle(fg.opacity(0.3))
-                            .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 3]))
-                    }
-                }
-                .chartYScale(domain: 0...100)
-                .chartYAxisLabel("Frames Kept %")
-                .chartPlotStyle { plot in plot.background(chartBg).clipped() }
-                .chartOverlay { proxy in chartHoverTracker(proxy: proxy) }
-                .frame(minHeight: 300)
-                .overlay(alignment: .topLeading) {
-                    if let hd = hoveredDate,
-                       let point = data.min(by: { $0.date.timeIntervalSince(hd).magnitude < $1.date.timeIntervalSince(hd).magnitude }),
-                       point.date.timeIntervalSince(hd).magnitude < 30 * 86400 {
-                        chartTooltip {
-                            Text(point.night).font(.system(size: fs(10), weight: .bold))
-                            Text(String(format: "%.0f%% kept — %d frames", point.retentionPct, point.total))
-                                .font(.system(size: fs(10)))
-                            Text("\(point.excellent) excellent, \(point.good) good, \(point.borderline) borderline, \(point.trash) trash")
-                                .font(.system(size: fs(9))).foregroundColor(fgDim)
-                            if !point.targets.isEmpty {
-                                Text(point.targets.map { TargetCatalog.displayName($0) }.joined(separator: ", "))
-                                    .font(.system(size: fs(9))).foregroundColor(fgDim)
-                            }
-                            HStack(spacing: 8) {
-                                if !point.filters.isEmpty {
-                                    Text(point.filters.joined(separator: "/")).font(.system(size: fs(9)))
-                                }
-                                if let fwhm = point.avgFWHM {
-                                    Text(String(format: "FWHM %.1f px", fwhm)).font(.system(size: fs(9)))
-                                        .foregroundColor(fwhm > 6 ? .orange : fgDim)
-                                }
-                                if let moon = point.moonPct {
-                                    Text(String(format: "Moon %.0f%%", moon)).font(.system(size: fs(9)))
-                                        .foregroundColor(moon > 60 ? .orange : fgDim)
-                                }
-                            }
-                            .foregroundColor(fgDim)
-                            // Highlight likely cause for bad nights
-                            if point.retentionPct < 50 {
-                                let causes = badNightCauses(point)
-                                if !causes.isEmpty {
-                                    Text("Likely: " + causes.joined(separator: ", "))
-                                        .font(.system(size: fs(9), weight: .medium))
-                                        .foregroundColor(.orange)
-                                }
-                            }
-                            Divider().frame(height: 1)
-                            if let s = model.efficiencyChartStats {
-                                Text(String(format: "Overall: avg %.0f%%, median %.0f%%", s.avg, s.median))
-                                    .font(.system(size: fs(9), design: .monospaced))
-                                    .foregroundColor(fgDim)
-                            }
-                            Text("Retention = usable frames kept after culling.\n<50% often means clouds, wind, or equipment issues.")
-                                .font(.system(size: fs(8)))
-                                .foregroundColor(fgDim.opacity(0.7))
-                                .lineLimit(3)
-                        }
-                        .offset(tooltipOffset(x: hoverLocation.x, y: hoverLocation.y))
-                    }
-                }
-
-                // Legend + stats
-                HStack(spacing: 12) {
-                    HStack(spacing: 3) { Circle().fill(.green).frame(width: 6); Text("80%+").font(.system(size: fs(9))).foregroundColor(fgDim) }
-                    HStack(spacing: 3) { Circle().fill(.yellow).frame(width: 6); Text("60-79%").font(.system(size: fs(9))).foregroundColor(fgDim) }
-                    HStack(spacing: 3) { Circle().fill(.orange).frame(width: 6); Text("40-59%").font(.system(size: fs(9))).foregroundColor(fgDim) }
-                    HStack(spacing: 3) { Circle().fill(.red).frame(width: 6); Text("<40%").font(.system(size: fs(9))).foregroundColor(fgDim) }
-                    Spacer()
-                    let avgEfficiency = data.map(\.retentionPct).reduce(0, +) / Double(data.count)
-                    let totalFrames = data.reduce(0) { $0 + $1.total }
-                    let totalKept = data.reduce(0) { $0 + $1.excellent + $1.good }
-                    Text("Avg: \(String(format: "%.0f%%", avgEfficiency))")
-                        .font(.system(size: fs(11), weight: .medium, design: .monospaced))
-                        .foregroundColor(fg)
-                    Text("\(totalKept)/\(totalFrames) kept overall")
-                        .font(.system(size: fs(11), design: .monospaced))
-                        .foregroundColor(fgDim)
-                }
-                Text("Excellent + Good frames / Total frames per night")
-                    .font(.system(size: fs(9)))
-                    .foregroundColor(fgDim)
-            }
-        }
-    }
 
     // KPI 3: Equipment Health — rolling FWHM trend per setup
     private var equipmentHealthChart: some View {
@@ -1416,21 +1309,6 @@ struct FrameHistoryContentView: View {
         .padding(.vertical, 6)
     }
 
-    // MARK: - Bad Night Cause Analysis
-
-    /// Analyze an efficiency data point and suggest likely causes for poor retention.
-    private func badNightCauses(_ point: FrameHistoryModel.EfficiencyPoint) -> [String] {
-        var causes: [String] = []
-        if let fwhm = point.avgFWHM, fwhm > 8 { causes.append("bad seeing (FWHM \(String(format: "%.1f", fwhm)))") }
-        else if let fwhm = point.avgFWHM, fwhm > 5 { causes.append("mediocre seeing") }
-        if let moon = point.moonPct, moon > 70 {
-            let hasBroadband = point.filters.contains(where: { ["L", "R", "G", "B"].contains($0) })
-            if hasBroadband { causes.append("bright moon + broadband") }
-        }
-        if point.trash > point.total / 2 { causes.append("high trash rate") }
-        if point.total < 10 { causes.append("very few frames") }
-        return causes
-    }
 
     // MARK: - Chart Scroll/Zoom Helpers
 
