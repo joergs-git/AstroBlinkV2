@@ -5901,18 +5901,26 @@ class TriageViewModel: ObservableObject {
         // Trigger on 5th and every 50th session after that (Apple rate-limits anyway)
         let reviewDue = (count == 5) || (count > 5 && count % 50 == 0)
 
-        // Small delay so the session is visually loaded before the prompt appears
+        // Review prompt fires at 2s — Apple rate-limits this anyway and the user
+        // is just landing on the session, so a quick prompt is fine.
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
             if reviewDue {
                 SKStoreReviewController.requestReview()
-                // Don't stack two prompts on the same session — coffee dialog will
-                // re-evaluate next launch.
-                return
             }
-            CoffeeSupportDialog.presentIfDue(
-                currentSessionCount: count,
-                nightMode: self.nightMode
-            )
+        }
+
+        // Coffee dialog fires at 120s — gives the user real time to use the app
+        // before being asked for support, feels much less pushy than firing on
+        // session-load. Skipped entirely when the review prompt is due so the
+        // two prompts can't stack on the same session.
+        if !reviewDue {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 120.0) { [weak self] in
+                guard let self else { return }
+                CoffeeSupportDialog.presentIfDue(
+                    currentSessionCount: count,
+                    nightMode: self.nightMode
+                )
+            }
         }
     }
 
