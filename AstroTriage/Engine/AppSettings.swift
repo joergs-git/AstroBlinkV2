@@ -56,7 +56,7 @@ struct AppSettings {
         case sessionCount         // Int — number of sessions opened (for App Store review prompt)
         case hideSplash           // Bool — never show splash screen on launch
         case hasSeenOnboarding    // Bool — true after user dismissed the first-launch onboarding
-        case communityLearning    // Bool — community detection learning (default: on for new installs)
+        case communityLearning    // Bool — anonymous benchmark + curated-frame sharing (default: on; users opt out in Settings)
         case fontScale            // Float — UI font scale factor (1.0 = default)
         case dismissedMessageIDs  // [String] — UUIDs of permanently dismissed in-app messages
         case snoozedMessages      // Data — encoded [String: Date] of snoozed message ID → snooze-until date
@@ -70,7 +70,7 @@ struct AppSettings {
     // Register defaults for new installs (call once at app launch, before startCloudSync)
     static func registerDefaults() {
         defaults.register(defaults: [
-            Key.communityLearning.rawValue: true,   // opt-in by default so new users contribute data
+            Key.communityLearning.rawValue: true,   // enabled by default; users can opt out in Settings → Community Learning
             Key.showViewerOverlay.rawValue:  true,  // overlay on by default; user can dismiss via ⌘⇧O
         ])
     }
