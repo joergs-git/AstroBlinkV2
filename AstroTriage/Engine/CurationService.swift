@@ -264,12 +264,18 @@ enum CurationService {
     /// the UNIQUE (file_hash, machine_hash) constraint so the same frame can
     /// be re-rated without creating duplicate rows.
     private static func upsert(entry: CuratedFrameEntry) async throws {
-        guard var request = SupabaseClient.jsonInsertRequest(
+        // PostgREST 12+ requires an explicit on_conflict target when the table has
+        // multiple unique-style constraints (PRIMARY KEY id + UNIQUE (file_hash,
+        // machine_hash)). Without it the merge-duplicates resolution fails with 409.
+        guard let url = SupabaseClient.restURL(
             table: "curated_frames",
-            prefer: "resolution=merge-duplicates,return=minimal"
+            query: "on_conflict=file_hash,machine_hash"
         ) else {
             throw CurationError.badURL
         }
+        var request = SupabaseClient.makeRequest(url: url, method: "POST", withBearer: true)
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("resolution=merge-duplicates,return=minimal", forHTTPHeaderField: "Prefer")
 
         let encoder = JSONEncoder()
         request.httpBody = try encoder.encode(entry)
