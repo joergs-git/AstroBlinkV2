@@ -17,7 +17,7 @@ The core image-viewing, culling, and stacking functions run entirely on your dev
 
 A few optional features send anonymized technical data to our servers (Anthropic for AIsaac, Supabase for benchmarks and community learning). These are listed in detail below. All transmitted identifiers are non-reversible SHA256 hashes. There are no advertising, analytics, or tracking SDKs in either app.
 
-Servers are operated by Anthropic and Supabase in the United States. By using AIsaac or Community Learning, you accept transfer of anonymized data to US servers.
+Anthropic operates from the United States. Supabase data for this project is stored in the EU region (Ireland, `eu-west-1`). By using AIsaac you accept transfer of anonymized query data to Anthropic in the US. By enabling Community Learning you accept storage of anonymized telemetry in the EU.
 
 ---
 
@@ -47,7 +47,7 @@ No file contents, file paths, file names, or full-resolution pixel data leave yo
 | Curated frame ratings | machine hash, telescope name, camera name, filter, target name, capture date, quality metrics, your 1–3 star rating | Improves quality-scoring algorithm for everyone |
 | Community sessions | machine hash, equipment fingerprint, session aggregates (no per-frame detail) | Cross-user baseline learning for outlier detection |
 
-**Where it goes:** A Supabase project hosted in the United States.
+**Where it goes:** A Supabase project hosted in the EU region (Ireland, `eu-west-1`).
 
 **Identifier:** A non-reversible SHA256 truncation of your hardware UUID. Cannot be traced back to your identity. There is no user account.
 
