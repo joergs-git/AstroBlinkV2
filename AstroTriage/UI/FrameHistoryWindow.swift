@@ -268,7 +268,7 @@ struct FrameHistoryContentView: View {
         case .progress:
             TargetProgressChart(model: model, theme: chartTheme)
         case .setups:
-            setupComparisonChart
+            SetupComparisonChart(model: model, theme: chartTheme)
         case .metrics:
             metricsChart
         }
@@ -279,124 +279,6 @@ struct FrameHistoryContentView: View {
 
     // KPI 4: Conditions — environmental factor impact on background noise
 
-
-    // Chart 4: Setup Comparison — compare equipment performance
-    @State private var hoveredSetup: String?
-
-    private var setupComparisonChart: some View {
-        let points = model.setupComparisonPoints(for: model.selectedMetric)
-        return VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Text("Setup Comparison")
-                    .font(.system(size: fs(13), weight: .semibold))
-                    .foregroundColor(fg)
-                Spacer()
-                Picker("Metric", selection: $model.selectedMetric) {
-                    ForEach(FrameHistoryModel.MetricType.allCases) { m in
-                        Text(m.rawValue).tag(m)
-                    }
-                }
-                .frame(maxWidth: 120)
-            }
-
-            if points.count < 2 {
-                VStack {
-                    Spacer()
-                    Image(systemName: "camera.2")
-                        .font(.system(size: 40))
-                        .foregroundColor(fgDim)
-                    Text("Need at least 2 setups to compare.\nLoad sessions from different telescope/camera combos.")
-                        .font(.system(size: fs(13)))
-                        .foregroundColor(fgDim)
-                        .multilineTextAlignment(.center)
-                    Spacer()
-                }
-                .frame(minHeight: 200)
-            } else {
-                // Truncate long setup labels for readability
-                let maxLabelLen = 25
-                Chart(points) { point in
-                    let label = point.setupLabel.count > maxLabelLen
-                        ? String(point.setupLabel.prefix(maxLabelLen)) + "…"
-                        : point.setupLabel
-                    BarMark(
-                        x: .value("Setup", label),
-                        y: .value(model.selectedMetric.rawValue, point.value),
-                        width: .fixed(min(80, max(30, 400 / CGFloat(points.count))))
-                    )
-                    .foregroundStyle(Color.accentColor.gradient)
-                    .annotation(position: .top) {
-                        Text(String(format: "%.1f", point.value))
-                            .font(.system(size: fs(10)))
-                            .foregroundColor(fgDim)
-                    }
-                }
-                .chartYAxisLabel(model.selectedMetric.rawValue)
-                .modifier(PercentileYScale(values: points.map(\.value)))
-                .chartPlotStyle { plot in plot.background(chartBg).clipped() }
-                .chartXAxis {
-                    AxisMarks { _ in
-                        AxisValueLabel()
-                            .font(.system(size: fs(9)))
-                    }
-                }
-                .chartOverlay { proxy in
-                    GeometryReader { geo in
-                        Rectangle().fill(Color.clear).contentShape(Rectangle())
-                            .onContinuousHover { phase in
-                                switch phase {
-                                case .active(let loc):
-                                    hoverLocation = loc
-                                    if let label: String = proxy.value(atX: loc.x) {
-                                        hoveredSetup = points.first(where: {
-                                            let truncated = $0.setupLabel.count > 25
-                                                ? String($0.setupLabel.prefix(25)) + "…"
-                                                : $0.setupLabel
-                                            return truncated == label
-                                        })?.setupLabel
-                                    }
-                                case .ended:
-                                    hoveredSetup = nil
-                                }
-                            }
-                    }
-                }
-                .frame(minHeight: 300)
-                .overlay(alignment: .topLeading) {
-                    if let hLabel = hoveredSetup,
-                       let point = points.first(where: { $0.setupLabel == hLabel }) {
-                        chartTooltip {
-                            Text(point.setupLabel).font(.system(size: fs(10), weight: .bold))
-                            Text(String(format: "%@ = %.2f", model.selectedMetric.rawValue, point.value))
-                                .font(.system(size: fs(10)))
-                            Divider().frame(height: 1)
-                            Text("\(point.totalFrames) frames")
-                                .font(.system(size: fs(9))).foregroundColor(fgDim)
-                            if let first = point.firstNight, let last = point.lastNight {
-                                Text("\(first) — \(last)")
-                                    .font(.system(size: fs(9), design: .monospaced)).foregroundColor(fgDim)
-                            }
-                            Text(String(format: "Trash: %.0f%%", point.trashRate * 100))
-                                .font(.system(size: fs(9)))
-                                .foregroundColor(point.trashRate > 0.3 ? .orange : fgDim)
-                            if !point.targets.isEmpty {
-                                Text(point.targets.prefix(5).map { TargetCatalog.displayName($0) }.joined(separator: ", ")
-                                     + (point.targets.count > 5 ? " +\(point.targets.count - 5)" : ""))
-                                    .font(.system(size: fs(9))).foregroundColor(fgDim)
-                                    .lineLimit(2)
-                            }
-                            Divider().frame(height: 1)
-                            Text("Compare setups side by side. Note: seeing conditions\nvary across nights — compare with matching date ranges.")
-                                .font(.system(size: fs(8)))
-                                .foregroundColor(fgDim.opacity(0.7))
-                                .lineLimit(3)
-                        }
-                        .offset(tooltipOffset(x: hoverLocation.x, y: hoverLocation.y))
-                    }
-                }
-            }
-        }
-    }
 
     // MARK: - Metrics Chart (Temperature vs HFR scatter plot)
 
