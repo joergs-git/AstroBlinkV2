@@ -2,7 +2,118 @@
 
 Status: [ ] offen | [~] in Arbeit | [x] fertig
 
-Current version: **v5.19.1** (build 63)
+Current version: **v6.0.0** (build 89) — shipped 2026-05-03 ([release notes](https://github.com/joergs-git/AstroBlinkV2/releases/tag/v6.0.0))
+
+---
+
+## v6.x Post-Launch Backlog
+
+Welle-3 work from the 2026-05-03 launch-readiness audit. Three patch
+releases planned (v6.0.x → v6.1.x → v6.2.x), priority order top to bottom.
+Working file with full context: `tasks/launch-readiness-2026-05.md` (gitignored).
+
+### Patch 1 — Service hygiene + safety nets
+
+- [ ] **Pre-launch verifications still pending** (run on the Release build,
+      not Debug):
+  - [ ] PrefetchCache stress test: 500+ FITS, fast ←/→ navigation, watch
+        for stale-worker leaks under repeated session opens
+  - [ ] Manipulated FITS bounds test: hand-craft a header with width/height
+        beyond the 200 MP cap; expect clean error, not crash
+  - [ ] Golden-Set regression: 7 setups × 1638 frames, score deviation ≤ ±2 %
+        from pre-refactor baseline (validates that the day's file splits
+        didn't accidentally change scoring)
+
+- [ ] **`SupabaseClient` → real service layer**
+  - Retry with exponential backoff (transient 5xx, network blip)
+  - Unified per-call timeout configuration
+  - Consistent error mapping (network / 4xx / 5xx → typed cases)
+  - Single point for adding x-app-version, request IDs, etc.
+  - Migrate the ~10 callers off ad-hoc URLSession.data and onto the
+    new `client.send(...)` shape
+
+- [ ] **CI: enforce `kAlgorithmVersion` bump** on quality-critical edits.
+  GitHub Action checks the diff: if any of `QualityEstimator.swift`,
+  `TrailingAnalyzer.swift`, `CalibrationDatabase.swift`,
+  `ConvergenceDetector.swift`, `StarMetricsCalculator.swift`,
+  `STFCalculator.swift`, `ColorCombineEngine.swift` changed AND
+  `kAlgorithmVersion` in `FrameRecord.swift` did not → block PR with
+  link to `ALGORITHM_CHANGELOG.md`
+
+- [ ] **Force-Unwrap-Sweep** — full-codebase audit of `!` and `try!`,
+  categorized in `tasks/force-unwrap-audit.md` as:
+  1. System-guaranteed (Bundle resources, etc.) — keep
+  2. Internal-invariant guaranteed — keep with comment
+  3. User-input / filesystem / network — replace with `guard let`
+
+### Patch 2 — TriageViewModel split + QualityEstimator stages
+
+The big one. Snapshot tag before each step (`pre-refactor-<slice>`), build
++ smoke test between every commit.
+
+- [ ] **`SessionOrchestrator`** — pull session loading, scoring trigger,
+  mosaic generation, community-detection wiring out of `TriageViewModel`.
+  Closures/protocols for the few places that still need to call back into
+  `TriageState`.
+
+- [ ] **`TriageState`** — the riskiest split, do **last**. Move the
+  `@Published` UI state (selectedIndex, hideMarked, skipMarked, sort
+  state, filter state, marked sets) into a dedicated state holder.
+  Existing SwiftUI bindings either continue to work via forwarding
+  computed properties on `TriageViewModel` or get migrated piecemeal.
+
+- [ ] **`QualityEstimator` stages → separate files**
+  (R0/R1.5/R6/R7/Stage4 each in their own file). Pure organizational
+  but quality-critical, so it requires:
+  - bump `kAlgorithmVersion` (even though logic is unchanged — re-runs
+    are cheap insurance)
+  - run Golden-Set regression, attach numbers to commit message
+  - add an `ALGORITHM_CHANGELOG.md` entry explaining "version bumped
+    purely to mark file split, no logic change, golden set ±0.X%"
+
+- [ ] **`FrameHistoryDatabase` iCloud-Sync extraction**
+  (deferred from W2.6). Needs an injected `FrameHistoryICloudSync`
+  helper struct because the methods touch private instance state
+  (`_iCloudDirectory`, `dbQueue`, `storageURL`) that an extension in
+  another file cannot reach without raising visibility.
+
+- [ ] **`FrameHistoryModel`** — domain types (`SessionScorePoint`,
+  `EfficiencyPoint`, etc.) split from the aggregation logic that
+  produces them. ~1300 LOC currently.
+
+### Patch 3 — Cross-platform + tests + concurrency
+
+- [ ] **Decoder sharing macOS ↔ iOS**: `Packages/ImageDecoder/` becomes
+  a single SPM target consumed by both apps. Reconcile the
+  `bytes:length:options:` (iOS, copy) vs. `bytesNoCopy` (macOS,
+  zero-copy) variants — pick one pattern, document why.
+
+- [ ] **Granular telemetry toggles** — split the single
+  "Community Learning" Settings toggle into three:
+  - Performance Benchmarks (anonymous hardware/timing)
+  - Frame Quality Ratings (equipment + target metadata)
+  - Community Baselines (only aggregates)
+  Better acceptance, lower opt-out rate.
+
+- [ ] **Test coverage** — gap-fill the worst spots:
+  - `QualityEstimator` unit tests for each stage (R6 star anomaly,
+    Stage 1.5b narrowband, R7 background, isLockedKeep)
+  - `DeepSkyTargetDatabase` aliasing / canonical-name / type-classification
+  - Golden-Set-Regression in CI: 7 setups × 1638 frames, threshold ±2%
+
+- [ ] **Strict Concurrency / Swift 6 migration** — there are ~30
+  Sendable warnings in `TriageViewModel.Task.detached` blocks (capture
+  of `var self` etc.). `swift-language-mode complete` once we're
+  ready to fix them all.
+
+### Smaller observations (quick wins, anytime)
+
+- [ ] Status-bar Community Learning indicator → click info-icon to open
+      PRIVACY.md on GitHub
+- [ ] `AIsaacUserProfile.delete()` — also reset in-memory profile state
+      via a `Notification.Name.aisaacProfileDeleted` so
+      `AIsaacContextBuilder` doesn't keep serving the old profile
+      until next launch
 
 ---
 
