@@ -31,6 +31,18 @@ struct ImageDecoder {
         let width = Int(result.width)
         let height = Int(result.height)
         let channels = Int(result.channelCount)
+
+        // Bounds check before multiplying — rejects manipulated/garbage FITS headers
+        // that would otherwise allocate pathological amounts of memory. 200 MP covers
+        // any consumer or pro astro camera (ASI6200MM is ~62 MP) with headroom; the
+        // division order avoids overflow during the check itself.
+        let maxPixels = 200_000_000
+        guard width > 0, height > 0, channels > 0, channels <= 4,
+              width <= maxPixels / max(1, height * channels) else {
+            free_decode_result(&result)
+            return .failure(.decodeFailed("dimensions out of range: \(width)x\(height)x\(channels)"))
+        }
+
         let byteCount = width * height * channels * MemoryLayout<UInt16>.size
 
         // Round up to page size for bytesNoCopy requirement
@@ -39,7 +51,11 @@ struct ImageDecoder {
 
         // Zero-copy: wrap the page-aligned C allocation as MTLBuffer directly.
         // The deallocator frees the C memory when the MTLBuffer is released.
-        let rawPtr = UnsafeMutableRawPointer(result.pixels)!
+        guard let pixels = result.pixels else {
+            free_decode_result(&result)
+            return .failure(.decodeFailed("decoder reported success but pixel buffer is nil"))
+        }
+        let rawPtr = UnsafeMutableRawPointer(pixels)
         guard let buffer = device.makeBuffer(
             bytesNoCopy: rawPtr,
             length: alignedByteCount,
