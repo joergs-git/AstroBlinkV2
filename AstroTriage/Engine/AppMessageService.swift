@@ -345,12 +345,16 @@ final class AppMessageService {
 
     /// POST a new interaction record.
     private func postInteraction(_ interaction: MessageInteraction) async {
-        // UPSERT: merge on conflict (message_id, machine_hash)
-        guard var request = SupabaseClient.jsonInsertRequest(
+        // UPSERT: merge on conflict (message_id, machine_hash). Schema gained the
+        // matching UNIQUE constraint in the 2026-05-03 patch-1 migration; pass
+        // on_conflict explicitly so PostgREST 12+ knows which constraint to merge on.
+        guard let url = SupabaseClient.restURL(
             table: "message_interactions",
-            prefer: "resolution=merge-duplicates",
-            withBearer: false
+            query: "on_conflict=message_id,machine_hash"
         ) else { return }
+        var request = SupabaseClient.makeRequest(url: url, method: "POST")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.setValue("resolution=merge-duplicates", forHTTPHeaderField: "Prefer")
         request.timeoutInterval = 30
 
         do {
