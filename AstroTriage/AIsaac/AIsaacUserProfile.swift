@@ -266,4 +266,24 @@ struct AIsaacUserProfile: Codable {
             try? data.write(to: icloudURL, options: .atomic)
         }
     }
+
+    /// Delete both the local and iCloud copy of the profile JSON.
+    /// In-memory profiles held by AIsaacContextBuilder etc. are NOT cleared by this —
+    /// the next AIsaacUserProfile.load() call will return a fresh blank profile.
+    static func delete() {
+        let fm = FileManager.default
+        try? fm.removeItem(at: localURL)
+        if let icloud = iCloudURL {
+            try? fm.removeItem(at: icloud)
+        }
+    }
+
+    /// Write a pretty-printed copy of the profile to the given URL (typically
+    /// a user-chosen location via NSSavePanel). Throws on encoding/write failure.
+    func exportTo(_ url: URL) throws {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        let data = try encoder.encode(self)
+        try data.write(to: url, options: .atomic)
+    }
 }

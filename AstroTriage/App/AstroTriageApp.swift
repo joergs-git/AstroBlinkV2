@@ -175,6 +175,15 @@ struct AstroBlinkV2App: App {
                         NotificationCenter.default.post(name: .resetFrameHistory, object: nil)
                     }
                     Divider()
+                    Menu("AIsaac Profile") {
+                        Button("Export Profile (JSON)...") {
+                            exportAIsaacProfile()
+                        }
+                        Button("Delete Profile...") {
+                            deleteAIsaacProfile()
+                        }
+                    }
+                    Divider()
                     Button("Destroy All DB Data...") {
                         NotificationCenter.default.post(name: .destroyAllData, object: nil)
                     }
@@ -196,6 +205,44 @@ struct AstroBlinkV2App: App {
             }
         }
     }
+}
+
+// MARK: - AIsaac Profile Menu Helpers
+
+/// Export the current AIsaac profile JSON to a user-chosen location.
+/// Reaches the file via AIsaacUserProfile.load() so we don't need a reference
+/// to the in-memory copy held by AIsaacContextBuilder.
+@MainActor
+private func exportAIsaacProfile() {
+    let panel = NSSavePanel()
+    panel.title = "Export AIsaac Profile"
+    panel.allowedContentTypes = [.json]
+    panel.nameFieldStringValue = "aisaac_profile.json"
+    panel.canCreateDirectories = true
+    guard panel.runModal() == .OK, let url = panel.url else { return }
+    do {
+        try AIsaacUserProfile.load().exportTo(url)
+    } catch {
+        let alert = NSAlert()
+        alert.messageText = "Export failed"
+        alert.informativeText = error.localizedDescription
+        alert.alertStyle = .warning
+        alert.runModal()
+    }
+}
+
+/// Delete the local + iCloud copies of the AIsaac profile after explicit
+/// user confirmation. The next AIsaac query starts from a fresh blank profile.
+@MainActor
+private func deleteAIsaacProfile() {
+    let alert = NSAlert()
+    alert.messageText = "Delete AIsaac profile?"
+    alert.informativeText = "Removes the local profile in Application Support and the iCloud copy. Equipment, filters and imaging history kept in the profile will be cleared. This does not affect Frame History or your local image files."
+    alert.alertStyle = .warning
+    alert.addButton(withTitle: "Delete")
+    alert.addButton(withTitle: "Cancel")
+    guard alert.runModal() == .alertFirstButtonReturn else { return }
+    AIsaacUserProfile.delete()
 }
 
 // Custom app delegate for About panel and cleanup
