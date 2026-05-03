@@ -34,13 +34,19 @@ enum SupabaseClient {
 
     // MARK: - Request setup
 
-    /// Build a URLRequest with the standard `apikey` header and (optionally) a Bearer
-    /// `Authorization` header for write paths and RLS-protected reads.
+    /// Build a URLRequest with the standard `apikey` header, an `X-Device-Id` header
+    /// (the anonymous machine hash — used by RLS policies that bind rows to a device),
+    /// and (optionally) a Bearer `Authorization` header for write paths.
     /// Caller is responsible for setting Content-Type / Prefer / body for the operation.
+    ///
+    /// The X-Device-Id header is harmless on public-read endpoints (bortle_grid, target_catalog, …)
+    /// and essential on RLS-protected UPDATE paths (curated_frames, message_interactions) where
+    /// the policy enforces `machine_hash = request.headers ->> 'x-device-id'`.
     static func makeRequest(url: URL, method: String = "GET", withBearer: Bool = false) -> URLRequest {
         var r = URLRequest(url: url)
         r.httpMethod = method
         r.setValue(BenchmarkConfig.supabaseAnonKey, forHTTPHeaderField: "apikey")
+        r.setValue(MachineInfo.machineHash, forHTTPHeaderField: "x-device-id")
         if withBearer {
             r.setValue("Bearer \(BenchmarkConfig.supabaseAnonKey)", forHTTPHeaderField: "Authorization")
         }
