@@ -4,6 +4,56 @@ All notable changes to AstroBlink & AIsaac will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [6.0.0] — 2026-05-03
+
+### Privacy & Security
+
+- **PRIVACY.md fully rewritten** to match what the app actually sends. Adds explicit sections for anonymous telemetry (default-on, opt-out), approximate location from FITS `SITELAT`/`SITELONG` rounded to 0.1°, in-app email collection for entitlements, and curated-frame uploads that include equipment metadata. Region corrected from US to EU (Supabase project lives in `eu-west-1`/Ireland; Anthropic stays US).
+- **Onboarding screen now discloses telemetry** with an inline opt-out checkbox above "Get Started" and an info button linking to PRIVACY.md. The Settings → Community Learning toggle stays the long-term control.
+- **Status-bar Community Learning tooltip** corrected — it previously claimed "no equipment names" which contradicted the curated_frames pipeline. Tooltip now matches PRIVACY.md.
+- **Supabase RLS hardened.** Five `admin_*` SECURITY DEFINER functions had `EXECUTE` granted to anon/authenticated/PUBLIC and could be called by anyone holding the public anon key — including `admin_delete_by_machine` and `admin_delete_by_setup`, which would have let any client wipe other users' data. All `EXECUTE` grants revoked except `service_role`. Nine `public.*` functions had their `search_path` pinned to `public, pg_temp` as defense in depth.
+- **`curated_frames` and `message_interactions` UPDATE policies** tightened from `USING (true) WITH CHECK (true)` to require `machine_hash = request.headers ->> 'x-device-id'`. The client now auto-injects that header through `SupabaseClient.makeRequest`.
+- **`message_interactions` schema fix**: missing `UNIQUE (message_id, machine_hash)` constraint added so the existing `Prefer: resolution=merge-duplicates` UPSERT actually merges instead of accumulating duplicates. Existing duplicate rows de-duplicated as part of the migration.
+- **`curated_frames.rated_at` trigger** added so re-rating a frame refreshes the timestamp instead of keeping the original INSERT time.
+- **`AIsaac Profile → Export (JSON) / Delete`** in Window → Advanced → AIsaac Profile menu. Save panel for export, confirmation alert for delete; both local and iCloud copies are removed.
+
+### Robustness
+
+- **`FrameHistoryDatabase` no longer hard-fails on a corrupt SQLite file.** The bad file is renamed to `FrameHistory.corrupt-<timestamp>.sqlite` (kept for manual recovery), a fresh empty DB is created, and a `Notification.Name.frameHistoryDidImport` posts so the UI can show a notice. If even fresh creation fails, falls back to in-memory so the app at least starts.
+- **`ImageDecoder` rejects pathological dimensions** before allocation. 200 MP cap covers any astro camera (ASI6200MM ≈ 62 MP) with headroom; the division-form bound check avoids overflow during the check itself. Manipulated FITS that previously could trigger huge allocations now produce a clean error.
+- **Force-unwrap cleanup** in `FrameHistoryDatabase`, `SessionCache`, `TargetCatalogService`, `TriageViewModel` (video export), `KeyboardHandler`. Sandbox-edge-case fallbacks added where the OS could in principle return nil; pixel-buffer force-unwrap during MOV export now drops the frame and continues instead of crashing.
+- **`PrefetchCache` session-generation guard.** Workers from a previous session that complete after `clear()` / `invalidateAll()` no longer pollute the freshly-cleared cache with stale entries.
+- **`SessionCache.cleanupAllCaches()`** now preserves named sibling caches (e.g. `dss_thumbnails/` is supposed to live across launches). Previously it nuked the entire `~/Library/Caches/AstroBlinkV2/` on quit, defeating the "download once, cache forever" design of the DSS thumbnail cache.
+
+### Code organization
+
+Roughly 4 000 lines of single-file monoliths split into focused, testable units. Behaviour identical, file count up, mental model down.
+
+| File | Before | After | New companions |
+|---|---|---|---|
+| `AstroTriageApp.swift` | 1934 | 512 | OnboardingView, AboutWindow, HelpWindow |
+| `FileListView.swift` | 1512 | 393 | FileListView+Coordinator |
+| `FrameHistoryWindow.swift` | 1666 | 667 | FrameHistoryChartTheme + 7 chart structs (SessionScore, Efficiency, EquipmentHealth, Conditions, TargetProgress, SetupComparison, Metrics) |
+| `QuickStackWindow.swift` | 1704 | 835 | StackResultView, ImagePreviewWindow |
+| `TargetDatabaseWindow.swift` | 2088 | 1300 | TargetDetailView, DSSThumbnailCache |
+| `ContentView.swift` | 1977 | 1223 | ContentViewSupport |
+| `FrameHistoryDatabase.swift` | 1338 | 1154 | FrameHistoryMigrations |
+
+Side benefit: each Frame History chart now owns its own hover state. Hovering one chart no longer paints the rule mark on all others.
+
+`SupabaseClient.swift` introduced as a single point of truth for URL building, header setup, and the `X-Device-Id` injection. Forty-four direct `BenchmarkConfig.supabaseURL` / `.supabaseAnonKey` references across ten services migrated to the helper. `PlaybackController.swift` extracted as the first slice of the eventual `TriageViewModel` split (auto-blink timer + index iteration); behaviour identical, owner unchanged.
+
+### Fixed
+
+- **Coffee dialog timing**: now fires 120s after session-load instead of 2s. The 2s slot is still used by the App-Store review prompt; the two are mutually exclusive on a given session.
+
+### Notes
+
+- `kAlgorithmVersion` is **unchanged** — no quality / scoring logic was touched. Frame History DB records remain compatible.
+- Six Supabase migrations applied during this release cycle: `revoke_admin_function_grants`, `revoke_admin_function_grants_from_public`, `pin_function_search_paths`, `tighten_per_machine_update_policies`, `curated_frames_bump_rated_at_on_update`, `message_interactions_unique_on_message_machine`. All live and verified against EU prod.
+
+---
+
 ## [5.29.0] — 2026-05-03
 
 ### Added
