@@ -3,7 +3,21 @@
 **Project:** `bpngramreznwvtssrcbe` (`astroblink`)
 **Region:** `eu-west-1` (Ireland)
 **Audit method:** Supabase MCP `get_advisors` (security category) + direct queries against `pg_policies` and `pg_proc`.
-**Status:** Multiple findings, three of them launch blockers (red), three nice-to-have (yellow), rest acceptable.
+**Status:** All three launch blockers fixed and verified end-to-end on 2026-05-03. Two should-fix items deferred to patch 1 with concrete tickets below.
+
+## Applied migrations
+
+| Migration | Apply time (UTC) | Verification |
+|---|---|---|
+| `20260503_revoke_admin_function_grants` | 17:01 | Direct anon/authenticated grants gone |
+| `20260503_revoke_admin_function_grants_from_public` | 17:13 | PUBLIC grant gone — `pg_proc.proacl` shows only `postgres + service_role` |
+| `20260503_pin_function_search_paths` | 17:01 | All 9 functions now pinned to `public, pg_temp` |
+| `20260503_tighten_per_machine_update_policies` | 17:18 | App-side smoke test 17:19: 4× POST 200 + 1× DELETE 204 from machine `bd7e7a0f526e8bef8e1529c7` after Phase B applied. Confirms `request.headers ->> 'x-device-id'` resolves correctly to the per-machine policy match. |
+
+## Follow-up tickets (patch 1)
+
+- **`rated_at` does not bump on UPDATE** — `curated_frames.rated_at` only fills via DEFAULT NOW() on INSERT. A re-rate (UPSERT UPDATE leg) keeps the original timestamp. Trigger: `BEFORE UPDATE FOR EACH ROW SET NEW.rated_at = NOW()`.
+- **`message_interactions` lacks UNIQUE (message_id, machine_hash)** — the upsert in `AppMessageService.postInteraction` uses `Prefer: resolution=merge-duplicates` but there is no matching unique constraint, so the merge can never UPDATE — it always INSERTs new rows or 409s. Add `UNIQUE (message_id, machine_hash)` and adjust the upsert URL with `on_conflict=message_id,machine_hash`.
 
 ---
 
