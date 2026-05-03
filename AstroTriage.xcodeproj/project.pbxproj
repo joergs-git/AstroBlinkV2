@@ -27,6 +27,7 @@
 		2AC85F5C8AE08A1DB6A74261 /* KeyboardHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 763931350538CED5EA81290D /* KeyboardHandler.swift */; };
 		2B342761B8218D9FD97D3063 /* DisplayAligner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2727035D4657A3FCCCEE6076 /* DisplayAligner.swift */; };
 		2CF2D0DA29197AECBEE2FA9D /* CurationServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A418D2B8B47E7D7859BCC0E /* CurationServiceTests.swift */; };
+		30A10E61F2606E5D7B2F6CB9 /* SupabaseClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = D294FBAA33E829B384E0D16A /* SupabaseClient.swift */; };
 		31747A36A973DE54498AA159 /* FrameRecord.swift in Sources */ = {isa = PBXBuildFile; fileRef = F90E148C13F8C7FE088D1524 /* FrameRecord.swift */; };
 		31947D5AB6C982F422ECFD8C /* DeepSkyTargetDatabase.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0FAA26375FEB3A7D2F9BFBAC /* DeepSkyTargetDatabase.swift */; };
 		37DA495A008C7E13F6D23D6C /* HeaderInspectorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D45AA5729C0A57A6C12C9C2 /* HeaderInspectorView.swift */; };
@@ -273,6 +274,7 @@
 		CC2B51C4B8F25806E968FDB4 /* QualityEstimator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QualityEstimator.swift; sourceTree = "<group>"; };
 		CD2457C0829FBD7832C880DF /* QuickLookSTF.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickLookSTF.swift; sourceTree = "<group>"; };
 		CD52DEA0A1A02E46E1C26A18 /* AIsaacContextBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIsaacContextBuilder.swift; sourceTree = "<group>"; };
+		D294FBAA33E829B384E0D16A /* SupabaseClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupabaseClient.swift; sourceTree = "<group>"; };
 		D60FDB5923A652383E3ABEB7 /* AstroTriageApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AstroTriageApp.swift; sourceTree = "<group>"; };
 		DB80D59623FFC14D180C6451 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		DE83C9556D164ED7CC41C0FC /* DecoderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DecoderTests.swift; sourceTree = "<group>"; };
@@ -455,6 +457,7 @@
 				0BFB130B08CCDD11AC1018A7 /* StarMetricsCalculator.swift */,
 				BC55336CE3C3552EF83E3A21 /* StructureEnhancement.swift */,
 				1C731CAA9FB954423A4E9179 /* SunCalculator.swift */,
+				D294FBAA33E829B384E0D16A /* SupabaseClient.swift */,
 				C023AB6340F89534CACE284C /* TargetCatalog.swift */,
 				433F3F811A3CF1871EC2D380 /* TargetCatalogService.swift */,
 				B8942CE397AE911C7346F9D1 /* TrailingAnalyzer.swift */,
@@ -854,6 +857,7 @@
 				C66ED07D541C5E62EC36991E /* StarMetricsCalculator.swift in Sources */,
 				970927BE4AF96FBF6FE430EE /* StructureEnhancement.swift in Sources */,
 				8D073D0D163390286003304D /* SunCalculator.swift in Sources */,
+				30A10E61F2606E5D7B2F6CB9 /* SupabaseClient.swift in Sources */,
 				4CDFC8CC583603D7DB09BC1D /* TargetCatalog.swift in Sources */,
 				1C55F1A7F9B655046F8D1D96 /* TargetCatalogService.swift in Sources */,
 				FF43031830F6DAE5DA5EE9CB /* TargetDatabaseViewModel.swift in Sources */,
