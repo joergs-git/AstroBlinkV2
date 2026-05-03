@@ -423,8 +423,8 @@ struct ContentView: View {
                 viewModel.objectWillChange.send()
             }
             .help(communityEnabled
-                ? "Community Learning is ON — You're helping improve quality detection for all AstroBlink users! Only anonymous metric averages (FWHM, SNR, trailing) are shared. No filenames, no images, no coordinates, no personal data — ever. New equipment? You'll get instant calibration from the community. Click to disable."
-                : "Community Learning is OFF — Click to join! Share anonymous quality metrics to help improve detection accuracy for everyone. In return, you get instant calibration baselines when trying new equipment — no 30-frame warmup needed. No personal data is ever shared: no filenames, no images, no location, no equipment names.")
+                ? "Community Learning is ON — Anonymous quality metrics, hardware specs, and equipment metadata (telescope/camera/filter/target/date with each star rating) are shared via Supabase to improve detection for all users. No filenames, no images, no real names. Identifier is a non-reversible hardware hash. Click to disable."
+                : "Community Learning is OFF — Click to join. Anonymous metrics + equipment metadata (telescope/camera/filter/target/date) are shared with each star rating to improve detection. No filenames, no images, no real names. You also get instant calibration baselines when trying new equipment.")
 
             statusDivider
             HStack(spacing: 2) {

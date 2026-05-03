@@ -546,6 +546,9 @@ struct OnboardingView: View {
     var dismissAction: () -> Void
     @State private var hoveredCard: Int? = nil
     @State private var hideSplash: Bool = AppSettings.loadBool(for: .hideSplash) ?? false
+    // Mirrors UserDefaults — register(defaults:) seeds it true, so the box is checked unless
+    // the user explicitly opts out here (or via the status-bar Community indicator later).
+    @State private var communityLearning: Bool = AppSettings.defaults.bool(forKey: AppSettings.Key.communityLearning.rawValue)
 
     private var version: String {
         Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
@@ -698,7 +701,7 @@ struct OnboardingView: View {
             Spacer()
                 .frame(height: 12)
 
-            // Get Started + checkbox.
+            // Get Started + checkboxes.
             // We deliberately do NOT use .borderedProminent here. SwiftUI's .borderedProminent
             // renders nearly invisibly inside an NSHostingView when the parent NSWindow is
             // inactive at first paint — even with NSApp.activate() and keyboardShortcut(.defaultAction)
@@ -706,6 +709,32 @@ struct OnboardingView: View {
             // Custom Button with an explicit accent-color background is immune to that and
             // also keeps the visual prominence on inactive show.
             VStack(spacing: 8) {
+                // Telemetry disclosure with inline opt-out.
+                // Default-on, but visible and one-click off so the user never has to hunt
+                // for the toggle in Settings to disable it before first use.
+                HStack(spacing: 6) {
+                    Toggle(isOn: $communityLearning) {
+                        Text("Share anonymous benchmarks and frame ratings to improve detection for everyone")
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                    }
+                    .toggleStyle(.checkbox)
+                    .onChange(of: communityLearning) { newValue in
+                        AppSettings.save(newValue, for: .communityLearning)
+                    }
+                    Button(action: {
+                        if let url = URL(string: "https://github.com/joergs-git/AstroBlinkV2/blob/main/PRIVACY.md") {
+                            NSWorkspace.shared.open(url)
+                        }
+                    }) {
+                        Image(systemName: "info.circle")
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Read the privacy policy on GitHub")
+                }
+
                 Button(action: dismissAction) {
                     Text("Get Started")
                         .font(.system(size: 15, weight: .semibold))
