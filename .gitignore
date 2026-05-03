@@ -34,6 +34,9 @@ Package.resolved
 default.profraw
 .claude/
 
+# Supabase CLI local state (per-machine token / temp)
+supabase/.temp/
+
 # Test images (too large for git, even with LFS)
 TestImages/*
 # Exception: Apple Review sample files (tracked via Git LFS)

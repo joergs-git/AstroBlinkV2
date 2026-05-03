@@ -5,6 +5,8 @@ How to manage AIsaac knowledge, in-app messages, and other server-side features.
 **Project:** `astroblink` (eu-west-1)
 **Dashboard:** https://supabase.com/dashboard/project/bpngramreznwvtssrcbe
 
+> **Shared with AstroSharper (since 2026-05-03).** AstroBlink and AstroSharper write to the same Postgres project. Every shared table carries an `app` discriminator column (`'astroblink'` vs `'astrosharper'`); existing AstroBlink rows in `app_events` were backfilled to `'astroblink'` via a `DEFAULT` clause. AstroSharper-only tables: `stack_telemetry`, `community_thumbnails`. AstroSharper-only edge functions: `stack-completed`, `community-thumbnail`. Never spin up a new Supabase project for sister apps — extend this one.
+
 ---
 
 ## AIsaac Remote Knowledge (`aisaac_knowledge`)
