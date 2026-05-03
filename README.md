@@ -14,7 +14,15 @@ Nice side effect: Finally you have a native XISF and FITS Quicklook for macOS. (
 
 ---
 
-## What's New in v5.28.0 (Build 87)
+## What's New in v5.29.0 (Build 88)
+
+- **BETA notice on the Lightspeed Stacker** — the in-app stacker is great for fast previews and validation, but it's not a replacement for full integration in WBPP / PixInsight. The progress panel now states this clearly: a "BETA: LightspeedStacker" title plus a red one-liner so first-time users know what they're looking at.
+- **"Buy me a coffee" support dialog** — once between every 10–100 sessions you'll see a small, friendly dialog with a portrait of the developer and three options: yes, maybe later (snoozes 2 sessions), or no thanks (snoozes ~50 sessions). One-click opens [buymeacoffee.com/joergsflow](https://buymeacoffee.com/joergsflow). Honors night mode. Random schedule means it's never a fixed cadence and won't fire on the first install.
+- **Review prompt fix** — the App Store review prompt was wired only into the single-folder load path, missing single-file (`Cmd+O` → individual files) and multi-folder selections. All three load paths now bump the session counter and trigger the prompt — fixes a quiet bug present since the review prompt was added.
+
+> **Algorithm version unchanged** in this release — no quality/scoring logic touched. Frame History DB records remain compatible.
+
+## Previously in v5.28.0 (Build 87)
 
 - **Auto-Rotate Pipeline Overhaul** — Full rework after an empirical survey of 6,210 local frames exposed multiple failure modes on multi-setup, multi-session targets. The rotator-delta fallback (which covered ~80% of non-WCS frames) turned out to be unreliable because cross-session recalibrations invalidate naïve rotator math — it was silently overriding every other signal. Removed.
 - **New Pixel Fingerprint Signal** — A 32×32 spatial signature computed from the raw decoded buffer (< 1 ms per frame, 1024 bytes, session-scoped). Works as the last-resort orientation detector when headers are silent (20.8% of frames — mostly RASA), and as an independent veto against bad WCS plate-solve transforms (catches 90°-off false solutions).

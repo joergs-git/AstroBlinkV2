@@ -4,6 +4,21 @@ All notable changes to AstroBlink & AIsaac will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [5.29.0] — 2026-05-03
+
+### Added
+- **Lightspeed Stacker BETA notice** — the stacker progress panel now shows a "BETA: LightspeedStacker" title and a red one-liner ("Quick preview only — not a replacement for professional stacking, WBPP, PixInsight, etc."). Sets correct expectations: this is fast, no rejection beyond min/max + WCS/triangle alignment, no proper calibration — *not* a full integration tool.
+- **"Buy me a coffee" support dialog** — friendly, non-invasive ask that appears once between every 10–100 sessions. Small circular portrait of the developer + first-person copy + a triple-sized centered ☕ above the buttons. Three actions: **Yes, sure!** opens `buymeacoffee.com/joergsflow` and never prompts again. **Maybe later** snoozes 2 sessions. **No thanks** snoozes ~50–60 sessions. Honors night mode. Default action = Return; Esc = No.
+- New persisted keys `coffeeNextPromptAt` / `coffeeThanked` in `AppSettings`. First scheduling picks a random offset in `[10, 100]` from the current `sessionCount` so the prompt doesn't fire on a fresh install and isn't predictable.
+
+### Fixed
+- **App Store review (and now coffee) prompt missed two of three load paths.** `checkForReviewPrompt()` was only called from `loadSession(url:)` (single-folder picker), so users who opened individual FITS/XISF files via Cmd+O (`loadFiles`) or selected multiple folders (`loadMultipleFolders`) never got their `sessionCount` incremented and never saw the review prompt. Wired into all three paths so the counter is consistent regardless of how a session was opened.
+
+### Notes
+- No quality/scoring logic touched in this release; `kAlgorithmVersion` is **unchanged**. Frame History DB records remain compatible.
+
+---
+
 ## [5.28.0] — 2026-04-22
 
 ### Auto-Rotate Pipeline Overhaul

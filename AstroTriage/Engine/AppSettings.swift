@@ -63,6 +63,8 @@ struct AppSettings {
         case seenDefaultColumns   // [String] — default-visible column ids seen by user (tracks auto-migration of new columns)
         case showSessionOverviewPanel  // Bool — right-side Session Overview panel visibility (persisted across sessions & iCloud)
         case showViewerOverlay    // Bool — filter letter / time / mini-map overlay in image viewer (top-left)
+        case coffeeNextPromptAt   // Int — sessionCount value at which to show the next "buy me a coffee" dialog
+        case coffeeThanked        // Bool — user already donated (or said "no thanks") → never prompt again
     }
 
     // Register defaults for new installs (call once at app launch, before startCloudSync)

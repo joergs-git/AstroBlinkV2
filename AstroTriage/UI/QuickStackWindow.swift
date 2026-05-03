@@ -670,7 +670,7 @@ struct QuickStackV2ProgressView: View {
                 Image(systemName: "square.3.layers.3d.down.right")
                     .font(.system(size: fs(16), weight: .semibold))
                     .foregroundColor(fg)
-                Text("LightspeedStacker")
+                Text("BETA: LightspeedStacker")
                     .font(.system(size: fs(14), weight: .semibold, design: .monospaced))
                     .foregroundColor(fg)
                 Spacer()
@@ -688,6 +688,14 @@ struct QuickStackV2ProgressView: View {
                     .help("Cancel stacking")
                 }
             }
+
+            // BETA notice — quick preview only, not a replacement for professional stacking.
+            Text("Quick preview only — not a replacement for professional stacking (WBPP, PixInsight, etc.)")
+                .font(.system(size: fs(10), weight: .medium, design: .monospaced))
+                .foregroundColor(.red)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 4)
 
             ZStack {
                 Rectangle()

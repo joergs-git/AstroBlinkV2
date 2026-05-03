@@ -1161,6 +1161,9 @@ class TriageViewModel: ObservableObject {
                 self.enrichWithHeaders()
                 // Give table focus so keyboard navigation works immediately
                 self.focusTableAfterDelay()
+
+                // Same review/coffee prompt logic as loadSession — count this as a session.
+                self.checkForReviewPrompt()
             }
         }
     }
@@ -1236,6 +1239,9 @@ class TriageViewModel: ObservableObject {
                 self.applyAllEnabled = true
 
                 self.checkMemoryBudgetAndCache(for: allEntries)
+
+                // Same review/coffee prompt logic as loadSession — count this as a session.
+                self.checkForReviewPrompt()
             }
         }
     }
@@ -5900,11 +5906,20 @@ class TriageViewModel: ObservableObject {
         AppSettings.defaults.set(count, forKey: AppSettings.Key.sessionCount.rawValue)
 
         // Trigger on 5th and every 50th session after that (Apple rate-limits anyway)
-        guard count == 5 || (count > 5 && count % 50 == 0) else { return }
+        let reviewDue = (count == 5) || (count > 5 && count % 50 == 0)
 
         // Small delay so the session is visually loaded before the prompt appears
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-            SKStoreReviewController.requestReview()
+            if reviewDue {
+                SKStoreReviewController.requestReview()
+                // Don't stack two prompts on the same session — coffee dialog will
+                // re-evaluate next launch.
+                return
+            }
+            CoffeeSupportDialog.presentIfDue(
+                currentSessionCount: count,
+                nightMode: self.nightMode
+            )
         }
     }
 
