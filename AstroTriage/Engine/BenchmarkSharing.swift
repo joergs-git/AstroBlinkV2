@@ -338,8 +338,8 @@ class BenchmarkService: ObservableObject {
         ) else { return }
         var request = SupabaseClient.makeRequest(url: url)
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        let (data, response) = try await URLSession.shared.data(for: request)
-        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+        let (data, response) = try await SupabaseClient.send(request, retries: 2)
+        guard (200...299).contains(response.statusCode) else {
             throw BenchmarkError.fetchFailed
         }
         let entries = try JSONDecoder().decode([BenchmarkEntry].self, from: data)
@@ -378,8 +378,8 @@ class BenchmarkService: ObservableObject {
         guard let url = SupabaseClient.restURL(table: "session_benchmarks", query: query) else { return }
         var request = SupabaseClient.makeRequest(url: url)
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        let (data, response) = try await URLSession.shared.data(for: request)
-        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+        let (data, response) = try await SupabaseClient.send(request, retries: 2)
+        guard (200...299).contains(response.statusCode) else {
             throw BenchmarkError.fetchFailed
         }
         let entries = try JSONDecoder().decode([SessionBenchmarkEntry].self, from: data)
@@ -396,8 +396,8 @@ class BenchmarkService: ObservableObject {
         guard let url = SupabaseClient.restURL(table: table, query: query) else { return false }
         var request = SupabaseClient.makeRequest(url: url)
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        let (data, response) = try await URLSession.shared.data(for: request)
-        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else { return false }
+        let (data, response) = try await SupabaseClient.send(request, retries: 2)
+        guard (200...299).contains(response.statusCode) else { return false }
         let results = try JSONDecoder().decode([[String: String]].self, from: data)
         return !results.isEmpty
     }
@@ -409,8 +409,10 @@ class BenchmarkService: ObservableObject {
             withBearer: false
         ) else { return }
         request.httpBody = try JSONEncoder().encode(entry)
-        let (_, response) = try await URLSession.shared.data(for: request)
-        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+        // No retries: server-side dedup is the responsibility of `checkDuplicate` above,
+        // not of an automatic retry that could turn a slow ack into duplicate inserts.
+        let (_, response) = try await SupabaseClient.send(request)
+        guard (200...299).contains(response.statusCode) else {
             throw BenchmarkError.uploadFailed
         }
     }
