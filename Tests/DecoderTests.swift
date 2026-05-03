@@ -126,4 +126,59 @@ final class DecoderTests: XCTestCase {
             XCTFail("Decode failed: \(error)")
         }
     }
+
+    // MARK: - Bounds check: malicious headers must error, not crash
+
+    // Hand-craft a minimal FITS primary HDU with dimensions far beyond any
+    // real astro camera (~62 MP top-end today). cfitsio either refuses to
+    // allocate the implied 8.6 GB data block (returning failure on the spot)
+    // or passes the dimensions back so the Swift-level 200-MP cap in
+    // ImageDecoder.swift trips. Either branch must surface as Result.failure
+    // — never a crash, never a runaway allocation.
+    func testFITSBoundsCheck_RejectsAbsurdDimensions() throws {
+        let headerData = Self.makeMinimalFITSHeader(naxis1: 65535, naxis2: 65535, bitpix: 16)
+        let tmpURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("astrotriage-bounds-test-\(UUID().uuidString).fits")
+        try headerData.write(to: tmpURL)
+        defer { try? FileManager.default.removeItem(at: tmpURL) }
+
+        guard let device = MTLCreateSystemDefaultDevice() else {
+            throw XCTSkip("Metal device not available on test runner.")
+        }
+
+        let result = ImageDecoder.decode(url: tmpURL, device: device)
+        switch result {
+        case .success(let decoded):
+            XCTFail("65535×65535 FITS must be rejected; got \(decoded.width)×\(decoded.height).")
+        case .failure(let error):
+            let msg = "\(error)"
+            XCTAssertFalse(msg.isEmpty, "Failure should carry a diagnostic message.")
+            print("[BoundsCheck] Rejected as expected: \(msg)")
+        }
+    }
+
+    /// Build a 2880-byte FITS primary header block (no data unit) with the
+    /// requested NAXIS1/NAXIS2/BITPIX. Sufficient for header-parsing tests.
+    private static func makeMinimalFITSHeader(naxis1: Int, naxis2: Int, bitpix: Int) -> Data {
+        func card(_ s: String) -> String {
+            var c = s
+            while c.count < 80 { c += " " }
+            return String(c.prefix(80))
+        }
+        func intCard(_ key: String, _ value: Int) -> String {
+            let keyPad = key.padding(toLength: 8, withPad: " ", startingAt: 0)
+            return card("\(keyPad)= " + String(format: "%20d", value))
+        }
+        let cards = [
+            card("SIMPLE  = " + String(repeating: " ", count: 19) + "T"),
+            intCard("BITPIX", bitpix),
+            intCard("NAXIS", 2),
+            intCard("NAXIS1", naxis1),
+            intCard("NAXIS2", naxis2),
+            card("END")
+        ]
+        var blob = cards.joined()
+        while blob.count % 2880 != 0 { blob += " " }  // pad to one 2880-byte FITS block
+        return Data(blob.utf8)
+    }
 }

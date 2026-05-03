@@ -1,0 +1,141 @@
+name: Algorithm Version Check
+
+# Quality gate from CLAUDE.md "Algorithm Versioning (MANDATORY)":
+# When ANY quality-critical scoring file changes, the integer
+# `kAlgorithmVersion` in AstroTriage/Model/FrameRecord.swift MUST bump.
+# Frame History DB records carry this version — without a bump there is
+# no way to tell stale records from current ones, and re-analysis breaks.
+#
+# This workflow blocks the merge when the bump is missing.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  check-algorithm-version:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (full history)
+        uses: actions/checkout@v4
+        with:
+          # Need at least the PR base (or previous push) to diff against.
+          fetch-depth: 0
+
+      - name: Determine diff range
+        id: range
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE="${{ github.event.pull_request.base.sha }}"
+            HEAD="${{ github.event.pull_request.head.sha }}"
+          else
+            # push to main: diff against the commit that was main before this push
+            BASE="${{ github.event.before }}"
+            HEAD="${{ github.sha }}"
+          fi
+          # Brand-new branch / first push has BASE = 000...0 → fall back to HEAD~1
+          if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ]; then
+            BASE="$(git rev-parse "$HEAD^" 2>/dev/null || git rev-parse "$HEAD")"
+          fi
+          echo "base=$BASE" >> "$GITHUB_OUTPUT"
+          echo "head=$HEAD" >> "$GITHUB_OUTPUT"
+          echo "Diff range: $BASE..$HEAD"
+
+      - name: Detect quality-critical changes
+        id: detect
+        run: |
+          BASE="${{ steps.range.outputs.base }}"
+          HEAD="${{ steps.range.outputs.head }}"
+
+          # Quality-critical files per CLAUDE.md "Quality Gates — Scoring Invariants"
+          CRITICAL_FILES=(
+            "AstroTriage/Engine/QualityEstimator.swift"
+            "AstroTriage/Engine/TrailingAnalyzer.swift"
+            "AstroTriage/Engine/CalibrationDatabase.swift"
+            "AstroTriage/Engine/ConvergenceDetector.swift"
+            "AstroTriage/Engine/StarMetricsCalculator.swift"
+            "AstroTriage/Metal/STFCalculator.swift"
+            "AstroTriage/Engine/ColorCombineEngine.swift"
+          )
+
+          CHANGED_FILES=$(git diff --name-only "$BASE" "$HEAD")
+          echo "Files changed in range:"
+          echo "$CHANGED_FILES" | sed 's/^/  /'
+
+          CRITICAL_HIT=""
+          for f in "${CRITICAL_FILES[@]}"; do
+            if echo "$CHANGED_FILES" | grep -Fxq "$f"; then
+              CRITICAL_HIT+="$f"$'\n'
+            fi
+          done
+
+          if [ -z "$CRITICAL_HIT" ]; then
+            echo "No quality-critical files touched — skipping version check."
+            echo "needs_bump=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "needs_bump=true" >> "$GITHUB_OUTPUT"
+          echo
+          echo "Quality-critical files modified:"
+          printf '%s' "$CRITICAL_HIT" | sed 's/^/  /'
+
+      - name: Verify kAlgorithmVersion bumped
+        if: steps.detect.outputs.needs_bump == 'true'
+        run: |
+          BASE="${{ steps.range.outputs.base }}"
+          HEAD="${{ steps.range.outputs.head }}"
+          VERSION_FILE="AstroTriage/Model/FrameRecord.swift"
+          PATTERN='^let kAlgorithmVersion = '
+
+          extract_version() {
+            git show "$1:$VERSION_FILE" 2>/dev/null \
+              | grep -E "$PATTERN" \
+              | head -n1 \
+              | sed -E 's/^let kAlgorithmVersion = ([0-9]+).*/\1/'
+          }
+
+          OLD_VERSION="$(extract_version "$BASE")"
+          NEW_VERSION="$(extract_version "$HEAD")"
+
+          echo "kAlgorithmVersion: $OLD_VERSION → $NEW_VERSION"
+
+          if [ -z "$OLD_VERSION" ] || [ -z "$NEW_VERSION" ]; then
+            echo "::error::Could not parse kAlgorithmVersion from $VERSION_FILE."
+            echo "Expected line: 'let kAlgorithmVersion = <integer>'"
+            exit 1
+          fi
+
+          if [ "$NEW_VERSION" -le "$OLD_VERSION" ]; then
+            cat <<EOF
+          ::error file=$VERSION_FILE::kAlgorithmVersion was not bumped.
+
+          Quality-critical scoring files changed in this PR but
+          kAlgorithmVersion in $VERSION_FILE is still $NEW_VERSION
+          (was $OLD_VERSION on the base branch).
+
+          The Frame History database stamps every record with this
+          version. Without a bump, stale records cannot be distinguished
+          from current ones, and re-analysis of older frames silently
+          uses the wrong scoring.
+
+          To fix this PR:
+            1. Bump kAlgorithmVersion in $VERSION_FILE to $((OLD_VERSION + 1))
+            2. Add a detailed entry to ALGORITHM_CHANGELOG.md describing
+               what scoring logic changed and why
+            3. Commit both with the scoring change
+
+          See CLAUDE.md → "Algorithm Versioning (MANDATORY)".
+          EOF
+            exit 1
+          fi
+
+          # Sanity: the changelog should also have grown.
+          CHANGELOG_DIFF=$(git diff "$BASE" "$HEAD" -- ALGORITHM_CHANGELOG.md | wc -l)
+          if [ "$CHANGELOG_DIFF" -eq 0 ]; then
+            echo "::warning file=ALGORITHM_CHANGELOG.md::kAlgorithmVersion bumped to $NEW_VERSION but ALGORITHM_CHANGELOG.md was not updated. Add an entry describing what changed."
+          fi
+
+          echo "kAlgorithmVersion bump verified ($OLD_VERSION → $NEW_VERSION)."
