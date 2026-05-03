@@ -173,7 +173,6 @@ class VisualAnomalyDetector {
         }
         request.setValue(MachineInfo.machineHash, forHTTPHeaderField: "x-device-id")
         request.setValue(Self.computeRollingToken(), forHTTPHeaderField: "x-aisaac-token")
-        request.timeoutInterval = 180 // Extended thinking needs more time
 
         let body: [String: Any] = [
             "system": system,
@@ -185,16 +184,16 @@ class VisualAnomalyDetector {
         let bodyMB = Double(bodyData.count) / 1_048_576.0
         os_log("Request body size: %.1f MB", log: vlmLog, type: .info, bodyMB)
 
-        let (data, response): (Data, URLResponse)
+        // 180s timeout preserved — extended thinking needs the runway.
+        // No retry: caller treats 429 (rate limit) and 413 (image too large) as
+        // first-class outcomes; a blind retry would burn the daily quota.
+        let data: Data
+        let http: HTTPURLResponse
         do {
-            (data, response) = try await URLSession.shared.data(for: request)
+            (data, http) = try await SupabaseClient.send(request, timeout: 180)
         } catch {
             os_log("URLSession error: %{public}@", log: vlmLog, type: .error, error.localizedDescription)
             throw DetectorError.networkError("Request failed: \(error.localizedDescription)")
-        }
-
-        guard let http = response as? HTTPURLResponse else {
-            throw DetectorError.networkError("No HTTP response")
         }
 
         let bodyPreview = String(data: data.prefix(500), encoding: .utf8) ?? "(binary)"

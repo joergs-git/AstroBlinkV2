@@ -183,9 +183,11 @@ class AIsaacWeatherService {
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
 
         do {
-            let (data, response) = try await URLSession.shared.data(for: request)
+            // No retry: 429 from the rate-limited edge function is handled below as a
+            // first-class result, and a transient retry would mask that signal.
+            let (data, response) = try await SupabaseClient.send(request)
 
-            if let httpResp = response as? HTTPURLResponse, httpResp.statusCode == 429 {
+            if response.statusCode == 429 {
                 print("[AIsaac Weather] Rate limited by Supabase Edge Function")
                 return nil
             }

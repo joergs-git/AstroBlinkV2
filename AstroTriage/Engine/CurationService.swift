@@ -280,10 +280,12 @@ enum CurationService {
         let encoder = JSONEncoder()
         request.httpBody = try encoder.encode(entry)
 
-        let (_, response) = try await URLSession.shared.data(for: request)
-        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
-            let code = (response as? HTTPURLResponse)?.statusCode ?? -1
-            throw CurationError.badResponse(code)
+        // Retry: this UPSERT is idempotent (Prefer: resolution=merge-duplicates +
+        // UNIQUE constraint on file_hash, machine_hash) — re-sending the same row
+        // after a transient failure cannot create duplicates.
+        let (_, response) = try await SupabaseClient.send(request, retries: 2)
+        guard (200...299).contains(response.statusCode) else {
+            throw CurationError.badResponse(response.statusCode)
         }
     }
 
@@ -303,10 +305,10 @@ enum CurationService {
         var request = SupabaseClient.makeRequest(url: url, method: "DELETE", withBearer: true)
         request.setValue("return=minimal", forHTTPHeaderField: "Prefer")
 
-        let (_, response) = try await URLSession.shared.data(for: request)
-        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
-            let code = (response as? HTTPURLResponse)?.statusCode ?? -1
-            throw CurationError.badResponse(code)
+        // DELETEs against the same predicate are idempotent — safe to retry.
+        let (_, response) = try await SupabaseClient.send(request, retries: 2)
+        guard (200...299).contains(response.statusCode) else {
+            throw CurationError.badResponse(response.statusCode)
         }
     }
 }

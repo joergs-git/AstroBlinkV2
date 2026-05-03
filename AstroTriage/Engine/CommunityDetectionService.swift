@@ -299,10 +299,9 @@ final class CommunityDetectionService {
 
         var request = SupabaseClient.makeRequest(url: url)
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        request.timeoutInterval = 30
 
-        let (data, response) = try await URLSession.shared.data(for: request)
-        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else { return false }
+        let (data, response) = try await SupabaseClient.send(request, retries: 2)
+        guard (200...299).contains(response.statusCode) else { return false }
         let results = try JSONDecoder().decode([[String: String]].self, from: data)
         return !results.isEmpty
     }
@@ -312,14 +311,15 @@ final class CommunityDetectionService {
             table: "community_sessions",
             withBearer: false
         ) else { return }
-        request.timeoutInterval = 30
 
         let encoder = JSONEncoder()
         encoder.keyEncodingStrategy = .useDefaultKeys
         request.httpBody = try encoder.encode(entry)
 
-        let (_, response) = try await URLSession.shared.data(for: request)
-        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+        // No retries on this POST: checkDuplicate() above is the dedup gate;
+        // retrying after a slow ack could turn into duplicate inserts.
+        let (_, response) = try await SupabaseClient.send(request)
+        guard (200...299).contains(response.statusCode) else {
             return  // Silent failure
         }
     }
@@ -334,7 +334,6 @@ final class CommunityDetectionService {
 
         var request = SupabaseClient.makeRequest(url: url, method: "POST")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.timeoutInterval = 30
 
         let body: [String: Any] = [
             "min_scale": minScale,
@@ -342,8 +341,9 @@ final class CommunityDetectionService {
         ]
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
 
-        let (data, response) = try await URLSession.shared.data(for: request)
-        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+        // RPC is read-shaped (server-side aggregation, no mutation) — safe to retry.
+        let (data, response) = try await SupabaseClient.send(request, retries: 2)
+        guard (200...299).contains(response.statusCode) else {
             return []
         }
 

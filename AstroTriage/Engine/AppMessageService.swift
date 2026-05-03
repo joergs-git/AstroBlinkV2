@@ -296,11 +296,10 @@ final class AppMessageService {
         guard let url else { return [] }
         var request = SupabaseClient.makeRequest(url: url)
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        request.timeoutInterval = 30
 
         do {
-            let (data, response) = try await URLSession.shared.data(for: request)
-            guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+            let (data, response) = try await SupabaseClient.send(request, retries: 2)
+            guard (200...299).contains(response.statusCode) else {
                 return []
             }
             return try JSONDecoder().decode([T].self, from: data)
@@ -355,13 +354,12 @@ final class AppMessageService {
         var request = SupabaseClient.makeRequest(url: url, method: "POST")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("resolution=merge-duplicates", forHTTPHeaderField: "Prefer")
-        request.timeoutInterval = 30
 
         do {
             request.httpBody = try JSONEncoder().encode(interaction)
-            let (_, response) = try await URLSession.shared.data(for: request)
-            if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
-                print("[AppMessageService] POST interaction failed: \(http.statusCode)")
+            let (_, response) = try await SupabaseClient.send(request)
+            if !(200...299).contains(response.statusCode) {
+                print("[AppMessageService] POST interaction failed: \(response.statusCode)")
             }
         } catch {
             print("[AppMessageService] POST interaction error: \(error.localizedDescription)")
@@ -378,13 +376,12 @@ final class AppMessageService {
 
         var request = SupabaseClient.makeRequest(url: url, method: "PATCH")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.timeoutInterval = 30
 
         do {
             request.httpBody = try JSONSerialization.data(withJSONObject: updates)
-            let (_, response) = try await URLSession.shared.data(for: request)
-            if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
-                print("[AppMessageService] PATCH interaction failed: \(http.statusCode)")
+            let (_, response) = try await SupabaseClient.send(request)
+            if !(200...299).contains(response.statusCode) {
+                print("[AppMessageService] PATCH interaction failed: \(response.statusCode)")
             }
         } catch {
             print("[AppMessageService] PATCH interaction error: \(error.localizedDescription)")
@@ -455,7 +452,6 @@ final class AppMessageService {
                 table: "app_events",
                 withBearer: false
             ) else { return }
-            request.timeoutInterval = 15
 
             let payload: [String: Any] = [
                 "machine_hash": MachineInfo.machineHash,
@@ -468,7 +464,9 @@ final class AppMessageService {
 
             do {
                 request.httpBody = try JSONSerialization.data(withJSONObject: payload)
-                let (_, _) = try await URLSession.shared.data(for: request)
+                // 15s timeout preserved from original behavior — telemetry, no retry
+                // (dupes are noise on this fire-and-forget path).
+                _ = try await SupabaseClient.send(request, timeout: 15)
             } catch {
                 // Silent — never impact app startup
             }

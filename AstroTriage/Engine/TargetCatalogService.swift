@@ -235,11 +235,11 @@ class TargetCatalogService {
 
         var request = SupabaseClient.makeRequest(url: url)
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        request.timeoutInterval = 30  // catalog can be large
 
         do {
-            let (data, response) = try await URLSession.shared.data(for: request)
-            guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+            // Catalog can be large; default 30s timeout matches prior behavior.
+            let (data, response) = try await SupabaseClient.send(request, retries: 2)
+            guard response.statusCode == 200 else {
                 return
             }
             let decoder = JSONDecoder()

@@ -125,10 +125,10 @@ enum BortleEstimator {
                                                 query: "lat=eq.\(gridLat)&lon=eq.\(gridLon)&select=bortle") {
                 var request = SupabaseClient.makeRequest(url: url)
                 request.setValue("application/json", forHTTPHeaderField: "Accept")
-                request.timeoutInterval = 10
 
-                if let (data, response) = try? await URLSession.shared.data(for: request),
-                   let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode),
+                // 10s timeout preserved — local grid fallback is right there if Supabase stalls.
+                if let (data, response) = try? await SupabaseClient.send(request, timeout: 10, retries: 2),
+                   (200...299).contains(response.statusCode),
                    let rows = try? JSONDecoder().decode([[String: Double]].self, from: data),
                    let bortle = rows.first?["bortle"] {
                     let clamped = max(1.0, min(9.0, bortle))

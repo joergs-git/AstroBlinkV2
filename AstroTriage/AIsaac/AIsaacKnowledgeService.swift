@@ -107,11 +107,11 @@ class AIsaacKnowledgeService {
 
         var request = SupabaseClient.makeRequest(url: url)
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        request.timeoutInterval = 15
 
         do {
-            let (data, response) = try await URLSession.shared.data(for: request)
-            guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+            // 15s timeout preserved — quick fail-back to embedded knowledge if server slow.
+            let (data, response) = try await SupabaseClient.send(request, timeout: 15, retries: 2)
+            guard response.statusCode == 200 else {
                 return
             }
             let decoder = JSONDecoder()
