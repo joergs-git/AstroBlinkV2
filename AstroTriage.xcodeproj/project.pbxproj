@@ -30,6 +30,7 @@
 		30A10E61F2606E5D7B2F6CB9 /* SupabaseClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = D294FBAA33E829B384E0D16A /* SupabaseClient.swift */; };
 		31747A36A973DE54498AA159 /* FrameRecord.swift in Sources */ = {isa = PBXBuildFile; fileRef = F90E148C13F8C7FE088D1524 /* FrameRecord.swift */; };
 		31947D5AB6C982F422ECFD8C /* DeepSkyTargetDatabase.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0FAA26375FEB3A7D2F9BFBAC /* DeepSkyTargetDatabase.swift */; };
+		3303B77B26BF00BD453C22E5 /* AboutWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2AC23856D906A14A0CCC6C03 /* AboutWindow.swift */; };
 		37DA495A008C7E13F6D23D6C /* HeaderInspectorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D45AA5729C0A57A6C12C9C2 /* HeaderInspectorView.swift */; };
 		390301387CB9257F1DAE9235 /* MetadataExtractor.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAC4AFD3D3784B02004BA98D /* MetadataExtractor.swift */; };
 		399A544B01D518D97920F138 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AE4E059ADDE28F88AF19A8DF /* Assets.xcassets */; };
@@ -200,6 +201,7 @@
 		2727035D4657A3FCCCEE6076 /* DisplayAligner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DisplayAligner.swift; sourceTree = "<group>"; };
 		2888071D5D7B050F791FC4C6 /* BortleGrid.bin */ = {isa = PBXFileReference; lastKnownFileType = archive.macbinary; path = BortleGrid.bin; sourceTree = "<group>"; };
 		29010C9CAAC1B072A96DE780 /* CuratedExport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CuratedExport.swift; sourceTree = "<group>"; };
+		2AC23856D906A14A0CCC6C03 /* AboutWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AboutWindow.swift; sourceTree = "<group>"; };
 		2C90F68D49B2362943B4E1EF /* CurationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CurationService.swift; sourceTree = "<group>"; };
 		32B55DBDF2FD18BEF1399C8D /* ArchiveScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArchiveScanner.swift; sourceTree = "<group>"; };
 		349FE588694CBEF50831E753 /* ScoringValidationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScoringValidationTests.swift; sourceTree = "<group>"; };
@@ -404,6 +406,7 @@
 		663E3E565F372ECFB7CE9527 /* App */ = {
 			isa = PBXGroup;
 			children = (
+				2AC23856D906A14A0CCC6C03 /* AboutWindow.swift */,
 				D60FDB5923A652383E3ABEB7 /* AstroTriageApp.swift */,
 				048345D935BF6D509B7E7C8D /* OnboardingView.swift */,
 			);
@@ -797,6 +800,7 @@
 				BF9CBFE8BFFC1A572EE95211 /* AIsaacView.swift in Sources */,
 				A4F9C54A9D8BDA57CA1126FE /* AIsaacWeather.swift in Sources */,
 				AF2D1D16D710F786CE5B7279 /* AIsaacWindowController.swift in Sources */,
+				3303B77B26BF00BD453C22E5 /* AboutWindow.swift in Sources */,
 				C33E8561A691A0A777142B7D /* AltAzCalculator.swift in Sources */,
 				DE72EE4660AD670E0A17857B /* AppColors.swift in Sources */,
 				D4A041A8487DE17C0BBF8DCC /* AppMessage.swift in Sources */,
