@@ -67,6 +67,12 @@ struct FrameHistoryContentView: View {
     private var fgDim: Color { AppColors.fgDim(nightMode) }
     private var bg: Color { AppColors.bg(nightMode) }
     private var chartBg: Color { AppColors.chartBg(nightMode) }
+    /// Theme bundle passed to extracted chart structs (SessionScoreChart etc.).
+    /// As more charts move out, fewer of the local color/font helpers above will
+    /// be needed and they'll shrink.
+    private var chartTheme: FrameHistoryChartTheme {
+        FrameHistoryChartTheme(nightMode: nightMode, fontScale: fontScale)
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -252,7 +258,7 @@ struct FrameHistoryContentView: View {
     private var chartView: some View {
         switch model.selectedChart {
         case .sessionScore:
-            sessionScoreChart
+            SessionScoreChart(model: model, theme: chartTheme)
         case .efficiency:
             efficiencyChart
         case .performance:
@@ -268,132 +274,6 @@ struct FrameHistoryContentView: View {
         }
     }
 
-    // KPI 1: Session Score — composite quality score per night
-    private var sessionScoreChart: some View {
-        let scores = model.sessionScores
-        let medians = model.monthlyMedianScores
-        let showTrend = !medians.isEmpty
-        return VStack(alignment: .leading, spacing: 4) {
-            Text("Session Score by Night")
-                .font(.system(size: fs(13), weight: .semibold))
-                .foregroundColor(fg)
-
-            if scores.isEmpty {
-                noDataView
-            } else {
-                Chart {
-                    // Always show nightly bars
-                    ForEach(scores) { point in
-                        BarMark(
-                            x: .value("Night", point.date, unit: .day),
-                            y: .value("Score", point.score)
-                        )
-                        .foregroundStyle(
-                            point.score >= 75 ? Color.green :
-                            point.score >= 50 ? Color.yellow :
-                            point.score >= 25 ? Color.orange : Color.red
-                        )
-                    }
-                    // Overlay monthly median trend line when >6 months
-                    if showTrend {
-                        ForEach(medians) { point in
-                            LineMark(
-                                x: .value("Month", point.date, unit: .month),
-                                y: .value("Median", point.score),
-                                series: .value("Trend", "median")
-                            )
-                            .foregroundStyle(Color.primary.opacity(0.7))
-                            .lineStyle(StrokeStyle(lineWidth: 2.5))
-                            .interpolationMethod(.catmullRom)
-                            PointMark(
-                                x: .value("Month", point.date, unit: .month),
-                                y: .value("Median", point.score)
-                            )
-                            .foregroundStyle(Color.primary.opacity(0.8))
-                            .symbolSize(30)
-                        }
-                    }
-                    // Hover rule
-                    if let hd = hoveredDate {
-                        RuleMark(x: .value("Hover", hd, unit: .day))
-                            .foregroundStyle(fg.opacity(0.3))
-                            .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 3]))
-                    }
-                }
-                .chartYScale(domain: 0...100)
-                .chartYAxisLabel("Score (0-100)")
-                .chartPlotStyle { plot in plot.background(chartBg).clipped() }
-                .chartOverlay { proxy in chartHoverTracker(proxy: proxy) }
-                .frame(minHeight: 300)
-                .overlay(alignment: .topLeading) {
-                    if let hd = hoveredDate,
-                       let point = scores.min(by: { $0.date.timeIntervalSince(hd).magnitude < $1.date.timeIntervalSince(hd).magnitude }),
-                       point.date.timeIntervalSince(hd).magnitude < 30 * 86400 {
-                        chartTooltip {
-                            Text(point.night).font(.system(size: fs(10), weight: .bold))
-                            Text(String(format: "Score: %.0f — %d frames, %.0f%% kept", point.score, point.frameCount, point.retentionRate * 100))
-                                .font(.system(size: fs(10)))
-                            if !point.targets.isEmpty {
-                                Text(point.targets.map { TargetCatalog.displayName($0) }.joined(separator: ", "))
-                                    .font(.system(size: fs(9))).foregroundColor(fgDim)
-                            }
-                            HStack(spacing: 8) {
-                                if !point.filters.isEmpty {
-                                    Text(point.filters.joined(separator: "/")).font(.system(size: fs(9)))
-                                }
-                                if let fwhm = point.avgFWHM {
-                                    Text(String(format: "FWHM %.1f", fwhm)).font(.system(size: fs(9)))
-                                }
-                                if let moon = point.moonPct {
-                                    Text(String(format: "Moon %.0f%%", moon)).font(.system(size: fs(9)))
-                                        .foregroundColor(moon > 60 ? .orange : fgDim)
-                                }
-                            }
-                            .foregroundColor(fgDim)
-                            Divider().frame(height: 1)
-                            if let s = model.scoreChartStats {
-                                Text(String(format: "Overall: avg %.0f, median %.0f", s.avg, s.median))
-                                    .font(.system(size: fs(9), design: .monospaced))
-                                    .foregroundColor(fgDim)
-                            }
-                            Text("Composite score: FWHM, retention, seeing.\nHigher = better. Watch for seasonal patterns.")
-                                .font(.system(size: fs(8)))
-                                .foregroundColor(fgDim.opacity(0.7))
-                                .lineLimit(3)
-                        }
-                        .offset(tooltipOffset(x: hoverLocation.x, y: hoverLocation.y))
-                    }
-                }
-
-                // Legend + stats
-                HStack(spacing: 12) {
-                    HStack(spacing: 3) { Circle().fill(.green).frame(width: 6); Text("75+").font(.system(size: fs(9))).foregroundColor(fgDim) }
-                    HStack(spacing: 3) { Circle().fill(.yellow).frame(width: 6); Text("50-74").font(.system(size: fs(9))).foregroundColor(fgDim) }
-                    HStack(spacing: 3) { Circle().fill(.orange).frame(width: 6); Text("25-49").font(.system(size: fs(9))).foregroundColor(fgDim) }
-                    HStack(spacing: 3) { Circle().fill(.red).frame(width: 6); Text("<25").font(.system(size: fs(9))).foregroundColor(fgDim) }
-                    if showTrend {
-                        HStack(spacing: 3) {
-                            RoundedRectangle(cornerRadius: 1).fill(Color.primary.opacity(0.7)).frame(width: 14, height: 2)
-                            Text("Median").font(.system(size: fs(9))).foregroundColor(fgDim)
-                        }
-                    }
-                    Spacer()
-                    let avg = scores.map(\.score).reduce(0, +) / Double(scores.count)
-                    Text("Avg: \(String(format: "%.0f", avg))")
-                        .font(.system(size: fs(11), weight: .medium, design: .monospaced))
-                        .foregroundColor(fg)
-                    if let best = scores.max(by: { $0.score < $1.score }) {
-                        Text("Best: \(String(format: "%.0f", best.score)) (\(best.night))")
-                            .font(.system(size: fs(11), design: .monospaced))
-                            .foregroundColor(fgDim)
-                    }
-                }
-                Text("Score = 40% retention + 30% FWHM quality + 20% trailing + 10% stability\(showTrend ? " · White line = monthly median" : "")")
-                    .font(.system(size: fs(9)))
-                    .foregroundColor(fgDim)
-            }
-        }
-    }
 
     // KPI 2: Imaging Efficiency — retention rate per night with tier breakdown
     private var efficiencyChart: some View {

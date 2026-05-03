@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		0058FC7C75B67B4C7AD5A246 /* BenchmarkSharing.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A3C4F920C008F3B9EEA4CED /* BenchmarkSharing.swift */; };
 		0169C332A6AE8044239328AB /* QuickStackEngineV2.swift in Sources */ = {isa = PBXBuildFile; fileRef = F51EC131A3171F9475C7979F /* QuickStackEngineV2.swift */; };
+		032E25A868266D47F856F19A /* FrameHistoryChartTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D22BC02E9903BCA053B9C53 /* FrameHistoryChartTheme.swift */; };
 		04496E91573738A0DE8C1ADB /* CommunityBaseline.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78F34710ED7DC2766AE2501F /* CommunityBaseline.swift */; };
 		0917BBDCA2FF57FA9EF2ED2B /* VisualValidationWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 82255D613953DAE86F6B6A9B /* VisualValidationWindow.swift */; };
 		0A8D1ABC0439459F3075F477 /* AstroTriageQuickLookThumbnail.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 837394D162B707B718C708C9 /* AstroTriageQuickLookThumbnail.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
@@ -84,6 +85,7 @@
 		9D950EBF4E4EBC1A00430834 /* StarAnalyzerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C73F68266BEC1BE0872283EB /* StarAnalyzerTests.swift */; };
 		9F741F47A7830BD9A405A511 /* FrameHistoryMigrations.swift in Sources */ = {isa = PBXBuildFile; fileRef = 80A7F31F7DBA920A68B6787D /* FrameHistoryMigrations.swift */; };
 		9FE0865A0F4D4378F7A43D7A /* ArchiveScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 32B55DBDF2FD18BEF1399C8D /* ArchiveScanner.swift */; };
+		A1C2006F19F3C1DEE8EEAB9C /* SessionScoreChart.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55ABE4E540ACACE563997661 /* SessionScoreChart.swift */; };
 		A1F34E194B0A1115E47E6022 /* OrientationFingerprint.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA05B54F2E8430F12945A188 /* OrientationFingerprint.swift */; };
 		A25E05A896A91A675B10AB27 /* AIsaacUserProfile.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BC8D6B7579B8D8EE0A8190B /* AIsaacUserProfile.swift */; };
 		A3B2A88FE0D2DFC9F44E3342 /* CurationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C90F68D49B2362943B4E1EF /* CurationService.swift */; };
@@ -227,6 +229,7 @@
 		4EC5D8FEF949DAD6CA5217B2 /* ConvergenceDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConvergenceDetector.swift; sourceTree = "<group>"; };
 		4F4E0BFE3D430285CFC280C9 /* CompareWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompareWindow.swift; sourceTree = "<group>"; };
 		511D5503EE634473FF2EC433 /* CalibrationDatabase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalibrationDatabase.swift; sourceTree = "<group>"; };
+		55ABE4E540ACACE563997661 /* SessionScoreChart.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionScoreChart.swift; sourceTree = "<group>"; };
 		571C5A1575E51796C6AEABB1 /* AppSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSettings.swift; sourceTree = "<group>"; };
 		5B79046A0EF170F63FA87EED /* AIsaacWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIsaacWindowController.swift; sourceTree = "<group>"; };
 		5D45AA5729C0A57A6C12C9C2 /* HeaderInspectorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HeaderInspectorView.swift; sourceTree = "<group>"; };
@@ -245,6 +248,7 @@
 		76A68D583C36500C4A7BD068 /* AIsaacService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIsaacService.swift; sourceTree = "<group>"; };
 		78F34710ED7DC2766AE2501F /* CommunityBaseline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommunityBaseline.swift; sourceTree = "<group>"; };
 		7AE6DE7943D690C501401C4C /* ImageDecoder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageDecoder.swift; sourceTree = "<group>"; };
+		7D22BC02E9903BCA053B9C53 /* FrameHistoryChartTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FrameHistoryChartTheme.swift; sourceTree = "<group>"; };
 		7E3E8374566F596C93B1AE16 /* BenchmarkStats.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BenchmarkStats.swift; sourceTree = "<group>"; };
 		7EA258813A0F669A15FDE38A /* AstroTriage.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = AstroTriage.entitlements; sourceTree = "<group>"; };
 		7F143D9906FBF9F56814DB68 /* QualityEstimatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QualityEstimatorTests.swift; sourceTree = "<group>"; };
@@ -554,6 +558,7 @@
 				CFB1C427EBAA80D2C054A9A6 /* DSSThumbnailCache.swift */,
 				B6D16C070C8599AC5C5A265B /* FileListView.swift */,
 				7196FBBA0783630389EA7125 /* FileListView+Coordinator.swift */,
+				7D22BC02E9903BCA053B9C53 /* FrameHistoryChartTheme.swift */,
 				C81EB8161036824934AF68B0 /* FrameHistoryWindow.swift */,
 				5D45AA5729C0A57A6C12C9C2 /* HeaderInspectorView.swift */,
 				BA64AC3E56CA52677C9BF553 /* ImagePreviewWindow.swift */,
@@ -562,6 +567,7 @@
 				740CADC7ADA01E2160E95DCC /* QuickStackWindow.swift */,
 				F523409C99088A95634ED4F9 /* ReleaseNotesWindow.swift */,
 				8D35D584AE1D7CFEB4B41638 /* SessionOverviewView.swift */,
+				55ABE4E540ACACE563997661 /* SessionScoreChart.swift */,
 				6B1DF8104819C65DE1BF3EE5 /* StackResultView.swift */,
 				DF64C891421EA884F38DC4E3 /* TargetDatabaseViewModel.swift */,
 				B0C0251745EE8E533EF325DF /* TargetDatabaseWindow.swift */,
@@ -863,6 +869,7 @@
 				A557AE1C0894A7ED185F5BDC /* FileHasher.swift in Sources */,
 				93921CF3AEE8A7997AEA6F4E /* FileListView+Coordinator.swift in Sources */,
 				1864DE963C0E5E7717212E46 /* FileListView.swift in Sources */,
+				032E25A868266D47F856F19A /* FrameHistoryChartTheme.swift in Sources */,
 				C4AB2A0721C2A52C27DC95AC /* FrameHistoryDatabase.swift in Sources */,
 				9F741F47A7830BD9A405A511 /* FrameHistoryMigrations.swift in Sources */,
 				FE889D78C435FC53FEC3F372 /* FrameHistoryModel.swift in Sources */,
@@ -894,6 +901,7 @@
 				F1ABC93BE5D945B448028500 /* SessionCache.swift in Sources */,
 				BD7A31D9AF626FB19873EC7E /* SessionOverviewView.swift in Sources */,
 				F13B387686D2B2C88DC14937 /* SessionScanner.swift in Sources */,
+				A1C2006F19F3C1DEE8EEAB9C /* SessionScoreChart.swift in Sources */,
 				B6FAD33DBA5A722B4EC6F6AA /* Shaders.metal in Sources */,
 				8B3DCC9E6EA086B6F111AAC2 /* StackResultView.swift in Sources */,
 				FF2D352047518183D1FF4073 /* StarDetector.swift in Sources */,
