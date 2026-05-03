@@ -46,10 +46,22 @@ Working file with full context: `tasks/launch-readiness-2026-05.md` (gitignored)
   against the seven scoring files, blocks if `kAlgorithmVersion` did
   not bump, warns if `ALGORITHM_CHANGELOG.md` was not updated alongside.
 
-- [~] **Force-Unwrap-Sweep** — full-codebase audit of `!` and `try!`.
-  Audit deliverable at `tasks/force-unwrap-audit.md` (gitignored).
-  Category-C (user-input / filesystem / network) hits become a
-  follow-up patch after audit lands.
+- [x] **Force-Unwrap-Sweep** — audit complete 2026-05-03,
+  deliverable at `tasks/force-unwrap-audit.md` (gitignored).
+  100 sites total: 71 system-guaranteed | 18 internal-invariant
+  | **11 Category C real risks**. Surprise finding: 4 of the 5
+  named launch-readiness Category-C sites were already fixed in
+  v6.0.0 (only `SessionCache.swift:35` remains).
+  Top files for Category-C fixes (follow-up patch):
+  - `TriageViewModel.swift` — 5 (best!.qualityTier×2, sessionRootURL!,
+    cropRect!×2, all session-lifecycle, NOT scoring)
+  - `StarMetricsCalculator.swift` — 4 (RANSAC trail post-processing
+    lines 667–670; quality-critical so will need `kAlgorithmVersion`
+    bump even though happy-path behavior is unchanged)
+  - `QualityEstimator.swift` — 1 (line 1343, diagnostic write only,
+    NOT scoring → no version bump needed)
+  - `SessionCache.swift`, `AppMessageService.swift`,
+    `AIsaacWindowController.swift` — 1 each
 
 ### Patch 2 — TriageViewModel split + QualityEstimator stages
 
