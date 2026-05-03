@@ -119,6 +119,7 @@
 		F13B387686D2B2C88DC14937 /* SessionScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7D54DB9FE9BF17CD5203F2D /* SessionScanner.swift */; };
 		F1ABC93BE5D945B448028500 /* SessionCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72BFE1A73BD5AD652BD34CB8 /* SessionCache.swift */; };
 		F2A2E4A93406E9E2FDA58F39 /* CommunityDetectionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9357E837EAC43DB99DF08C8F /* CommunityDetectionService.swift */; };
+		F39159B44A5C5FB0A139FEA0 /* DSSThumbnailCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = CFB1C427EBAA80D2C054A9A6 /* DSSThumbnailCache.swift */; };
 		F47A29B58D39DCB30BDB290A /* ImageViewerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED760805A7C9C85AB7BB391E /* ImageViewerView.swift */; };
 		F5831BE6789DBE653994543B /* CompareWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F4E0BFE3D430285CFC280C9 /* CompareWindow.swift */; };
 		F6AABBF221940E76783E0463 /* QuickLookDebayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41189836F6D85A8AB207DF34 /* QuickLookDebayer.swift */; };
@@ -281,6 +282,7 @@
 		CC2B51C4B8F25806E968FDB4 /* QualityEstimator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QualityEstimator.swift; sourceTree = "<group>"; };
 		CD2457C0829FBD7832C880DF /* QuickLookSTF.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickLookSTF.swift; sourceTree = "<group>"; };
 		CD52DEA0A1A02E46E1C26A18 /* AIsaacContextBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIsaacContextBuilder.swift; sourceTree = "<group>"; };
+		CFB1C427EBAA80D2C054A9A6 /* DSSThumbnailCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DSSThumbnailCache.swift; sourceTree = "<group>"; };
 		D19F3382C587963657C7C560 /* HelpWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HelpWindow.swift; sourceTree = "<group>"; };
 		D294FBAA33E829B384E0D16A /* SupabaseClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupabaseClient.swift; sourceTree = "<group>"; };
 		D60FDB5923A652383E3ABEB7 /* AstroTriageApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AstroTriageApp.swift; sourceTree = "<group>"; };
@@ -535,6 +537,7 @@
 				C3E8644313598CB076771595 /* ColorCombineWindow.swift */,
 				4F4E0BFE3D430285CFC280C9 /* CompareWindow.swift */,
 				24F8E2016E26D881862A1E76 /* ContentView.swift */,
+				CFB1C427EBAA80D2C054A9A6 /* DSSThumbnailCache.swift */,
 				B6D16C070C8599AC5C5A265B /* FileListView.swift */,
 				C81EB8161036824934AF68B0 /* FrameHistoryWindow.swift */,
 				5D45AA5729C0A57A6C12C9C2 /* HeaderInspectorView.swift */,
@@ -834,6 +837,7 @@
 				2356F4E612C0145A8DAD2063 /* ConvergenceDetector.swift in Sources */,
 				B201AAFCD2873CF8D29655B9 /* CuratedExport.swift in Sources */,
 				A3B2A88FE0D2DFC9F44E3342 /* CurationService.swift in Sources */,
+				F39159B44A5C5FB0A139FEA0 /* DSSThumbnailCache.swift in Sources */,
 				FF242D8AC80D34562D5B296A /* DecodedImage.swift in Sources */,
 				31947D5AB6C982F422ECFD8C /* DeepSkyTargetDatabase.swift in Sources */,
 				2B342761B8218D9FD97D3063 /* DisplayAligner.swift in Sources */,
