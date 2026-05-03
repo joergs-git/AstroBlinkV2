@@ -102,6 +102,7 @@
 		C66ED07D541C5E62EC36991E /* StarMetricsCalculator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0BFB130B08CCDD11AC1018A7 /* StarMetricsCalculator.swift */; };
 		C68EC1D0FE54ABE5A60B0B5C /* MoonCalculator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E25E535A2CFCECDD16EF936 /* MoonCalculator.swift */; };
 		CC6E11E8FA4788135037A3CE /* NINAFilenameParserTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E291DE3DBC147FB649506D61 /* NINAFilenameParserTests.swift */; };
+		CCC0A640BC6FB06A49C4F621 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 048345D935BF6D509B7E7C8D /* OnboardingView.swift */; };
 		D1C96F46237D0B999DA95C52 /* BenchmarkStats.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E3E8374566F596C93B1AE16 /* BenchmarkStats.swift */; };
 		D4A041A8487DE17C0BBF8DCC /* AppMessage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43550D7E1EF1A01C304E9765 /* AppMessage.swift */; };
 		D8490084CA833D518635A281 /* ImageDecoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7AE6DE7943D690C501401C4C /* ImageDecoder.swift */; };
@@ -173,6 +174,7 @@
 
 /* Begin PBXFileReference section */
 		01FF98B4BC98399919553F34 /* ColorCombineEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ColorCombineEngine.swift; sourceTree = "<group>"; };
+		048345D935BF6D509B7E7C8D /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
 		086FF25EBE46523DDAFB5D52 /* AppColors.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppColors.swift; sourceTree = "<group>"; };
 		08F0D2BEEDC92E723A57A4DE /* AIsaacSpeech.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIsaacSpeech.swift; sourceTree = "<group>"; };
 		0BFB130B08CCDD11AC1018A7 /* StarMetricsCalculator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StarMetricsCalculator.swift; sourceTree = "<group>"; };
@@ -403,6 +405,7 @@
 			isa = PBXGroup;
 			children = (
 				D60FDB5923A652383E3ABEB7 /* AstroTriageApp.swift */,
+				048345D935BF6D509B7E7C8D /* OnboardingView.swift */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -841,6 +844,7 @@
 				C68EC1D0FE54ABE5A60B0B5C /* MoonCalculator.swift in Sources */,
 				49AAD6D113938C331D999DBC /* MosaicGenerator.swift in Sources */,
 				3D029D52F10611A437BC2B5F /* NINAFilenameParser.swift in Sources */,
+				CCC0A640BC6FB06A49C4F621 /* OnboardingView.swift in Sources */,
 				A1F34E194B0A1115E47E6022 /* OrientationFingerprint.swift in Sources */,
 				B54934C587552F12AB659721 /* PrefetchCache.swift in Sources */,
 				BFD9D646DC78249F8654CC1D /* PreviewGenerator.swift in Sources */,
