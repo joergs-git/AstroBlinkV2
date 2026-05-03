@@ -14,37 +14,42 @@ Working file with full context: `tasks/launch-readiness-2026-05.md` (gitignored)
 
 ### Patch 1 — Service hygiene + safety nets
 
-- [ ] **Pre-launch verifications still pending** (run on the Release build,
-      not Debug):
-  - [ ] PrefetchCache stress test: 500+ FITS, fast ←/→ navigation, watch
-        for stale-worker leaks under repeated session opens
-  - [ ] Manipulated FITS bounds test: hand-craft a header with width/height
-        beyond the 200 MP cap; expect clean error, not crash
-  - [ ] Golden-Set regression: 7 setups × 1638 frames, score deviation ≤ ±2 %
-        from pre-refactor baseline (validates that the day's file splits
-        didn't accidentally change scoring)
+- [~] **Pre-launch verifications**:
+  - [ ] PrefetchCache stress test (500+ FITS, fast ←/→ nav) —
+        manual on Release build, repro steps in
+        `tasks/launch-readiness-2026-05.md` § "M1"
+  - [x] Manipulated FITS bounds test — automated as
+        `testFITSBoundsCheck_RejectsAbsurdDimensions` in
+        `Tests/DecoderTests.swift`
+  - [ ] Golden-Set regression (7 setups × 1638 frames, ±2%) —
+        `Tests/ScoringRegressionTests.swift` covers the synthetic
+        portion; full real-data sweep stays manual,
+        repro steps in `tasks/launch-readiness-2026-05.md` § "M3"
 
-- [ ] **`SupabaseClient` → real service layer**
-  - Retry with exponential backoff (transient 5xx, network blip)
-  - Unified per-call timeout configuration
-  - Consistent error mapping (network / 4xx / 5xx → typed cases)
-  - Single point for adding x-app-version, request IDs, etc.
-  - Migrate the ~10 callers off ad-hoc URLSession.data and onto the
-    new `client.send(...)` shape
+- [x] **`SupabaseClient` → real service layer**
+  - Retry with exponential backoff on transient 5xx (502/503/504) +
+    recoverable URLErrors (timedOut, networkConnectionLost, dns…)
+  - Per-call timeout via `send(_, timeout:, retries:)` parameter
+  - Typed `SupabaseError` (notConfigured / network / cancelled /
+    invalidResponse). 4xx / non-transient 5xx pass through as
+    `(data, response)` so callers retain their own status-code
+    handling (e.g. 429 → first-class result)
+  - `X-App-Version` header now on every request (e.g.
+    "AstroBlinkV2/6.0.0 (89)")
+  - All 10 callers migrated; SSE-streaming callers stay raw
+    (AIsaacService + Claude-API fallback in VisualAnomalyDetector)
+  - Commits: 0a26281 (helper), 6780797 (BenchmarkSharing),
+    b40ca29 (remaining 8)
 
-- [ ] **CI: enforce `kAlgorithmVersion` bump** on quality-critical edits.
-  GitHub Action checks the diff: if any of `QualityEstimator.swift`,
-  `TrailingAnalyzer.swift`, `CalibrationDatabase.swift`,
-  `ConvergenceDetector.swift`, `StarMetricsCalculator.swift`,
-  `STFCalculator.swift`, `ColorCombineEngine.swift` changed AND
-  `kAlgorithmVersion` in `FrameRecord.swift` did not → block PR with
-  link to `ALGORITHM_CHANGELOG.md`
+- [x] **CI: enforce `kAlgorithmVersion` bump** on quality-critical edits.
+  Workflow `.github/workflows/algorithm-version-check.yml` diffs PR/push
+  against the seven scoring files, blocks if `kAlgorithmVersion` did
+  not bump, warns if `ALGORITHM_CHANGELOG.md` was not updated alongside.
 
-- [ ] **Force-Unwrap-Sweep** — full-codebase audit of `!` and `try!`,
-  categorized in `tasks/force-unwrap-audit.md` as:
-  1. System-guaranteed (Bundle resources, etc.) — keep
-  2. Internal-invariant guaranteed — keep with comment
-  3. User-input / filesystem / network — replace with `guard let`
+- [~] **Force-Unwrap-Sweep** — full-codebase audit of `!` and `try!`.
+  Audit deliverable at `tasks/force-unwrap-audit.md` (gitignored).
+  Category-C (user-input / filesystem / network) hits become a
+  follow-up patch after audit lands.
 
 ### Patch 2 — TriageViewModel split + QualityEstimator stages
 
