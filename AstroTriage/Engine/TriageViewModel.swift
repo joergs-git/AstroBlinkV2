@@ -127,12 +127,14 @@ class TriageViewModel: ObservableObject {
     // Programmatic multi-row selection (AIsaac highlight command)
     @Published var pendingHighlightRows: IndexSet?
 
-    // Blink playback
+    // Blink playback. Timer + index iteration live in PlaybackController;
+    // TriageViewModel keeps `isPlaying` and `playbackDelay` as @Published mirrors
+    // so existing SwiftUI bindings (toolbar Play button, delay slider) keep working.
     @Published var isPlaying: Bool = false
-    @Published var playbackDelay: Double = 0.1
-    private var playbackTimer: Timer?
-    private var playbackIndices: [Int] = []
-    private var playbackPosition: Int = 0
+    @Published var playbackDelay: Double = 0.1 {
+        didSet { playback.delaySeconds = playbackDelay }
+    }
+    private let playback = PlaybackController()
 
     // Visual Validation (VLM mosaic anomaly detection)
     @Published var isGeneratingMosaic: Bool = false
@@ -616,6 +618,16 @@ class TriageViewModel: ObservableObject {
 
     init() {
         self.device = MTLCreateSystemDefaultDevice()
+        // Wire playback controller — the controller owns the timer and the
+        // index list, this view model owns the published flags and image-array
+        // logic. When the timer advances, this hands the new index to selectImage.
+        playback.delaySeconds = playbackDelay
+        playback.onAdvance = { [weak self] idx in
+            guard let self else { return }
+            if idx >= 0, idx < self.images.count {
+                self.selectImage(at: idx)
+            }
+        }
         if let device = self.device {
             self.prefetchCache = PrefetchCache(device: device)
             // When a priority-queued preview completes, refresh display if it matches current image
@@ -4249,58 +4261,34 @@ class TriageViewModel: ObservableObject {
         guard !images.isEmpty else { return }
 
         // Build list of indices to cycle through — always respect visibility
+        let indices: [Int]
         if let rows = highlightedRows, rows.count > 1 {
             // Multi-selected rows are table rows (visible list indices) — map to real indices
             let visible = visibleImages
-            playbackIndices = rows.compactMap { row -> Int? in
+            indices = rows.compactMap { row -> Int? in
                 guard row < visible.count else { return nil }
                 return images.firstIndex(where: { $0.url == visible[row].url })
             }
         } else {
             // All visible images — map to their real indices in the images array
             let visible = visibleImages
-            playbackIndices = visible.compactMap { entry in
+            indices = visible.compactMap { entry in
                 images.firstIndex(where: { $0.url == entry.url })
             }
         }
-        guard !playbackIndices.isEmpty else { return }
+        guard !indices.isEmpty else { return }
 
         // Start at current image if it's in the list, otherwise start from beginning
-        if let pos = playbackIndices.firstIndex(of: selectedIndex) {
-            playbackPosition = pos
-        } else {
-            playbackPosition = 0
-        }
+        let startPos = indices.firstIndex(of: selectedIndex) ?? 0
 
+        playback.delaySeconds = playbackDelay
+        playback.start(indices: indices, startAt: startPos)
         isPlaying = true
-        schedulePlaybackTimer()
     }
 
     func stopPlayback() {
         isPlaying = false
-        playbackTimer?.invalidate()
-        playbackTimer = nil
-        playbackIndices = []
-        playbackPosition = 0
-    }
-
-    private func schedulePlaybackTimer() {
-        playbackTimer?.invalidate()
-        playbackTimer = Timer.scheduledTimer(withTimeInterval: playbackDelay, repeats: false) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                self?.advancePlayback()
-            }
-        }
-    }
-
-    private func advancePlayback() {
-        guard isPlaying, !playbackIndices.isEmpty else { return }
-        playbackPosition = (playbackPosition + 1) % playbackIndices.count
-        let idx = playbackIndices[playbackPosition]
-        if idx >= 0, idx < images.count {
-            selectImage(at: idx)
-        }
-        schedulePlaybackTimer()
+        playback.stop()
     }
 
     // MARK: - Blink Video Export

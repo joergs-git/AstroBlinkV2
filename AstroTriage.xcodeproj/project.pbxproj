@@ -29,6 +29,7 @@
 		27A50C3C24B073F7FA400012 /* ImageEntryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1ABC62333FF8D3609F74755 /* ImageEntryTests.swift */; };
 		2AC85F5C8AE08A1DB6A74261 /* KeyboardHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 763931350538CED5EA81290D /* KeyboardHandler.swift */; };
 		2B342761B8218D9FD97D3063 /* DisplayAligner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2727035D4657A3FCCCEE6076 /* DisplayAligner.swift */; };
+		2BCAFB12B4EB32102A53F0A4 /* PlaybackController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72482E3B4DA87C1D05E5BC54 /* PlaybackController.swift */; };
 		2CF2D0DA29197AECBEE2FA9D /* CurationServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A418D2B8B47E7D7859BCC0E /* CurationServiceTests.swift */; };
 		30A10E61F2606E5D7B2F6CB9 /* SupabaseClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = D294FBAA33E829B384E0D16A /* SupabaseClient.swift */; };
 		31747A36A973DE54498AA159 /* FrameRecord.swift in Sources */ = {isa = PBXBuildFile; fileRef = F90E148C13F8C7FE088D1524 /* FrameRecord.swift */; };
@@ -234,6 +235,7 @@
 		6B1DF8104819C65DE1BF3EE5 /* StackResultView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StackResultView.swift; sourceTree = "<group>"; };
 		6E25E535A2CFCECDD16EF936 /* MoonCalculator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoonCalculator.swift; sourceTree = "<group>"; };
 		6F15B76878AB89E64790D0D4 /* AIsaacWeather.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIsaacWeather.swift; sourceTree = "<group>"; };
+		72482E3B4DA87C1D05E5BC54 /* PlaybackController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaybackController.swift; sourceTree = "<group>"; };
 		72BFE1A73BD5AD652BD34CB8 /* SessionCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionCache.swift; sourceTree = "<group>"; };
 		740CADC7ADA01E2160E95DCC /* QuickStackWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickStackWindow.swift; sourceTree = "<group>"; };
 		763931350538CED5EA81290D /* KeyboardHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardHandler.swift; sourceTree = "<group>"; };
@@ -468,6 +470,7 @@
 				4E6FA09107C45349725E7DCF /* MosaicGenerator.swift */,
 				958EAAFB0801AA6BF89E7E57 /* NINAFilenameParser.swift */,
 				FA05B54F2E8430F12945A188 /* OrientationFingerprint.swift */,
+				72482E3B4DA87C1D05E5BC54 /* PlaybackController.swift */,
 				1B4C4D1E3CA9608F6E41582A /* PrefetchCache.swift */,
 				CC2B51C4B8F25806E968FDB4 /* QualityEstimator.swift */,
 				F51EC131A3171F9475C7979F /* QuickStackEngineV2.swift */,
@@ -872,6 +875,7 @@
 				3D029D52F10611A437BC2B5F /* NINAFilenameParser.swift in Sources */,
 				CCC0A640BC6FB06A49C4F621 /* OnboardingView.swift in Sources */,
 				A1F34E194B0A1115E47E6022 /* OrientationFingerprint.swift in Sources */,
+				2BCAFB12B4EB32102A53F0A4 /* PlaybackController.swift in Sources */,
 				B54934C587552F12AB659721 /* PrefetchCache.swift in Sources */,
 				BFD9D646DC78249F8654CC1D /* PreviewGenerator.swift in Sources */,
 				785DA5B582B5E5DD03CF89AE /* QualityEstimator.swift in Sources */,
