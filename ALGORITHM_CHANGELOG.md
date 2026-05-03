@@ -12,6 +12,38 @@ Records with `algorithmVersion < kAlgorithmVersion` are candidates for re-analys
 
 ---
 
+## Version 24 — v6.0.x (2026-05-03)
+
+**Defensive guards in StarMetricsCalculator RANSAC trail post-processing — no
+behaviour change on any reachable input. Version bump per CLAUDE.md policy
+("Algorithm Versioning (MANDATORY): When ANY quality-critical file is modified
+… you MUST bump kAlgorithmVersion").**
+
+### What changed
+`AstroTriage/Engine/StarMetricsCalculator.swift:667–670`: replaced four
+force-unwraps (`trailStars.map(\.x).min()!` etc.) with a single `guard let`.
+The pre-existing `bestInliers.count >= minInliers` guard at line 663 (with
+`minInliers = 8`) already proves `trailStars` is non-empty, so the new guard
+is unreachable on the happy path. The new path returns `[]` (the same value
+the caller would receive on a "no trail detected" outcome) instead of crashing
+in the theoretical case where the guarded invariant ever broke.
+
+### Validation
+- `Tests/ScoringRegressionTests` — 9/9 passing, no tier shift on any
+  fixture (M82, IC63, NGC7635, planet exclusion, mixed sessions).
+- Re-analysis of stale `algorithmVersion = 23` records is **not** required
+  for this version. The bump is policy compliance, not a real scoring change.
+
+### Why bumped anyway
+The CLAUDE.md rule treats "any change to quality-critical files" as a bump
+trigger because reviewers can't tell at a glance whether a defensive guard
+or refactor secretly altered behaviour. The CI workflow added in v6.0.x
+(`.github/workflows/algorithm-version-check.yml`) will block PRs that touch
+these files without a bump — Version 24 is the first such bump under the
+new gate.
+
+---
+
 ## Version 23 — v5.26.0 (2026-04-18)
 
 **Curation-driven scoring pipeline tune-up: remove lossy Stage 1.5 severe path,

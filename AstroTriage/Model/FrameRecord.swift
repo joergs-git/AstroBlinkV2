@@ -11,7 +11,7 @@ import GRDB
 /// with a detailed entry describing what changed and why.
 ///
 /// See: ALGORITHM_CHANGELOG.md for full version history.
-let kAlgorithmVersion = 23
+let kAlgorithmVersion = 24
 
 // MARK: - FrameRecord
 

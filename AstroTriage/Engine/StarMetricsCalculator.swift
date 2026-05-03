@@ -662,12 +662,18 @@ enum StarMetricsCalculator {
         // Only flag as trail if enough collinear points found
         guard bestInliers.count >= minInliers else { return [] }
 
-        // Verify the trail spans a significant portion of the image (not just a cluster)
+        // Verify the trail spans a significant portion of the image (not just a cluster).
+        // The `bestInliers.count >= minInliers` guard above (minInliers = 8) ensures
+        // trailStars is non-empty on every reachable code path; the guard-let here
+        // is a defensive fallback (should never fire) and behaviour is unchanged
+        // for every valid input.
         let trailStars = bestInliers.map { stars[$0] }
-        let minX = trailStars.map(\.x).min()!
-        let maxX = trailStars.map(\.x).max()!
-        let minY = trailStars.map(\.y).min()!
-        let maxY = trailStars.map(\.y).max()!
+        guard let minX = trailStars.map(\.x).min(),
+              let maxX = trailStars.map(\.x).max(),
+              let minY = trailStars.map(\.y).min(),
+              let maxY = trailStars.map(\.y).max() else {
+            return []
+        }
         let span = ((maxX - minX) * (maxX - minX) + (maxY - minY) * (maxY - minY)).squareRoot()
         let imageSize = (Float(width * width + height * height)).squareRoot()
 
