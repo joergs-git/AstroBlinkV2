@@ -39,6 +39,7 @@
 		37DA495A008C7E13F6D23D6C /* HeaderInspectorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D45AA5729C0A57A6C12C9C2 /* HeaderInspectorView.swift */; };
 		390301387CB9257F1DAE9235 /* MetadataExtractor.swift in Sources */ = {isa = PBXBuildFile; fileRef = EAC4AFD3D3784B02004BA98D /* MetadataExtractor.swift */; };
 		399A544B01D518D97920F138 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AE4E059ADDE28F88AF19A8DF /* Assets.xcassets */; };
+		3A2CBDE8B15293A433A58D90 /* MetricsChart.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B3E41AED2C1FD9826CD93D3 /* MetricsChart.swift */; };
 		3AE8C59AED6435B5F41CA9AF /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24F8E2016E26D881862A1E76 /* ContentView.swift */; };
 		3D029D52F10611A437BC2B5F /* NINAFilenameParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 958EAAFB0801AA6BF89E7E57 /* NINAFilenameParser.swift */; };
 		3ED3F0F9A74454F562857A09 /* ConditionsChart.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8C040E3CFD178726618C93F /* ConditionsChart.swift */; };
@@ -221,6 +222,7 @@
 		2C90F68D49B2362943B4E1EF /* CurationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CurationService.swift; sourceTree = "<group>"; };
 		32B55DBDF2FD18BEF1399C8D /* ArchiveScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArchiveScanner.swift; sourceTree = "<group>"; };
 		349FE588694CBEF50831E753 /* ScoringValidationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScoringValidationTests.swift; sourceTree = "<group>"; };
+		3B3E41AED2C1FD9826CD93D3 /* MetricsChart.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetricsChart.swift; sourceTree = "<group>"; };
 		3BCBBE41D0B90CC98443F843 /* GradientRemoval.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GradientRemoval.swift; sourceTree = "<group>"; };
 		3E84C4C954C1B6E8C561713D /* ThumbnailProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThumbnailProvider.swift; sourceTree = "<group>"; };
 		40D54AA4B026ABD4997C7758 /* STFCalculator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = STFCalculator.swift; sourceTree = "<group>"; };
@@ -577,6 +579,7 @@
 				BA64AC3E56CA52677C9BF553 /* ImagePreviewWindow.swift */,
 				ED760805A7C9C85AB7BB391E /* ImageViewerView.swift */,
 				763931350538CED5EA81290D /* KeyboardHandler.swift */,
+				3B3E41AED2C1FD9826CD93D3 /* MetricsChart.swift */,
 				740CADC7ADA01E2160E95DCC /* QuickStackWindow.swift */,
 				F523409C99088A95634ED4F9 /* ReleaseNotesWindow.swift */,
 				8D35D584AE1D7CFEB4B41638 /* SessionOverviewView.swift */,
@@ -903,6 +906,7 @@
 				2AC85F5C8AE08A1DB6A74261 /* KeyboardHandler.swift in Sources */,
 				390301387CB9257F1DAE9235 /* MetadataExtractor.swift in Sources */,
 				B6A89CE09C96403D52C0CAE5 /* MetalRenderer.swift in Sources */,
+				3A2CBDE8B15293A433A58D90 /* MetricsChart.swift in Sources */,
 				C68EC1D0FE54ABE5A60B0B5C /* MoonCalculator.swift in Sources */,
 				49AAD6D113938C331D999DBC /* MosaicGenerator.swift in Sources */,
 				3D029D52F10611A437BC2B5F /* NINAFilenameParser.swift in Sources */,
