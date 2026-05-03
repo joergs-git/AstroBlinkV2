@@ -16,6 +16,7 @@
 		1004744272F7E887C2080BE9 /* AIsaacKeychain.swift in Sources */ = {isa = PBXBuildFile; fileRef = 218287CA9A583C11D2A4196E /* AIsaacKeychain.swift */; };
 		142FCBA2B931A2772A0E206E /* ConvergenceDetectorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2264DF9C1BBEE95302DA02E /* ConvergenceDetectorTests.swift */; };
 		165583E38229583940B63330 /* HelpWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = D19F3382C587963657C7C560 /* HelpWindow.swift */; };
+		1741CE7D55DC72D318B68290 /* TargetDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCB1D88E1217036EC7901133 /* TargetDetailView.swift */; };
 		1864DE963C0E5E7717212E46 /* FileListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6D16C070C8599AC5C5A265B /* FileListView.swift */; };
 		1C5494999757C263A4969E6F /* QuickLookRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D9A7A3939A213218612E649 /* QuickLookRenderer.swift */; };
 		1C55F1A7F9B655046F8D1D96 /* TargetCatalogService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 433F3F811A3CF1871EC2D380 /* TargetCatalogService.swift */; };
@@ -280,6 +281,7 @@
 		CAB86491BE4F5019B5883E46 /* QuickLookDecoder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickLookDecoder.swift; sourceTree = "<group>"; };
 		CBB9979AD11949E2FE6E7511 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		CC2B51C4B8F25806E968FDB4 /* QualityEstimator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QualityEstimator.swift; sourceTree = "<group>"; };
+		CCB1D88E1217036EC7901133 /* TargetDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TargetDetailView.swift; sourceTree = "<group>"; };
 		CD2457C0829FBD7832C880DF /* QuickLookSTF.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickLookSTF.swift; sourceTree = "<group>"; };
 		CD52DEA0A1A02E46E1C26A18 /* AIsaacContextBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIsaacContextBuilder.swift; sourceTree = "<group>"; };
 		CFB1C427EBAA80D2C054A9A6 /* DSSThumbnailCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DSSThumbnailCache.swift; sourceTree = "<group>"; };
@@ -548,6 +550,7 @@
 				8D35D584AE1D7CFEB4B41638 /* SessionOverviewView.swift */,
 				DF64C891421EA884F38DC4E3 /* TargetDatabaseViewModel.swift */,
 				B0C0251745EE8E533EF325DF /* TargetDatabaseWindow.swift */,
+				CCB1D88E1217036EC7901133 /* TargetDetailView.swift */,
 				82255D613953DAE86F6B6A9B /* VisualValidationWindow.swift */,
 			);
 			path = UI;
@@ -882,6 +885,7 @@
 				1C55F1A7F9B655046F8D1D96 /* TargetCatalogService.swift in Sources */,
 				FF43031830F6DAE5DA5EE9CB /* TargetDatabaseViewModel.swift in Sources */,
 				562762ADDFF1E2EDD6111A87 /* TargetDatabaseWindow.swift in Sources */,
+				1741CE7D55DC72D318B68290 /* TargetDetailView.swift in Sources */,
 				7A69119E8C46AEEEC3903EDA /* TexturePool.swift in Sources */,
 				7025BB820EB0394F1BD3F5B8 /* TrailingAnalyzer.swift in Sources */,
 				C26CB03B2AE2C731BC2B72BF /* TriageViewModel.swift in Sources */,
