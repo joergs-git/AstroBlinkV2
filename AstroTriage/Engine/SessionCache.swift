@@ -86,9 +86,20 @@ class SessionCache {
         }
     }
 
-    // Remove the entire AstroBlinkV2 cache directory
+    // Remove only session-cache directories — preserves named sibling caches
+    // like dss_thumbnails/ that are designed to live across launches.
+    // Session caches are named "<absHash>_<basename>" (see prepareSession), so
+    // we filter on a leading numeric segment followed by an underscore.
     static func cleanupAllCaches() {
-        try? FileManager.default.removeItem(at: cacheRoot)
+        let fm = FileManager.default
+        guard let contents = try? fm.contentsOfDirectory(at: cacheRoot, includingPropertiesForKeys: nil) else { return }
+        for entry in contents {
+            let name = entry.lastPathComponent
+            guard let underscore = name.firstIndex(of: "_") else { continue }
+            let prefix = name[name.startIndex..<underscore]
+            guard !prefix.isEmpty, prefix.allSatisfy({ $0.isNumber }) else { continue }
+            try? fm.removeItem(at: entry)
+        }
     }
 
     // Clean up old session caches (keep only most recent 3)

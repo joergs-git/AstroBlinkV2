@@ -767,10 +767,21 @@ final class FrameHistoryDatabase {
         let metaURL = iDir.appendingPathComponent("FrameHistory_meta.json")
 
         do {
-            // Rotate: current → backup1
+            // Rotate: current → backup1. Both steps logged on failure so a quietly
+            // broken rotation surfaces in Console.app instead of looking like success.
             if FileManager.default.fileExists(atPath: latestURL.path) {
-                try? FileManager.default.removeItem(at: backupURL)
-                try? FileManager.default.moveItem(at: latestURL, to: backupURL)
+                do {
+                    try FileManager.default.removeItem(at: backupURL)
+                } catch CocoaError.fileNoSuchFile {
+                    // First-time export — no previous backup to remove. Expected.
+                } catch {
+                    print("FrameHistoryDatabase: iCloud rotation — failed to remove old backup: \(error)")
+                }
+                do {
+                    try FileManager.default.moveItem(at: latestURL, to: backupURL)
+                } catch {
+                    print("FrameHistoryDatabase: iCloud rotation — failed to move latest to backup1: \(error)")
+                }
             }
 
             // Copy current DB to iCloud

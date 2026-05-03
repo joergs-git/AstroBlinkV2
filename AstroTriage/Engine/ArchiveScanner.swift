@@ -519,9 +519,13 @@ class ArchiveScanner: ObservableObject {
         if let v = headers["GAIN"] { entry.gain = Int(Double(v) ?? 0) }
         if let v = headers["OFFSET"] { entry.offset = Int(Double(v) ?? 0) }
         if let v = headers["XBINNING"] { entry.binning = "\(v)x\(v)" }
-        override(&entry.telescope, from: headers["TELESCOP"])
-        override(&entry.camera, from: headers["INSTRUME"])
-        override(&entry.target, from: headers["OBJECT"])
+        // Equipment names occasionally arrive with embedded paths or nicknames.
+        // Cap to a sane length so an unusual value can't bloat the DB or leak
+        // verbose user-machine-name strings (e.g. "ASIStudio2 - Joerg's Mac")
+        // through the curated_frames upload.
+        override(&entry.telescope, from: headers["TELESCOP"].map { Self.sanitizeFITSValue($0, maxLength: 100) })
+        override(&entry.camera,    from: headers["INSTRUME"].map { Self.sanitizeFITSValue($0, maxLength: 100) })
+        override(&entry.target,    from: headers["OBJECT"].map   { Self.sanitizeFITSValue($0, maxLength: 100) })
         if let v = headers["IMAGETYP"] ?? headers["FRAME"] {
             entry.frameType = MetadataExtractor.normalizeFrameType(v)
         }
@@ -557,6 +561,15 @@ class ArchiveScanner: ObservableObject {
             if parts.count >= 1 { entry.date = String(parts[0]) }
             if parts.count >= 2 { entry.time = String(parts[1].prefix(8)) }
         }
+    }
+
+    /// Trim whitespace and clamp to a max length. Cheap insurance against unusually
+    /// long FITS-header values that could carry user-machine names, paths, or
+    /// pasted-comment artifacts into the curated_frames pipeline.
+    private static func sanitizeFITSValue(_ raw: String, maxLength: Int) -> String {
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.count <= maxLength { return trimmed }
+        return String(trimmed.prefix(maxLength))
     }
 
     // MARK: - Post-Scan Quality Scoring
