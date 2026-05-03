@@ -36,7 +36,7 @@ final class AppMessageService {
     /// Check for messages, fetch from Supabase if stale, return highest-priority matching message.
     /// Called on app launch and periodically from TriageViewModel.
     func checkForMessages() async -> AppMessage? {
-        guard BenchmarkConfig.isConfigured else { return nil }
+        guard SupabaseClient.isConfigured else { return nil }
 
         // Fetch from network if stale
         let needsFetch = lastFetchDate == nil ||
@@ -261,16 +261,20 @@ final class AppMessageService {
     }
 
     private func fetchMessages() async -> [AppMessage] {
-        let urlString = "\(BenchmarkConfig.supabaseURL)/rest/v1/app_messages" +
-            "?select=*&is_active=eq.true&platform=in.(macos,all)&order=priority.desc"
-        return await fetchArray(urlString: urlString)
+        let url = SupabaseClient.restURL(
+            table: "app_messages",
+            query: "select=*&is_active=eq.true&platform=in.(macos,all)&order=priority.desc"
+        )
+        return await fetchArray(url: url)
     }
 
     private func fetchInteractions() async -> [String: MessageInteraction] {
         let hash = MachineInfo.machineHash
-        let urlString = "\(BenchmarkConfig.supabaseURL)/rest/v1/message_interactions" +
-            "?select=*&machine_hash=eq.\(hash)"
-        let list: [MessageInteraction] = await fetchArray(urlString: urlString)
+        let url = SupabaseClient.restURL(
+            table: "message_interactions",
+            query: "select=*&machine_hash=eq.\(hash)"
+        )
+        let list: [MessageInteraction] = await fetchArray(url: url)
         var dict: [String: MessageInteraction] = [:]
         for item in list { dict[item.message_id] = item }
         return dict
@@ -279,17 +283,18 @@ final class AppMessageService {
     @discardableResult
     private func fetchEntitlements() async -> [DeviceEntitlement] {
         let hash = MachineInfo.machineHash
-        let urlString = "\(BenchmarkConfig.supabaseURL)/rest/v1/device_entitlements" +
-            "?select=*&machine_hash=eq.\(hash)"
-        let result: [DeviceEntitlement] = await fetchArray(urlString: urlString)
+        let url = SupabaseClient.restURL(
+            table: "device_entitlements",
+            query: "select=*&machine_hash=eq.\(hash)"
+        )
+        let result: [DeviceEntitlement] = await fetchArray(url: url)
         cachedEntitlements = result
         return result
     }
 
-    private func fetchArray<T: Decodable>(urlString: String) async -> [T] {
-        guard let url = URL(string: urlString) else { return [] }
-        var request = URLRequest(url: url)
-        request.setValue(BenchmarkConfig.supabaseAnonKey, forHTTPHeaderField: "apikey")
+    private func fetchArray<T: Decodable>(url: URL?) async -> [T] {
+        guard let url else { return [] }
+        var request = SupabaseClient.makeRequest(url: url)
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.timeoutInterval = 30
 
@@ -340,13 +345,12 @@ final class AppMessageService {
 
     /// POST a new interaction record.
     private func postInteraction(_ interaction: MessageInteraction) async {
-        guard let url = URL(string: "\(BenchmarkConfig.supabaseURL)/rest/v1/message_interactions") else { return }
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue(BenchmarkConfig.supabaseAnonKey, forHTTPHeaderField: "apikey")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         // UPSERT: merge on conflict (message_id, machine_hash)
-        request.setValue("resolution=merge-duplicates", forHTTPHeaderField: "Prefer")
+        guard var request = SupabaseClient.jsonInsertRequest(
+            table: "message_interactions",
+            prefer: "resolution=merge-duplicates",
+            withBearer: false
+        ) else { return }
         request.timeoutInterval = 30
 
         do {
@@ -363,13 +367,12 @@ final class AppMessageService {
     /// PATCH an existing interaction with specific field updates.
     private func upsertInteraction(messageId: String, updates: [String: String]) async {
         let hash = MachineInfo.machineHash
-        let urlString = "\(BenchmarkConfig.supabaseURL)/rest/v1/message_interactions" +
-            "?message_id=eq.\(messageId)&machine_hash=eq.\(hash)"
-        guard let url = URL(string: urlString) else { return }
+        guard let url = SupabaseClient.restURL(
+            table: "message_interactions",
+            query: "message_id=eq.\(messageId)&machine_hash=eq.\(hash)"
+        ) else { return }
 
-        var request = URLRequest(url: url)
-        request.httpMethod = "PATCH"
-        request.setValue(BenchmarkConfig.supabaseAnonKey, forHTTPHeaderField: "apikey")
+        var request = SupabaseClient.makeRequest(url: url, method: "PATCH")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.timeoutInterval = 30
 
@@ -441,15 +444,13 @@ final class AppMessageService {
     /// Fire-and-forget app start ping. Writes one row to app_events table.
     /// Never blocks the app — errors are silently ignored.
     static func recordAppStart() {
-        guard BenchmarkConfig.isConfigured else { return }
+        guard SupabaseClient.isConfigured else { return }
 
         Task.detached(priority: .utility) {
-            guard let url = URL(string: "\(BenchmarkConfig.supabaseURL)/rest/v1/app_events") else { return }
-            var request = URLRequest(url: url)
-            request.httpMethod = "POST"
-            request.setValue(BenchmarkConfig.supabaseAnonKey, forHTTPHeaderField: "apikey")
-            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            request.setValue("return=minimal", forHTTPHeaderField: "Prefer")
+            guard var request = SupabaseClient.jsonInsertRequest(
+                table: "app_events",
+                withBearer: false
+            ) else { return }
             request.timeoutInterval = 15
 
             let payload: [String: Any] = [

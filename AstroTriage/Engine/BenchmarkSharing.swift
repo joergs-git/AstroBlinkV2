@@ -332,11 +332,11 @@ class BenchmarkService: ObservableObject {
 
     func fetchLeaderboard(engine: String) async throws {
         isFetching = true; defer { isFetching = false }
-        let urlString = "\(BenchmarkConfig.supabaseURL)/rest/v1/benchmarks" +
-            "?select=*&stack_engine=eq.\(engine)&order=created_at.desc&limit=1000"
-        guard let url = URL(string: urlString) else { return }
-        var request = URLRequest(url: url)
-        request.setValue(BenchmarkConfig.supabaseAnonKey, forHTTPHeaderField: "apikey")
+        guard let url = SupabaseClient.restURL(
+            table: "benchmarks",
+            query: "select=*&stack_engine=eq.\(engine)&order=created_at.desc&limit=1000"
+        ) else { return }
+        var request = SupabaseClient.makeRequest(url: url)
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
@@ -371,13 +371,12 @@ class BenchmarkService: ObservableObject {
 
     func fetchSessionLeaderboard(sourceType: String?) async throws {
         isFetching = true; defer { isFetching = false }
-        var urlString = "\(BenchmarkConfig.supabaseURL)/rest/v1/session_benchmarks?select=*&order=created_at.desc&limit=1000"
+        var query = "select=*&order=created_at.desc&limit=1000"
         if let src = sourceType {
-            urlString += "&source_type=eq.\(src)"
+            query += "&source_type=eq.\(src)"
         }
-        guard let url = URL(string: urlString) else { return }
-        var request = URLRequest(url: url)
-        request.setValue(BenchmarkConfig.supabaseAnonKey, forHTTPHeaderField: "apikey")
+        guard let url = SupabaseClient.restURL(table: "session_benchmarks", query: query) else { return }
+        var request = SupabaseClient.makeRequest(url: url)
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
@@ -390,13 +389,12 @@ class BenchmarkService: ObservableObject {
     // MARK: - Generic helpers
 
     private func checkDuplicate(table: String, filters: [String: String]) async throws -> Bool {
-        var urlString = "\(BenchmarkConfig.supabaseURL)/rest/v1/\(table)?select=id&limit=1"
+        var query = "select=id&limit=1"
         for (key, value) in filters {
-            urlString += "&\(key)=eq.\(value)"
+            query += "&\(key)=eq.\(value)"
         }
-        guard let url = URL(string: urlString) else { return false }
-        var request = URLRequest(url: url)
-        request.setValue(BenchmarkConfig.supabaseAnonKey, forHTTPHeaderField: "apikey")
+        guard let url = SupabaseClient.restURL(table: table, query: query) else { return false }
+        var request = SupabaseClient.makeRequest(url: url)
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else { return false }
@@ -405,12 +403,11 @@ class BenchmarkService: ObservableObject {
     }
 
     private func upload<T: Encodable>(table: String, entry: T) async throws {
-        guard let url = URL(string: "\(BenchmarkConfig.supabaseURL)/rest/v1/\(table)") else { return }
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue(BenchmarkConfig.supabaseAnonKey, forHTTPHeaderField: "apikey")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("return=representation", forHTTPHeaderField: "Prefer")
+        guard var request = SupabaseClient.jsonInsertRequest(
+            table: table,
+            prefer: "return=representation",
+            withBearer: false
+        ) else { return }
         request.httpBody = try JSONEncoder().encode(entry)
         let (_, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {

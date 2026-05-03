@@ -228,12 +228,12 @@ class TargetCatalogService {
     private func fetchFromSupabase() async {
         guard BenchmarkConfig.isConfigured else { return }
 
-        let urlString = "\(BenchmarkConfig.supabaseURL)/rest/v1/target_catalog" +
-            "?select=*&is_active=eq.true&order=canonical_name"
-        guard let url = URL(string: urlString) else { return }
+        guard let url = SupabaseClient.restURL(
+            table: "target_catalog",
+            query: "select=*&is_active=eq.true&order=canonical_name"
+        ) else { return }
 
-        var request = URLRequest(url: url)
-        request.setValue(BenchmarkConfig.supabaseAnonKey, forHTTPHeaderField: "apikey")
+        var request = SupabaseClient.makeRequest(url: url)
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.timeoutInterval = 30  // catalog can be large
 

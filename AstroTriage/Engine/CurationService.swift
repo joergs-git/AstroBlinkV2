@@ -264,15 +264,12 @@ enum CurationService {
     /// the UNIQUE (file_hash, machine_hash) constraint so the same frame can
     /// be re-rated without creating duplicate rows.
     private static func upsert(entry: CuratedFrameEntry) async throws {
-        guard let url = URL(string: "\(BenchmarkConfig.supabaseURL)/rest/v1/curated_frames") else {
+        guard var request = SupabaseClient.jsonInsertRequest(
+            table: "curated_frames",
+            prefer: "resolution=merge-duplicates,return=minimal"
+        ) else {
             throw CurationError.badURL
         }
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue(BenchmarkConfig.supabaseAnonKey, forHTTPHeaderField: "apikey")
-        request.setValue("Bearer \(BenchmarkConfig.supabaseAnonKey)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("resolution=merge-duplicates,return=minimal", forHTTPHeaderField: "Prefer")
 
         let encoder = JSONEncoder()
         request.httpBody = try encoder.encode(entry)
@@ -292,14 +289,12 @@ enum CurationService {
         let fhEnc = fileHash.addingPercentEncoding(withAllowedCharacters: allowed) ?? fileHash
         let mhEnc = machineHash.addingPercentEncoding(withAllowedCharacters: allowed) ?? machineHash
 
-        let urlString = "\(BenchmarkConfig.supabaseURL)/rest/v1/curated_frames"
-            + "?file_hash=eq.\(fhEnc)&machine_hash=eq.\(mhEnc)"
-        guard let url = URL(string: urlString) else { throw CurationError.badURL }
+        guard let url = SupabaseClient.restURL(
+            table: "curated_frames",
+            query: "file_hash=eq.\(fhEnc)&machine_hash=eq.\(mhEnc)"
+        ) else { throw CurationError.badURL }
 
-        var request = URLRequest(url: url)
-        request.httpMethod = "DELETE"
-        request.setValue(BenchmarkConfig.supabaseAnonKey, forHTTPHeaderField: "apikey")
-        request.setValue("Bearer \(BenchmarkConfig.supabaseAnonKey)", forHTTPHeaderField: "Authorization")
+        var request = SupabaseClient.makeRequest(url: url, method: "DELETE", withBearer: true)
         request.setValue("return=minimal", forHTTPHeaderField: "Prefer")
 
         let (_, response) = try await URLSession.shared.data(for: request)

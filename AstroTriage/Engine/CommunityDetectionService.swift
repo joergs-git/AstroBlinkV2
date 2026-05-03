@@ -36,7 +36,7 @@ final class CommunityDetectionService {
     /// Async, fire-and-forget — errors are silently ignored (no user impact).
     func uploadSessionData(entries: [ImageEntry], fingerprint: SetupFingerprint) {
         guard AppSettings.defaults.bool(forKey: AppSettings.Key.communityLearning.rawValue) else { return }
-        guard BenchmarkConfig.isConfigured else { return }
+        guard SupabaseClient.isConfigured else { return }
 
         let retained = entries.filter { !$0.isMarkedForDeletion }
         guard retained.count >= 6 else { return }  // Minimum upload threshold
@@ -161,7 +161,7 @@ final class CommunityDetectionService {
     /// Returns cached data if available and not expired.
     func fetchCommunityBaseline(fingerprint: SetupFingerprint) async -> CommunityBaseline? {
         guard AppSettings.defaults.bool(forKey: AppSettings.Key.communityLearning.rawValue) else { return nil }
-        guard BenchmarkConfig.isConfigured else { return nil }
+        guard SupabaseClient.isConfigured else { return nil }
 
         let fl = Double(fingerprint.focalLength)
         let px = Double(fingerprint.pixelSizeMicrons) / 10.0
@@ -289,16 +289,15 @@ final class CommunityDetectionService {
     // MARK: - Private: Supabase API
 
     private func checkDuplicate(entry: CommunitySessionEntry) async throws -> Bool {
-        var urlString = "\(BenchmarkConfig.supabaseURL)/rest/v1/community_sessions?select=id&limit=1"
-        urlString += "&machine_hash=eq.\(entry.machine_hash)"
-        urlString += "&setup_hash=eq.\(entry.setup_hash)"
-        urlString += "&filter_canonical=eq.\(entry.filter_canonical)"
-        urlString += "&exposure_s=eq.\(entry.exposure_s)"
-        urlString += "&frame_count=eq.\(entry.frame_count)"
-        guard let url = URL(string: urlString) else { return false }
+        var query = "select=id&limit=1"
+        query += "&machine_hash=eq.\(entry.machine_hash)"
+        query += "&setup_hash=eq.\(entry.setup_hash)"
+        query += "&filter_canonical=eq.\(entry.filter_canonical)"
+        query += "&exposure_s=eq.\(entry.exposure_s)"
+        query += "&frame_count=eq.\(entry.frame_count)"
+        guard let url = SupabaseClient.restURL(table: "community_sessions", query: query) else { return false }
 
-        var request = URLRequest(url: url)
-        request.setValue(BenchmarkConfig.supabaseAnonKey, forHTTPHeaderField: "apikey")
+        var request = SupabaseClient.makeRequest(url: url)
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.timeoutInterval = 30
 
@@ -309,12 +308,10 @@ final class CommunityDetectionService {
     }
 
     private func upload(entry: CommunitySessionEntry) async throws {
-        guard let url = URL(string: "\(BenchmarkConfig.supabaseURL)/rest/v1/community_sessions") else { return }
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue(BenchmarkConfig.supabaseAnonKey, forHTTPHeaderField: "apikey")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("return=minimal", forHTTPHeaderField: "Prefer")
+        guard var request = SupabaseClient.jsonInsertRequest(
+            table: "community_sessions",
+            withBearer: false
+        ) else { return }
         request.timeoutInterval = 30
 
         let encoder = JSONEncoder()
@@ -333,11 +330,9 @@ final class CommunityDetectionService {
         let maxScale = pixelScale * 1.1
 
         // Use Supabase RPC for server-side aggregation
-        guard let url = URL(string: "\(BenchmarkConfig.supabaseURL)/rest/v1/rpc/get_community_baseline") else { return [] }
+        guard let url = SupabaseClient.restURL(table: "rpc/get_community_baseline") else { return [] }
 
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue(BenchmarkConfig.supabaseAnonKey, forHTTPHeaderField: "apikey")
+        var request = SupabaseClient.makeRequest(url: url, method: "POST")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.timeoutInterval = 30
 

@@ -118,14 +118,12 @@ enum BortleEstimator {
         }
 
         // Query Supabase REST API directly (no Edge Function needed)
-        if BenchmarkConfig.isConfigured {
+        if SupabaseClient.isConfigured {
             let gridLat = String(format: "%.1f", (latitude * 10).rounded() / 10)
             let gridLon = String(format: "%.1f", (longitude * 10).rounded() / 10)
-            let urlString = "\(BenchmarkConfig.supabaseURL)/rest/v1/bortle_grid" +
-                "?lat=eq.\(gridLat)&lon=eq.\(gridLon)&select=bortle"
-            if let url = URL(string: urlString) {
-                var request = URLRequest(url: url)
-                request.setValue(BenchmarkConfig.supabaseAnonKey, forHTTPHeaderField: "apikey")
+            if let url = SupabaseClient.restURL(table: "bortle_grid",
+                                                query: "lat=eq.\(gridLat)&lon=eq.\(gridLon)&select=bortle") {
+                var request = SupabaseClient.makeRequest(url: url)
                 request.setValue("application/json", forHTTPHeaderField: "Accept")
                 request.timeoutInterval = 10
 

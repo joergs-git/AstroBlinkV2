@@ -100,12 +100,12 @@ class AIsaacKnowledgeService {
     }
 
     private func fetchFromSupabase() async {
-        let urlString = "\(BenchmarkConfig.supabaseURL)/rest/v1/aisaac_knowledge" +
-            "?select=*&is_active=eq.true&order=priority.desc"
-        guard let url = URL(string: urlString) else { return }
+        guard let url = SupabaseClient.restURL(
+            table: "aisaac_knowledge",
+            query: "select=*&is_active=eq.true&order=priority.desc"
+        ) else { return }
 
-        var request = URLRequest(url: url)
-        request.setValue(BenchmarkConfig.supabaseAnonKey, forHTTPHeaderField: "apikey")
+        var request = SupabaseClient.makeRequest(url: url)
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.timeoutInterval = 15
 

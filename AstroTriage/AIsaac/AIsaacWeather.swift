@@ -177,16 +177,8 @@ class AIsaacWeatherService {
             return nil
         }
 
-        let urlStr = "\(BenchmarkConfig.supabaseURL)/functions/v1/weather-forecast"
-        guard let url = URL(string: urlStr) else { return nil }
-
+        guard var request = SupabaseClient.functionRequest("weather-forecast") else { return nil }
         let deviceId = MachineInfo.machineHash
-
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("Bearer \(BenchmarkConfig.supabaseAnonKey)", forHTTPHeaderField: "Authorization")
-
         let body: [String: Any] = ["lat": lat, "lon": lon, "deviceId": deviceId]
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)
 

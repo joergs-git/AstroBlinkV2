@@ -11,7 +11,7 @@ private let vlmLog = OSLog(subsystem: "com.astroblink", category: "VLM")
 
 class VisualAnomalyDetector {
 
-    private let edgeFunctionURL = "\(BenchmarkConfig.supabaseURL)/functions/v1/vlm-check"
+    private static let edgeFunctionName = "vlm-check"
 
     // MARK: - Errors
 
@@ -168,17 +168,11 @@ class VisualAnomalyDetector {
     // MARK: - Supabase Edge Function (works out of the box)
 
     private func callEdgeFunction(system: String, messages: [[String: Any]]) async throws -> String {
-        guard let url = URL(string: edgeFunctionURL) else {
+        guard var request = SupabaseClient.functionRequest(Self.edgeFunctionName) else {
             throw DetectorError.networkError("Invalid edge function URL")
         }
-
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("Bearer \(BenchmarkConfig.supabaseAnonKey)", forHTTPHeaderField: "Authorization")
-        request.setValue(BenchmarkConfig.supabaseAnonKey, forHTTPHeaderField: "apikey")
         request.setValue(MachineInfo.machineHash, forHTTPHeaderField: "x-device-id")
         request.setValue(Self.computeRollingToken(), forHTTPHeaderField: "x-aisaac-token")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.timeoutInterval = 180 // Extended thinking needs more time
 
         let body: [String: Any] = [

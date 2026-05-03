@@ -8,7 +8,7 @@ class AIsaacService: ObservableObject {
 
     @Published var remainingQueries: Int? = nil
 
-    private let edgeFunctionURL = "\(BenchmarkConfig.supabaseURL)/functions/v1/ask-aisaac"
+    private static let edgeFunctionName = "ask-aisaac"
 
     // API response model
     private struct AIsaacResponse: Codable {
@@ -98,17 +98,11 @@ class AIsaacService: ObservableObject {
     // MARK: - Edge Function Call
 
     private func callEdgeFunction(system: String, messages: [[String: Any]]) async throws -> String {
-        guard let url = URL(string: edgeFunctionURL) else {
+        guard var request = SupabaseClient.functionRequest(Self.edgeFunctionName) else {
             throw AIsaacError.invalidURL
         }
-
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("Bearer \(BenchmarkConfig.supabaseAnonKey)", forHTTPHeaderField: "Authorization")
-        request.setValue(BenchmarkConfig.supabaseAnonKey, forHTTPHeaderField: "apikey")
         request.setValue(MachineInfo.machineHash, forHTTPHeaderField: "x-device-id")
         request.setValue(Self.computeRollingToken(), forHTTPHeaderField: "x-aisaac-token")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("true", forHTTPHeaderField: "x-stream")
         request.timeoutInterval = 60
 
