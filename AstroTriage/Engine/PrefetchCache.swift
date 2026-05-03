@@ -12,14 +12,26 @@ import Metal
 // GPU preview generation uses async completion to free worker threads immediately.
 @MainActor
 class PrefetchCache {
+    // `cache` is fully MainActor-isolated — only the main thread reads or writes it.
+    // Background decode workers never touch `cache` directly; they hand results back
+    // via `Task { @MainActor in storePreview(...) }`.
     private var cache: [URL: CachedPreview] = [:]
     private let device: MTLDevice
     private let previewGenerator: PreviewGenerator?
 
-    // Thread-safe set of cached URLs — updated alongside cache, readable from background threads
-    // Eliminates DispatchQueue.main.sync calls from background operations
+    // `cachedURLsSet` is a write-once-per-store mirror of `cache.keys` that background
+    // workers can read under NSLock to skip URLs that another worker already cached.
+    // The set is intentionally separate so workers don't have to hop to MainActor just
+    // to ask "is this already done?". `storePreview` writes `cache` first, then this set,
+    // so a "set says yes" answer always implies the cache is also populated. Background
+    // never reads `cache` itself, so the reverse race ("set says yes, cache empty") cannot occur.
     private let cachedURLsLock = NSLock()
     private var cachedURLsSet = Set<URL>()
+
+    // Bumped on every clear() / invalidateAll(). Workers capture this at enqueue time
+    // and the MainActor completion task checks it before writing into `cache` — prevents
+    // stale workers from a previous session from polluting a freshly-cleared cache.
+    private var sessionGeneration: Int = 0
 
     // Background fill queue for bulk prefetching
     private var backgroundQueue: OperationQueue?
@@ -167,6 +179,7 @@ class PrefetchCache {
         let targetKeyProvider = self.targetKeyForEntry
         let onAligned = self.onAlignmentComputed
         let skipStarAlignment = self.skipStarMatchingForAlignment
+        let workerGeneration = self.sessionGeneration
 
         for entry in uncachedEntries {
             let url = entry.url
@@ -285,8 +298,11 @@ class PrefetchCache {
                 }
                 semaphore.wait()
 
-                // Single MainActor task: deliver ALL results atomically
+                // Single MainActor task: deliver ALL results atomically.
+                // Skip everything if the session was cleared/invalidated mid-decode —
+                // the captured `workerGeneration` no longer matches.
                 Task { @MainActor [weak self] in
+                    guard self?.sessionGeneration == workerGeneration else { return }
                     if let hash = fileHashResult { onFileHash?(url, hash) }
                     if let fp = fingerprintResult { onOrientationFingerprint?(url, fp) }
                     if let stats = noiseStatsResult { onNoiseStats?(url, stats) }
@@ -350,6 +366,7 @@ class PrefetchCache {
         let targetKeyProvider = self.targetKeyForEntry
         let onAligned = self.onAlignmentComputed
         let skipStarAlignment = self.skipStarMatchingForAlignment
+        let workerGeneration = self.sessionGeneration
         // Pre-compute target keys for all images (so workers don't touch MainActor state)
         let targetKeys: [URL: String]
         if let provider = targetKeyProvider {
@@ -534,8 +551,11 @@ class PrefetchCache {
                     // Single MainActor task: deliver ALL per-image results atomically.
                     // This guarantees starChainFraction and noiseMAD are populated BEFORE
                     // onProgress fires the final scoring pass (fixes R9 timing race).
+                    // Generation guard prevents stale workers from a previous session from
+                    // populating the freshly-cleared cache.
                     let completed = completedCount.increment()
                     Task { @MainActor in
+                        guard self?.sessionGeneration == workerGeneration else { return }
                         if let hash = fileHashResult { onFileHash?(url, hash) }
                         if let fp = fingerprintResult { onOrientationFingerprint?(url, fp) }
                         if let stats = noiseStatsResult { onNoiseStats?(url, stats) }
@@ -575,6 +595,7 @@ class PrefetchCache {
     // Note: does NOT reset firstPreviewStoredFired — settings changes mid-session must not
     // re-fire the "time to first image" benchmark metric.
     func invalidateAll() {
+        sessionGeneration += 1
         cache.removeAll()
         cachedURLsLock.lock()
         cachedURLsSet.removeAll()
@@ -590,6 +611,7 @@ class PrefetchCache {
     }
 
     func clear() {
+        sessionGeneration += 1
         backgroundQueue?.cancelAllOperations()
         priorityQueue?.cancelAllOperations()
         prefetchTask?.cancel()
