@@ -201,8 +201,7 @@ struct KeyboardHandler {
         }
 
         // 1/2/3: Set user confidence rating (1-3 stars). Same key again toggles off.
-        if modifiers.isEmpty, chars == "1" || chars == "2" || chars == "3" {
-            let rating = Int(String(chars.first!))!
+        if modifiers.isEmpty, let rating = Int(chars), (1...3).contains(rating) {
             Task { @MainActor in
                 if let tableView = findTableView() {
                     let selectedRows = tableView.selectedRowIndexes

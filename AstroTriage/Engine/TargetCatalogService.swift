@@ -182,7 +182,8 @@ class TargetCatalogService {
     static let didRefreshNotification = Notification.Name("TargetCatalogDidRefresh")
 
     private init() {
-        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? URL(fileURLWithPath: NSTemporaryDirectory())
         let dir = appSupport.appendingPathComponent("AstroBlinkV2")
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         cacheFile = dir.appendingPathComponent("target_catalog_cache.json")

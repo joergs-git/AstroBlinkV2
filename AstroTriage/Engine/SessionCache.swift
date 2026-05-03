@@ -14,7 +14,9 @@ class SessionCache {
     private let lock = NSLock()
 
     private static let cacheRoot: URL = {
-        let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first!
+        // Caches dir is system-guaranteed on macOS; fallback to tmp keeps the static init nil-safe.
+        let caches = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first
+            ?? URL(fileURLWithPath: NSTemporaryDirectory())
         return caches.appendingPathComponent("AstroBlinkV2", isDirectory: true)
     }()
 

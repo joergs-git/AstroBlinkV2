@@ -4623,7 +4623,12 @@ class TriageViewModel: ObservableObject {
                 guard let img = textureToImage(texture, width: width, height: height, cropRect: cropRect) else { continue }
 
                 CVPixelBufferLockBaseAddress(pixelBuffer, [])
-                let dest = CVPixelBufferGetBaseAddress(pixelBuffer)!
+                guard let dest = CVPixelBufferGetBaseAddress(pixelBuffer) else {
+                    // Lock succeeded technically but base address is nil — drop this frame
+                    // rather than crash mid-export. Unlock first to keep CV's refcount sane.
+                    CVPixelBufferUnlockBaseAddress(pixelBuffer, [])
+                    continue
+                }
                 let destBPR = CVPixelBufferGetBytesPerRow(pixelBuffer)
                 let ctx = CGContext(data: dest, width: width, height: height,
                                     bitsPerComponent: 8, bytesPerRow: destBPR,

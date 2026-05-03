@@ -14,6 +14,10 @@ final class FrameHistoryDatabase {
     private var dbQueue: DatabaseQueue
     private let storageURL: URL
 
+    /// True if the existing DB file was corrupt at startup and got renamed in favor of a fresh one.
+    /// The renamed file (FrameHistory.corrupt-<ts>.sqlite) stays in Application Support for manual recovery.
+    private(set) var recoveredFromCorruption: Bool = false
+
     // iCloud directory resolved once on a background thread.
     // FileManager.url(forUbiquityContainerIdentifier:) can block 10-30s,
     // so we resolve it asynchronously and notify via callback when ready.
@@ -65,17 +69,46 @@ final class FrameHistoryDatabase {
 
     private init() {
         // Local: ~/Library/Application Support/AstroBlinkV2/
-        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        // Fallback to tmp keeps init nil-safe on weird sandbox states (in practice this branch never fires).
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? URL(fileURLWithPath: NSTemporaryDirectory())
         let dir = appSupport.appendingPathComponent("AstroBlinkV2", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         storageURL = dir.appendingPathComponent(Self.dbFilename)
 
-        // Open or create database (local only — no iCloud access here)
+        // Open or create database. On corruption: rename the bad file to
+        // FrameHistory.corrupt-<timestamp>.sqlite and start fresh, so the app boots.
+        // The renamed file is left in place for manual recovery. UI listeners can
+        // observe `.frameHistoryRecoveredFromCorruption` to surface a notice.
         do {
             dbQueue = try DatabaseQueue(path: storageURL.path)
             try Self.migrate(dbQueue)
         } catch {
-            fatalError("FrameHistoryDatabase: failed to open database: \(error)")
+            let ts = ISO8601DateFormatter().string(from: Date())
+                .replacingOccurrences(of: ":", with: "-")
+            let backupURL = dir.appendingPathComponent("FrameHistory.corrupt-\(ts).sqlite")
+            print("FrameHistoryDatabase: failed to open existing DB (\(error)); renaming to \(backupURL.lastPathComponent) and creating fresh")
+            try? FileManager.default.moveItem(at: storageURL, to: backupURL)
+            do {
+                dbQueue = try DatabaseQueue(path: storageURL.path)
+                try Self.migrate(dbQueue)
+                recoveredFromCorruption = true
+                DispatchQueue.main.async {
+                    NotificationCenter.default.post(name: .frameHistoryRecoveredFromCorruption, object: backupURL)
+                }
+            } catch {
+                // Fresh DB creation also failed (disk full, permissions, …) — fall back to
+                // in-memory so the app at least starts. History won't persist this session.
+                print("FrameHistoryDatabase: fresh DB creation failed (\(error)); using in-memory fallback")
+                do {
+                    dbQueue = try DatabaseQueue()
+                    try Self.migrate(dbQueue)
+                } catch {
+                    // In-memory init failing is system-unusable territory. Keep a hard stop
+                    // here so the failure mode is loud, not silently corrupted state.
+                    fatalError("FrameHistoryDatabase: even in-memory init failed: \(error)")
+                }
+            }
         }
 
         // Start iCloud resolution in background (fire-and-forget, non-blocking)
@@ -1285,4 +1318,10 @@ final class FrameHistoryDatabase {
         // 4. Delete setup nicknames (already erased with DB, but explicit for clarity)
         print("FrameHistoryDatabase: ALL data destroyed (local + iCloud + calibration)")
     }
+}
+
+extension Notification.Name {
+    /// Posted once if FrameHistoryDatabase had to recover from a corrupt SQLite file at launch.
+    /// `object` is the URL of the renamed corrupt file (for manual recovery).
+    static let frameHistoryRecoveredFromCorruption = Notification.Name("FrameHistoryRecoveredFromCorruption")
 }
