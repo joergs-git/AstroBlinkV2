@@ -262,7 +262,7 @@ struct FrameHistoryContentView: View {
         case .efficiency:
             EfficiencyChart(model: model, theme: chartTheme)
         case .performance:
-            equipmentHealthChart
+            EquipmentHealthChart(model: model, theme: chartTheme)
         case .conditions:
             conditionsChart
         case .progress:
@@ -276,132 +276,6 @@ struct FrameHistoryContentView: View {
 
 
 
-    // KPI 3: Equipment Health — rolling FWHM trend per setup
-    private var equipmentHealthChart: some View {
-        let data = model.equipmentHealthData
-        let setupLabel = model.selectedSetupHash == nil ? "All Setups" : "This Setup"
-        return VStack(alignment: .leading, spacing: 4) {
-            HStack {
-                Text("Equipment Health — FWHM Trend (\(setupLabel))")
-                    .font(.system(size: fs(13), weight: .semibold))
-                    .foregroundColor(fg)
-                Spacer()
-                if model.selectedSetupHash == nil {
-                    Text("Select a setup above for accurate tracking")
-                        .font(.system(size: fs(9)))
-                        .foregroundColor(.orange)
-                }
-                // Rolling average window picker
-                Picker("Window", selection: $model.rollingWindowSize) {
-                    Text("5").tag(5)
-                    Text("10").tag(10)
-                    Text("20").tag(20)
-                    Text("50").tag(50)
-                    Text("100").tag(100)
-                }
-                .pickerStyle(.segmented)
-                .frame(width: 100)
-                .help("Rolling average window (sessions)")
-                // Trend arrow
-                if data.count >= 5 {
-                    let recent = data.suffix(3).map(\.rollingFWHM).reduce(0, +) / 3.0
-                    let earlier = data.prefix(3).map(\.rollingFWHM).reduce(0, +) / 3.0
-                    let improving = recent < earlier
-                    HStack(spacing: 4) {
-                        Image(systemName: improving ? "arrow.down.circle.fill" : "arrow.up.circle.fill")
-                            .foregroundColor(improving ? .green : .orange)
-                        Text(improving ? "Improving" : "Degrading")
-                            .font(.system(size: fs(11)))
-                            .foregroundColor(improving ? .green : .orange)
-                    }
-                }
-            }
-
-            if data.isEmpty {
-                noDataView
-            } else {
-                Chart {
-                    ForEach(data) { point in
-                        PointMark(
-                            x: .value("Night", point.date),
-                            y: .value("FWHM", point.rawFWHM)
-                        )
-                        .foregroundStyle(fgDim.opacity(0.4))
-                        .symbolSize(15)
-                    }
-                    ForEach(data) { point in
-                        LineMark(
-                            x: .value("Night", point.date),
-                            y: .value("Rolling Avg", point.rollingFWHM)
-                        )
-                        .foregroundStyle(AppColors.accent(nightMode))
-                        .lineStyle(StrokeStyle(lineWidth: 2))
-                    }
-                    if let hd = hoveredDate {
-                        RuleMark(x: .value("Hover", hd))
-                            .foregroundStyle(fg.opacity(0.3))
-                            .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 3]))
-                    }
-                }
-                .chartYAxisLabel("FWHM (px)")
-                .modifier(PercentileYScale(values: data.map(\.rawFWHM)))
-                .chartPlotStyle { plot in plot.background(chartBg).clipped() }
-                .chartOverlay { proxy in chartHoverTracker(proxy: proxy) }
-                .frame(minHeight: 300)
-                .overlay(alignment: .topLeading) {
-                    if let hd = hoveredDate,
-                       let point = data.min(by: { $0.date.timeIntervalSince(hd).magnitude < $1.date.timeIntervalSince(hd).magnitude }),
-                       point.date.timeIntervalSince(hd).magnitude < 86400 * 3 {
-                        chartTooltip {
-                            Text(point.night).font(.system(size: fs(10), weight: .bold))
-                            Text(String(format: "FWHM: %.2f px  (rolling: %.2f)", point.rawFWHM, point.rollingFWHM))
-                                .font(.system(size: fs(10)))
-                            // Per-setup breakdown when "All Setups" selected
-                            if model.selectedSetupHash == nil {
-                                let perSetup = (try? FrameHistoryDatabase.shared.perSetupFWHM(night: point.night)) ?? []
-                                if perSetup.count > 1 {
-                                    Divider().frame(height: 1)
-                                    ForEach(Array(perSetup.prefix(5).enumerated()), id: \.offset) { _, entry in
-                                        HStack(spacing: 4) {
-                                            Text(entry.setup).font(.system(size: fs(9)))
-                                                .lineLimit(1).foregroundColor(fgDim)
-                                            Spacer()
-                                            Text(String(format: "%.2f px", entry.fwhm))
-                                                .font(.system(size: fs(9), weight: .medium, design: .monospaced))
-                                                .foregroundColor(entry.fwhm > point.rawFWHM * 1.2 ? .orange : fg)
-                                        }
-                                    }
-                                }
-                            }
-                            Divider().frame(height: 1)
-                            if let s = model.fwhmChartStats {
-                                Text(String(format: "Overall: avg %.2f, median %.2f, MAD %.2f px", s.avg, s.median, s.mad))
-                                    .font(.system(size: fs(9), design: .monospaced))
-                                    .foregroundColor(fgDim)
-                            }
-                            Text("FWHM = star width in pixels. Lower = sharper.\nRising trend → collimation drift, tilt, or dew.")
-                                .font(.system(size: fs(8)))
-                                .foregroundColor(fgDim.opacity(0.7))
-                                .lineLimit(3)
-                        }
-                        .offset(tooltipOffset(x: hoverLocation.x, y: hoverLocation.y))
-                    }
-                }
-
-                // Legend
-                HStack(spacing: 16) {
-                    HStack(spacing: 4) {
-                        Circle().fill(fgDim.opacity(0.4)).frame(width: 6)
-                        Text("Per-night FWHM").font(.system(size: fs(9))).foregroundColor(fgDim)
-                    }
-                    HStack(spacing: 4) {
-                        RoundedRectangle(cornerRadius: 1).fill(AppColors.accent(nightMode)).frame(width: 16, height: 2)
-                        Text("\(model.rollingWindowSize)-session rolling avg").font(.system(size: fs(9))).foregroundColor(fgDim)
-                    }
-                }
-            }
-        }
-    }
 
     // KPI 4: Conditions — environmental factor impact on background noise
     @State private var hoveredConditionsPoint: String?  // ID of hovered point
