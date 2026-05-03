@@ -343,7 +343,13 @@ class AIsaacWindowController: NSWindowController {
             model.currentThumbnailBase64 = nil
             return
         }
-        memcpy(bitmap.bitmapData!, pixels, pixels.count)
+        guard let bitmapDst = bitmap.bitmapData else {
+            // NSBitmapImageRep.bitmapData is documented as nullable when the
+            // requested format isn't supported by the backing store.
+            model.currentThumbnailBase64 = nil
+            return
+        }
+        memcpy(bitmapDst, pixels, pixels.count)
 
         let maxDim: CGFloat = 800
         let scale = min(maxDim / CGFloat(w), maxDim / CGFloat(h), 1.0)

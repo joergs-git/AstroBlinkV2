@@ -30,9 +30,10 @@ class SessionCache {
     func prepareSession(rootURL: URL) {
         let hash = abs(rootURL.path.hashValue)
         let dirName = "\(hash)_\(rootURL.lastPathComponent)"
-        sessionCacheDir = Self.cacheRoot.appendingPathComponent(dirName, isDirectory: true)
+        let dir = Self.cacheRoot.appendingPathComponent(dirName, isDirectory: true)
+        sessionCacheDir = dir
 
-        try? FileManager.default.createDirectory(at: sessionCacheDir!, withIntermediateDirectories: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         lock.lock()
         cache.removeAll()
         lock.unlock()

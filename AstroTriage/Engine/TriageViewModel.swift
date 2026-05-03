@@ -787,8 +787,15 @@ class TriageViewModel: ObservableObject {
         // Always prefer same filter. Only fall back within class (NB↔NB, BB↔BB) if nothing else.
         let selectedCanonical = ColorCombineEngine.canonicalFilterName(filterKey)
 
+        // True only when `best` is non-nil AND has a usable tier — keeps the
+        // two fallback predicates consistent and removes the need for `best!`.
+        func isAcceptable(_ entry: ImageEntry?) -> Bool {
+            guard let e = entry else { return false }
+            return e.qualityTier == .excellent || e.qualityTier == .good
+        }
+
         // Fallback 1: same filter + same setup, any exposure (e.g., Ha 300s best is garbage → try Ha 180s)
-        if best == nil || (best!.qualityTier != .excellent && best!.qualityTier != .good) {
+        if !isAcceptable(best) {
             let sameFilterAnyExp = images.filter { img in
                 let t = img.canonicalTarget ?? TargetCatalog.canonicalName(img.target ?? "")
                 let f = (img.filter ?? "").uppercased().trimmingCharacters(in: .whitespaces)
@@ -806,7 +813,7 @@ class TriageViewModel: ObservableObject {
         // BB↔BB (L can compare to R — both broadband, similar star fields).
         // Never NB↔BB (Ha vs L looks completely different).
         // Always same setup (FL) — never compare RASA to RC12.
-        if best == nil || (best!.qualityTier != .excellent && best!.qualityTier != .good) {
+        if !isAcceptable(best) {
             let selectedIsNarrowband = QualityEstimator.narrowbandCanonical.contains(selectedCanonical)
             let sameClass = images.filter { img in
                 let t = img.canonicalTarget ?? TargetCatalog.canonicalName(img.target ?? "")
@@ -4334,8 +4341,15 @@ class TriageViewModel: ObservableObject {
         let cropRect: CGRect? = cropToZoom ? visibleCropRect() : nil
 
         let srcW = textures[0].width, srcH = textures[0].height
-        let cropW = cropRect != nil ? Int(cropRect!.width * CGFloat(srcW)) : srcW
-        let cropH = cropRect != nil ? Int(cropRect!.height * CGFloat(srcH)) : srcH
+        let cropW: Int
+        let cropH: Int
+        if let r = cropRect {
+            cropW = Int(r.width * CGFloat(srcW))
+            cropH = Int(r.height * CGFloat(srcH))
+        } else {
+            cropW = srcW
+            cropH = srcH
+        }
         let scale = max(10, min(100, scalePercent))
         let outW = (cropW * scale / 100) & ~1
         let outH = (cropH * scale / 100) & ~1
@@ -5065,8 +5079,13 @@ class TriageViewModel: ObservableObject {
         // Remember the first marked index for re-selection later
         let firstMarkedIndex = images.firstIndex(where: { $0.isMarkedForDeletion }) ?? selectedIndex
 
-        // Use current sessionRootURL (may have been updated by folder access grant)
-        let activePreDeleteDir = sessionRootURL!.appendingPathComponent("PRE-DELETE", isDirectory: true)
+        // Use current sessionRootURL (may have been updated by folder access grant
+        // above, or reset to nil if the user revoked access mid-flow).
+        guard let sessionRoot = sessionRootURL else {
+            statusMessage = "Session folder unavailable — reopen the folder and try again"
+            return
+        }
+        let activePreDeleteDir = sessionRoot.appendingPathComponent("PRE-DELETE", isDirectory: true)
 
         // Move files and build undo entries
         var movedCount = 0

@@ -1339,10 +1339,13 @@ struct QualityEstimator {
             try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
             let path = dir.appendingPathComponent("stage15b_diag.txt").path
             let line = msg + "\n"
+            // Data(_:utf8) is non-failing — Swift String guarantees a valid UTF-8
+            // representation, unlike `String.data(using: .utf8)` which is Optional.
+            let bytes = Data(line.utf8)
             if let fh = FileHandle(forWritingAtPath: path) {
-                fh.seekToEndOfFile(); fh.write(line.data(using: .utf8)!); fh.closeFile()
+                fh.seekToEndOfFile(); fh.write(bytes); fh.closeFile()
             } else {
-                FileManager.default.createFile(atPath: path, contents: line.data(using: .utf8))
+                FileManager.default.createFile(atPath: path, contents: bytes)
             }
         }
         diagLog("=== Stage 1.5b: \(entries.count) entries, fp=\(fingerprint?.telescope ?? "nil")+\(fingerprint?.camera ?? "nil") ===")

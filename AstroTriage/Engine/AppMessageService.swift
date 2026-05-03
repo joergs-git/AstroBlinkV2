@@ -39,8 +39,12 @@ final class AppMessageService {
         guard SupabaseClient.isConfigured else { return nil }
 
         // Fetch from network if stale
-        let needsFetch = lastFetchDate == nil ||
-            Date().timeIntervalSince(lastFetchDate!) > fetchIntervalSeconds
+        let needsFetch: Bool
+        if let last = lastFetchDate {
+            needsFetch = Date().timeIntervalSince(last) > fetchIntervalSeconds
+        } else {
+            needsFetch = true
+        }
         if needsFetch {
             await fetchAll()
         }
