@@ -15,6 +15,7 @@
 		0E09D42DA6C26E06AADDEC40 /* QuickStackWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 740CADC7ADA01E2160E95DCC /* QuickStackWindow.swift */; };
 		1004744272F7E887C2080BE9 /* AIsaacKeychain.swift in Sources */ = {isa = PBXBuildFile; fileRef = 218287CA9A583C11D2A4196E /* AIsaacKeychain.swift */; };
 		142FCBA2B931A2772A0E206E /* ConvergenceDetectorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2264DF9C1BBEE95302DA02E /* ConvergenceDetectorTests.swift */; };
+		165583E38229583940B63330 /* HelpWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = D19F3382C587963657C7C560 /* HelpWindow.swift */; };
 		1864DE963C0E5E7717212E46 /* FileListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6D16C070C8599AC5C5A265B /* FileListView.swift */; };
 		1C5494999757C263A4969E6F /* QuickLookRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5D9A7A3939A213218612E649 /* QuickLookRenderer.swift */; };
 		1C55F1A7F9B655046F8D1D96 /* TargetCatalogService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 433F3F811A3CF1871EC2D380 /* TargetCatalogService.swift */; };
@@ -278,6 +279,7 @@
 		CC2B51C4B8F25806E968FDB4 /* QualityEstimator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QualityEstimator.swift; sourceTree = "<group>"; };
 		CD2457C0829FBD7832C880DF /* QuickLookSTF.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickLookSTF.swift; sourceTree = "<group>"; };
 		CD52DEA0A1A02E46E1C26A18 /* AIsaacContextBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIsaacContextBuilder.swift; sourceTree = "<group>"; };
+		D19F3382C587963657C7C560 /* HelpWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HelpWindow.swift; sourceTree = "<group>"; };
 		D294FBAA33E829B384E0D16A /* SupabaseClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupabaseClient.swift; sourceTree = "<group>"; };
 		D60FDB5923A652383E3ABEB7 /* AstroTriageApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AstroTriageApp.swift; sourceTree = "<group>"; };
 		DB80D59623FFC14D180C6451 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
@@ -408,6 +410,7 @@
 			children = (
 				2AC23856D906A14A0CCC6C03 /* AboutWindow.swift */,
 				D60FDB5923A652383E3ABEB7 /* AstroTriageApp.swift */,
+				D19F3382C587963657C7C560 /* HelpWindow.swift */,
 				048345D935BF6D509B7E7C8D /* OnboardingView.swift */,
 			);
 			path = App;
@@ -839,6 +842,7 @@
 				31747A36A973DE54498AA159 /* FrameRecord.swift in Sources */,
 				685E7112D4AC89C6C0A2F693 /* GradientRemoval.swift in Sources */,
 				37DA495A008C7E13F6D23D6C /* HeaderInspectorView.swift in Sources */,
+				165583E38229583940B63330 /* HelpWindow.swift in Sources */,
 				D8490084CA833D518635A281 /* ImageDecoder.swift in Sources */,
 				5BEA8CB806944696DA8FF49D /* ImageEntry.swift in Sources */,
 				F47A29B58D39DCB30BDB290A /* ImageViewerView.swift in Sources */,
