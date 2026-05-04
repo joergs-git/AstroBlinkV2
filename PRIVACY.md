@@ -53,7 +53,13 @@ No file contents, file paths, file names, or full-resolution pixel data leave yo
 
 **Note on equipment fingerprinting:** While no plain-text username is sent, an unusual telescope + camera + filter + target + date combination could in theory be linked to a public observation. If you publish image metadata (e.g. AstroBin), this is the same risk you already accept by publishing.
 
-**Opt-out:** Settings → Community Learning → toggle off. The first-launch onboarding screen also offers an immediate opt-out.
+**Opt-out:** Click the "Community" indicator in the status bar (bottom right of the main window). A popover lets you toggle each telemetry category independently:
+
+- **Performance Benchmarks** — anonymous hardware specs (chip, cores, RAM) and timing for stacking + session-load benchmarks. Powers the leaderboard and the `app_started` event.
+- **Frame Quality Ratings** — equipment + target metadata (telescope, camera, filter, target, date) sent with each star rating.
+- **Community Baselines** — aggregate-only quality metrics for community calibration (skip-the-30-frame-learning-phase shortcut for new equipment).
+
+"Disable all" / "Enable all" buttons at the bottom of the popover toggle every category at once. The first-launch onboarding screen offers the same single-click master opt-out before any data is sent.
 
 ---
 

@@ -75,6 +75,11 @@ enum CurationService {
     /// Silent failure on network error — local DB remains the source of truth.
     static func uploadCuratedFrame(_ entry: ImageEntry) {
         guard BenchmarkConfig.isConfigured else { return }
+        // Frame-rating telemetry is per-category gated; opted-out users keep
+        // their ratings in the local Frame History DB but nothing leaves the
+        // device. Delete is gated symmetrically below to keep server state
+        // consistent with what the user actually shared.
+        guard AppSettings.defaults.bool(forKey: AppSettings.Key.telemetryFrameQualityRatings.rawValue) else { return }
         guard entry.userConfidence > 0 else { return }
         guard let fileHash = entry.fileHash else { return }
 
@@ -89,6 +94,7 @@ enum CurationService {
     /// the same number key twice). Silent failure on network error.
     static func deleteCuratedFrame(fileHash: String) {
         guard BenchmarkConfig.isConfigured else { return }
+        guard AppSettings.defaults.bool(forKey: AppSettings.Key.telemetryFrameQualityRatings.rawValue) else { return }
         let machineHash = MachineInfo.machineHash
 
         Task.detached(priority: .utility) {
@@ -103,6 +109,10 @@ enum CurationService {
     @MainActor
     static func bulkSync(completion: @escaping (_ synced: Int, _ failed: Int) -> Void) {
         guard BenchmarkConfig.isConfigured else {
+            completion(0, 0)
+            return
+        }
+        guard AppSettings.defaults.bool(forKey: AppSettings.Key.telemetryFrameQualityRatings.rawValue) else {
             completion(0, 0)
             return
         }

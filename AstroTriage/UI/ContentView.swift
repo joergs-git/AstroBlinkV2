@@ -10,6 +10,10 @@ struct ContentView: View {
     @State private var keyboardMonitor: Any?
     @State private var sliderValue: Double = Double(AppSettings.loadFloat(for: .stretchStrength) ?? STFCalculator.defaultTargetBackground)
     @State private var showVlmAlphaWarning = false
+    @State private var showTelemetryPopover = false
+    @State private var telemetryPerformanceBenchmarks: Bool = AppSettings.defaults.bool(forKey: AppSettings.Key.telemetryPerformanceBenchmarks.rawValue)
+    @State private var telemetryFrameQualityRatings: Bool = AppSettings.defaults.bool(forKey: AppSettings.Key.telemetryFrameQualityRatings.rawValue)
+    @State private var telemetryCommunityBaselines: Bool = AppSettings.defaults.bool(forKey: AppSettings.Key.telemetryCommunityBaselines.rawValue)
 
     // Night mode colors
     private var nightFg: Color { viewModel.nightMode ? .red : Color(NSColor.labelColor) }
@@ -408,23 +412,41 @@ struct ContentView: View {
     private var statusBarCommunityAndCloud: some View {
         HStack(spacing: 6) {
             statusDivider
-            let communityEnabled = AppSettings.defaults.bool(forKey: AppSettings.Key.communityLearning.rawValue)
-            HStack(spacing: 2) {
-                Image(systemName: "person.3.fill")
-                    .font(.system(size: 10))
-                    .foregroundColor(communityEnabled ? (viewModel.nightMode ? .red : .green) : nightFgDim.opacity(0.4))
-                Text("Community")
-                    .font(.system(size: 9, design: .monospaced))
-                    .foregroundColor(communityEnabled ? nightFgDim.opacity(0.6) : nightFgDim.opacity(0.4))
+            // Master state: green when ALL three sub-toggles on, dim-yellow when
+            // partial, dim-grey when all off. The label tracks the same
+            // tri-state so users immediately see at a glance how much they
+            // share.
+            let allOn = AppSettings.allTelemetryEnabled
+            let allOff = AppSettings.noTelemetryEnabled
+            let masterColor: Color = allOn
+                ? (viewModel.nightMode ? .red : .green)
+                : (allOff ? nightFgDim.opacity(0.4) : .orange.opacity(0.7))
+            Button {
+                // Sync popover @State from current persisted values before showing,
+                // in case another window or iCloud sync changed them since launch.
+                telemetryPerformanceBenchmarks = AppSettings.defaults.bool(forKey: AppSettings.Key.telemetryPerformanceBenchmarks.rawValue)
+                telemetryFrameQualityRatings = AppSettings.defaults.bool(forKey: AppSettings.Key.telemetryFrameQualityRatings.rawValue)
+                telemetryCommunityBaselines = AppSettings.defaults.bool(forKey: AppSettings.Key.telemetryCommunityBaselines.rawValue)
+                showTelemetryPopover = true
+            } label: {
+                HStack(spacing: 2) {
+                    Image(systemName: "person.3.fill")
+                        .font(.system(size: 10))
+                        .foregroundColor(masterColor)
+                    Text("Community")
+                        .font(.system(size: 9, design: .monospaced))
+                        .foregroundColor(allOff ? nightFgDim.opacity(0.4) : nightFgDim.opacity(0.6))
+                }
             }
-            .onTapGesture {
-                let newValue = !AppSettings.defaults.bool(forKey: AppSettings.Key.communityLearning.rawValue)
-                AppSettings.save(newValue, for: .communityLearning)
-                viewModel.objectWillChange.send()
+            .buttonStyle(.plain)
+            .help(allOn
+                ? "Community Learning is ON for all categories. Click to manage individual telemetry types."
+                : (allOff
+                    ? "Community Learning is OFF for all categories. Click to manage."
+                    : "Community Learning is ON for some categories. Click to manage."))
+            .popover(isPresented: $showTelemetryPopover, arrowEdge: .bottom) {
+                telemetryPopover
             }
-            .help(communityEnabled
-                ? "Community Learning is ON — Anonymous quality metrics, hardware specs, and equipment metadata (telescope/camera/filter/target/date with each star rating) are shared via Supabase to improve detection for all users. No filenames, no images, no real names. Identifier is a non-reversible hardware hash. Click to disable."
-                : "Community Learning is OFF — Click to join. Anonymous metrics + equipment metadata (telescope/camera/filter/target/date) are shared with each star rating to improve detection. No filenames, no images, no real names. You also get instant calibration baselines when trying new equipment.")
 
             // Side-by-side info button → opens the full PRIVACY.md on GitHub.
             // Lives outside the toggle's tap-area so curiosity clicks don't flip
@@ -458,6 +480,104 @@ struct ContentView: View {
             .help(FileManager.default.ubiquityIdentityToken != nil
                 ? "iCloud is ON — Your settings, calibration profiles, and equipment memory sync privately across your Macs. All data stays in your personal iCloud account — nothing is shared publicly or with other users."
                 : "iCloud is OFF — Settings and calibration data are stored locally only. Sign in to iCloud in System Settings to sync across your Macs. iCloud data is always private — never shared with anyone.")
+        }
+    }
+
+    /// Popover presented when the status-bar Community indicator is clicked.
+    /// Three independent toggles plus an "All on / All off" master row at the
+    /// top for the common case. Persists each change to AppSettings (and the
+    /// iCloud key-value store via `AppSettings.save`) immediately.
+    private var telemetryPopover: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("Community Learning")
+                    .font(.system(size: 13, weight: .semibold))
+                Spacer()
+                Button {
+                    if let url = URL(string: "https://github.com/joergs-git/AstroBlinkV2/blob/main/PRIVACY.md") {
+                        NSWorkspace.shared.open(url)
+                    }
+                } label: {
+                    Image(systemName: "info.circle").font(.system(size: 12))
+                }
+                .buttonStyle(.plain)
+                .help("Open PRIVACY.md on GitHub")
+            }
+
+            Text("Anonymous, opt-in by default. No filenames, no images, no real names. Identifier is a non-reversible hardware hash. Toggle each category independently.")
+                .font(.system(size: 10))
+                .foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Divider()
+
+            telemetryToggleRow(
+                isOn: $telemetryPerformanceBenchmarks,
+                key: .telemetryPerformanceBenchmarks,
+                title: "Performance Benchmarks",
+                detail: "Anonymous hardware specs (chip, cores, RAM) and timing for stacking + session-load benchmarks. Powers the leaderboard.")
+
+            telemetryToggleRow(
+                isOn: $telemetryFrameQualityRatings,
+                key: .telemetryFrameQualityRatings,
+                title: "Frame Quality Ratings",
+                detail: "Equipment + target metadata (telescope, camera, filter, target, date) sent with each star rating. Trains future detection improvements.")
+
+            telemetryToggleRow(
+                isOn: $telemetryCommunityBaselines,
+                key: .telemetryCommunityBaselines,
+                title: "Community Baselines",
+                detail: "Aggregate-only quality metrics for community calibration. Lets you skip the 30-frame learning phase when trying new equipment.")
+
+            Divider()
+
+            HStack {
+                Button("Disable all") {
+                    telemetryPerformanceBenchmarks = false
+                    telemetryFrameQualityRatings = false
+                    telemetryCommunityBaselines = false
+                    AppSettings.setAllTelemetry(false)
+                    viewModel.objectWillChange.send()
+                }
+                Spacer()
+                Button("Enable all") {
+                    telemetryPerformanceBenchmarks = true
+                    telemetryFrameQualityRatings = true
+                    telemetryCommunityBaselines = true
+                    AppSettings.setAllTelemetry(true)
+                    viewModel.objectWillChange.send()
+                }
+            }
+            .font(.system(size: 11))
+        }
+        .padding(14)
+        .frame(width: 360)
+    }
+
+    /// One row of the telemetry popover: checkbox + bold title + 2-line detail.
+    /// Persists immediately on toggle so closing the popover isn't required to
+    /// commit the change.
+    private func telemetryToggleRow(
+        isOn: Binding<Bool>,
+        key: AppSettings.Key,
+        title: String,
+        detail: String
+    ) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Toggle("", isOn: isOn)
+                .toggleStyle(.checkbox)
+                .labelsHidden()
+                .onChange(of: isOn.wrappedValue) { newValue in
+                    AppSettings.save(newValue, for: key)
+                    viewModel.objectWillChange.send()
+                }
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.system(size: 12, weight: .medium))
+                Text(detail)
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
 

@@ -56,7 +56,23 @@ struct AppSettings {
         case sessionCount         // Int — number of sessions opened (for App Store review prompt)
         case hideSplash           // Bool — never show splash screen on launch
         case hasSeenOnboarding    // Bool — true after user dismissed the first-launch onboarding
-        case communityLearning    // Bool — anonymous benchmark + curated-frame sharing (default: on; users opt out in Settings)
+        case communityLearning    // Bool — DEPRECATED legacy master toggle. Kept for the
+                                  // one-time migration in `migrateLegacyTelemetryToggle()`;
+                                  // do not gate new code on it. Read the granular sub-toggles
+                                  // below instead.
+
+        // Granular telemetry sub-toggles (split from the legacy `communityLearning` key).
+        // Each gates a distinct outbound traffic path so users can opt in/out per category
+        // rather than all-or-nothing. Defaults: all true (matching previous behaviour for
+        // existing users via `migrateLegacyTelemetryToggle()`).
+        case telemetryPerformanceBenchmarks  // Bool — anonymous hardware/timing benchmarks
+                                              // (BenchmarkSharing.swift, AppMessageService.recordAppStart)
+        case telemetryFrameQualityRatings    // Bool — equipment + target metadata sent with
+                                              // every star rating (CurationService.swift)
+        case telemetryCommunityBaselines     // Bool — anonymous quality-metric aggregates for
+                                              // community calibration (CommunityDetectionService.swift)
+        case telemetryMigrationComplete      // Bool — set true after the one-time
+                                              // legacy → granular migration runs successfully
         case fontScale            // Float — UI font scale factor (1.0 = default)
         case dismissedMessageIDs  // [String] — UUIDs of permanently dismissed in-app messages
         case snoozedMessages      // Data — encoded [String: Date] of snoozed message ID → snooze-until date
@@ -70,9 +86,56 @@ struct AppSettings {
     // Register defaults for new installs (call once at app launch, before startCloudSync)
     static func registerDefaults() {
         defaults.register(defaults: [
-            Key.communityLearning.rawValue: true,   // enabled by default; users can opt out in Settings → Community Learning
-            Key.showViewerOverlay.rawValue:  true,  // overlay on by default; user can dismiss via ⌘⇧O
+            Key.communityLearning.rawValue: true,            // legacy master, kept for migration
+            Key.telemetryPerformanceBenchmarks.rawValue: true,
+            Key.telemetryFrameQualityRatings.rawValue: true,
+            Key.telemetryCommunityBaselines.rawValue: true,
+            Key.showViewerOverlay.rawValue:  true,           // overlay on by default; user can dismiss via ⌘⇧O
         ])
+        migrateLegacyTelemetryToggle()
+    }
+
+    /// One-time migration: if the user explicitly opted out of the old monolithic
+    /// `communityLearning` toggle, propagate that choice to all three new granular
+    /// sub-toggles so we don't silently re-enable telemetry under the new keys.
+    /// Idempotent — guarded by `telemetryMigrationComplete`.
+    private static func migrateLegacyTelemetryToggle() {
+        guard !defaults.bool(forKey: Key.telemetryMigrationComplete.rawValue) else { return }
+
+        // `defaults.bool(forKey:)` returns the registered default (true) when the user
+        // never wrote a value, or the explicit user value (typically false) when they
+        // opted out. Either way we propagate the same value to all three sub-toggles —
+        // matching the legacy "all or nothing" behaviour exactly.
+        let legacy = defaults.bool(forKey: Key.communityLearning.rawValue)
+        defaults.set(legacy, forKey: Key.telemetryPerformanceBenchmarks.rawValue)
+        defaults.set(legacy, forKey: Key.telemetryFrameQualityRatings.rawValue)
+        defaults.set(legacy, forKey: Key.telemetryCommunityBaselines.rawValue)
+        defaults.set(true, forKey: Key.telemetryMigrationComplete.rawValue)
+    }
+
+    // MARK: - Telemetry helpers
+
+    /// True when the user has opted in to all three telemetry categories — used by
+    /// the status-bar master indicator and the Onboarding splash toggle.
+    static var allTelemetryEnabled: Bool {
+        defaults.bool(forKey: Key.telemetryPerformanceBenchmarks.rawValue) &&
+        defaults.bool(forKey: Key.telemetryFrameQualityRatings.rawValue) &&
+        defaults.bool(forKey: Key.telemetryCommunityBaselines.rawValue)
+    }
+
+    /// True when the user has opted out of every telemetry category.
+    static var noTelemetryEnabled: Bool {
+        !defaults.bool(forKey: Key.telemetryPerformanceBenchmarks.rawValue) &&
+        !defaults.bool(forKey: Key.telemetryFrameQualityRatings.rawValue) &&
+        !defaults.bool(forKey: Key.telemetryCommunityBaselines.rawValue)
+    }
+
+    /// Set all three telemetry sub-toggles in one shot (used by the master switch
+    /// in the status-bar popover and Onboarding splash).
+    static func setAllTelemetry(_ enabled: Bool) {
+        save(enabled, for: .telemetryPerformanceBenchmarks)
+        save(enabled, for: .telemetryFrameQualityRatings)
+        save(enabled, for: .telemetryCommunityBaselines)
     }
 
     // Start observing iCloud changes (call once at app launch)

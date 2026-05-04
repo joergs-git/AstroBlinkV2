@@ -35,7 +35,7 @@ final class CommunityDetectionService {
     /// Upload session group summaries. Called after CalibrationDatabase.commitSession().
     /// Async, fire-and-forget — errors are silently ignored (no user impact).
     func uploadSessionData(entries: [ImageEntry], fingerprint: SetupFingerprint) {
-        guard AppSettings.defaults.bool(forKey: AppSettings.Key.communityLearning.rawValue) else { return }
+        guard AppSettings.defaults.bool(forKey: AppSettings.Key.telemetryCommunityBaselines.rawValue) else { return }
         guard SupabaseClient.isConfigured else { return }
 
         let retained = entries.filter { !$0.isMarkedForDeletion }
@@ -160,7 +160,7 @@ final class CommunityDetectionService {
     /// Fetch community baseline for the current setup's pixel scale.
     /// Returns cached data if available and not expired.
     func fetchCommunityBaseline(fingerprint: SetupFingerprint) async -> CommunityBaseline? {
-        guard AppSettings.defaults.bool(forKey: AppSettings.Key.communityLearning.rawValue) else { return nil }
+        guard AppSettings.defaults.bool(forKey: AppSettings.Key.telemetryCommunityBaselines.rawValue) else { return nil }
         guard SupabaseClient.isConfigured else { return nil }
 
         let fl = Double(fingerprint.focalLength)

@@ -9,7 +9,11 @@ struct OnboardingView: View {
     @State private var hideSplash: Bool = AppSettings.loadBool(for: .hideSplash) ?? false
     // Mirrors UserDefaults — register(defaults:) seeds it true, so the box is checked unless
     // the user explicitly opts out here (or via the status-bar Community indicator later).
-    @State private var communityLearning: Bool = AppSettings.defaults.bool(forKey: AppSettings.Key.communityLearning.rawValue)
+    // Onboarding presents ONE master checkbox for simplicity. Power users can
+    // dial individual telemetry categories from the status-bar Community popover
+    // after launch. The master state mirrors `AppSettings.allTelemetryEnabled`
+    // and toggling it writes all three sub-keys via `AppSettings.setAllTelemetry`.
+    @State private var communityLearning: Bool = AppSettings.allTelemetryEnabled
 
     private var version: String {
         Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
@@ -181,7 +185,7 @@ struct OnboardingView: View {
                     }
                     .toggleStyle(.checkbox)
                     .onChange(of: communityLearning) { newValue in
-                        AppSettings.save(newValue, for: .communityLearning)
+                        AppSettings.setAllTelemetry(newValue)
                     }
                     Button(action: {
                         if let url = URL(string: "https://github.com/joergs-git/AstroBlinkV2/blob/main/PRIVACY.md") {

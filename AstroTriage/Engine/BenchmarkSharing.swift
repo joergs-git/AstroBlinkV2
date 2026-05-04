@@ -312,6 +312,12 @@ class BenchmarkService: ObservableObject {
         guard BenchmarkConfig.isConfigured else {
             errorMessage = "Benchmark sharing not configured"; return
         }
+        guard AppSettings.defaults.bool(forKey: AppSettings.Key.telemetryPerformanceBenchmarks.rawValue) else {
+            errorMessage = "Performance Benchmarks telemetry is disabled — enable it in the status-bar Community menu to share."
+            // Still fetch leaderboard so the user sees how others compare even when opted out.
+            try? await fetchLeaderboard(engine: entry.stack_engine)
+            return
+        }
         isUploading = true; errorMessage = nil
         do {
             let isDuplicate = try await checkDuplicate(table: "benchmarks", filters: [
@@ -351,6 +357,11 @@ class BenchmarkService: ObservableObject {
     func shareSessionBenchmark(entry: SessionBenchmarkEntry) async {
         guard BenchmarkConfig.isConfigured else {
             errorMessage = "Benchmark sharing not configured"; return
+        }
+        guard AppSettings.defaults.bool(forKey: AppSettings.Key.telemetryPerformanceBenchmarks.rawValue) else {
+            errorMessage = "Performance Benchmarks telemetry is disabled — enable it in the status-bar Community menu to share."
+            try? await fetchSessionLeaderboard(sourceType: nil)
+            return
         }
         isUploading = true; errorMessage = nil
         do {
@@ -440,6 +451,10 @@ class BenchmarkService: ObservableObject {
     /// or if an upload is already in flight.
     func autoUploadSessionLoad(stats: BenchmarkStats, sessionRootURL: URL?) {
         guard BenchmarkConfig.isConfigured else { return }
+        // Auto-upload runs in the background after every session load — strictly
+        // gated on the per-category toggle, no override (unlike the user-initiated
+        // share methods which still fetch the leaderboard for opted-out users).
+        guard AppSettings.defaults.bool(forKey: AppSettings.Key.telemetryPerformanceBenchmarks.rawValue) else { return }
         guard !isUploading else { return }
         // Only upload meaningful sessions — skip tiny test loads
         guard stats.fileCount >= 5 else { return }

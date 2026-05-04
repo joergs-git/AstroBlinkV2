@@ -450,6 +450,10 @@ final class AppMessageService {
     /// Never blocks the app — errors are silently ignored.
     static func recordAppStart() {
         guard SupabaseClient.isConfigured else { return }
+        // The app_started event carries hardware/version metadata (chip, cores,
+        // RAM, app_version) — same telemetry surface as BenchmarkSharing, so
+        // it's gated on the same Performance Benchmarks toggle.
+        guard AppSettings.defaults.bool(forKey: AppSettings.Key.telemetryPerformanceBenchmarks.rawValue) else { return }
 
         Task.detached(priority: .utility) {
             guard var request = SupabaseClient.jsonInsertRequest(
