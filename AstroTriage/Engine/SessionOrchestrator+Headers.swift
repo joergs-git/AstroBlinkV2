@@ -63,7 +63,7 @@ extension SessionOrchestrator {
                 progressCounter.unlock()
 
                 if currentProgress % 8 == 0 || currentProgress == total {
-                    Task { @MainActor in
+                    Task { @MainActor [weak self] in
                         guard let host = self?.host else { return }
                         host.headerReadCount = currentProgress
                         host.headerProgress = total > 0 ? Double(currentProgress) / Double(total) : 0
@@ -87,13 +87,15 @@ extension SessionOrchestrator {
                 let headers = allHeaders[index]
                 if !headers.isEmpty { headersByURL[urls[index]] = headers }
             }
+            // Freeze before crossing into MainActor.run (strict concurrency).
+            let headersByURLFrozen = headersByURL
 
-            await MainActor.run {
-                guard let self = self, let host = self.host else { return }
+            await MainActor.run { [weak self] in
+                guard let self, let host = self.host else { return }
                 var foundOSC = false
 
                 for index in host.images.indices {
-                    guard let headers = headersByURL[host.images[index].url] else { continue }
+                    guard let headers = headersByURLFrozen[host.images[index].url] else { continue }
 
                     // Apply header values (authoritative over filename)
                     if let filter = headers["FILTER"], !filter.isEmpty {

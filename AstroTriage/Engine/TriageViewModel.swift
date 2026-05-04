@@ -1213,8 +1213,8 @@ class TriageViewModel: ObservableObject {
         currentDecodeTask?.cancel()
         currentDecodeTask = Task.detached(priority: .userInitiated) { [weak self] in
             let result = ImageDecoder.decode(url: decodeURL, device: device)
-            await MainActor.run {
-                guard let self = self, self.selectedImage?.url == targetURL else { return }
+            await MainActor.run { [weak self] in
+                guard let self, self.selectedImage?.url == targetURL else { return }
                 if case .success(let decoded) = result {
                     self.currentDecodedImage = decoded
                     if let mtkView = self.findMTKView(), let renderer = self.renderer {
@@ -2541,11 +2541,11 @@ class TriageViewModel: ObservableObject {
                     try Self.writeBlinkGIF(textures: textures, loops: loops, outputURL: outputURL,
                                            width: outW, height: outH, fps: fps, maxSizeMB: maxSizeMB,
                                            cropRect: cropRect,
-                                           onProgress: { p in Task { @MainActor [weak self] in self?.videoExportProgress = p } })
+                                           onProgress: { [weak self] p in Task { @MainActor [weak self] in self?.videoExportProgress = p } })
                 } else {
                     try await Self.writeBlinkMOV(textures: textures, loops: loops, outputURL: outputURL,
                                                  width: outW, height: outH, fps: fps, cropRect: cropRect,
-                                                 onProgress: { p in Task { @MainActor [weak self] in self?.videoExportProgress = p } })
+                                                 onProgress: { [weak self] p in Task { @MainActor [weak self] in self?.videoExportProgress = p } })
                 }
                 await MainActor.run { [weak self] in
                     self?.isExportingVideo = false
@@ -4039,8 +4039,8 @@ class TriageViewModel: ObservableObject {
 
             let result = ImageDecoder.decode(url: decodeURL, device: device)
 
-            await MainActor.run {
-                guard let self = self, !Task.isCancelled else { return }
+            await MainActor.run { [weak self] in
+                guard let self, !Task.isCancelled else { return }
                 guard self.selectedImage?.url == targetURL else { return }
 
                 switch result {

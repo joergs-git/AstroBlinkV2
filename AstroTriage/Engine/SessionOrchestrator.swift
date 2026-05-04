@@ -300,14 +300,18 @@ final class SessionOrchestrator {
                     if let v = headers["NAXIS2"], let val = Int(v), val > 0 { buffer[idx].height = val }
                 }
             }
+            // Freeze the mutable scan result before crossing the actor boundary —
+            // the @Sendable MainActor.run closure cannot capture `var` storage in
+            // Swift 6 strict-concurrency mode.
+            let scannedEntries = entries
             let headerMs = Int(Date().timeIntervalSince(headerStart) * 1000)
-            let wcsCount = entries.filter { $0.wcsCD11 != nil && $0.wcsCRPIX1 != nil }.count
-            print("[Bench] WCS pre-scan: \(wcsCount)/\(entries.count) frames have WCS (\(headerMs)ms)")
+            let wcsCount = scannedEntries.filter { $0.wcsCD11 != nil && $0.wcsCRPIX1 != nil }.count
+            print("[Bench] WCS pre-scan: \(wcsCount)/\(scannedEntries.count) frames have WCS (\(headerMs)ms)")
 
-            await MainActor.run {
-                guard let self = self, let host = self.host else { return }
-                self.benchmarkStats.markScanComplete(fileCount: entries.count, totalBytes: entries.reduce(Int64(0)) { $0 + ($1.fileSize ?? 0) })
-                host.images = entries
+            await MainActor.run { [weak self] in
+                guard let self, let host = self.host else { return }
+                self.benchmarkStats.markScanComplete(fileCount: scannedEntries.count, totalBytes: scannedEntries.reduce(Int64(0)) { $0 + ($1.fileSize ?? 0) })
+                host.images = scannedEntries
                 host.assignSessionIndices()
                 // Disable prefetch star-matching when ANY frame has WCS. Reasoning:
                 // when WCS frames exist, applyWCSAlignment defines the global reference.
@@ -315,18 +319,18 @@ final class SessionOrchestrator {
                 // forming a separate reference group inconsistent with WCS.
                 // applyWCSAlignment now also handles the WCS-less frames via a
                 // rotator-based synthetic transform, all anchored to the same reference.
-                let anyHasWCS = entries.contains { $0.wcsCD11 != nil && $0.wcsCRPIX1 != nil }
+                let anyHasWCS = scannedEntries.contains { $0.wcsCD11 != nil && $0.wcsCRPIX1 != nil }
                 self.prefetchCache?.skipStarMatchingForAlignment = anyHasWCS
                 host.isLoading = false
                 host.needsTableRefresh = true
 
-                if !entries.isEmpty {
+                if !scannedEntries.isEmpty {
                     host.selectImage(at: 0)
                     host.needsScrollToTop = true
                 }
 
                 // Refresh overview stats but honor user-persisted visibility.
-                self.sessionOverviewModel.updateStats(from: entries)
+                self.sessionOverviewModel.updateStats(from: scannedEntries)
                 // Session Overview visibility is user-persisted; do not force-show.
                 host.showInspector = true
 
@@ -334,14 +338,14 @@ final class SessionOrchestrator {
                 host.applyAllEnabled = true
 
                 if isNetwork {
-                    host.statusMessage = "Downloading \(entries.count) images to local cache..."
+                    host.statusMessage = "Downloading \(scannedEntries.count) images to local cache..."
                     // Clear scanning overlay — download fuel bar takes over from here
                     host.loadingPhase = .none
                     // Header enrichment deferred to after downloads complete — reading headers
                     // from local SSD cache is 100x faster than reading from NAS over SMB
                 } else {
                     // Check memory budget — if over budget, shows alert and calls back
-                    self.checkMemoryBudgetAndCache(for: entries)
+                    self.checkMemoryBudgetAndCache(for: scannedEntries)
                 }
                 // Give table focus so keyboard navigation works immediately
                 host.focusTableAfterDelay()
@@ -441,27 +445,29 @@ final class SessionOrchestrator {
 
             // Sort by date/time ascending
             entries.sort { ($0.dateTime ?? "") < ($1.dateTime ?? "") }
+            // Freeze before crossing into MainActor.run (strict concurrency).
+            let loadedEntries = entries
 
-            await MainActor.run {
-                guard let self = self, let host = self.host else { return }
-                self.benchmarkStats.markScanComplete(fileCount: entries.count, totalBytes: entries.reduce(Int64(0)) { $0 + ($1.fileSize ?? 0) })
-                host.images = entries
+            await MainActor.run { [weak self] in
+                guard let self, let host = self.host else { return }
+                self.benchmarkStats.markScanComplete(fileCount: loadedEntries.count, totalBytes: loadedEntries.reduce(Int64(0)) { $0 + ($1.fileSize ?? 0) })
+                host.images = loadedEntries
                 host.assignSessionIndices()
                 host.isLoading = false
                 host.needsTableRefresh = true
                 host.needsQualityResort = false  // Reset for new session
 
-                if !entries.isEmpty {
+                if !loadedEntries.isEmpty {
                     host.selectImage(at: 0)
                     host.needsScrollToTop = true
                 }
 
-                self.sessionOverviewModel.updateStats(from: entries)
+                self.sessionOverviewModel.updateStats(from: loadedEntries)
                 // Session Overview visibility is user-persisted (AppSettings.showSessionOverviewPanel).
                 // Do not force-show on every load — respects the user's last choice.
                 host.showInspector = true
 
-                host.statusMessage = "\(entries.count) files loaded"
+                host.statusMessage = "\(loadedEntries.count) files loaded"
                 // Enable Apply All by default so cached previews are instant from the start
                 host.applyAllEnabled = true
                 host.triggerApplyAll()
@@ -528,27 +534,29 @@ final class SessionOrchestrator {
             }
 
             allEntries.sort { ($0.dateTime ?? "") < ($1.dateTime ?? "") }
+            // Freeze before crossing into MainActor.run (strict concurrency).
+            let mergedEntries = allEntries
 
-            await MainActor.run {
-                guard let self = self, let host = self.host else { return }
-                self.benchmarkStats.markScanComplete(fileCount: allEntries.count, totalBytes: allEntries.reduce(Int64(0)) { $0 + ($1.fileSize ?? 0) })
-                host.images = allEntries
+            await MainActor.run { [weak self] in
+                guard let self, let host = self.host else { return }
+                self.benchmarkStats.markScanComplete(fileCount: mergedEntries.count, totalBytes: mergedEntries.reduce(Int64(0)) { $0 + ($1.fileSize ?? 0) })
+                host.images = mergedEntries
                 host.assignSessionIndices()
                 host.isLoading = false
                 host.needsTableRefresh = true
                 host.needsQualityResort = false
 
-                if !allEntries.isEmpty {
+                if !mergedEntries.isEmpty {
                     host.selectImage(at: 0)
                     host.needsScrollToTop = true
                 }
 
-                self.sessionOverviewModel.updateStats(from: allEntries)
+                self.sessionOverviewModel.updateStats(from: mergedEntries)
                 // Session Overview visibility is user-persisted; do not force-show.
                 host.showInspector = true
                 host.applyAllEnabled = true
 
-                self.checkMemoryBudgetAndCache(for: allEntries)
+                self.checkMemoryBudgetAndCache(for: mergedEntries)
 
                 // Same review/coffee prompt logic as loadSession — count this as a session.
                 host.checkForReviewPrompt()
@@ -657,8 +665,8 @@ final class SessionOrchestrator {
 
             let sorted = deduped.sorted { ($0.dateTime ?? "") < ($1.dateTime ?? "") }
 
-            await MainActor.run {
-                guard let self = self, let host = self.host else { return }
+            await MainActor.run { [weak self] in
+                guard let self, let host = self.host else { return }
                 self.benchmarkStats.markScanComplete(
                     fileCount: sorted.count,
                     totalBytes: sorted.reduce(Int64(0)) { $0 + ($1.fileSize ?? 0) })

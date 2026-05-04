@@ -554,7 +554,7 @@ class PrefetchCache {
                     // Generation guard prevents stale workers from a previous session from
                     // populating the freshly-cleared cache.
                     let completed = completedCount.increment()
-                    Task { @MainActor in
+                    Task { @MainActor [weak self] in
                         guard self?.sessionGeneration == workerGeneration else { return }
                         if let hash = fileHashResult { onFileHash?(url, hash) }
                         if let fp = fingerprintResult { onOrientationFingerprint?(url, fp) }

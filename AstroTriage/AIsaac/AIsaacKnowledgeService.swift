@@ -122,9 +122,11 @@ class AIsaacKnowledgeService {
             for snippet in snippets {
                 newCache[snippet.topic] = snippet
             }
+            // Freeze before crossing into MainActor.run (strict concurrency).
+            let frozenCache = newCache
 
             await MainActor.run {
-                self.cache = newCache
+                self.cache = frozenCache
                 self.lastFetch = Date()
             }
 

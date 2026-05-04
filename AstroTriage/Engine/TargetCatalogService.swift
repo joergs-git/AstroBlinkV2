@@ -205,7 +205,7 @@ class TargetCatalogService {
         isFetching = true
         Task.detached(priority: .utility) { [weak self] in
             await self?.fetchFromSupabase()
-            await MainActor.run { self?.isFetching = false }
+            await MainActor.run { [weak self] in self?.isFetching = false }
         }
     }
 
@@ -214,7 +214,7 @@ class TargetCatalogService {
         isFetching = true
         Task.detached(priority: .utility) { [weak self] in
             await self?.fetchFromSupabase()
-            await MainActor.run { self?.isFetching = false }
+            await MainActor.run { [weak self] in self?.isFetching = false }
         }
     }
 

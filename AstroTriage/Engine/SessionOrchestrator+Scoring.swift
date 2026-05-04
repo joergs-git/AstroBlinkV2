@@ -211,7 +211,7 @@ extension SessionOrchestrator {
         Task.detached(priority: .utility) { [weak self] in
             for (_, coord) in uniqueCoords {
                 if let bortle = await BortleEstimator.estimateOnline(latitude: coord.lat, longitude: coord.lon) {
-                    await MainActor.run {
+                    await MainActor.run { [weak self] in
                         guard let host = self?.host else { return }
                         for idx in coord.indices where idx < host.images.count {
                             host.images[idx].bortleClass = bortle

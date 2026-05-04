@@ -260,8 +260,8 @@ class HeaderInspectorModel: ObservableObject {
         let targetURL = url
         Task.detached(priority: .userInitiated) { [weak self] in
             let headers = MetadataExtractor.readHeaders(from: targetURL)
-            await MainActor.run {
-                guard let self = self else { return }
+            await MainActor.run { [weak self] in
+                guard let self else { return }
                 let entries = headers
                     .map { HeaderEntry(key: $0.key, value: $0.value) }
                     .sorted { a, b in
