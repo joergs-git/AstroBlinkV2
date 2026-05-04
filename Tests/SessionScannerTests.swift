@@ -125,15 +125,19 @@ final class SessionScannerTests: XCTestCase {
         XCTAssertEqual(entries.count, 4, "Only .xisf, .fits, .fit, .fts should be scanned")
     }
 
-    func testSmartSubfolderDetection() {
-        // Root has images → only root is scanned (subfolders ignored)
+    func testRootAndSubfolderPickedUpTogether() {
+        // SessionScanner intentionally always recurses AND picks up root-level
+        // files in the same scan — a parent folder with a stray .fits plus
+        // per-filter subdirs should yield both in a single session.
+        // (See SessionScanner.scan docstring.)
         createFile("root_image.xisf")
         createFile("subfolder/sub_image.xisf")
 
         let entries = SessionScanner.scan(rootURL: tempDir, lightsOnly: false)
+        let names = Set(entries.map { $0.filename })
 
-        XCTAssertEqual(entries.count, 1, "Root with images should only scan root level")
-        XCTAssertEqual(entries.first?.filename, "root_image.xisf")
+        XCTAssertEqual(entries.count, 2, "Root + subfolder image should both appear in one scan")
+        XCTAssertEqual(names, ["root_image.xisf", "sub_image.xisf"])
     }
 
     func testSubfolderRecursionWhenRootEmpty() {

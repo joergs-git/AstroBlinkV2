@@ -148,9 +148,14 @@ struct ColumnDefinition {
         case "ambientTemp": return entry.ambientTemp.map { String(format: "%.1f", $0) } ?? ""
         case "frameType":   return entry.frameType ?? ""
         case "snr":
-            // SNR = median / MAD (same formula as Quality Overview)
+            // SNR = median / MAD (same formula as Quality Overview).
+            // Drop the ".0" tail when SNR is integer-valued so column reads
+            // "50" rather than "50.0"; keep one decimal otherwise (e.g. "12.7").
             guard let med = entry.noiseMedian, let mad = entry.noiseMAD, mad > 0 else { return "" }
             let snr = med / mad
+            if abs(snr - snr.rounded()) < 0.05 {
+                return String(format: "%.0f", snr)
+            }
             return String(format: "%.1f", snr)
         case "snrContrib":
             return entry.qualityBreakdown?.snrContribution.map { String(format: "%.0f%%", $0) } ?? ""
