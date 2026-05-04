@@ -28,6 +28,7 @@ struct SessionScoreChart: View {
             if scores.isEmpty {
                 noDataView
             } else {
+                let allTimeMedian = model.allTimeMedianSessionScore
                 Chart {
                     ForEach(scores) { point in
                         BarMark(
@@ -39,6 +40,21 @@ struct SessionScoreChart: View {
                             point.score >= 50 ? Color.yellow :
                             point.score >= 25 ? Color.orange : Color.red
                         )
+                    }
+                    if let median = allTimeMedian {
+                        // Long-term baseline: lets the user read tonight's bar
+                        // against their cumulative median at a glance. Only
+                        // drawn when ≥5 sessions exist (computed in the model)
+                        // so the line is statistically meaningful.
+                        RuleMark(y: .value("All-time median", median))
+                            .foregroundStyle(theme.fg.opacity(0.45))
+                            .lineStyle(StrokeStyle(lineWidth: 1.5, dash: [6, 3]))
+                            .annotation(position: .top, alignment: .trailing) {
+                                Text("median \(Int(median.rounded()))")
+                                    .font(.system(size: theme.fs(9), design: .monospaced))
+                                    .foregroundColor(theme.fgDim)
+                                    .padding(.trailing, 2)
+                            }
                     }
                     if showTrend {
                         ForEach(medians) { point in
@@ -74,7 +90,7 @@ struct SessionScoreChart: View {
                 }
 
                 legendRow(showTrend: showTrend, scores: scores)
-                Text("Score = 40% retention + 30% FWHM quality + 20% trailing + 10% stability\(showTrend ? " · White line = monthly median" : "")")
+                Text("Score = 40% retention + 30% FWHM quality + 20% trailing + 10% stability\(allTimeMedian != nil ? " · Dashed line = all-time median" : "")\(showTrend ? " · White line = monthly median" : "")")
                     .font(.system(size: theme.fs(9)))
                     .foregroundColor(theme.fgDim)
             }

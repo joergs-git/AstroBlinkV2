@@ -282,9 +282,18 @@ All original implementation phases are complete:
 ## Open — Planned Features
 
 ### Target Database UI
-- [ ] Browsable target catalog window (like Telescopius — sortable table with type, size, magnitude, filter recommendations)
-- [ ] Show which target matched the current session + active weight modifiers
-- [ ] FOV fill ratio visualization for current setup
+- [x] Browsable target catalog window (`AstroTriage/UI/TargetDatabaseWindow.swift`,
+      `TargetDatabaseViewModel.swift`, `TargetDetailView.swift` — sortable
+      table, type/size/magnitude/filter recommendations, weather + FOV
+      preview; shipped v5.15.0).
+- [x] FOV fill ratio visualization (per release notes: "FOV Simulation —
+      proportional target-in-sensor rectangle using your actual equipment
+      profile. Shows plate scale and fill ratio. Switch between equipment
+      setups.").
+- [ ] Show which target matched the current session + active weight
+      modifiers (open — needs UX choice on placement; per CLAUDE.md
+      "Type-Based Metric Weight Modifiers" the data is already computed,
+      just not surfaced to the user).
 
 ### Imaging Calendar / Planner
 - [ ] Monthly calendar view with moon phases and darkness hours
@@ -319,14 +328,26 @@ All original implementation phases are complete:
 - [x] C key toggles star circle overlay on/off (shared state with UI toggle)
 - [x] Metadata redesign: BEST (green) / SELECTED (orange) bold labels, one-line summary (Filter, Exposure, Cam-Temp, Night, Time), smaller filename below. Centered metric comparison bar (Stars, FWHM, HFR, Ecc, SNR) with green vs orange coloring.
 
-### Tilted-Plane Background in GPU PSF Fit (Future R&D)
-- [ ] GPU `psf_fit_gaussian`: expand 3-param (A, σ, B) to 5-param (A, σ, B0, Bx, By) with tilted-plane background
-- [ ] CPU `computeFWHMGaussian`: gradient pre-subtraction from stamp edge pixels before linearized fit
-- [ ] Standard approach in professional photometry (SExtractor, DAOphot) for handling moon/LP gradients
-- [ ] Tested 2026-04-17: did NOT fix the external user's NGC 2251 moonlit B-filter issue (FWHM went 11.88 → 13.20, worse)
-- [ ] Root cause was star detection contamination (noise peaks on bright background), not gradient bias
-- [ ] May still help for genuine gradient-only cases (non-crowded fields, moderate moon). Needs testing on more diverse data.
-- [ ] Implementation reference: plan `mutable-singing-glacier.md` and git stash/conversation from 2026-04-17
+### Tilted-Plane Background in GPU PSF Fit — ABANDONED R&D
+
+Investigated 2026-04-17 against the external user's moonlit-B-filter
+NGC 2251 issue. Adding the tilted-plane background to `psf_fit_gaussian`
++ gradient pre-subtraction in `computeFWHMGaussian` made FWHM *worse*
+(11.88 → 13.20). Root cause turned out to be star-detection
+contamination (noise peaks on bright background), not a gradient bias
+in the Gaussian fit — fixed via the v21 full-res saturation filter +
+peak-SNR gate (commit 3d506b4) instead.
+
+The technique is theoretically sound for genuine gradient-only cases
+(non-crowded fields, moderate moon) but our existing pipeline already
+covers those well. Re-opening would need a real test corpus where the
+existing approach demonstrably fails — and so far we don't have one.
+Closing this slot to declutter the planned-features list. The 2026-04-17
+git stash and the v21 fix commit (3d506b4) cover the alternative path
+that actually worked. (Note: the original plan codename
+`mutable-singing-glacier.md` has since been re-used for the
+Curation-Driven Threshold Learning Phase 2 plan, so don't expect that
+file to still describe the tilted-plane work.)
 
 ### History Window Chart Improvements
 - [x] Y-axis percentile clamping — P2/P98 range, outliers clamped
@@ -349,8 +370,15 @@ All original implementation phases are complete:
 - [x] **Performance tooltip** — per-setup FWHM breakdown when "All Setups" selected, orange highlight on outliers
 - [x] **Conditions redesign** — multi-factor X-axis: Moon/FWHM/Temp/Bortle segmented picker, nearest-point hover with full breakdown
 - [x] **Setups tooltip** — frame count, date range, trash rate, targets per setup on bar hover
-- [ ] Monthly aggregation when date range >6 months
-- [ ] Historical median reference line (dashed horizontal)
+- [x] Monthly aggregation when date range >6 months
+      (`FrameHistoryModel.useMonthlyAggregation` + per-chart wiring;
+      visible indicator at `FrameHistoryWindow.swift:131` "Showing
+      monthly averages (date range >6 months)").
+- [x] Historical median reference line (dashed horizontal) on
+      Session Score chart. `FrameHistoryModel.allTimeMedianSessionScore`
+      computes the median of the current filtered selection (≥5 sessions
+      gate). `SessionScoreChart` renders a `RuleMark` with annotation
+      `"median N"` when available. Legend updated to call out the line.
 
 ### AIsaac Session Planner
 - [x] "Plan Tonight" context — moon phase, twilight times, target integration status, filter gaps
@@ -387,10 +415,28 @@ All original implementation phases are complete:
       `staleRecordCount(forFileHashes:)`.
 
 ### SSWEIGHT Reset / Removal
-- [ ] Option to remove or reset SSWEIGHT keywords from FITS/XISF headers
-- [ ] Undo path for cases where weights were written based on incorrect scoring
-- [ ] Could be per-file (context menu) or batch (whole session)
-- [ ] Must also handle the CSV backup file (`AstroBlinkV2_SSWEIGHT.csv`)
+- [x] Option to remove or reset SSWEIGHT keywords from FITS/XISF headers
+      — Batch Rename (Cmd+Shift+R) → scope "Delete Key" → keyword
+      "SSWEIGHT" or "PSFSWGHT" wipes the keyword in-place via the
+      `delete_xisf_keyword` / `delete_fits_keyword` C bridge
+      (`AstroTriage/Engine/BatchOperations.swift:395`/`:410`,
+      `TriageViewModel.swift:1179` documents the path).
+- [x] Undo path: re-running the same Batch Rename "Delete Key" pass is
+      idempotent — keywords absent stay absent, no error. Equivalent to
+      "I want this gone; do it again if I'm not sure" without dedicated
+      undo state.
+- [x] Batch (whole session) works via the existing Batch Rename UI.
+- [ ] Per-file context menu — open. Would be one-line trivial to add but
+      the Batch Rename path with a one-row selection already covers the
+      single-frame case, so deferring until there's a real ergonomic
+      complaint.
+- [ ] CSV backup file cleanup (`AstroBlinkV2_SSWEIGHT.csv`) — open.
+      Removing keywords from the headers does NOT delete the CSV. The
+      CSV records what was written at scoring time and serves as a
+      forensic record; keeping it is arguably correct ("here's what we
+      wrote, regardless of whether it's still in the headers"). Decision
+      pending — leave as-is OR auto-delete on Batch-Rename-Delete-Key
+      with confirmation prompt.
 
 ### PSFSignalWeight Compatibility — SHIPPED
 - [x] PSFSWGHT keyword written alongside SSWEIGHT in FITS / XISF headers

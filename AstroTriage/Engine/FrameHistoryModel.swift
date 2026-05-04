@@ -844,6 +844,19 @@ class FrameHistoryModel: ObservableObject {
         }.sorted { $0.date < $1.date }
     }
 
+    /// All-time median session score across the current filtered selection.
+    /// Used as a horizontal reference line on the session-score chart so the
+    /// user can read tonight's score against their long-term baseline at a
+    /// glance. Returns nil when the selection is too thin for a stable
+    /// median (< 5 sessions) — drawing a reference line off two data points
+    /// would be misleading.
+    var allTimeMedianSessionScore: Double? {
+        let scores = sessionScores
+        guard scores.count >= 5 else { return nil }
+        let sorted = scores.map(\.score).sorted()
+        return sorted[sorted.count / 2]
+    }
+
     // MARK: - KPI 2: Imaging Efficiency
 
 
