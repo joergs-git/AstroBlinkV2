@@ -151,11 +151,57 @@ The big one. Snapshot tag before each step (`pre-refactor-<slice>`), build
   - Golden-Set in CI: still listed as a future item (synthetic golden set
     is automated; full real-data sweep stays manual per launch-readiness M3)
 
-- [ ] **Strict Concurrency / Swift 6 migration** — there are ~30
-  Sendable warnings in `TriageViewModel.Task.detached` blocks (capture
-  of `var self` etc.). `swift-language-mode complete` once we're
-  ready to fix them all. Deferred — should pair with Patch 2's
-  TriageViewModel split since the hot spots overlap.
+- [~] **Strict Concurrency / Swift 6 migration** — partial.
+  - **Shipped (waves 1-3, kAlgorithmVersion 25 → 26):**
+    Cleared the 89 default-mode warnings the compiler shows without
+    `SWIFT_STRICT_CONCURRENCY=complete`. Three commits, snapshot tags
+    `pre-patch3-{wave2,wave3,flip}`:
+    - Wave 1 (chore: 23 sites, commit fe12406): `onChange(of:perform:)`
+      → macOS-14 two/zero-parameter syntax across 9 view files.
+    - Wave 2 (refactor: 32 sites, commit 9b93cf2): snapshot mutable
+      arrays/dicts to `let` before crossing into MainActor.run; add
+      explicit `[weak self]` to inner closures so `self` is not
+      aliased back to the outer detached-Task's captured-var.
+    - Wave 3 (refactor: 28 sites, commit 23be223): `@unchecked Sendable`
+      on PreviewGenerator / DisplayAligner / SessionCache (already
+      thread-safe via internal locks); `nonisolated(unsafe)` on
+      PrefetchCache.cachedURLsSet (already lock-protected) and on the
+      bufferAlias inside SessionOrchestrator's withUnsafeMutableBufferPointer
+      (concurrentPerform writes only its own index per worker);
+      AIsaacSpeech polling moved off DispatchQueue.global onto a Task
+      that hops to MainActor; QuickLookDebayer's local `func pix`
+      lifted to a static helper; QuickStackEngineV2.waitUntilCompleted()
+      → `withCheckedContinuation { addCompletedHandler }` (Swift 6
+      hard error from async); one real dangling-pointer bug fixed in
+      BatchOperations.swift's XISF write-keyword error path; misc
+      cleanup (redundant `??`, unused `let T` / `summaries`,
+      redundant `nonisolated(unsafe)` on Sendable static).
+    Plus: the unstaged `.xcscheme` revert that has been carried through
+    every recent session is unrelated and was not committed.
+  - **Deferred (wave 4):** flipping `SWIFT_STRICT_CONCURRENCY=complete`
+    in project.yml exposes **531 additional warnings**. Categories
+    sized to plan around (top of the distribution):
+    - 31× "sending 'self' risks data races" — Swift 6 sendable inference
+      across SwiftUI/AppKit boundaries.
+    - 12× `MTLTexture` non-Sendable captures — the Metal API itself
+      doesn't conform; needs wrapper types or `@unchecked Sendable`
+      shims everywhere a texture crosses a Sendable closure.
+    - ~120× "main actor-isolated property X cannot be referenced from
+      nonisolated context" — AppKit `NSView` / `NSWindow` ergonomics
+      (centerXAnchor, addSubview, makeKeyAndOrderFront, etc.) all
+      `@MainActor`. Most call sites need `@MainActor` annotations or
+      `MainActor.assumeIsolated { … }` shims.
+    - 11× `ArchiveScanner` self-capture in @Sendable closures — needs
+      `@unchecked Sendable` or an actor refactor.
+    - 6× `FileListView.Coordinator` non-Sendable parameter passing.
+    - Plus a long tail (passing closure as 'sending', main-actor
+      property mutation through nonisolated NSTableView delegate
+      methods, etc.).
+    This is genuinely multi-day work, not a single slice. Right
+    sequencing is probably: actor boundaries first
+    (ArchiveScanner / Coordinators), then Metal wrappers (MTLTexture
+    Sendable shim), then the AppKit @MainActor sweep, then flip the
+    flag and clear the residual.
 
 ### Smaller observations (quick wins, anytime)
 
