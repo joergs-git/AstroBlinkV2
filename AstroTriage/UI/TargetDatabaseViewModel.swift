@@ -255,6 +255,12 @@ class TargetDatabaseViewModel: ObservableObject {
     }
 
     private var refreshObserver: Any?
+    private var profileDeletedObserver: Any?
+
+    deinit {
+        if let o = refreshObserver { NotificationCenter.default.removeObserver(o) }
+        if let o = profileDeletedObserver { NotificationCenter.default.removeObserver(o) }
+    }
 
     // MARK: - Load
 
@@ -280,6 +286,25 @@ class TargetDatabaseViewModel: ObservableObject {
                 if let loc = self.observerLocation {
                     self.computeVisibility(latitude: loc.lat, longitude: loc.lon)
                 }
+            }
+        }
+
+        // If the user profile is deleted from somewhere else (Settings →
+        // Reset AIsaac Profile), the cached `equipmentSetups` /
+        // `allLocations` arrays below would otherwise keep serving the
+        // stale data. Reload from the now-empty profile so the UI reflects
+        // reality immediately.
+        profileDeletedObserver = NotificationCenter.default.addObserver(
+            forName: .aisaacProfileDeleted, object: nil, queue: .main
+        ) { [weak self] _ in
+            guard let self else { return }
+            Task { @MainActor in
+                let fresh = AIsaacUserProfile.load()
+                self.equipmentSetups = fresh.equipmentSetups
+                self.allLocations = fresh.locations.sorted(by: { $0.lastUsed > $1.lastUsed })
+                self.selectedSetupIndex = 0
+                self.selectedLocationIndex = 0
+                self.objectWillChange.send()
             }
         }
 

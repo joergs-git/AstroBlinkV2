@@ -426,6 +426,21 @@ struct ContentView: View {
                 ? "Community Learning is ON — Anonymous quality metrics, hardware specs, and equipment metadata (telescope/camera/filter/target/date with each star rating) are shared via Supabase to improve detection for all users. No filenames, no images, no real names. Identifier is a non-reversible hardware hash. Click to disable."
                 : "Community Learning is OFF — Click to join. Anonymous metrics + equipment metadata (telescope/camera/filter/target/date) are shared with each star rating to improve detection. No filenames, no images, no real names. You also get instant calibration baselines when trying new equipment.")
 
+            // Side-by-side info button → opens the full PRIVACY.md on GitHub.
+            // Lives outside the toggle's tap-area so curiosity clicks don't flip
+            // Community Learning by accident.
+            Button {
+                if let url = URL(string: "https://github.com/joergs-git/AstroBlinkV2/blob/main/PRIVACY.md") {
+                    NSWorkspace.shared.open(url)
+                }
+            } label: {
+                Image(systemName: "info.circle")
+                    .font(.system(size: 10))
+                    .foregroundColor(nightFgDim.opacity(0.5))
+            }
+            .buttonStyle(.plain)
+            .help("Open the full Privacy Policy (PRIVACY.md) on GitHub")
+
             statusDivider
             HStack(spacing: 2) {
                 if FileManager.default.ubiquityIdentityToken != nil {

@@ -268,14 +268,20 @@ struct AIsaacUserProfile: Codable {
     }
 
     /// Delete both the local and iCloud copy of the profile JSON.
-    /// In-memory profiles held by AIsaacContextBuilder etc. are NOT cleared by this —
-    /// the next AIsaacUserProfile.load() call will return a fresh blank profile.
+    ///
+    /// Posts `Notification.Name.aisaacProfileDeleted` so that long-lived view
+    /// models which cache profile-derived state (`TargetDatabaseViewModel`'s
+    /// `equipmentSetups` / `allLocations`, etc.) can invalidate their
+    /// `@Published` mirrors and reload from a now-empty profile. Code paths
+    /// that call `.load()` directly each time they need data do not need to
+    /// observe — they will already pick up the fresh blank profile.
     static func delete() {
         let fm = FileManager.default
         try? fm.removeItem(at: localURL)
         if let icloud = iCloudURL {
             try? fm.removeItem(at: icloud)
         }
+        NotificationCenter.default.post(name: .aisaacProfileDeleted, object: nil)
     }
 
     /// Write a pretty-printed copy of the profile to the given URL (typically
@@ -286,4 +292,11 @@ struct AIsaacUserProfile: Codable {
         let data = try encoder.encode(self)
         try data.write(to: url, options: .atomic)
     }
+}
+
+extension Notification.Name {
+    /// Posted by `AIsaacUserProfile.delete()` after the on-disk profile (and
+    /// any iCloud mirror) has been removed. Observers should clear their
+    /// cached profile-derived state and reload.
+    static let aisaacProfileDeleted = Notification.Name("aisaacProfileDeleted")
 }
