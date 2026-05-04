@@ -68,10 +68,20 @@ Working file with full context: `tasks/launch-readiness-2026-05.md` (gitignored)
 The big one. Snapshot tag before each step (`pre-refactor-<slice>`), build
 + smoke test between every commit.
 
-- [ ] **`SessionOrchestrator`** — pull session loading, scoring trigger,
-  mosaic generation, community-detection wiring out of `TriageViewModel`.
-  Closures/protocols for the few places that still need to call back into
-  `TriageState`.
+- [x] **`SessionOrchestrator`** (shipped, commits d3e471b → 371d14b):
+  Session loading, prefetch + caching pipeline, header enrichment,
+  scoring trigger, post-scoring cascade (SNR retention, convergence,
+  Frame History persistence, moon, Bortle), VLM mosaic + Claude Vision,
+  and community session-commit hook all live on
+  `SessionOrchestrator` (+Headers, +Prefetch, +Scoring, +VLM
+  extensions). TriageViewModel.swift trimmed 6118 → 4219 LOC (-31%).
+  SessionHost protocol owns the narrow seam back into TriageViewModel
+  for state mutation + a few orientation/display bridges
+  (detectMeridianFlip, applyWCSAlignment, updateMeridianRotation,
+  checkForMixedDimensions, applySortByColumnOrder,
+  shouldRotateForMeridian) that stay on the view model.
+  Snapshot tags pre-refactor-orchestrator-{protocol,load,prefetch,
+  enrich,scoring,vlm,community} cover rollback.
 
 - [ ] **`TriageState`** — the riskiest split, do **last**. Move the
   `@Published` UI state (selectedIndex, hideMarked, skipMarked, sort
