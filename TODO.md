@@ -47,21 +47,17 @@ Working file with full context: `tasks/launch-readiness-2026-05.md` (gitignored)
   not bump, warns if `ALGORITHM_CHANGELOG.md` was not updated alongside.
 
 - [x] **Force-Unwrap-Sweep** — audit complete 2026-05-03,
-  deliverable at `tasks/force-unwrap-audit.md` (gitignored).
-  100 sites total: 71 system-guaranteed | 18 internal-invariant
-  | **11 Category C real risks**. Surprise finding: 4 of the 5
-  named launch-readiness Category-C sites were already fixed in
-  v6.0.0 (only `SessionCache.swift:35` remains).
-  Top files for Category-C fixes (follow-up patch):
-  - `TriageViewModel.swift` — 5 (best!.qualityTier×2, sessionRootURL!,
-    cropRect!×2, all session-lifecycle, NOT scoring)
-  - `StarMetricsCalculator.swift` — 4 (RANSAC trail post-processing
-    lines 667–670; quality-critical so will need `kAlgorithmVersion`
-    bump even though happy-path behavior is unchanged)
-  - `QualityEstimator.swift` — 1 (line 1343, diagnostic write only,
-    NOT scoring → no version bump needed)
-  - `SessionCache.swift`, `AppMessageService.swift`,
-    `AIsaacWindowController.swift` — 1 each
+  deliverable at `tasks/force-unwrap-audit.md` (gitignored). 100 sites:
+  71 system-guaranteed | 18 internal-invariant | 11 Category C real
+  risks. **Category C cleared 2026-05-04**: all 11 sites verified gone
+  during Patch 3 wave 4 follow-up. The TriageViewModel-shaped sites
+  (best!.qualityTier × 2, sessionRootURL!, cropRect! × 2) were swept up
+  by Patch 2's TVM split. The standalone sites
+  (SessionCache.swift:35, AppMessageService.swift:43,
+  AIsaacWindowController.swift:346, QualityEstimator.swift:1343,
+  StarMetricsCalculator.swift:667–670) had also been refactored to
+  if-let / guard-let in earlier maintenance. The audit doc itself
+  remains useful as a Category B style-cleanup backlog.
 
 ### Patch 2 — TriageViewModel split + QualityEstimator stages
 
