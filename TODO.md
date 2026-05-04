@@ -83,30 +83,39 @@ The big one. Snapshot tag before each step (`pre-refactor-<slice>`), build
   Snapshot tags pre-refactor-orchestrator-{protocol,load,prefetch,
   enrich,scoring,vlm,community} cover rollback.
 
-- [ ] **`TriageState`** — the riskiest split, do **last**. Move the
-  `@Published` UI state (selectedIndex, hideMarked, skipMarked, sort
-  state, filter state, marked sets) into a dedicated state holder.
-  Existing SwiftUI bindings either continue to work via forwarding
-  computed properties on `TriageViewModel` or get migrated piecemeal.
+- [x] **`TriageState`** (shipped, commit a45db93): Selection /
+  filter / marked / sort UI-state extracted to a dedicated
+  TriageState class. View model keeps thin forwarder properties of
+  the same name; sub-object's `objectWillChange` is forwarded into
+  the view model's so SwiftUI bindings continue to repaint
+  unchanged. Scope: selectedIndex, hideMarked, skipMarked,
+  showOnlyMarked, pendingColumnOrder, pendingColumnVisibility,
+  needsQualityResort. `filterText` deliberately stays on the view
+  model (Binding-projection constraint).
 
-- [ ] **`QualityEstimator` stages → separate files**
-  (R0/R1.5/R6/R7/Stage4 each in their own file). Pure organizational
-  but quality-critical, so it requires:
-  - bump `kAlgorithmVersion` (even though logic is unchanged — re-runs
-    are cheap insurance)
-  - run Golden-Set regression, attach numbers to commit message
-  - add an `ALGORITHM_CHANGELOG.md` entry explaining "version bumped
-    purely to mark file split, no logic change, golden set ±0.X%"
+- [x] **`QualityEstimator` stages → separate files** (shipped,
+  commit aa53d42, kAlgorithmVersion 24 → 25): pure mechanical move,
+  byte-for-byte preservation. Split into +Helpers (227 LOC),
+  +SessionSanity (250 LOC), +Historical (387 LOC).
+  QualityEstimator.swift 2112 → 1292 LOC. ALGORITHM_CHANGELOG entry
+  in v25 documents the rationale + the no-logic-change guarantee.
+  Synthetic ScoringRegressionTests green; full real-data
+  BatchQualityAnalysis stays manual per launch-readiness M3.
 
-- [ ] **`FrameHistoryDatabase` iCloud-Sync extraction**
-  (deferred from W2.6). Needs an injected `FrameHistoryICloudSync`
-  helper struct because the methods touch private instance state
-  (`_iCloudDirectory`, `dbQueue`, `storageURL`) that an extension in
-  another file cannot reach without raising visibility.
+- [x] **`FrameHistoryDatabase` iCloud-Sync extraction** (shipped,
+  commit 9956e7a): iCloud rotating-backup workflow moved into a
+  dedicated FrameHistoryICloudSync class. Database keeps its
+  storageURL + dbQueue private; helper holds iCloud directory
+  state and reaches into the database via a weak ref + narrow
+  internal `reopenAfterImport(replacingWith:)` API. All four
+  external call sites work unchanged via thin DB forwarders.
 
-- [ ] **`FrameHistoryModel`** — domain types (`SessionScorePoint`,
-  `EfficiencyPoint`, etc.) split from the aggregation logic that
-  produces them. ~1300 LOC currently.
+- [x] **`FrameHistoryModel`** (shipped, commit accad72): 20 nested
+  domain types split into a FrameHistoryModel+Domain.swift
+  extension. Pure mechanical move — every reference site keeps
+  working unchanged because Swift looks nested types up by
+  enclosing type, not by declaration file. FrameHistoryModel.swift
+  1289 → 1099 LOC.
 
 ### Patch 3 — Cross-platform + tests + concurrency
 
