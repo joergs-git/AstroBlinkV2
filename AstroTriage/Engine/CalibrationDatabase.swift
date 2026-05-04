@@ -106,12 +106,12 @@ struct LearnedThresholds: Codable, Hashable {
     /// Added to QualityEstimator.thresholdBorderline (-2.0).
     /// Negative = stricter (more frames slip into trash);
     /// positive = more lenient (rescues z-score-only trash).
-    /// Clamped to ±0.8 by the learner.
+    /// Clamped to ±0.8 by the learner AND on decode.
     var borderlineOffset: Double = 0.0
 
     /// Added to QualityEstimator.absoluteTrailingCeilingScore (0.60).
     /// Negative = stricter ceiling, positive = more lenient.
-    /// Clamped to [-0.15, +0.20] by the learner.
+    /// Clamped to [-0.15, +0.20] by the learner AND on decode.
     var trailingCeilingOffset: Double = 0.0
 
     /// Number of curated frames the offsets were derived from.
@@ -125,6 +125,47 @@ struct LearnedThresholds: Codable, Hashable {
 
     /// Minimum sample count before learned offsets apply.
     static let learningThreshold = 50
+
+    /// Hard clamps applied both at learn time AND on decode — protects
+    /// against profile-file tampering or future-version migrations that
+    /// might persist out-of-range offsets.
+    static let borderlineClampRange: ClosedRange<Double> = -0.8 ... 0.8
+    static let trailingClampRange: ClosedRange<Double> = -0.15 ... 0.20
+
+    init(borderlineOffset: Double = 0.0,
+         trailingCeilingOffset: Double = 0.0,
+         sampleCount: Int = 0,
+         lastComputed: Date? = nil,
+         fpRate: Double? = nil,
+         fnRate: Double? = nil,
+         cost: Double? = nil) {
+        self.borderlineOffset = Self.borderlineClampRange.clamped(borderlineOffset)
+        self.trailingCeilingOffset = Self.trailingClampRange.clamped(trailingCeilingOffset)
+        self.sampleCount = max(0, sampleCount)
+        self.lastComputed = lastComputed
+        self.fpRate = fpRate
+        self.fnRate = fnRate
+        self.cost = cost
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        let rawBorderline = try container.decodeIfPresent(Double.self, forKey: .borderlineOffset) ?? 0.0
+        let rawTrailing = try container.decodeIfPresent(Double.self, forKey: .trailingCeilingOffset) ?? 0.0
+        self.borderlineOffset = Self.borderlineClampRange.clamped(rawBorderline)
+        self.trailingCeilingOffset = Self.trailingClampRange.clamped(rawTrailing)
+        self.sampleCount = try container.decodeIfPresent(Int.self, forKey: .sampleCount) ?? 0
+        self.lastComputed = try container.decodeIfPresent(Date.self, forKey: .lastComputed)
+        self.fpRate = try container.decodeIfPresent(Double.self, forKey: .fpRate)
+        self.fnRate = try container.decodeIfPresent(Double.self, forKey: .fnRate)
+        self.cost = try container.decodeIfPresent(Double.self, forKey: .cost)
+    }
+}
+
+private extension ClosedRange where Bound == Double {
+    func clamped(_ value: Double) -> Double {
+        Swift.max(lowerBound, Swift.min(upperBound, value))
+    }
 }
 
 // MARK: - Calibration Profile

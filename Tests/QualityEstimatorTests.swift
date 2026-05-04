@@ -1985,4 +1985,135 @@ final class QualityEstimatorTests: XCTestCase {
     func testStage1_5b_NarrowbandThresholds_NotCoveredHere() throws {
         throw XCTSkip("Stage 1.5b reads FrameHistoryDatabase.shared which is a disk-backed singleton without a test seam. Adding coverage requires production refactor (dependency injection or in-memory mode) which is out of scope for Patch 3 — see comment above.")
     }
+
+    // MARK: - Phase 2 — Curation-Driven Threshold Learning integration
+
+    /// Build a population that produces a meaningful trash/borderline mix
+    /// so we can compare two scoring runs. Mostly-clean group with a
+    /// graded-outlier tail. Outliers stay BELOW Stage 1 thresholds
+    /// (FWHM ≤ 2× median, HFR ≤ 2× median, stars ≥ 50% median, etc.) so
+    /// their tier is determined by the borderline z-score branch — i.e.
+    /// the path the learned offset actually adjusts. Stage-1-tripping
+    /// outliers would short-circuit to .trash before reaching that branch.
+    private func makeMarginalGroup() -> [ImageEntry] {
+        var entries: [ImageEntry] = []
+        // Twelve clean reference frames (well above the borderline boundary).
+        for i in 0..<12 {
+            entries.append(makeEntry(index: i, fwhm: 2.0, hfr: 1.0, starCount: 500,
+                                     noiseMAD: 0.005, noiseMedian: 0.05))
+        }
+        // Three graded outliers: FWHM stays ≤ 1.95× median (under the
+        // highFWHM cutoff at median × 2.0); HFR ≤ 1.9× median; stars ≥ 60%
+        // of median (well above the starCountDrop cutoff at 50%).
+        entries.append(makeEntry(index: 100, fwhm: 3.5, hfr: 1.7, starCount: 350,
+                                 noiseMAD: 0.008, noiseMedian: 0.05))
+        entries.append(makeEntry(index: 101, fwhm: 3.7, hfr: 1.8, starCount: 320,
+                                 noiseMAD: 0.009, noiseMedian: 0.05))
+        entries.append(makeEntry(index: 102, fwhm: 3.9, hfr: 1.9, starCount: 300,
+                                 noiseMAD: 0.010, noiseMedian: 0.05))
+        return entries
+    }
+
+    /// 1 — Directional contract for the borderline offset:
+    ///   - Lenient offset (negative) must NOT increase the trash count.
+    ///   - Strict offset (positive) must NOT decrease the trash count.
+    ///   - Stage 1 garbage reasons are independent of any learned offset.
+    ///
+    /// Asserting an exact tier shift would couple the test to
+    /// QualityEstimator's z-score distribution math (MAD floors, weight
+    /// rebalance, etc.), which is owned by a different test. The
+    /// directional contract is what `effectiveBorderline` is supposed to
+    /// guarantee at the API level.
+    func testLearnedBorderlineOffset_DirectionalContract() {
+        let entries = makeMarginalGroup()
+
+        let scoresDefault = QualityEstimator.computeScores(for: entries)
+
+        let lenient = LearnedThresholds(borderlineOffset: -0.8, sampleCount: 100)
+        let scoresLenient = QualityEstimator.computeScores(for: entries, learnedThresholds: lenient)
+
+        let strict = LearnedThresholds(borderlineOffset: 0.8, sampleCount: 100)
+        let scoresStrict = QualityEstimator.computeScores(for: entries, learnedThresholds: strict)
+
+        let trashDefault  = scoresDefault.values.filter  { $0.tier == .trash }.count
+        let trashLenient  = scoresLenient.values.filter  { $0.tier == .trash }.count
+        let trashStrict   = scoresStrict.values.filter   { $0.tier == .trash }.count
+
+        XCTAssertLessThanOrEqual(trashLenient, trashDefault,
+                                 "Lenient offset must NOT increase trash count")
+        XCTAssertGreaterThanOrEqual(trashStrict, trashDefault,
+                                    "Strict offset must NOT decrease trash count")
+
+        // Stage 1 garbage reasons are computed before the borderline branch
+        // ever runs, so the same set must appear regardless of the offset.
+        let reasonsDefault = Set(scoresDefault.values.flatMap { $0.garbageReasons }.map(\.rawValue))
+        let reasonsLenient = Set(scoresLenient.values.flatMap { $0.garbageReasons }.map(\.rawValue))
+        let reasonsStrict  = Set(scoresStrict.values.flatMap  { $0.garbageReasons }.map(\.rawValue))
+        XCTAssertEqual(reasonsLenient, reasonsDefault,
+                       "Lenient offset must not change Stage 1 garbage reasons")
+        XCTAssertEqual(reasonsStrict, reasonsDefault,
+                       "Strict offset must not change Stage 1 garbage reasons")
+    }
+
+    /// 2 — Below the activation gate (`sampleCount < learningThreshold`),
+    /// the offset is IGNORED — even a wildly lenient offset produces the
+    /// exact same tier histogram as `learnedThresholds: nil`.
+    func testLearnedBorderlineOffset_BelowActivationGate_IsIgnored() {
+        let entries = makeMarginalGroup()
+
+        let scoresDefault = QualityEstimator.computeScores(for: entries)
+
+        // 49 samples — one below the 50-sample gate. Should be a no-op.
+        let belowGate = LearnedThresholds(borderlineOffset: -1.0, sampleCount: 49)
+        let scoresBelowGate = QualityEstimator.computeScores(for: entries, learnedThresholds: belowGate)
+
+        for (url, defaultBd) in scoresDefault {
+            XCTAssertEqual(scoresBelowGate[url]?.tier, defaultBd.tier,
+                           "Below the 50-sample gate, learned offsets must not affect tier assignment")
+        }
+    }
+
+    /// 3 — Stage 1 garbage is forced to .trash *before* the borderline
+    /// branch ever runs. A lenient learned offset must not promote a
+    /// Stage-1-flagged frame.
+    func testLearnedThresholds_CannotPromoteStage1Garbage() {
+        // Build a group where one frame triggers Rule 1a (zero stars).
+        var entries: [ImageEntry] = []
+        for i in 0..<12 {
+            entries.append(makeEntry(index: i, fwhm: 2.0, hfr: 1.0, starCount: 500,
+                                     noiseMAD: 0.005, noiseMedian: 0.05))
+        }
+        // Frame with computedStarCount == 0 → triggers Stage 1 noStars.
+        entries.append(makeEntry(index: 100, fwhm: 2.0, hfr: 1.0, starCount: 0,
+                                 noiseMAD: 0.005, noiseMedian: 0.05,
+                                 computedStarCount: 0))
+
+        let extreme = LearnedThresholds(borderlineOffset: -0.8, sampleCount: 200)
+        let scores = QualityEstimator.computeScores(for: entries, learnedThresholds: extreme)
+
+        let zeroStarURL = entries.last!.url
+        XCTAssertEqual(scores[zeroStarURL]?.tier, .trash,
+                       "Frame with Stage 1 garbage (zero stars) must stay .trash regardless of any learned offset")
+        // And the Stage 1 garbage reason should still be on the breakdown.
+        XCTAssertFalse(scores[zeroStarURL]?.garbageReasons.isEmpty ?? true,
+                       "Stage 1 garbage reasons must still appear on the breakdown")
+    }
+
+    /// 4 — `LearnedThresholds.init` (and decode) clamp out-of-range
+    /// offsets so a tampered profile JSON cannot bypass the safe range.
+    func testLearnedThresholds_DecodeClampsOutOfRangeOffsets() throws {
+        let oversized: [String: Any] = [
+            "borderlineOffset": 5.0,
+            "trailingCeilingOffset": -2.0,
+            "sampleCount": 100,
+        ]
+        let json = try JSONSerialization.data(withJSONObject: oversized)
+        let decoded = try JSONDecoder().decode(LearnedThresholds.self, from: json)
+
+        XCTAssertEqual(decoded.borderlineOffset, 0.8, accuracy: 1e-9,
+                       "Out-of-range borderlineOffset must clamp to +0.8 cap on decode")
+        XCTAssertEqual(decoded.trailingCeilingOffset, -0.15, accuracy: 1e-9,
+                       "Out-of-range trailingCeilingOffset must clamp to -0.15 floor on decode")
+        XCTAssertEqual(decoded.sampleCount, 100)
+    }
 }
