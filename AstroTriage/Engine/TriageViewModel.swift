@@ -3261,12 +3261,11 @@ class TriageViewModel: ObservableObject {
             statusMessage = "Moved \(movedCount) files to PRE-DELETE — Undo available"
         }
 
-        // Commit retained frames to calibration database for learning
-        if let fp = currentSetupFingerprint {
-            CalibrationDatabase.shared.commitSession(entries: images, fingerprint: fp)
-            // Upload anonymous session summary to community (if opted in)
-            CommunityDetectionService.shared.uploadSessionData(entries: images, fingerprint: fp)
-        }
+        // Commit retained frames to the calibration database (for learning)
+        // and upload the anonymous session summary to the community service.
+        // Both happen inside SessionOrchestrator.commitSession (step 7) so the
+        // PRE-DELETE flow only has to invoke a single session-lifecycle hook.
+        orchestrator.commitSession()
 
         // Mark deleted frames in Frame History Database
         let deletedHashes = images.filter { $0.isMarkedForDeletion }.compactMap { $0.fileHash }

@@ -36,6 +36,12 @@
 // SessionOrchestrator+VLM.swift (startVisualValidation,
 // cancelVisualValidation, runVisualAnalysis). The cancellable handle
 // for the in-flight generation task lives on the orchestrator.
+//
+// Step 7: commitSession() wraps the calibration-learning + community-
+// upload pair that used to live inline at the end of moveMarkedToPreDelete.
+// Centralised here because "what the session learned" is a session-
+// lifecycle concept; the PRE-DELETE flow that triggers it stays on TVM
+// because it owns the file-system move.
 import Foundation
 
 /// State and actions on TriageViewModel that the SessionOrchestrator
@@ -208,6 +214,22 @@ final class SessionOrchestrator {
     /// initialization. Called once from TriageViewModel.init().
     func attach(host: SessionHost) {
         self.host = host
+    }
+
+    // MARK: - Session commit
+
+    /// Commit retained frames to the per-setup calibration database (for
+    /// adaptive Welford learning) and upload the anonymous session summary
+    /// to the community-detection service (when telemetry is opted in).
+    /// Called from the PRE-DELETE flow once the file-system moves have
+    /// completed — what stays on disk is the user's quality verdict for
+    /// that session, which is the signal both subsystems learn from.
+    func commitSession() {
+        guard let host = host else { return }
+        guard let fp = host.currentSetupFingerprint else { return }
+        CalibrationDatabase.shared.commitSession(entries: host.images, fingerprint: fp)
+        // Upload anonymous session summary to community (if opted in)
+        CommunityDetectionService.shared.uploadSessionData(entries: host.images, fingerprint: fp)
     }
 
     // MARK: - Session loading entry points
