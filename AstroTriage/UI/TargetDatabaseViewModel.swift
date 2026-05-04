@@ -133,7 +133,9 @@ class TargetDatabaseViewModel: ObservableObject {
                                    focalLength: setup.focalLength, pixelSizeMicrons: setup.pixelSize)
     }
 
-    /// Tonight's weather forecast (from 7Timer + Open-Meteo)
+    /// Tonight's weather forecast (from Meteoblue via Supabase Edge Function;
+    /// see `AIsaacWeatherService.fetchMeteoblue`). 7Timer + Open-Meteo were
+    /// retired in the v6.x weather migration.
     @Published var weatherForecast: AIsaacWeatherService.AstroForecast?
     @Published var isLoadingWeather: Bool = false
 

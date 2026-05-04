@@ -387,7 +387,18 @@ file to still describe the tilted-plane work.)
 - [x] Recent performance trend (last 2-3 sessions FWHM/retention in prompt)
 - [x] Weather-adaptive advice (wind→shorter exp, humidity→dew warning, moon→narrowband)
 - [x] Setup awareness (dome vs portable guidance in system prompt)
-- [ ] Meteoblue/Clear Outside seeing forecast integration (7Timer + Open-Meteo already wired)
+- [x] Meteoblue weather integration via Supabase Edge Function
+      (`AstroTriage/AIsaac/AIsaacWeather.swift` — `fetchMeteoblue(lat:lon:)`
+      is the sole weather path; 7Timer + Open-Meteo retired in the v6.x
+      migration per `ReleaseNotesWindow.swift:118`). Cloud layers
+      (low/mid/high), visibility, fog probability, 7-day hourly forecast
+      with NOW marker and per-hour hover detail card. Powered-by credit
+      shown in `TargetDatabaseWindow.swift:435`. Open-Meteo is NOT a
+      fallback in the live path — Meteoblue failure returns nil; if a
+      fallback is desired later, the helper that does the network call
+      is the place to add it. Clear Outside seeing forecast remains an
+      option but Meteoblue's multi-factor heuristic
+      (`AIsaacWeather.swift:60`) covers the same ground today.
 
 ### Frame History Re-Analysis
 - [x] Detect stale records: `FrameHistoryDatabase.staleRecordCount()` /
