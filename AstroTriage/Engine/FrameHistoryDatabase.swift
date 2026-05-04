@@ -18,54 +18,15 @@ final class FrameHistoryDatabase {
     /// The renamed file (FrameHistory.corrupt-<ts>.sqlite) stays in Application Support for manual recovery.
     private(set) var recoveredFromCorruption: Bool = false
 
-    // iCloud directory resolved once on a background thread.
-    // FileManager.url(forUbiquityContainerIdentifier:) can block 10-30s,
-    // so we resolve it asynchronously and notify via callback when ready.
-    private var _iCloudDirectory: URL?
-    private var _iCloudResolutionStarted = false
-    private var _iCloudResolved = false
-    private var _iCloudReadyCallbacks: [(URL?) -> Void] = []
-
-    /// Register a callback for when iCloud directory resolution completes.
-    /// If already resolved, callback fires immediately. Must be called from main thread.
-    func onICloudResolved(_ callback: @escaping (URL?) -> Void) {
-        if _iCloudResolved {
-            callback(_iCloudDirectory)
-            return
-        }
-        _iCloudReadyCallbacks.append(callback)
-    }
-
-    private func resolveICloudIfNeeded() {
-        guard !_iCloudResolutionStarted else { return }
-        _iCloudResolutionStarted = true
-        DispatchQueue.global(qos: .utility).async { [weak self] in
-            guard let self else { return }
-            let container = FileManager.default.url(forUbiquityContainerIdentifier: "iCloud.com.joergsflow.AstroBlinkV2")
-            let dir: URL?
-            if let container {
-                let d = container.appendingPathComponent(Self.iCloudSubdir, isDirectory: true)
-                try? FileManager.default.createDirectory(at: d, withIntermediateDirectories: true)
-                dir = d
-                print("FrameHistoryDatabase: iCloud resolved → \(d.path)")
-            } else {
-                dir = nil
-                print("FrameHistoryDatabase: iCloud not available (not signed in or Drive not enabled)")
-            }
-            DispatchQueue.main.async {
-                self._iCloudDirectory = dir
-                self._iCloudResolved = true
-                let callbacks = self._iCloudReadyCallbacks
-                self._iCloudReadyCallbacks.removeAll()
-                for cb in callbacks {
-                    cb(dir)
-                }
-            }
-        }
-    }
+    /// iCloud rotating-backup helper. Owns iCloud directory resolution, the
+    /// export-with-rotation flow, the meta.json freshness check, and the
+    /// import-and-reopen flow. Initialized from init() once self is fully
+    /// set up. See FrameHistoryICloudSync.swift.
+    private let icloudSync: FrameHistoryICloudSync
 
     private static let dbFilename = "FrameHistory.sqlite"
     private static let iCloudSubdir = "Documents/FrameHistory"
+    private static let iCloudContainer = "iCloud.com.joergsflow.AstroBlinkV2"
 
     private init() {
         // Local: ~/Library/Application Support/AstroBlinkV2/
@@ -111,8 +72,58 @@ final class FrameHistoryDatabase {
             }
         }
 
-        // Start iCloud resolution in background (fire-and-forget, non-blocking)
-        resolveICloudIfNeeded()
+        // Build the iCloud helper now that storageURL + dbQueue are stable, then
+        // kick off background resolution (fire-and-forget, non-blocking).
+        self.icloudSync = FrameHistoryICloudSync(
+            database: nil,  // patched immediately below — Swift won't allow self before this property is set
+            localDBURL: storageURL,
+            localDBFilename: Self.dbFilename,
+            iCloudSubdir: Self.iCloudSubdir,
+            containerIdentifier: Self.iCloudContainer
+        )
+        icloudSync.attach(database: self)
+        icloudSync.startResolution()
+    }
+
+    // MARK: - iCloud Forwarders
+    //
+    // External callers (AstroTriageApp, ArchiveScanner, SessionOrchestrator+Scoring)
+    // keep using FrameHistoryDatabase.shared.exportToICloud() etc. The bodies live
+    // on FrameHistoryICloudSync; these forwarders preserve the call-site API.
+
+    /// Register a callback for when iCloud directory resolution completes.
+    /// If already resolved, callback fires immediately. Must be called from main thread.
+    func onICloudResolved(_ callback: @escaping (URL?) -> Void) {
+        icloudSync.onResolved(callback)
+    }
+
+    /// Export database to iCloud container with rotating backup.
+    func exportToICloud() {
+        icloudSync.exportToICloud()
+    }
+
+    /// Async check if iCloud has a newer/larger database than local.
+    func checkICloudForNewerDBAsync(completion: @escaping ((local: FrameHistoryMeta, iCloud: FrameHistoryMeta)?) -> Void) {
+        icloudSync.checkICloudForNewerDBAsync(completion: completion)
+    }
+
+    /// Import database from iCloud (replaces local DB). Call after user confirmation.
+    func importFromICloudAsync(completion: @escaping (Result<Int, Error>) -> Void) {
+        icloudSync.importFromICloudAsync(completion: completion)
+    }
+
+    /// Replace the local DB file with the contents at `replacingWith` and reopen
+    /// the GRDB queue against the new file. Internal API used exclusively by
+    /// FrameHistoryICloudSync.importFromICloudAsync — the helper can't swap the
+    /// dbQueue itself because dbQueue + storageURL are private to this type.
+    /// Returns the number of frame records in the freshly imported database.
+    func reopenAfterImport(replacingWith readURL: URL) throws -> Int {
+        try? FileManager.default.removeItem(at: storageURL)
+        try FileManager.default.copyItem(at: readURL, to: storageURL)
+        // Reopen database connection (old DatabaseQueue still points to deleted inode)
+        dbQueue = try DatabaseQueue(path: storageURL.path)
+        try Self.migrate(dbQueue)
+        return (try? databaseStats())?.frameCount ?? 0
     }
 
 
@@ -560,175 +571,6 @@ final class FrameHistoryDatabase {
         FileHasher.hash(for: url)
     }
 
-    // MARK: - iCloud Backup
-
-    /// Export database to iCloud container with rotating backup.
-    func exportToICloud() {
-        // If iCloud hasn't resolved yet (e.g. quick quit), try synchronous resolution as fallback
-        if _iCloudDirectory == nil && !_iCloudResolved {
-            if let container = FileManager.default.url(forUbiquityContainerIdentifier: "iCloud.com.joergsflow.AstroBlinkV2") {
-                let dir = container.appendingPathComponent(Self.iCloudSubdir, isDirectory: true)
-                try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-                _iCloudDirectory = dir
-                print("FrameHistoryDatabase: iCloud resolved synchronously during export")
-            }
-        }
-        guard let iDir = _iCloudDirectory else {
-            print("FrameHistoryDatabase: skipping iCloud export — iCloud not available")
-            return
-        }
-
-        let latestURL = iDir.appendingPathComponent(Self.dbFilename)
-        let backupURL = iDir.appendingPathComponent("FrameHistory_backup1.sqlite")
-        let metaURL = iDir.appendingPathComponent("FrameHistory_meta.json")
-
-        do {
-            // Rotate: current → backup1. Both steps logged on failure so a quietly
-            // broken rotation surfaces in Console.app instead of looking like success.
-            if FileManager.default.fileExists(atPath: latestURL.path) {
-                do {
-                    try FileManager.default.removeItem(at: backupURL)
-                } catch CocoaError.fileNoSuchFile {
-                    // First-time export — no previous backup to remove. Expected.
-                } catch {
-                    print("FrameHistoryDatabase: iCloud rotation — failed to remove old backup: \(error)")
-                }
-                do {
-                    try FileManager.default.moveItem(at: latestURL, to: backupURL)
-                } catch {
-                    print("FrameHistoryDatabase: iCloud rotation — failed to move latest to backup1: \(error)")
-                }
-            }
-
-            // Copy current DB to iCloud
-            try FileManager.default.copyItem(at: storageURL, to: latestURL)
-
-            // Write metadata sidecar
-            let stats = try databaseStats()
-            let fileSize = (try? FileManager.default.attributesOfItem(atPath: storageURL.path)[.size] as? Int64) ?? 0
-            let meta = FrameHistoryMeta(
-                lastModified: ISO8601DateFormatter().string(from: Date()),
-                frameCount: stats.frameCount,
-                sessionCount: stats.sessionCount,
-                dbSizeBytes: fileSize
-            )
-            let encoder = JSONEncoder()
-            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-            let data = try encoder.encode(meta)
-            try data.write(to: metaURL, options: .atomic)
-            print("FrameHistoryDatabase: exported to iCloud — \(stats.frameCount) frames (\(String(format: "%.1f MB", Double(fileSize) / (1024*1024))))")
-        } catch {
-            print("FrameHistoryDatabase: iCloud export failed: \(error)")
-        }
-    }
-
-    /// Async check if iCloud has a newer/larger database than local.
-    /// Handles evicted (cloud-only) files by triggering download via NSFileCoordinator.
-    /// Completion is called on main thread.
-    func checkICloudForNewerDBAsync(completion: @escaping ((local: FrameHistoryMeta, iCloud: FrameHistoryMeta)?) -> Void) {
-        guard let iDir = _iCloudDirectory else {
-            print("FrameHistoryDatabase: sync check skipped — iCloud directory not available")
-            completion(nil)
-            return
-        }
-        let metaURL = iDir.appendingPathComponent("FrameHistory_meta.json")
-
-        // Trigger download if file is evicted (cloud-only placeholder on new Mac)
-        try? FileManager.default.startDownloadingUbiquitousItem(at: metaURL)
-
-        // Read on background thread — NSFileCoordinator waits for download if needed
-        DispatchQueue.global(qos: .utility).async { [weak self] in
-            guard let self else {
-                DispatchQueue.main.async { completion(nil) }
-                return
-            }
-
-            var coordinatorError: NSError?
-            var result: (local: FrameHistoryMeta, iCloud: FrameHistoryMeta)?
-
-            let coordinator = NSFileCoordinator()
-            coordinator.coordinate(readingItemAt: metaURL, options: [], error: &coordinatorError) { readURL in
-                guard let data = try? Data(contentsOf: readURL),
-                      let iCloudMeta = try? JSONDecoder().decode(FrameHistoryMeta.self, from: data) else {
-                    print("FrameHistoryDatabase: failed to read iCloud meta.json at \(readURL.path)")
-                    return
-                }
-
-                guard let localStats = try? self.databaseStats() else { return }
-                let localSize = (try? FileManager.default.attributesOfItem(atPath: self.storageURL.path)[.size] as? Int64) ?? 0
-                let localMeta = FrameHistoryMeta(
-                    lastModified: ISO8601DateFormatter().string(from: Date()),
-                    frameCount: localStats.frameCount,
-                    sessionCount: localStats.sessionCount,
-                    dbSizeBytes: localSize
-                )
-
-                if iCloudMeta.frameCount != localMeta.frameCount {
-                    result = (local: localMeta, iCloud: iCloudMeta)
-                    print("FrameHistoryDatabase: iCloud differs — local \(localMeta.frameCount), iCloud \(iCloudMeta.frameCount) frames")
-                } else {
-                    print("FrameHistoryDatabase: iCloud in sync (\(localMeta.frameCount) frames)")
-                }
-            }
-
-            if let error = coordinatorError {
-                print("FrameHistoryDatabase: NSFileCoordinator error reading meta: \(error)")
-            }
-
-            DispatchQueue.main.async { completion(result) }
-        }
-    }
-
-    /// Import database from iCloud (replaces local DB). Call after user confirmation.
-    /// Handles evicted files via download trigger + NSFileCoordinator.
-    /// Completion is called on main thread with imported frame count or error.
-    func importFromICloudAsync(completion: @escaping (Result<Int, Error>) -> Void) {
-        guard let iDir = _iCloudDirectory else {
-            completion(.failure(NSError(domain: "FrameHistoryDatabase", code: 1,
-                                        userInfo: [NSLocalizedDescriptionKey: "iCloud not available"])))
-            return
-        }
-        let iCloudDB = iDir.appendingPathComponent(Self.dbFilename)
-
-        // Trigger download if evicted
-        try? FileManager.default.startDownloadingUbiquitousItem(at: iCloudDB)
-
-        DispatchQueue.global(qos: .utility).async { [weak self] in
-            guard let self else { return }
-
-            var coordinatorError: NSError?
-            var importResult: Result<Int, Error> = .failure(NSError(domain: "FrameHistoryDatabase", code: 3,
-                                                                     userInfo: [NSLocalizedDescriptionKey: "Import did not complete"]))
-
-            let coordinator = NSFileCoordinator()
-            coordinator.coordinate(readingItemAt: iCloudDB, options: [], error: &coordinatorError) { readURL in
-                do {
-                    try? FileManager.default.removeItem(at: self.storageURL)
-                    try FileManager.default.copyItem(at: readURL, to: self.storageURL)
-                    // Reopen database connection (old DatabaseQueue still points to deleted inode)
-                    self.dbQueue = try DatabaseQueue(path: self.storageURL.path)
-                    try Self.migrate(self.dbQueue)
-                    let count = (try? self.databaseStats())?.frameCount ?? 0
-                    print("FrameHistoryDatabase: imported \(count) frames from iCloud, DB reopened")
-                    importResult = .success(count)
-                } catch {
-                    print("FrameHistoryDatabase: import failed: \(error)")
-                    importResult = .failure(error)
-                }
-            }
-
-            if let error = coordinatorError {
-                print("FrameHistoryDatabase: NSFileCoordinator error on import: \(error)")
-                importResult = .failure(error)
-            }
-
-            DispatchQueue.main.async {
-                // Notify UI to reload Frame History data
-                NotificationCenter.default.post(name: .frameHistoryDidImport, object: nil)
-                completion(importResult)
-            }
-        }
-    }
 
     // MARK: - Setup Nicknames
 
@@ -1125,15 +967,8 @@ final class FrameHistoryDatabase {
         try dbQueue.erase()
         try Self.migrate(dbQueue)
 
-        // 2. Delete iCloud backups
-        if let iDir = _iCloudDirectory {
-            let fm = FileManager.default
-            if let files = try? fm.contentsOfDirectory(at: iDir, includingPropertiesForKeys: nil) {
-                for file in files {
-                    try? fm.removeItem(at: file)
-                }
-            }
-        }
+        // 2. Delete iCloud backups (helper owns iCloud directory state)
+        icloudSync.destroyAllData()
 
         // 3. Delete calibration database files
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
