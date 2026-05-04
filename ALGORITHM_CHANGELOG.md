@@ -12,6 +12,82 @@ Records with `algorithmVersion < kAlgorithmVersion` are candidates for re-analys
 
 ---
 
+## Version 27 — Curation-Driven Threshold Learning Phase 2 (2026-05-04)
+
+**First scoring change with real behavioural impact since v22.** Adds
+per-setup soft adjustments to two of QualityEstimator's tier cutoffs,
+learned by grid search over the user's curated star ratings.
+
+### What changes
+
+- `LearnedThresholds` struct on `CalibrationProfile` (Codable,
+  backward-compatible decode) with two offsets:
+  - `borderlineOffset` ∈ [-0.8, +0.8] added to
+    `QualityEstimator.thresholdBorderline` (-2.0). Negative = stricter,
+    positive = more lenient. Addresses the 192 / 417 false positives
+    (46%) flagged in the 2026-04-16 curation baseline that were
+    "z-score-only trash" — combinedZ < -2.0 with no Stage 1 reason.
+  - `trailingCeilingOffset` ∈ [-0.15, +0.20] added to
+    `QualityEstimator.absoluteTrailingCeilingScore` (0.60). Addresses
+    residual trailing false positives.
+- New `ThresholdLearner` engine (`AstroTriage/Engine/ThresholdLearner.swift`).
+  Grid search with asymmetric cost FP × 1.5 + FN × 2.5 (false negatives
+  punished harder than false positives — keeping a 1★ frame is worse than
+  rejecting a 2★/3★ frame). Tie-break favours `offset = 0.0`
+  (regularisation toward defaults).
+- New DB query `FrameHistoryDatabase.curatedFrameRecords(setupHash:)`
+  returns every record with `userConfidence > 0` for one setup.
+- Wired into `SessionOrchestrator.commitSession()`: after the existing
+  CalibrationDatabase commit, the learner runs off the main thread on the
+  cumulative curated set. Result lands in the CalibrationProfile via
+  `CalibrationDatabase.updateLearnedThresholds(_:for:)` and applies on
+  the *next* `recomputeQualityScores()`.
+- `QualityEstimator.computeScores(for:…)` gains a
+  `learnedThresholds: LearnedThresholds? = nil` parameter. The two
+  application sites are Rule 6a (absolute trailing ceiling) and the
+  borderline tier assignment.
+
+### Activation gate
+
+Offsets only apply once `sampleCount >= LearnedThresholds.learningThreshold`
+(50 curated frames). Below the threshold the effective values fall through
+to the static defaults — the user sees no behaviour change until they've
+curated enough data for stable offsets. Borderline grid search additionally
+requires ≥10 frames each at 1★ and 3★. Trailing grid search requires ≥20
+frames carrying the elongated/trackingHop garbage reasons or
+`trailingScore > 0.3`.
+
+### Non-learnable exclusions
+
+Frames carrying `decenteredTarget`, `backgroundAnomaly`, or
+`twilightExposure` are excluded from grid search regardless of star
+rating. Those are physical issues the curator cannot reliably judge from
+the zoomed thumbnail we present, so the rating carries no useful signal
+for them.
+
+### Hard backstops preserved
+
+Stage 1 garbage rules (no-data, lowSNR, highFWHM, etc.) and the
+`isLockedKeep` calibration floor are untouched — learned offsets are
+soft adjustments to the borderline cutoff and the trailing ceiling only.
+The z-score COMPUTATION (median / MAD / metric weights) is also
+unchanged.
+
+### Provenance
+
+Status bar appends `[thresholds adapted from N curated frames]` after a
+session is scored using non-default offsets, so the user can see whether
+the cutoffs are coming from their curation or QualityEstimator's
+defaults.
+
+### References
+
+- Plan: `~/.claude/plans/mutable-singing-glacier.md`
+- Curation baseline (4,550 blind-curated frames):
+  `~/.claude/projects/.../memory/project_curation_baseline_2026_04_16.md`
+
+---
+
 ## Version 26 — Patch 3 wave 3 (2026-05-04)
 
 **Strict-concurrency cleanup pass touched two quality-critical files

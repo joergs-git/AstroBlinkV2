@@ -95,6 +95,38 @@ struct FilterExposureBaseline: Codable, Hashable {
     var framesAnalyzed: Int = 0
 }
 
+// MARK: - Learned Thresholds (Phase 2 — curation-driven)
+
+/// Per-setup soft adjustments to QualityEstimator's tier cutoffs, learned
+/// from the user's curated star ratings via grid search (see
+/// ThresholdLearner.computeLearnedThresholds). Hard Stage 1 backstops are
+/// untouched — only the borderline z-score and the absolute trailing
+/// ceiling shift. Activates once `sampleCount >= learningThreshold`.
+struct LearnedThresholds: Codable, Hashable {
+    /// Added to QualityEstimator.thresholdBorderline (-2.0).
+    /// Negative = stricter (more frames slip into trash);
+    /// positive = more lenient (rescues z-score-only trash).
+    /// Clamped to ±0.8 by the learner.
+    var borderlineOffset: Double = 0.0
+
+    /// Added to QualityEstimator.absoluteTrailingCeilingScore (0.60).
+    /// Negative = stricter ceiling, positive = more lenient.
+    /// Clamped to [-0.15, +0.20] by the learner.
+    var trailingCeilingOffset: Double = 0.0
+
+    /// Number of curated frames the offsets were derived from.
+    var sampleCount: Int = 0
+    var lastComputed: Date?
+
+    // Diagnostics from the grid search at last compute.
+    var fpRate: Double?
+    var fnRate: Double?
+    var cost: Double?
+
+    /// Minimum sample count before learned offsets apply.
+    static let learningThreshold = 50
+}
+
 // MARK: - Calibration Profile
 
 /// Complete per-setup calibration profile. Codable for JSON persistence,
@@ -112,6 +144,11 @@ struct CalibrationProfile: Codable {
     var userAgreed: Int
     var userDisagreed: Int
     var userPartlyAgreed: Int
+    /// Phase 2 — soft tier-cutoff adjustments learned from curated ratings.
+    /// nil until `ThresholdLearner.computeLearnedThresholds` finds enough
+    /// data; nil and `sampleCount < LearnedThresholds.learningThreshold`
+    /// both fall back to QualityEstimator's static defaults.
+    var learnedThresholds: LearnedThresholds?
     var createdAt: Date
     var lastUpdated: Date
 
@@ -151,6 +188,7 @@ struct CalibrationProfile: Codable {
         self.userAgreed = 0
         self.userDisagreed = 0
         self.userPartlyAgreed = 0
+        self.learnedThresholds = nil
         self.createdAt = Date()
         self.lastUpdated = Date()
     }
@@ -169,6 +207,7 @@ struct CalibrationProfile: Codable {
         userAgreed = try container.decodeIfPresent(Int.self, forKey: .userAgreed) ?? 0
         userDisagreed = try container.decodeIfPresent(Int.self, forKey: .userDisagreed) ?? 0
         userPartlyAgreed = try container.decodeIfPresent(Int.self, forKey: .userPartlyAgreed) ?? 0
+        learnedThresholds = try container.decodeIfPresent(LearnedThresholds.self, forKey: .learnedThresholds)
         createdAt = try container.decode(Date.self, forKey: .createdAt)
         lastUpdated = try container.decode(Date.self, forKey: .lastUpdated)
     }
@@ -378,6 +417,17 @@ final class CalibrationDatabase {
             return "Calibrated (\(prof.totalFramesAnalyzed) frames across \(prof.totalSessionsAnalyzed) session\(prof.totalSessionsAnalyzed == 1 ? "" : "s"))"
         }
         return "Learning... (\(prof.totalFramesAnalyzed)/\(CalibrationProfile.learningThreshold) frames)"
+    }
+
+    /// Phase 2 — store curation-driven threshold offsets for a setup. Pulled
+    /// from `ThresholdLearner.computeLearnedThresholds`; called after every
+    /// commitSession() once enough curated data is available.
+    func updateLearnedThresholds(_ thresholds: LearnedThresholds, for fingerprint: SetupFingerprint) {
+        var profile = profiles[fingerprint.hash] ?? CalibrationProfile(fingerprint: fingerprint)
+        profile.learnedThresholds = thresholds
+        profile.lastUpdated = Date()
+        profiles[fingerprint.hash] = profile
+        save(profile: profile)
     }
 
     // MARK: - Persistence

@@ -437,30 +437,64 @@ All original implementation phases are complete:
 - [ ] **Phase 2: Agreement Learning** — future (adjust thresholds from community override rates)
 - [ ] **Phase 3: Contextual Priors** — future (empirical Bayesian metric weights)
 
-### Curation-Driven Threshold Learning (Phase 2) — PLANNED, READY TO IMPLEMENT
+### Curation-Driven Threshold Learning (Phase 2) — SHIPPED 2026-05-04 (kAlgorithmVersion 27)
 
-**Problem:** 192 of 417 false positives (46%) are z-score-only trash — combinedZ < -2.0 but no Stage 1 reason. The static -2.0 threshold is too aggressive for some setups.
+**Problem (from 2026-04-16 curation baseline):** 192 of 417 false
+positives (46%) were z-score-only trash — combinedZ < -2.0 with no
+Stage 1 reason. The static -2.0 threshold was too aggressive for
+some setups.
 
-**Solution:** Grid search on curated star ratings finds per-setup offsets:
-- **Borderline offset** (±0.8 max) — adjusts -2.0 trash/borderline threshold
-- **Trailing ceiling offset** ([-0.15, +0.20]) — adjusts 0.60 trailing ceiling
+**Solution:** Grid search on the user's curated star ratings finds
+per-setup soft offsets to two QualityEstimator tier cutoffs.
 
-**Cost function:** FP × 1.5 + FN × 2.5 (false negatives penalized more). Ties favor offset=0.
+- **Borderline offset** ∈ [-0.8, +0.8] adjusts thresholdBorderline
+  (-2.0). Asymmetric cost: FP × 1.5 + FN × 2.5 (false negatives —
+  keeping a 1★ frame — punished harder). Tie-break favors offset=0.
+- **Trailing ceiling offset** ∈ [-0.15, +0.20] adjusts
+  absoluteTrailingCeilingScore (0.60).
+- Activation gate: `LearnedThresholds.learningThreshold = 50` with ≥10
+  at 1★ and ≥10 at 3★ for borderline; ≥20 trailing-flagged frames for
+  trailing. Below the gate the static defaults apply.
+- Non-learnable: decentered / backgroundAnomaly / twilight reasons are
+  excluded from the search regardless of star rating (the curator can't
+  reliably judge those from the zoomed thumbnail we present).
 
-**Activation:** ≥50 curated frames with ≥10 at 1★ and ≥10 at 3★. Never learn from: decentered, background, twilight.
+**Hard backstops preserved:** Stage 1 garbage rules and the
+isLockedKeep calibration floor are untouched. The z-score COMPUTATION
+(median / MAD / metric weights) is unchanged.
 
-**Implementation steps (8 files, 2 new):**
-- [ ] Step 1: `CalibrationDatabase.swift` — Add `LearnedThresholds` struct + `CalibrationProfile.learnedThresholds` field
-- [ ] Step 2: `ThresholdLearner.swift` — **NEW** grid search engine with non-learnable exclusions
-- [ ] Step 3: `FrameHistoryDatabase.swift` — Add `curatedFrameRecords(setupHash:)` query
-- [ ] Step 4: `QualityEstimator.swift` — Add `learnedThresholds` param, use effective thresholds in Rule 6a + tier assignment
-- [ ] Step 5: `TriageViewModel.swift` — Wire learning after `commitSession()`, pass thresholds to `computeScores()`
-- [ ] Step 6: `FrameRecord.swift` — Bump `kAlgorithmVersion` 20 → 21
-- [ ] Step 7: `ALGORITHM_CHANGELOG.md` — Document v21
-- [ ] Step 8: `Tests/ThresholdLearnerTests.swift` — **NEW** 6 unit tests
+**Provenance:** Status bar appends
+`[thresholds adapted from N curated frames]` after a session is scored
+using non-default offsets so the user can tell whether the cutoffs are
+coming from their curation or from QualityEstimator's defaults.
 
-**Full plan:** `~/.claude/plans/mutable-singing-glacier.md`
-**Data:** 4,550 blind-curated frames in Supabase. Baseline analysis in memory (`project_curation_baseline_2026_04_16.md`)
+**Implementation actually shipped (vs the original 8-step plan):**
+- [x] Step 1: `CalibrationDatabase.swift` — `LearnedThresholds` struct
+      + `CalibrationProfile.learnedThresholds` field +
+      `updateLearnedThresholds(_:for:)` method.
+- [x] Step 2: `ThresholdLearner.swift` (NEW, ~240 LOC) — grid search
+      engine with non-learnable exclusions and tunable cost weights.
+- [x] Step 3: `FrameHistoryDatabase.curatedFrameRecords(setupHash:)`.
+- [x] Step 4: `QualityEstimator.swift` — `learnedThresholds:
+      LearnedThresholds? = nil` parameter; effective thresholds applied
+      in Rule 6a (trailing ceiling) and the borderline tier assignment.
+- [x] Step 5: `SessionOrchestrator.commitSession()` triggers learning
+      off the main thread; `SessionOrchestrator+Scoring.recomputeQualityScores()`
+      pulls + passes the thresholds. (Plan said TriageViewModel; the
+      Patch 2 split moved both call sites to SessionOrchestrator.)
+- [x] Step 6: `FrameRecord.swift` — kAlgorithmVersion 26 → 27 (plan
+      said 20 → 21; we'd accumulated 6 versions of intermediate work).
+- [x] Step 7: `ALGORITHM_CHANGELOG.md` — v27 entry with full rationale,
+      activation gates, non-learnable exclusions, and hard-backstop
+      guarantees.
+- [x] Step 8: `Tests/ThresholdLearnerTests.swift` (NEW, 6 tests) —
+      optimal-offset detection, minimum-data gating, max-offset clamp,
+      non-learnable exclusion, tie-break-toward-zero,
+      trailing-grid-search bounds. 293 tests / 1 skipped / 0 failures.
+
+**Full plan reference:** `~/.claude/plans/mutable-singing-glacier.md`
+**Curation data:** 4,550 blind-curated frames in Supabase; baseline
+analysis at `project_curation_baseline_2026_04_16.md`.
 
 ### Onboarding / Welcome Screen
 - [x] First-launch onboarding splash — 4 marketing pillars (Speed Demon, Data Nerd, Community Learner, Power User) with hover details (v5.19.1)

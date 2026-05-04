@@ -298,13 +298,33 @@ struct QualityEstimator {
         calibrationDB: CalibrationDatabase? = nil,
         fingerprint: SetupFingerprint? = nil,
         communityBaseline: CommunityBaseline? = nil,
-        historicalBaselines: HistoricalBaselines? = nil
+        historicalBaselines: HistoricalBaselines? = nil,
+        learnedThresholds: LearnedThresholds? = nil
     ) -> [URL: QualityBreakdown] {
         // Solar system target exclusion — these cannot be quality-scored with deep-sky rules.
         // A homogeneous group of planetary frames would normalize to .good (z-scores = 0),
         // which is incorrect. Skip them entirely.
         let filteredEntries = entries.filter { !Self.isSolarSystemTarget($0.target) }
         let entries = filteredEntries
+
+        // Phase 2 — apply curation-driven offsets to the borderline z-score
+        // and the absolute trailing ceiling, but only after enough curated
+        // samples have been collected. Below the threshold the effective
+        // values are the static defaults declared at the top of this file.
+        let effectiveBorderline: Double = {
+            guard let lt = learnedThresholds,
+                  lt.sampleCount >= LearnedThresholds.learningThreshold else {
+                return thresholdBorderline
+            }
+            return thresholdBorderline + lt.borderlineOffset
+        }()
+        let effectiveTrailingCeiling: Double = {
+            guard let lt = learnedThresholds,
+                  lt.sampleCount >= LearnedThresholds.learningThreshold else {
+                return absoluteTrailingCeilingScore
+            }
+            return absoluteTrailingCeilingScore + lt.trailingCeilingOffset
+        }()
 
         // Two-pass night-aware scoring for multi-night sessions:
         // Pass 1: combined groups (all nights merged) → every entry gets a baseline score
@@ -730,7 +750,7 @@ struct QualityEstimator {
                 // (mount drift). The consensus requirement already guards against optical
                 // aberrations (which produce random PA, not consensus).
                 if isTrailingOutlier, !garbageReasons.contains(.elongated),
-                   let ts = entry.trailingScore, ts > absoluteTrailingCeilingScore,
+                   let ts = entry.trailingScore, ts > effectiveTrailingCeiling,
                    let consensus = entry.trailingConsensus, consensus > absoluteTrailingCeilingConsensus {
                     garbageReasons.append(.elongated)
                 }
@@ -1008,7 +1028,7 @@ struct QualityEstimator {
                     tier = .excellent
                 } else if combinedZ > thresholdGood {
                     tier = .good
-                } else if combinedZ > thresholdBorderline {
+                } else if combinedZ > effectiveBorderline {
                     tier = .borderline
                 } else {
                     tier = .trash

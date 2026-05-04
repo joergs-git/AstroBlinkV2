@@ -77,12 +77,21 @@ extension SessionOrchestrator {
             return HistoricalBaselines.build(from: records)
         }()
 
+        // Phase 2 — pull per-setup learned tier offsets if any have been
+        // computed (≥50 curated frames per setup). Falls through nil and
+        // QualityEstimator uses static defaults.
+        let learnedThresholds: LearnedThresholds? = {
+            guard let fp = host.currentSetupFingerprint else { return nil }
+            return CalibrationDatabase.shared.profile(for: fp).learnedThresholds
+        }()
+
         let scores = QualityEstimator.computeScores(
             for: host.images,
             calibrationDB: CalibrationDatabase.shared,
             fingerprint: host.currentSetupFingerprint,
             communityBaseline: host.communityBaseline,
-            historicalBaselines: histBaselines
+            historicalBaselines: histBaselines,
+            learnedThresholds: learnedThresholds
         )
         for index in host.images.indices {
             host.images[index].qualityBreakdown = scores[host.images[index].url]
@@ -115,6 +124,12 @@ extension SessionOrchestrator {
             // Show calibration learning status
             if let fp = host.currentSetupFingerprint {
                 msg += " [\(CalibrationDatabase.shared.learningStatus(for: fp))]"
+            }
+            // Phase 2 — surface adapted-threshold provenance so the user can
+            // tell whether the current session's tier cutoffs are coming from
+            // their own curation or from QualityEstimator's defaults.
+            if let lt = learnedThresholds, lt.sampleCount >= LearnedThresholds.learningThreshold {
+                msg += " [thresholds adapted from \(lt.sampleCount) curated frames]"
             }
             // Append session guidance hints if applicable
             if let guidance = self.generateSessionGuidance() {

@@ -47,6 +47,7 @@
 		3ED3F0F9A74454F562857A09 /* ConditionsChart.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8C040E3CFD178726618C93F /* ConditionsChart.swift */; };
 		40557783208A1A13EB363AF9 /* FrameHistoryModel+Domain.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FF1A1ABDDC0D8F5A76F24E7 /* FrameHistoryModel+Domain.swift */; };
 		46B1B8F966ADC9FDC262D7A6 /* CoffeeSupportDialog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C8D25832AC0BBE69EE662AF /* CoffeeSupportDialog.swift */; };
+		46DC95B31DFC767922E2AA34 /* ThresholdLearnerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 32608B6B9596DA5E7F7C9F1D /* ThresholdLearnerTests.swift */; };
 		47D998D3FD88DF482089211D /* SetupComparisonChart.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6087ADC4D2B2398C1923BC7E /* SetupComparisonChart.swift */; };
 		49AAD6D113938C331D999DBC /* MosaicGenerator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E6FA09107C45349725E7DCF /* MosaicGenerator.swift */; };
 		4CDFC8CC583603D7DB09BC1D /* TargetCatalog.swift in Sources */ = {isa = PBXBuildFile; fileRef = C023AB6340F89534CACE284C /* TargetCatalog.swift */; };
@@ -126,6 +127,7 @@
 		C33E8561A691A0A777142B7D /* AltAzCalculator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 105C67BE9EE39B55913DDDDC /* AltAzCalculator.swift */; };
 		C4AB2A0721C2A52C27DC95AC /* FrameHistoryDatabase.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18942289A31EB02EAC0670C9 /* FrameHistoryDatabase.swift */; };
 		C66ED07D541C5E62EC36991E /* StarMetricsCalculator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0BFB130B08CCDD11AC1018A7 /* StarMetricsCalculator.swift */; };
+		C68B19C9394B11C71200BB0A /* ThresholdLearner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4BB5154736A5300B56852D5A /* ThresholdLearner.swift */; };
 		C68EC1D0FE54ABE5A60B0B5C /* MoonCalculator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E25E535A2CFCECDD16EF936 /* MoonCalculator.swift */; };
 		CA1EA27ADB477F23799F40F6 /* TriageState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 340E4F50F68B830073674E41 /* TriageState.swift */; };
 		CC6E11E8FA4788135037A3CE /* NINAFilenameParserTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E291DE3DBC147FB649506D61 /* NINAFilenameParserTests.swift */; };
@@ -233,6 +235,7 @@
 		29010C9CAAC1B072A96DE780 /* CuratedExport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CuratedExport.swift; sourceTree = "<group>"; };
 		2AC23856D906A14A0CCC6C03 /* AboutWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AboutWindow.swift; sourceTree = "<group>"; };
 		2C90F68D49B2362943B4E1EF /* CurationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CurationService.swift; sourceTree = "<group>"; };
+		32608B6B9596DA5E7F7C9F1D /* ThresholdLearnerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThresholdLearnerTests.swift; sourceTree = "<group>"; };
 		32B55DBDF2FD18BEF1399C8D /* ArchiveScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArchiveScanner.swift; sourceTree = "<group>"; };
 		340E4F50F68B830073674E41 /* TriageState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TriageState.swift; sourceTree = "<group>"; };
 		349FE588694CBEF50831E753 /* ScoringValidationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScoringValidationTests.swift; sourceTree = "<group>"; };
@@ -247,6 +250,7 @@
 		43550D7E1EF1A01C304E9765 /* AppMessage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppMessage.swift; sourceTree = "<group>"; };
 		45F32B6422A0EB353A91C74B /* FrameHistoryDatabaseTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FrameHistoryDatabaseTests.swift; sourceTree = "<group>"; };
 		4B576ECA4D0080E5D97856E1 /* ImageDecoder */ = {isa = PBXFileReference; lastKnownFileType = folder; name = ImageDecoder; path = Packages/ImageDecoder; sourceTree = SOURCE_ROOT; };
+		4BB5154736A5300B56852D5A /* ThresholdLearner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThresholdLearner.swift; sourceTree = "<group>"; };
 		4CFD7069A619FC9F6E4DB412 /* QualityEstimator+Historical.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "QualityEstimator+Historical.swift"; sourceTree = "<group>"; };
 		4E6FA09107C45349725E7DCF /* MosaicGenerator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MosaicGenerator.swift; sourceTree = "<group>"; };
 		4EC26299CC364924D0AF79AC /* AIsaacView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIsaacView.swift; sourceTree = "<group>"; };
@@ -426,6 +430,7 @@
 				349FE588694CBEF50831E753 /* ScoringValidationTests.swift */,
 				A05ABE70A121689E1D00FB32 /* SessionScannerTests.swift */,
 				C73F68266BEC1BE0872283EB /* StarAnalyzerTests.swift */,
+				32608B6B9596DA5E7F7C9F1D /* ThresholdLearnerTests.swift */,
 			);
 			path = Tests;
 			sourceTree = "<group>";
@@ -535,6 +540,7 @@
 				D294FBAA33E829B384E0D16A /* SupabaseClient.swift */,
 				C023AB6340F89534CACE284C /* TargetCatalog.swift */,
 				433F3F811A3CF1871EC2D380 /* TargetCatalogService.swift */,
+				4BB5154736A5300B56852D5A /* ThresholdLearner.swift */,
 				B8942CE397AE911C7346F9D1 /* TrailingAnalyzer.swift */,
 				340E4F50F68B830073674E41 /* TriageState.swift */,
 				B4F0D3CE86492EF1F5EF6BB7 /* TriageViewModel.swift */,
@@ -855,6 +861,7 @@
 				6FA733CDA65AB773F874383C /* ScoringValidationTests.swift in Sources */,
 				E54F7D793DBBAA3ADA082451 /* SessionScannerTests.swift in Sources */,
 				9D950EBF4E4EBC1A00430834 /* StarAnalyzerTests.swift in Sources */,
+				46DC95B31DFC767922E2AA34 /* ThresholdLearnerTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -982,6 +989,7 @@
 				1741CE7D55DC72D318B68290 /* TargetDetailView.swift in Sources */,
 				FEA550159CAE0FCB7FEB0925 /* TargetProgressChart.swift in Sources */,
 				7A69119E8C46AEEEC3903EDA /* TexturePool.swift in Sources */,
+				C68B19C9394B11C71200BB0A /* ThresholdLearner.swift in Sources */,
 				7025BB820EB0394F1BD3F5B8 /* TrailingAnalyzer.swift in Sources */,
 				CA1EA27ADB477F23799F40F6 /* TriageState.swift in Sources */,
 				C26CB03B2AE2C731BC2B72BF /* TriageViewModel.swift in Sources */,

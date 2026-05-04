@@ -791,6 +791,19 @@ final class FrameHistoryDatabase {
         }
     }
 
+    /// Curated frames for one setup — every record where the user assigned
+    /// a star rating (1-3 ★). Used by ThresholdLearner to grid-search
+    /// per-setup borderline + trailing offsets.
+    func curatedFrameRecords(setupHash: String) throws -> [FrameRecord] {
+        try dbQueue.read { db in
+            try FrameRecord.fetchAll(db, sql: """
+                SELECT * FROM frame_record
+                WHERE userConfidence > 0 AND setupHash = ?
+                ORDER BY filter, observingNight, captureTime
+                """, arguments: [setupHash])
+        }
+    }
+
     // MARK: - Per-Frame Metrics Queries (for Session Metrics chart)
 
     /// Fetch per-frame records for the metrics chart, ordered by capture time.

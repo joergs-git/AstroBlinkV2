@@ -230,6 +230,20 @@ final class SessionOrchestrator {
         CalibrationDatabase.shared.commitSession(entries: host.images, fingerprint: fp)
         // Upload anonymous session summary to community (if opted in)
         CommunityDetectionService.shared.uploadSessionData(entries: host.images, fingerprint: fp)
+        // Phase 2 — re-derive curation-driven tier offsets from the cumulative
+        // curated set for this setup. Runs off the main thread because the DB
+        // read + grid search can take a few hundred ms when the curated set
+        // grows past a few thousand frames. Result lands back in the
+        // CalibrationProfile and applies on the *next* recomputeQualityScores.
+        let setupHash = fp.hash
+        DispatchQueue.global(qos: .utility).async {
+            guard let curated = try? FrameHistoryDatabase.shared.curatedFrameRecords(setupHash: setupHash),
+                  curated.count >= LearnedThresholds.learningThreshold else { return }
+            guard let learned = ThresholdLearner.computeLearnedThresholds(curatedFrames: curated) else { return }
+            DispatchQueue.main.async {
+                CalibrationDatabase.shared.updateLearnedThresholds(learned, for: fp)
+            }
+        }
     }
 
     // MARK: - Session loading entry points
