@@ -127,6 +127,7 @@
 		C4AB2A0721C2A52C27DC95AC /* FrameHistoryDatabase.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18942289A31EB02EAC0670C9 /* FrameHistoryDatabase.swift */; };
 		C66ED07D541C5E62EC36991E /* StarMetricsCalculator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0BFB130B08CCDD11AC1018A7 /* StarMetricsCalculator.swift */; };
 		C68EC1D0FE54ABE5A60B0B5C /* MoonCalculator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E25E535A2CFCECDD16EF936 /* MoonCalculator.swift */; };
+		CA1EA27ADB477F23799F40F6 /* TriageState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 340E4F50F68B830073674E41 /* TriageState.swift */; };
 		CC6E11E8FA4788135037A3CE /* NINAFilenameParserTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E291DE3DBC147FB649506D61 /* NINAFilenameParserTests.swift */; };
 		CCC0A640BC6FB06A49C4F621 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 048345D935BF6D509B7E7C8D /* OnboardingView.swift */; };
 		D1C96F46237D0B999DA95C52 /* BenchmarkStats.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E3E8374566F596C93B1AE16 /* BenchmarkStats.swift */; };
@@ -233,6 +234,7 @@
 		2AC23856D906A14A0CCC6C03 /* AboutWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AboutWindow.swift; sourceTree = "<group>"; };
 		2C90F68D49B2362943B4E1EF /* CurationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CurationService.swift; sourceTree = "<group>"; };
 		32B55DBDF2FD18BEF1399C8D /* ArchiveScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArchiveScanner.swift; sourceTree = "<group>"; };
+		340E4F50F68B830073674E41 /* TriageState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TriageState.swift; sourceTree = "<group>"; };
 		349FE588694CBEF50831E753 /* ScoringValidationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScoringValidationTests.swift; sourceTree = "<group>"; };
 		3B33772E7CA2FB77F9998ADB /* SessionOrchestrator+Prefetch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SessionOrchestrator+Prefetch.swift"; sourceTree = "<group>"; };
 		3B3E41AED2C1FD9826CD93D3 /* MetricsChart.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetricsChart.swift; sourceTree = "<group>"; };
@@ -534,6 +536,7 @@
 				C023AB6340F89534CACE284C /* TargetCatalog.swift */,
 				433F3F811A3CF1871EC2D380 /* TargetCatalogService.swift */,
 				B8942CE397AE911C7346F9D1 /* TrailingAnalyzer.swift */,
+				340E4F50F68B830073674E41 /* TriageState.swift */,
 				B4F0D3CE86492EF1F5EF6BB7 /* TriageViewModel.swift */,
 				B5C31339DD93590BCF3B277A /* VisualAnomalyDetector.swift */,
 				5DAC3DD9E30EB2E746271068 /* WienerDeconvolution.swift */,
@@ -980,6 +983,7 @@
 				FEA550159CAE0FCB7FEB0925 /* TargetProgressChart.swift in Sources */,
 				7A69119E8C46AEEEC3903EDA /* TexturePool.swift in Sources */,
 				7025BB820EB0394F1BD3F5B8 /* TrailingAnalyzer.swift in Sources */,
+				CA1EA27ADB477F23799F40F6 /* TriageState.swift in Sources */,
 				C26CB03B2AE2C731BC2B72BF /* TriageViewModel.swift in Sources */,
 				5B181190C6B6BA64F7B7E627 /* VisualAnomalyDetector.swift in Sources */,
 				0917BBDCA2FF57FA9EF2ED2B /* VisualValidationWindow.swift in Sources */,

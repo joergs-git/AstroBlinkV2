@@ -1,5 +1,6 @@
 // v4.3.0
 import Foundation
+import Combine
 import SwiftUI
 import Metal
 import MetalKit
@@ -13,7 +14,20 @@ import AVFoundation
 @MainActor
 class TriageViewModel: ObservableObject {
     @Published var images: [ImageEntry] = []
-    @Published var selectedIndex: Int = -1
+
+    /// UI state holder for selection / filter toggles / pending column hints.
+    /// Forwarded properties on this view model expose the underlying storage
+    /// (selectedIndex, hideMarked, …) so SwiftUI bindings keep working;
+    /// stateCancellable wires the sub-object's objectWillChange into ours.
+    /// See TriageState.swift for the full motivation.
+    let state = TriageState()
+    private var stateCancellable: AnyCancellable?
+
+    /// Selected row in the file table. Forwards to TriageState.selectedIndex.
+    var selectedIndex: Int {
+        get { state.selectedIndex }
+        set { state.selectedIndex = newValue }
+    }
     @Published var currentDecodedImage: DecodedImage?
     @Published var sessionRootURL: URL?
     @Published var statusMessage: String = "No session loaded"
@@ -156,8 +170,17 @@ class TriageViewModel: ObservableObject {
 
     // Recommended column order after header enrichment (set once per session load)
     // FileListView consumes and clears this after applying
-    @Published var pendingColumnOrder: [String]?
-    @Published var needsQualityResort = false
+    /// Pending column order — consumed by FileListView.updateNSView. Forwards to TriageState.
+    var pendingColumnOrder: [String]? {
+        get { state.pendingColumnOrder }
+        set { state.pendingColumnOrder = newValue }
+    }
+
+    /// Pending quality-driven re-sort flag. Forwards to TriageState.
+    var needsQualityResort: Bool {
+        get { state.needsQualityResort }
+        set { state.needsQualityResort = newValue }
+    }
 
     // Blind Curation mode — hides all metric columns + quality icons so the user
     // rates frames purely on visual impression (1/2/3 stars → userConfidence).
@@ -167,7 +190,11 @@ class TriageViewModel: ObservableObject {
     private var preBlindInspectorShown: Bool = false
     // FileListView consumes this and applies a bulk column-visibility change.
     // Set to nil after the change is applied.
-    @Published var pendingColumnVisibility: Set<String>?
+    /// Pending column visibility set used when entering / leaving Blind Curation. Forwards to TriageState.
+    var pendingColumnVisibility: Set<String>? {
+        get { state.pendingColumnVisibility }
+        set { state.pendingColumnVisibility = newValue }
+    }
 
     // Minimal column set while in Blind Curation — intentionally excludes every
     // metric column, tier icons, and the feedback column so the user can't see
@@ -178,14 +205,26 @@ class TriageViewModel: ObservableObject {
     ]
 
     // Hide marked images: when true, marked images are invisible in the list
-    @Published var hideMarked: Bool = false
+    /// Hide marked-for-deletion frames from the file list. Forwards to TriageState.
+    var hideMarked: Bool {
+        get { state.hideMarked }
+        set { state.hideMarked = newValue }
+    }
 
     // Show only marked: inverted view — when true, only marked images are shown
     // Mutually exclusive with hideMarked (Shift+H toggles this)
-    @Published var showOnlyMarked: Bool = false
+    /// Inverted view: show ONLY marked frames. Forwards to TriageState.
+    var showOnlyMarked: Bool {
+        get { state.showOnlyMarked }
+        set { state.showOnlyMarked = newValue }
+    }
 
     // Skip marked images during arrow-key navigation
-    @Published var skipMarked: Bool = false
+    /// Skip marked frames during arrow-key navigation. Forwards to TriageState.
+    var skipMarked: Bool {
+        get { state.skipMarked }
+        set { state.skipMarked = newValue }
+    }
 
     // Image viewer overlay — big filter letter, time, and 5%-size mini-map
     // pinned to the top-left of the image viewer. Anchored in viewport space
@@ -721,6 +760,15 @@ class TriageViewModel: ObservableObject {
 
         // Wire the orchestrator's weak back-reference now that self is fully initialized.
         orchestrator.attach(host: self)
+
+        // Forward TriageState's objectWillChange into ours so SwiftUI views
+        // observing this view model repaint when the sub-object's @Published
+        // storage changes (selectedIndex, hideMarked, skipMarked, …).
+        // Without this, mutating viewModel.selectedIndex would update the
+        // backing store but not redraw any views bound to viewModel itself.
+        stateCancellable = state.objectWillChange.sink { [weak self] _ in
+            self?.objectWillChange.send()
+        }
     }
 
     private func startStatsPolling() {
