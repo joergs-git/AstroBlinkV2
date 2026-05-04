@@ -22,28 +22,9 @@ class FrameHistoryModel: ObservableObject {
 
     // MARK: - Chart Configuration
 
-    enum MetricType: String, CaseIterable, Identifiable {
-        case fwhm = "FWHM"
-        case hfr = "HFR"
-        case starCount = "Stars"
-        case noise = "Noise"
-        case trailing = "Trailing"
-        case eccentricity = "Ecc"
-        var id: String { rawValue }
-    }
 
     @Published var selectedMetric: MetricType = .fwhm
 
-    enum ChartType: String, CaseIterable, Identifiable {
-        case sessionScore = "Score"
-        case efficiency = "Efficiency"
-        case performance = "Performance"
-        case conditions = "Conditions"
-        case progress = "Progress"
-        case setups = "Setups"
-        case metrics = "Metrics"
-        var id: String { rawValue }
-    }
 
     @Published var selectedChart: ChartType = .sessionScore
 
@@ -61,32 +42,10 @@ class FrameHistoryModel: ObservableObject {
     /// True when showing nightly medians (All Nights), false when showing per-frame (single night)
     var isMetricsLongtermView: Bool { selectedMetricsNight == nil }
 
-    enum MetricsFilterScope: Hashable {
-        case all
-        case narrowband
-        case broadband
-        case specific(String)
-    }
 
     /// Per-frame data point for the metrics chart
-    struct MetricsFramePoint: Identifiable {
-        let id: String       // fileHash
-        let date: Date
-        let hfr: Double?
-        let ambientTemp: Double?
-        let filter: String
-        let filename: String
-        let qualityTier: Int?
-        let pierSide: String?
-    }
 
     /// AF/MF event marker
-    struct MetricsEvent: Identifiable {
-        let id = UUID()
-        let date: Date
-        let type: MetricsEventType
-    }
-    enum MetricsEventType { case meridianFlip }
 
     /// Available filters in current metrics data
     var metricsAvailableFilters: [String] {
@@ -120,11 +79,6 @@ class FrameHistoryModel: ObservableObject {
     }
 
     /// Rolling average trend line: bin by 1°C temperature buckets, average HFR within each bin
-    struct TrendPoint: Identifiable {
-        let id = UUID()
-        let temp: Double
-        let hfr: Double
-    }
 
     var metricsTrendLine: [TrendPoint] {
         let points = metricsTempHFRPoints
@@ -146,32 +100,6 @@ class FrameHistoryModel: ObservableObject {
     }
 
     // Time range filter
-    enum TimeRange: String, CaseIterable, Identifiable {
-        case all = "All"
-        case threeMonths = "3M"
-        case sixMonths = "6M"
-        case nineMonths = "9M"
-        case twelveMonths = "12M"
-        case twoYears = "24M"
-        case threeYears = "36M"
-        var id: String { rawValue }
-
-        /// Cutoff date for filtering (nil = no filter)
-        var cutoffDate: Date? {
-            guard self != .all else { return nil }
-            let months: Int
-            switch self {
-            case .all: return nil
-            case .threeMonths: months = 3
-            case .sixMonths: months = 6
-            case .nineMonths: months = 9
-            case .twelveMonths: months = 12
-            case .twoYears: months = 24
-            case .threeYears: months = 36
-            }
-            return Calendar.current.date(byAdding: .month, value: -months, to: Date())
-        }
-    }
 
     @Published var selectedTimeRange: TimeRange = .all
 
@@ -681,16 +609,6 @@ class FrameHistoryModel: ObservableObject {
     // MARK: - Aggregated Chart Data
 
     /// Per-night (or per-month) quality tier breakdown (for stacked bar chart).
-    struct NightQuality: Identifiable {
-        var id: String { night }  // Stable ID — night string is unique per entry
-        let night: String
-        let date: Date
-        let excellent: Int
-        let good: Int
-        let borderline: Int
-        let trash: Int
-        var total: Int { excellent + good + borderline + trash }
-    }
 
     var nightlyQuality: [NightQuality] {
         let monthly = useMonthlyAggregation
@@ -733,13 +651,6 @@ class FrameHistoryModel: ObservableObject {
     }
 
     /// Per-night metric values by filter (for multi-line chart).
-    struct MetricPoint: Identifiable {
-        var id: String { "\(night)_\(filter)" }  // Stable ID
-        let night: String
-        let date: Date        // Parsed date for proper X-axis sorting
-        let filter: String    // Normalized filter name
-        let value: Double
-    }
 
     // Date parser for "YYYY-MM-DD" night strings
     private static let nightDateFormatter: DateFormatter = {
@@ -812,29 +723,8 @@ class FrameHistoryModel: ObservableObject {
     }
 
     /// Multi-factor conditions data point — carries all environmental factors per night+filter.
-    struct ConditionsPoint: Identifiable {
-        let id: String              // Stable ID from night+filter
-        let night: String
-        let target: String?
-        let filter: String
-        let isBroadband: Bool
-        let background: Double      // Y-axis: background noise (MAD)
-        // X-axis factors (user selects which one via toggle)
-        let moonPct: Double?        // Moon illumination %
-        let fwhm: Double?           // FWHM (proxy for seeing)
-        let ambientTemp: Double?    // Temperature (°C)
-        let bortle: Double?         // Bortle sky quality
-        let frameCount: Int
-    }
 
     /// Selected X-axis factor for the Conditions chart
-    enum ConditionsFactor: String, CaseIterable, Identifiable {
-        case moon = "Moon %"
-        case seeing = "FWHM (seeing)"
-        case temperature = "Temperature"
-        case bortle = "Bortle"
-        var id: String { rawValue }
-    }
 
     @Published var selectedConditionsFactor: ConditionsFactor = .moon
 
@@ -859,35 +749,9 @@ class FrameHistoryModel: ObservableObject {
     var moonPoints: [ConditionsPoint] { conditionsPoints }
 
     /// Setup comparison data (all setups, one bar per setup per metric).
-    struct SetupMetric: Identifiable {
-        var id: String { setupLabel }  // Stable ID
-        let setupLabel: String
-        let value: Double
-        // Rich context for tooltip
-        let totalFrames: Int
-        let firstNight: String?
-        let lastNight: String?
-        let trashRate: Double
-        let targets: [String]
-    }
 
     // MARK: - KPI 1: Session Score (0-100)
 
-    struct SessionScorePoint: Identifiable {
-        var id: String { night }  // Stable ID
-        let date: Date
-        let night: String
-        let score: Double       // 0-100 composite score (median when monthly)
-        let retentionRate: Double  // % kept
-        let fwhmNormalized: Double // relative to setup median (1.0 = average, <1 = better)
-        let frameCount: Int
-        // Context for tooltip
-        let targets: [String]
-        let filters: [String]
-        let avgFWHM: Double?
-        let moonPct: Double?
-        let nightCount: Int?    // Number of nights in this month (nil for daily view)
-    }
 
     /// Compute per-night composite score for a set of summaries sharing the same night key.
     private func nightCompositeScore(summaries: [NightSummary], baselineFWHM: Double) -> (score: Double, frames: Int, retention: Double, fwhmRatio: Double, fwhm: Double?, moonPct: Double?, targets: [String], filters: [String]) {
@@ -966,22 +830,6 @@ class FrameHistoryModel: ObservableObject {
 
     // MARK: - KPI 2: Imaging Efficiency
 
-    struct EfficiencyPoint: Identifiable {
-        var id: String { night }  // Stable ID
-        let date: Date
-        let night: String
-        let total: Int
-        let excellent: Int
-        let good: Int
-        let borderline: Int
-        let trash: Int
-        var retentionPct: Double { total > 0 ? Double(excellent + good) / Double(total) * 100 : 0 }
-        // Context for tooltip
-        let targets: [String]       // Targets imaged that night
-        let filters: [String]       // Filters used
-        let avgFWHM: Double?        // Average FWHM
-        let moonPct: Double?        // Moon illumination %
-    }
 
     var efficiencyData: [EfficiencyPoint] {
         let quality = nightlyQuality
@@ -1016,14 +864,6 @@ class FrameHistoryModel: ObservableObject {
 
     // MARK: - KPI 3: Seeing Index
 
-    struct SeeingPoint: Identifiable {
-        var id: String { "\(night)_\(filter)" }  // Stable ID
-        let date: Date
-        let night: String
-        let seeingIndex: Double   // theoretical/actual — 1.0 = diffraction limited
-        let actualFWHM: Double    // arcseconds
-        let filter: String
-    }
 
     /// Seeing Index = theoretical FWHM / actual FWHM.
     /// theoretical_arcsec = 1.22 × wavelength_nm / aperture_mm × 206265 / 1e6
@@ -1049,23 +889,7 @@ class FrameHistoryModel: ObservableObject {
 
     // MARK: - KPI 4: Integration Progress
 
-    struct TargetProgress: Identifiable {
-        var id: String { target }  // Stable ID — target name is unique per entry
-        let target: String
-        let totalIntegrationHours: Double     // Total integration time in hours
-        let usableIntegrationHours: Double    // Excluding trash, in hours
-        let nightCount: Int
-        let bestFWHM: Double?
-        let avgRetention: Double              // % kept
-        let filterBreakdown: [FilterIntegration]  // Per-filter detail
-    }
 
-    struct FilterIntegration: Identifiable {
-        let id: String  // Stable ID — set at creation as "target_filter"
-        let filter: String
-        let hours: Double                     // Usable integration hours
-        let frameCount: Int
-    }
 
     var targetProgressData: [TargetProgress] {
         // Group summaries by canonical target, then by filter
@@ -1136,13 +960,6 @@ class FrameHistoryModel: ObservableObject {
 
     // MARK: - KPI 5: Equipment Health (rolling FWHM trend)
 
-    struct HealthTrendPoint: Identifiable {
-        var id: String { night }  // Stable ID
-        let date: Date
-        let night: String
-        let rollingFWHM: Double     // Configurable rolling average
-        let rawFWHM: Double
-    }
 
     var equipmentHealthData: [HealthTrendPoint] {
         // Per-night average FWHM (across all filters)
@@ -1169,13 +986,6 @@ class FrameHistoryModel: ObservableObject {
 
     // MARK: - Summary Statistics (for cards above charts)
 
-    struct SummaryStats {
-        let totalFrames: Int
-        let totalNights: Int
-        let bestFWHM: Double?        // Best (lowest) median FWHM across all nights
-        let avgTrashRate: Double     // Percentage of frames that are trash
-        let totalTargets: Int
-    }
 
     var summaryStats: SummaryStats {
         let data = filteredSummaries
