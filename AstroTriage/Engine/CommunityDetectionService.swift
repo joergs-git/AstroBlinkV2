@@ -157,6 +157,22 @@ final class CommunityDetectionService {
 
     // MARK: - Download (on session load)
 
+    /// Sync access to whatever baseline is already in memory + non-expired
+    /// for the supplied fingerprint. Used by the AIsaac context builder
+    /// (which is sync) and any other sync caller that wants community
+    /// medians without triggering a network fetch. Returns nil when there
+    /// is no cached match — callers must use the async `fetchCommunityBaseline`
+    /// to populate the cache before relying on this getter.
+    func cachedCommunityBaseline(fingerprint: SetupFingerprint) -> CommunityBaseline? {
+        let fl = Double(fingerprint.focalLength)
+        let px = Double(fingerprint.pixelSizeMicrons) / 10.0
+        guard fl > 0, px > 0 else { return nil }
+        let pixelScale = 206.265 * px / fl
+        let cacheKey = String(format: "%.2f", pixelScale)
+        guard let cached = baselineCache[cacheKey], !cached.isExpired else { return nil }
+        return cached
+    }
+
     /// Fetch community baseline for the current setup's pixel scale.
     /// Returns cached data if available and not expired.
     func fetchCommunityBaseline(fingerprint: SetupFingerprint) async -> CommunityBaseline? {

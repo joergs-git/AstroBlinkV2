@@ -149,6 +149,17 @@ struct AIsaacContextBuilder {
             }
         }
 
+        // Community baseline — anonymized aggregate from contributors with
+        // similar pixel scale. AIsaac uses this to frame the current
+        // session against the wider community ("your FWHM is below median
+        // for this pixel scale, that's good"). Only included when telemetry
+        // is opted in AND a baseline has been fetched into memory for the
+        // current setup; we never trigger a network call from here.
+        if let ctx = context,
+           let community = communityBlock(for: ctx) {
+            parts.append(community)
+        }
+
         // Global DB summary — always available, even without a session loaded.
         // Enables "what targets have I imaged?", "which setup do I use most?", etc.
         if let globalSummary = try? FrameHistoryDatabase.shared.globalSummaryForAIsaac(),
@@ -179,6 +190,53 @@ struct AIsaacContextBuilder {
     }
 
     // MARK: - Historical Context Block
+
+    /// Anonymized community baseline for the current setup's pixel-scale
+    /// class. Skips when telemetry is off, the setup signature is too
+    /// thin to reconstruct, or no baseline has been fetched into memory
+    /// (we do not trigger a network call from the system-prompt path —
+    /// that would block AIsaac response start). The async fetch lives
+    /// in `SessionOrchestrator+Scoring`.
+    private static func communityBlock(for ctx: AIsaacSessionContext) -> String? {
+        guard AppSettings.defaults.bool(forKey: AppSettings.Key.telemetryCommunityBaselines.rawValue) else {
+            return nil
+        }
+        let fingerprint = SetupFingerprint(
+            telescope: ctx.telescope,
+            camera: ctx.camera,
+            focalLength: ctx.focalLength,
+            pixelSizeMicrons: ctx.pixelSize
+        )
+        guard let baseline = CommunityDetectionService.shared.cachedCommunityBaseline(fingerprint: fingerprint) else {
+            return nil
+        }
+
+        var lines = ["COMMUNITY BASELINE (anonymized aggregate from contributors with similar pixel scale):"]
+        lines.append("- Pixel scale class: \(String(format: "%.2f", baseline.pixelScaleCenter)) arcsec/px")
+        lines.append("- Contributing data: \(baseline.sessionCount) sessions across \(baseline.machineCount) unique imagers")
+
+        // Per-filter medians for the filters this user is actually shooting
+        // tonight. Skip filters with no community data — silent over noisy.
+        var perFilterLines: [String] = []
+        for stat in ctx.perFilterStats {
+            let key = CommunityBaseline.groupKey(filter: stat.filter, exposure: Int(stat.exposure.rounded()))
+            guard let fb = baseline.filterBaselines[key] else { continue }
+            var parts: [String] = []
+            if let f = fb.medianFWHM      { parts.append("FWHM \(String(format: "%.2f", f)) px") }
+            if let s = fb.medianStars     { parts.append("\(s) stars") }
+            if let snr = fb.medianSNR     { parts.append("SNR \(Int(snr.rounded()))") }
+            if let t = fb.medianTrailing  { parts.append("trailing \(String(format: "%.2f", t))") }
+            parts.append("retention \(Int((fb.avgRetentionRate * 100).rounded()))%")
+            perFilterLines.append("  • \(stat.filter) \(Int(stat.exposure.rounded()))s: \(parts.joined(separator: ", ")) (\(fb.contributingSessions) sessions)")
+        }
+        if !perFilterLines.isEmpty {
+            lines.append("- Community medians for tonight's filters:")
+            lines.append(contentsOf: perFilterLines)
+        }
+
+        lines.append("Use this to frame the user's session against the wider community: if their FWHM is markedly below community median, that's a good night and worth calling out; if SNR is below median, suggest possible causes. Always treat the data as anonymous — never reference individual users.")
+        return lines.joined(separator: "\n")
+    }
 
     private static func buildHistoricalBlock(setupHash: String) -> String? {
         guard let summary = try? FrameHistoryDatabase.shared.setupSummary(setupHash: setupHash) else {

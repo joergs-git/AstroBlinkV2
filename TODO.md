@@ -490,7 +490,15 @@ file to still describe the tilted-plane work.)
   - [x] `ContentView` — clickable status bar icon with tooltips
   - [x] Supabase: table + RPC + validation trigger + admin RPCs
   - [x] `Tests/CommunityDetectionTests.swift` — 15 tests
-  - [ ] `AIsaacService` — community context in system prompt (deferred)
+  - [x] AIsaac — community context in system prompt
+        (`AIsaacContextBuilder.communityBlock(for:)`,
+        `CommunityDetectionService.cachedCommunityBaseline(fingerprint:)`).
+        Telemetry-gated, sync-only (no network from the prompt path),
+        skips silently when the in-memory baseline cache has no match
+        for the current setup's pixel-scale class. Includes pixel-scale
+        center, contributing-session + machine counts, and per-filter
+        community medians (FWHM / stars / SNR / trailing / retention)
+        for whichever filters the user is shooting tonight.
 - [ ] **Phase 2: Agreement Learning** — future (adjust thresholds from community override rates)
 - [ ] **Phase 3: Contextual Priors** — future (empirical Bayesian metric weights)
 
