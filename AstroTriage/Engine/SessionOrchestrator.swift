@@ -31,6 +31,11 @@
 // rescore-retry counter that gates scheduleQualityRescore now lives on
 // the orchestrator. Quality logic itself unchanged — kAlgorithmVersion
 // not bumped — but Golden-Set regression run as insurance.
+//
+// Step 6: VLM mosaic + Claude Vision anomaly check moved into
+// SessionOrchestrator+VLM.swift (startVisualValidation,
+// cancelVisualValidation, runVisualAnalysis). The cancellable handle
+// for the in-flight generation task lives on the orchestrator.
 import Foundation
 
 /// State and actions on TriageViewModel that the SessionOrchestrator
@@ -74,6 +79,12 @@ protocol SessionHost: AnyObject {
     var cullingStatus: TriageViewModel.CullingStatus? { get set }
     var isConverged: Bool { get set }
     var convergenceResult: ConvergenceResult? { get set }
+
+    // MARK: VLM mosaic state (mirrors stay on TriageViewModel for SwiftUI bindings)
+    var isGeneratingMosaic: Bool { get set }
+    var mosaicProgress: String { get set }
+    var selectedEntries: [ImageEntry] { get }
+    func shouldRotateForMeridian(_ entry: ImageEntry) -> Bool
 
     // MARK: Cache + download state
     var isCaching: Bool { get set }
@@ -171,6 +182,11 @@ final class SessionOrchestrator {
     /// unbounded rescore chain. Owned by the orchestrator since only the
     /// scheduleQualityRescore* pair touches it.
     var rescoreRetryCount = 0
+
+    /// Cancellable handle for the in-flight VLM mosaic generation task.
+    /// startVisualValidation populates it; cancelVisualValidation tears it down.
+    /// Owned by the orchestrator since only the +VLM extension touches it.
+    var vlmGenerationTask: Task<Void, Never>?
 
     init(
         prefetchCache: PrefetchCache?,
