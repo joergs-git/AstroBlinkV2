@@ -3824,7 +3824,16 @@ class TriageViewModel: ObservableObject {
 
         let selectedURL = selectedImage?.url
 
-        images.sort { a, b in
+        // Sort into a local copy. Mutating self.images directly fires
+        // @Published, and two of this method's callers
+        // (FileListView.updateNSView line ~149 and ~179) are inside a
+        // SwiftUI update closure, where mutating an owned ObservableObject
+        // produces the "Publishing changes from within view updates"
+        // runtime warning. Sorting locally + dispatching the @Published
+        // writes off the current runloop tick keeps the call-site contract
+        // simple (callers don't need to wrap us) while staying correct.
+        var sortedImages = images
+        sortedImages.sort { a, b in
             for descriptor in descriptors {
                 guard let key = descriptor.key else { continue }
                 let ascending = descriptor.ascending
@@ -3862,17 +3871,24 @@ class TriageViewModel: ObservableObject {
             return (a.dateTime ?? "") < (b.dateTime ?? "")
         }
 
-        if let url = selectedURL,
-           let newIndex = images.firstIndex(where: { $0.url == url }) {
-            selectedIndex = newIndex
-        }
-
-        needsTableRefresh = true
+        let newSelectedIndex: Int = {
+            if let url = selectedURL,
+               let idx = sortedImages.firstIndex(where: { $0.url == url }) {
+                return idx
+            }
+            return selectedIndex
+        }()
 
         let sortInfo = descriptors.map { d in
             "\(d.key ?? "?") \(d.ascending ? "↑" : "↓")"
         }.joined(separator: " > ")
-        statusMessage = "Sorted: \(sortInfo)"
+
+        DispatchQueue.main.async {
+            self.images = sortedImages
+            self.selectedIndex = newSelectedIndex
+            self.needsTableRefresh = true
+            self.statusMessage = "Sorted: \(sortInfo)"
+        }
     }
 
     // Sort by the first 4 visible columns (excluding the marked checkbox).
