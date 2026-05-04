@@ -76,7 +76,7 @@ struct ColorCombineSetupView: View {
                     .pickerStyle(.menu)
                     .frame(width: 120)
                     .controlSize(.small)
-                    .onChange(of: engine.selectedPreset) { newPreset in
+                    .onChange(of: engine.selectedPreset) { _, newPreset in
                         engine.channelMapping = ColorCombineEngine.mapping(for: newPreset)
                     }
                     Spacer()
@@ -191,7 +191,7 @@ struct ColorCombineSetupView: View {
                 .fill(bg.opacity(0.95))
                 .shadow(color: .black.opacity(0.3), radius: 8)
         )
-        .onChange(of: engine.phase) { newPhase in
+        .onChange(of: engine.phase) { _, newPhase in
             if newPhase == .done {
                 openResultWindow()
             }
@@ -386,7 +386,7 @@ struct ColorCombineResultView: View {
                     .toggleStyle(.switch).controlSize(.mini)
                     .font(.system(size: fs(10), design: .monospaced))
                     .foregroundColor(fgDim)
-                    .onChange(of: linkedStretch) { _ in scheduleRender() }
+                    .onChange(of: linkedStretch) { scheduleRender() }
                 resultSlider("Denoise", value: $denoise, range: 0.0...2.0, step: 0.02,
                              display: denoise < 0.01 ? "Off" : String(format: "%.0f%%", denoise * 100))
                 resultSlider("Deconv", value: $deconvolve, range: 0.0...2.0, step: 0.02,
@@ -395,7 +395,7 @@ struct ColorCombineResultView: View {
                     .toggleStyle(.switch).controlSize(.mini)
                     .font(.system(size: fs(10), weight: .medium, design: .monospaced))
                     .foregroundColor(useRL ? .orange : .secondary)
-                    .onChange(of: useRL) { _ in scheduleRender() }
+                    .onChange(of: useRL) { scheduleRender() }
                     .frame(width: 52)
             }
             .padding(.horizontal, 8)
@@ -472,7 +472,7 @@ struct ColorCombineResultView: View {
                 .frame(width: 48, alignment: .trailing)
             Slider(value: value, in: range, step: step)
                 .frame(minWidth: 60, maxWidth: 100)
-                .onChange(of: value.wrappedValue) { _ in scheduleRender() }
+                .onChange(of: value.wrappedValue) { scheduleRender() }
             Text(display)
                 .font(.system(size: fs(10), design: .monospaced))
                 .foregroundColor(fgDim)

@@ -227,7 +227,7 @@ struct ImagePreviewView: View {
                         .font(.system(size: fs(10), design: .monospaced))
                         .foregroundColor(fgDim)
                         .help("OFF = Balanced: per-channel background clip + shared midtone (best white balance).\nON = Linked: identical stretch for all channels (raw color ratios).")
-                        .onChange(of: linkedStretch) { _ in scheduleRender() }
+                        .onChange(of: linkedStretch) { scheduleRender() }
                 }
                 resultSlider("Denoise", value: $denoise, range: 0.0...2.0, step: 0.02,
                              display: denoise < 0.01 ? "Off" : String(format: "%.0f%%", denoise * 100))
@@ -240,7 +240,7 @@ struct ImagePreviewView: View {
                     .font(.system(size: fs(10), weight: .medium, design: .monospaced))
                     .foregroundColor(useRL ? .orange : .secondary)
                     .help("USM = Multi-scale Unsharp Mask (fast).\nRL = Richardson-Lucy deconvolution (better quality, slower).")
-                    .onChange(of: useRL) { _ in scheduleRender() }
+                    .onChange(of: useRL) { scheduleRender() }
                     .frame(width: 52)
             }
             .padding(.horizontal, 8).padding(.vertical, 4)
@@ -276,7 +276,7 @@ struct ImagePreviewView: View {
                 .frame(width: 55, alignment: .trailing)
             Slider(value: value, in: range, step: step)
                 .frame(minWidth: 80, maxWidth: .infinity)
-                .onChange(of: value.wrappedValue) { _ in scheduleRender() }
+                .onChange(of: value.wrappedValue) { scheduleRender() }
             Text(display).font(.system(size: fs(10), design: .monospaced)).foregroundColor(fgDim)
                 .frame(width: 32, alignment: .leading)
         }

@@ -184,7 +184,7 @@ struct OnboardingView: View {
                             .foregroundColor(.secondary)
                     }
                     .toggleStyle(.checkbox)
-                    .onChange(of: communityLearning) { newValue in
+                    .onChange(of: communityLearning) { _, newValue in
                         AppSettings.setAllTelemetry(newValue)
                     }
                     Button(action: {
@@ -218,7 +218,7 @@ struct OnboardingView: View {
                     .toggleStyle(.checkbox)
                     .font(.system(size: 11))
                     .foregroundColor(.secondary)
-                    .onChange(of: hideSplash) { newValue in
+                    .onChange(of: hideSplash) { _, newValue in
                         AppSettings.saveBool(newValue, for: .hideSplash)
                     }
             }

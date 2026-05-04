@@ -251,13 +251,13 @@ struct AIsaacView: View {
                     .padding(16)
                 }
                 .background(ScrollPositionDetector(isNearBottom: $isNearBottom, pinScroll: $userScrolledUpDuringStream))
-                .onChange(of: isNearBottom) { nearBottom in
+                .onChange(of: isNearBottom) { _, nearBottom in
                     // User scrolled away from bottom during streaming — lock scroll position
                     if !nearBottom && model.isStreaming {
                         userScrolledUpDuringStream = true
                     }
                 }
-                .onChange(of: model.messages.count) { _ in
+                .onChange(of: model.messages.count) {
                     // New message added (user sent or response finalized) — reset and scroll
                     userScrolledUpDuringStream = false
                     withAnimation(.easeOut(duration: 0.3)) {
@@ -268,7 +268,7 @@ struct AIsaacView: View {
                         }
                     }
                 }
-                .onChange(of: model.isThinking) { thinking in
+                .onChange(of: model.isThinking) { _, thinking in
                     if thinking {
                         userScrolledUpDuringStream = false
                         withAnimation(.easeOut(duration: 0.3)) {
@@ -276,12 +276,12 @@ struct AIsaacView: View {
                         }
                     }
                 }
-                .onChange(of: model.streamingText) { _ in
+                .onChange(of: model.streamingText) {
                     // Auto-scroll handled by AppKit-level pinning in ScrollPositionDetector.
                     // When not pinned, SwiftUI naturally keeps bottom content visible.
                     // When pinned, the frameChanged handler restores the saved offset.
                 }
-                .onChange(of: model.isStreaming) { streaming in
+                .onChange(of: model.isStreaming) { _, streaming in
                     // Reset when streaming ends
                     if !streaming { userScrolledUpDuringStream = false }
                 }

@@ -208,7 +208,7 @@ struct AboutView: View {
                     .toggleStyle(.checkbox)
                     .font(.system(size: 11))
                     .foregroundColor(.secondary)
-                    .onChange(of: hideSplash) { newValue in
+                    .onChange(of: hideSplash) { _, newValue in
                         AppSettings.saveBool(newValue, for: .hideSplash)
                     }
             }

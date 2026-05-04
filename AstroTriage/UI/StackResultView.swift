@@ -161,7 +161,7 @@ struct StackResultViewV2: View {
                         .font(.system(size: fs(10), design: .monospaced))
                         .foregroundColor(nightMode ? .red.opacity(0.7) : .secondary)
                         .help("OFF = Balanced: per-channel background clip + shared midtone (best white balance).\nON = Linked: identical stretch for all channels (raw color ratios).")
-                        .onChange(of: linkedStretch) { _ in scheduleRender() }
+                        .onChange(of: linkedStretch) { scheduleRender() }
                 }
                 resultSlider("Denoise", value: $denoise, range: 0.0...2.0, step: 0.02,
                              display: denoise < 0.01 ? "Off" : String(format: "%.0f%%", denoise * 100))
@@ -176,7 +176,7 @@ struct StackResultViewV2: View {
                 resultSlider("Deconv", value: $deconvolve, range: 0.0...2.0, step: 0.02,
                              display: deconvolve < 0.01 ? "Off" : String(format: "%.1f", deconvolve))
                     .help("Star deconvolution — recovers detail lost to atmospheric seeing.\nRL = Richardson-Lucy (GPU, fast, default).\nUSM = Unsharp Mask (GPU, fastest).\nWiener = noise-aware (GPU, experimental).")
-                    .onChange(of: deconvolve) { _ in if deconvMode == .wiener { invalidatePreprocess() } }
+                    .onChange(of: deconvolve) { if deconvMode == .wiener { invalidatePreprocess() } }
                 Picker("", selection: $deconvMode) {
                     ForEach(DeconvMode.allCases, id: \.self) { mode in
                         Text(mode.rawValue).tag(mode)
@@ -186,21 +186,21 @@ struct StackResultViewV2: View {
                 .frame(width: 130)
                 .font(.system(size: fs(9)))
                 .help("RL = Richardson-Lucy iterative (GPU, recommended).\nUSM = multi-scale unsharp mask (GPU, fastest).\nWiener = noise-regularized sharpening using measured FWHM (GPU, experimental).")
-                .onChange(of: deconvMode) { newMode in
+                .onChange(of: deconvMode) { _, newMode in
                     useRL = (newMode == .rl)
                     invalidatePreprocess()
                 }
                 resultSlider("Structure", value: $structureAmount, range: 0.0...2.0, step: 0.02,
                              display: structureAmount < 0.01 ? "Off" : String(format: "%.0f%%", structureAmount * 100))
                     .help("Enhance nebula/cloud detail without sharpening stars.\nLarge-radius local contrast boost for extended structures.")
-                    .onChange(of: structureAmount) { _ in invalidatePreprocess() }
+                    .onChange(of: structureAmount) { invalidatePreprocess() }
                 Rectangle().fill(Color.gray.opacity(0.3)).frame(width: 1, height: 16)
                 Toggle("Gradient", isOn: $removeGradient)
                     .toggleStyle(.switch).controlSize(.mini)
                     .font(.system(size: fs(10), weight: .medium, design: .monospaced))
                     .foregroundColor(removeGradient ? .cyan : .secondary)
                     .help("Remove background gradient (light pollution, vignetting).\nUses median grid + bicubic interpolation.")
-                    .onChange(of: removeGradient) { _ in
+                    .onChange(of: removeGradient) {
                         invalidatePreprocess()
                     }
                     .frame(width: 82)
@@ -298,7 +298,7 @@ struct StackResultViewV2: View {
                 .frame(width: 48, alignment: .trailing)
             Slider(value: value, in: range, step: step)
                 .frame(minWidth: 60, maxWidth: 100)
-                .onChange(of: value.wrappedValue) { _ in scheduleRender() }
+                .onChange(of: value.wrappedValue) { scheduleRender() }
             Text(display)
                 .font(.system(size: fs(10), design: .monospaced))
                 .foregroundColor(fgDim)

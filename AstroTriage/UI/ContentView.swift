@@ -567,7 +567,7 @@ struct ContentView: View {
             Toggle("", isOn: isOn)
                 .toggleStyle(.checkbox)
                 .labelsHidden()
-                .onChange(of: isOn.wrappedValue) { newValue in
+                .onChange(of: isOn.wrappedValue) { _, newValue in
                     AppSettings.save(newValue, for: key)
                     viewModel.objectWillChange.send()
                 }
@@ -723,7 +723,7 @@ struct ContentView: View {
                 .textFieldStyle(.plain)
                 .font(.system(size: 11, design: .monospaced))
                 .foregroundColor(nightFg)
-                .onChange(of: viewModel.filterText) { _ in
+                .onChange(of: viewModel.filterText) {
                     viewModel.needsTableRefresh = true
                 }
 
@@ -926,7 +926,7 @@ struct ContentView: View {
             .pickerStyle(.menu)
             .frame(width: 72)
             .help("Blink delay between images")
-            .onChange(of: viewModel.playbackDelay) { _ in
+            .onChange(of: viewModel.playbackDelay) {
                 if viewModel.isPlaying {
                     viewModel.stopPlayback()
                     togglePlayback()

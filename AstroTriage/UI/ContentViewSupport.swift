@@ -16,7 +16,7 @@ struct ContentViewModifiers: ViewModifier {
         content
             .background(viewModel.nightMode ? Color.black : Color(NSColor.windowBackgroundColor))
             .preferredColorScheme(viewModel.nightMode ? .dark : nil)
-            .onChange(of: viewModel.nightMode) { isNight in
+            .onChange(of: viewModel.nightMode) { _, isNight in
                 if let window = NSApp.keyWindow {
                     window.appearance = isNight ? NSAppearance(named: .darkAqua) : nil
                     window.invalidateShadow()
@@ -180,7 +180,7 @@ struct ContentViewModifiers2: ViewModifier {
                     sliderValue = Double(viewModel.stretchStrength)
                 }
             }
-            .onChange(of: viewModel.quickStackEngineV2?.phase) { newPhase in
+            .onChange(of: viewModel.quickStackEngineV2?.phase) { _, newPhase in
                 if newPhase == .done || newPhase == .failed {
                     viewModel.benchmarkStats.markQuickStackEnd()
                 }
@@ -188,10 +188,10 @@ struct ContentViewModifiers2: ViewModifier {
             .onDisappear {
                 KeyboardHandler.remove(monitor: keyboardMonitor)
             }
-            .onChange(of: renderer) { newRenderer in
+            .onChange(of: renderer) { _, newRenderer in
                 viewModel.renderer = newRenderer
             }
-            .onChange(of: viewModel.stretchStrength) { newValue in
+            .onChange(of: viewModel.stretchStrength) { _, newValue in
                 sliderValue = Double(newValue)
             }
             .navigationTitle("AstroBlink & AIsaac v\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?") — Fast Visual Culling for Astrophotography")
@@ -738,22 +738,22 @@ struct AIsaacStateObserver: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .onChange(of: viewModel.isCaching) { isCaching in
+            .onChange(of: viewModel.isCaching) { _, isCaching in
                 AIsaacWindowController.shared.pushStateUpdate(from: viewModel)
                 if !isCaching {
                     AIsaacWindowController.shared.updateContext(images: viewModel.images, viewModel: viewModel)
                     AIsaacWindowController.shared.model.detectLanguageFromLocation()
                 }
             }
-            .onChange(of: viewModel.cacheProgress) { progress in
+            .onChange(of: viewModel.cacheProgress) { _, progress in
                 if progress > 0.99 || Int(progress * 10) > Int((progress - 0.1) * 10) {
                     AIsaacWindowController.shared.pushStateUpdate(from: viewModel)
                 }
             }
-            .onChange(of: viewModel.images.count) { _ in
+            .onChange(of: viewModel.images.count) {
                 AIsaacWindowController.shared.pushStateUpdate(from: viewModel)
             }
-            .onChange(of: viewModel.needsTableRefresh) { _ in
+            .onChange(of: viewModel.needsTableRefresh) {
                 AIsaacWindowController.shared.pushStateUpdate(from: viewModel)
             }
     }

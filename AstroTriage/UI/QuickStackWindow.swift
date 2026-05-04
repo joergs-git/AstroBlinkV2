@@ -797,7 +797,7 @@ struct QuickStackV2ProgressView: View {
                 .fill(bg.opacity(0.95))
                 .shadow(radius: 8)
         )
-        .onChange(of: engine.phase) { newPhase in
+        .onChange(of: engine.phase) { _, newPhase in
             if newPhase == .done {
                 openResultWindow()
             }
