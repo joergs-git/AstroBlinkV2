@@ -548,7 +548,9 @@ class TriageViewModel: ObservableObject {
     // Track security-scoped resources for proper cleanup. Multi-folder / mixed
     // selections need one scope per picked URL so PRE-DELETE moves succeed for
     // frames from any source folder (not just the first one).
-    private var accessedURLs: [URL] = []
+    // Visibility raised to internal so SessionOrchestrator can read/mutate via
+    // the SessionHost protocol.
+    var accessedURLs: [URL] = []
 
     // Backwards-compatible accessor for the primary (first) security-scoped URL.
     // Legacy callers such as moveMarkedToPreDelete read this — always prefer the
@@ -565,14 +567,17 @@ class TriageViewModel: ObservableObject {
     // Whether the current session was loaded from multiple source folders (or
     // a mix of files + folders). Used by moveMarkedToPreDelete to show a one-time
     // confirmation sheet explaining where PRE-DELETE will be created.
-    private var multiSourceSession: Bool = false
+    // Internal so SessionOrchestrator can mutate during session loads.
+    var multiSourceSession: Bool = false
 
     // One-time-per-session flag: set after the user confirms the multi-source
     // PRE-DELETE location so subsequent deletes in the same session don't re-prompt.
-    private var multiSourcePreDeleteConfirmed: Bool = false
+    // Internal so SessionOrchestrator can reset on every load.
+    var multiSourcePreDeleteConfirmed: Bool = false
 
     /// Stop accessing every URL we currently hold a scope for and clear the list.
-    private func stopAllAccessedURLs() {
+    /// Internal so SessionOrchestrator can call between session loads.
+    func stopAllAccessedURLs() {
         for u in accessedURLs { u.stopAccessingSecurityScopedResource() }
         accessedURLs.removeAll()
     }
@@ -580,7 +585,8 @@ class TriageViewModel: ObservableObject {
     /// Start security-scoped access to each URL and store those that succeeded.
     /// Callers should call stopAllAccessedURLs() before invoking this to release
     /// any previous session's scopes.
-    private func beginSecurityScopes(for urls: [URL]) {
+    /// Internal so SessionOrchestrator can claim scopes during loads.
+    func beginSecurityScopes(for urls: [URL]) {
         for u in urls {
             if u.startAccessingSecurityScopedResource() {
                 accessedURLs.append(u)
@@ -588,38 +594,19 @@ class TriageViewModel: ObservableObject {
         }
     }
 
-    /// Compute the deepest common ancestor directory across a set of URLs.
-    /// Returns `/` if the URLs don't share any common parent, or the first URL's
-    /// parent when the set has a single element. Used to derive sessionRootURL
-    /// for multi-folder / mixed selections so PRE-DELETE ends up at a sensible
-    /// location (and so the selection is still reachable from the sandbox).
-    private static func commonAncestor(of urls: [URL]) -> URL {
-        guard let first = urls.first else {
-            return URL(fileURLWithPath: "/")
-        }
-        if urls.count == 1 {
-            // For a single URL, return its parent (or itself if it's a directory
-            // — the caller is responsible for passing the right thing).
-            return first
-        }
-        // Build path-component arrays for each URL and walk forward while every
-        // array agrees. The longest common prefix is the deepest common ancestor.
-        let componentLists = urls.map { $0.pathComponents }
-        var prefix: [String] = []
-        var idx = 0
-        outer: while true {
-            var current: String?
-            for list in componentLists {
-                guard idx < list.count else { break outer }
-                if current == nil { current = list[idx] }
-                if list[idx] != current { break outer }
-            }
-            if let c = current { prefix.append(c) }
-            idx += 1
-        }
-        // Reconstruct a URL from the shared prefix. Empty prefix → "/".
-        let path = prefix.isEmpty ? "/" : ("/" + prefix.dropFirst().joined(separator: "/"))
-        return URL(fileURLWithPath: path, isDirectory: true)
+    /// Lock-protected read of the NAS download cancellation flag.
+    /// Exposed via SessionHost so the orchestrator can observe cancellation
+    /// without owning the underlying NSLock. The lock + flag stay private here.
+    var isDownloadCancelled: Bool {
+        downloadCancelled.lock(); defer { downloadCancelled.unlock() }
+        return _downloadCancelled
+    }
+
+    /// Lock-protected setter for the NAS download cancellation flag.
+    /// Used by SessionOrchestrator at the start of every session load to
+    /// abort any in-flight downloads from a previous session.
+    func setDownloadCancelled(_ value: Bool) {
+        downloadCancelled.lock(); _downloadCancelled = value; downloadCancelled.unlock()
     }
 
     init() {
@@ -934,8 +921,6 @@ class TriageViewModel: ObservableObject {
         let urls = panel.urls
         guard !urls.isEmpty else { return }
 
-        wireSessionOverviewCallbacks()
-
         // Separate directories and files
         var directories: [URL] = []
         var files: [URL] = []
@@ -948,478 +933,38 @@ class TriageViewModel: ObservableObject {
             }
         }
 
+        // Each orchestrator entry point internally re-wires the session overview
+        // tap callbacks, so no separate wireSessionOverviewCallbacks() call is
+        // needed here.
         if directories.count == 1 && files.isEmpty {
             // Single directory — standard folder scan
-            loadSession(url: directories[0])
+            orchestrator.loadSession(url: directories[0])
         } else if directories.count >= 1 && files.isEmpty {
             // Multiple directories only — merge into one session
-            loadMultipleFolders(urls: directories)
+            orchestrator.loadMultipleFolders(urls: directories)
         } else if directories.isEmpty && !files.isEmpty {
             // Individual files only — no folders picked
-            loadFiles(urls: files)
+            orchestrator.loadFiles(urls: files)
         } else {
             // Mixed selection: files + at least one folder. Pre-v5.22.1 silently
             // dropped the folders because loadFiles filtered by .fits extension.
             // Now we route through a dedicated mixed path that scans every picked
             // directory and merges each picked file as its own ImageEntry.
-            loadMixedSelection(files: files, directories: directories)
+            orchestrator.loadMixedSelection(files: files, directories: directories)
         }
     }
 
-    /// Handle a mixed NSOpenPanel selection of loose files + one or more folders.
-    /// Each directory is scanned via SessionScanner; each standalone file produces
-    /// its own ImageEntry. Results are deduped by standardizedFileURL so a file
-    /// listed both inside a picked folder and as a top-level pick appears once.
-    private func loadMixedSelection(files: [URL], directories: [URL]) {
-        let fileEntries = files.filter {
-            SessionScanner.supportedExtensions.contains($0.pathExtension.lowercased())
-        }
-        guard !fileEntries.isEmpty || !directories.isEmpty else {
-            statusMessage = "No FITS/XISF files or folders in selection"
-            return
-        }
-
-        wireSessionOverviewCallbacks()
-        benchmarkStats.markSessionStart()
-        prefetchCache?.resetFirstPreviewTracking()
-        isLoading = true
-        isCaching = false
-        cacheProgress = 0
-        cachingStopped = false
-        loadingPhase = .scanning
-
-        // Deepest common ancestor across every picked URL (files' parents + dirs),
-        // used as sessionRootURL / PRE-DELETE location.
-        let parentsAndDirs: [URL] = fileEntries.map { $0.deletingLastPathComponent() } + directories
-        let uniqueScopes = Array(Set(parentsAndDirs.map { $0.standardizedFileURL }))
-        let rootURL: URL
-        if uniqueScopes.count == 1 {
-            rootURL = uniqueScopes[0]
-            multiSourceSession = false
-        } else {
-            rootURL = Self.commonAncestor(of: uniqueScopes)
-            multiSourceSession = true
-        }
-        multiSourcePreDeleteConfirmed = false
-
-        // Claim scopes for every picked folder, every file parent, and the files
-        // themselves — the sandbox needs the individual file URLs to move them
-        // into PRE-DELETE.
-        stopAllAccessedURLs()
-        beginSecurityScopes(for: uniqueScopes + fileEntries)
-
-        sessionRootURL = rootURL
-        prefetchCache?.clear()
-        downloadCancelled.lock(); _downloadCancelled = true; downloadCancelled.unlock()
-        isDownloading = false; isCaching = false
-
-        let summary = "\(fileEntries.count) file\(fileEntries.count == 1 ? "" : "s") + \(directories.count) folder\(directories.count == 1 ? "" : "s")"
-        statusMessage = "Scanning \(summary)..."
-
-        Task.detached(priority: .userInitiated) { [weak self] in
-            var merged: [ImageEntry] = []
-            let fm = FileManager.default
-
-            // Folder scans
-            for dir in directories {
-                merged.append(contentsOf: SessionScanner.scan(rootURL: dir))
-            }
-
-            // Loose files — build ImageEntries the same way loadFiles does
-            for url in fileEntries {
-                let tokens = NINAFilenameParser.parse(url.lastPathComponent)
-                var entry = ImageEntry(url: url)
-                entry.date = tokens.date
-                entry.time = tokens.time
-                entry.target = tokens.target
-                entry.frameNumber = tokens.frameNumber
-                entry.exposure = tokens.exposure
-                entry.filter = tokens.filter
-                entry.frameType = tokens.frameType
-                entry.gain = tokens.gain
-                entry.offset = tokens.offset
-                entry.binning = tokens.binning
-                entry.sensorTemp = tokens.sensorTemp
-                entry.telescope = tokens.telescope
-                entry.camera = tokens.camera
-                entry.fwhm = tokens.fwhm
-                entry.focuserTemp = tokens.focuserTemp
-                entry.hfr = tokens.hfr
-                entry.starCount = tokens.starCount
-                if let attrs = try? fm.attributesOfItem(atPath: url.path),
-                   let size = attrs[.size] as? Int64 {
-                    entry.fileSize = size
-                }
-                merged.append(entry)
-            }
-
-            // Dedupe by standardized URL — a file listed both inside a picked
-            // folder and as its own pick collapses to one entry.
-            var seen: Set<URL> = []
-            let deduped = merged.filter { entry in
-                let key = entry.url.standardizedFileURL
-                if seen.contains(key) { return false }
-                seen.insert(key)
-                return true
-            }
-
-            let sorted = deduped.sorted { ($0.dateTime ?? "") < ($1.dateTime ?? "") }
-
-            await MainActor.run {
-                guard let self = self else { return }
-                self.benchmarkStats.markScanComplete(
-                    fileCount: sorted.count,
-                    totalBytes: sorted.reduce(Int64(0)) { $0 + ($1.fileSize ?? 0) })
-                self.images = sorted
-                self.assignSessionIndices()
-                self.isLoading = false
-                self.needsTableRefresh = true
-                self.needsQualityResort = false
-
-                if !sorted.isEmpty {
-                    self.selectImage(at: 0)
-                    self.needsScrollToTop = true
-                }
-
-                self.sessionOverviewModel.updateStats(from: sorted)
-                // Respect user-persisted Session Overview visibility.
-                self.showInspector = true
-                self.applyAllEnabled = true
-                self.triggerApplyAll()
-                self.enrichWithHeaders()
-                self.focusTableAfterDelay()
-
-                self.statusMessage = "\(sorted.count) frames loaded from \(summary)"
-            }
-        }
-    }
-
-    /// Wire session overview tap callbacks (idempotent — safe to call multiple times)
-    private func wireSessionOverviewCallbacks() {
-        sessionOverviewModel.onObjectTapped = { [weak self] name in self?.navigateToObject(name) }
-        sessionOverviewModel.onFilterTapped = { [weak self] obj, filter, exposure, night in self?.navigateToObject(obj, filter: filter, exposure: exposure, night: night) }
-    }
-
-    // Load specific files (user selected individual files, not a folder)
-    func loadFiles(urls: [URL]) {
-        let imageURLs = urls.filter { SessionScanner.supportedExtensions.contains($0.pathExtension.lowercased()) }
-        guard !imageURLs.isEmpty else {
-            statusMessage = "No FITS/XISF files in selection"
-            return
-        }
-
-        wireSessionOverviewCallbacks()
-        benchmarkStats.markSessionStart()
-        prefetchCache?.resetFirstPreviewTracking()
-        isLoading = true
-        isCaching = false
-        cacheProgress = 0
-        cachingStopped = false
-        loadingPhase = .scanning
-
-        // Session root: if all files share the same parent, use that; otherwise
-        // compute the deepest common ancestor across the picked file URLs so
-        // PRE-DELETE lands somewhere every picked file is reachable from.
-        let parentFolders = imageURLs.map { $0.deletingLastPathComponent() }
-        let uniqueParents = Array(Set(parentFolders.map { $0.standardizedFileURL }))
-        let rootURL: URL
-        if uniqueParents.count == 1 {
-            rootURL = uniqueParents[0]
-            multiSourceSession = false
-        } else {
-            rootURL = Self.commonAncestor(of: uniqueParents)
-            multiSourceSession = true
-        }
-        multiSourcePreDeleteConfirmed = false
-
-        // Release previous security-scoped resources and grab scopes for every
-        // distinct parent folder + each explicit file URL.
-        stopAllAccessedURLs()
-        beginSecurityScopes(for: uniqueParents + imageURLs)
-
-        sessionRootURL = rootURL
-        prefetchCache?.clear()
-        downloadCancelled.lock(); _downloadCancelled = true; downloadCancelled.unlock()
-        isDownloading = false; isCaching = false
-
-        statusMessage = "Loading \(imageURLs.count) files..."
-
-        Task.detached(priority: .userInitiated) { [weak self] in
-            var entries: [ImageEntry] = []
-            let fm = FileManager.default
-
-            for url in imageURLs {
-                let tokens = NINAFilenameParser.parse(url.lastPathComponent)
-                var entry = ImageEntry(url: url)
-                entry.date = tokens.date
-                entry.time = tokens.time
-                entry.target = tokens.target
-                entry.frameNumber = tokens.frameNumber
-                entry.exposure = tokens.exposure
-                entry.filter = tokens.filter
-                entry.frameType = tokens.frameType
-                entry.gain = tokens.gain
-                entry.offset = tokens.offset
-                entry.binning = tokens.binning
-                entry.sensorTemp = tokens.sensorTemp
-                entry.telescope = tokens.telescope
-                entry.camera = tokens.camera
-                entry.fwhm = tokens.fwhm
-                entry.focuserTemp = tokens.focuserTemp
-                entry.hfr = tokens.hfr
-                entry.starCount = tokens.starCount
-
-                // File size
-                if let attrs = try? fm.attributesOfItem(atPath: url.path),
-                   let size = attrs[.size] as? Int64 {
-                    entry.fileSize = size
-                }
-                entries.append(entry)
-            }
-
-            // Sort by date/time ascending
-            entries.sort { ($0.dateTime ?? "") < ($1.dateTime ?? "") }
-
-            await MainActor.run {
-                guard let self = self else { return }
-                self.benchmarkStats.markScanComplete(fileCount: entries.count, totalBytes: entries.reduce(Int64(0)) { $0 + ($1.fileSize ?? 0) })
-                self.images = entries
-                self.assignSessionIndices()
-                self.isLoading = false
-                self.needsTableRefresh = true
-                self.needsQualityResort = false  // Reset for new session
-
-                if !entries.isEmpty {
-                    self.selectImage(at: 0)
-                    self.needsScrollToTop = true
-                }
-
-                self.sessionOverviewModel.updateStats(from: entries)
-                // Session Overview visibility is user-persisted (AppSettings.showSessionOverviewPanel).
-                // Do not force-show on every load — respects the user's last choice.
-                self.showInspector = true
-
-                self.statusMessage = "\(entries.count) files loaded"
-                // Enable Apply All by default so cached previews are instant from the start
-                self.applyAllEnabled = true
-                self.triggerApplyAll()
-                // Read headers in background for metadata enrichment
-                self.enrichWithHeaders()
-                // Give table focus so keyboard navigation works immediately
-                self.focusTableAfterDelay()
-
-                // Same review/coffee prompt logic as loadSession — count this as a session.
-                self.checkForReviewPrompt()
-            }
-        }
-    }
-
-    // Load multiple folders as a merged session. sessionRootURL is set to the
-    // deepest common ancestor of the picked folders (not the first folder's
-    // parent) and security scope is held for EVERY folder so PRE-DELETE moves
-    // succeed for frames originating from any of them.
-    func loadMultipleFolders(urls: [URL]) {
-        guard !urls.isEmpty else { return }
-
-        wireSessionOverviewCallbacks()
-        benchmarkStats.markSessionStart()
-        prefetchCache?.resetFirstPreviewTracking()
-        isLoading = true
-        isCaching = false
-        cacheProgress = 0
-        cachingStopped = false
-        loadingPhase = .scanning
-
-        // Deepest common ancestor across all picked folders — the single
-        // location PRE-DELETE will be created in (single-folder case still
-        // falls through to that same folder).
-        let rootURL: URL
-        if urls.count == 1 {
-            rootURL = urls[0]
-            multiSourceSession = false
-        } else {
-            rootURL = Self.commonAncestor(of: urls)
-            multiSourceSession = true
-        }
-        multiSourcePreDeleteConfirmed = false
-
-        // Release previous session scopes, then claim a scope for every picked
-        // folder so moveMarkedToPreDelete can move frames from any source.
-        stopAllAccessedURLs()
-        beginSecurityScopes(for: urls)
-
-        sessionRootURL = rootURL
-        prefetchCache?.clear()
-        downloadCancelled.lock(); _downloadCancelled = true; downloadCancelled.unlock()
-        isDownloading = false; isCaching = false
-
-        let folderNames = urls.map { $0.lastPathComponent }.joined(separator: ", ")
-        statusMessage = "Scanning \(urls.count) folders: \(folderNames)..."
-
-        Task.detached(priority: .userInitiated) { [weak self] in
-            var allEntries: [ImageEntry] = []
-            for url in urls {
-                let entries = SessionScanner.scan(rootURL: url)
-                allEntries.append(contentsOf: entries)
-            }
-
-            allEntries.sort { ($0.dateTime ?? "") < ($1.dateTime ?? "") }
-
-            await MainActor.run {
-                guard let self = self else { return }
-                self.benchmarkStats.markScanComplete(fileCount: allEntries.count, totalBytes: allEntries.reduce(Int64(0)) { $0 + ($1.fileSize ?? 0) })
-                self.images = allEntries
-                self.assignSessionIndices()
-                self.isLoading = false
-                self.needsTableRefresh = true
-                self.needsQualityResort = false
-
-                if !allEntries.isEmpty {
-                    self.selectImage(at: 0)
-                    self.needsScrollToTop = true
-                }
-
-                self.sessionOverviewModel.updateStats(from: allEntries)
-                // Session Overview visibility is user-persisted; do not force-show.
-                self.showInspector = true
-                self.applyAllEnabled = true
-
-                self.checkMemoryBudgetAndCache(for: allEntries)
-
-                // Same review/coffee prompt logic as loadSession — count this as a session.
-                self.checkForReviewPrompt()
-            }
-        }
-    }
-
+    /// Thin forwarder so external callers (drag-and-drop in ContentViewSupport)
+    /// don't need to know about the orchestrator. Kept on the view model until
+    /// later slices when the orchestrator's API replaces direct view-model calls.
     func loadSession(url: URL) {
-        currentSessionId = UUID().uuidString
-        wireSessionOverviewCallbacks()
-        benchmarkStats.markSessionStart()
-        prefetchCache?.resetFirstPreviewTracking()
-        print("[Bench] LOAD START at \(Date().timeIntervalSince1970) — \(url.lastPathComponent)")
-        isLoading = true
-        isCaching = false
-        cacheProgress = 0
-        loadingPhase = .scanning
-        statusMessage = "Scanning \(url.lastPathComponent)..."
-
-        // Release previous session's security-scoped resources before starting a
-        // new session. Single-folder load: one scope on the picked folder.
-        stopAllAccessedURLs()
-        multiSourceSession = false
-        multiSourcePreDeleteConfirmed = false
-
-        sessionRootURL = url
-        prefetchCache?.clear()
-        // Reset the display aligner — each session establishes its own per-target references
-        displayAligner.reset()
-        // Cancel any in-progress NAS downloads
-        downloadCancelled.lock()
-        _downloadCancelled = true
-        downloadCancelled.unlock()
-        isDownloading = false
-        isCaching = false
-
-        beginSecurityScopes(for: [url])
-        let isNetwork = SessionCache.isNetworkVolume(url)
-
-        Task.detached(priority: .userInitiated) { [weak self] in
-            var entries = SessionScanner.scan(rootURL: url)
-
-            // Read FITS headers synchronously (in parallel) for every file BEFORE
-            // returning to MainActor. This guarantees that prefetch workers see
-            // accurate per-frame WCS data at enqueue time — frames with WCS skip
-            // star matching (saving lots of CPU), frames without WCS still get
-            // proper star-based fallback alignment. ~300-500ms for typical sessions.
-            let headerStart = Date()
-
-            // Use a lock-protected mutation: concurrentPerform writes to entries[idx]
-            // from different threads, but each thread writes only its own index, so
-            // we need a barrier — Swift Array is value type, so we use an unsafe pointer.
-            entries.withUnsafeMutableBufferPointer { buffer in
-                DispatchQueue.concurrentPerform(iterations: buffer.count) { idx in
-                    let headers = MetadataExtractor.readHeaders(from: buffer[idx].decodingURL)
-                    guard !headers.isEmpty else { return }
-                    // Populate JUST the WCS fields needed for the alignment skip decision
-                    // and applyWCSAlignment. Full header enrichment still runs later for
-                    // all the other metadata fields.
-                    if let v = headers["CRPIX1"] { buffer[idx].wcsCRPIX1 = Double(v) }
-                    if let v = headers["CRPIX2"] { buffer[idx].wcsCRPIX2 = Double(v) }
-                    if let v = headers["CD1_1"]  { buffer[idx].wcsCD11 = Double(v) }
-                    if let v = headers["CD1_2"]  { buffer[idx].wcsCD12 = Double(v) }
-                    if let v = headers["CD2_1"]  { buffer[idx].wcsCD21 = Double(v) }
-                    if let v = headers["CD2_2"]  { buffer[idx].wcsCD22 = Double(v) }
-                    if let v = headers["CRVAL1"], let val = Double(v) { buffer[idx].solvedRA = val }
-                    if let v = headers["CRVAL2"], let val = Double(v) { buffer[idx].solvedDec = val }
-                    if let v = headers["NAXIS1"], let val = Int(v), val > 0 { buffer[idx].width = val }
-                    if let v = headers["NAXIS2"], let val = Int(v), val > 0 { buffer[idx].height = val }
-                }
-            }
-            let headerMs = Int(Date().timeIntervalSince(headerStart) * 1000)
-            let wcsCount = entries.filter { $0.wcsCD11 != nil && $0.wcsCRPIX1 != nil }.count
-            print("[Bench] WCS pre-scan: \(wcsCount)/\(entries.count) frames have WCS (\(headerMs)ms)")
-
-            await MainActor.run {
-                guard let self = self else { return }
-                self.benchmarkStats.markScanComplete(fileCount: entries.count, totalBytes: entries.reduce(Int64(0)) { $0 + ($1.fileSize ?? 0) })
-                self.images = entries
-                self.assignSessionIndices()
-                // Disable prefetch star-matching when ANY frame has WCS. Reasoning:
-                // when WCS frames exist, applyWCSAlignment defines the global reference.
-                // Frames WITHOUT WCS would otherwise star-match against each other,
-                // forming a separate reference group inconsistent with WCS.
-                // applyWCSAlignment now also handles the WCS-less frames via a
-                // rotator-based synthetic transform, all anchored to the same reference.
-                let anyHasWCS = entries.contains { $0.wcsCD11 != nil && $0.wcsCRPIX1 != nil }
-                self.prefetchCache?.skipStarMatchingForAlignment = anyHasWCS
-                self.isLoading = false
-                self.needsTableRefresh = true
-
-                if !entries.isEmpty {
-                    self.selectImage(at: 0)
-                    self.needsScrollToTop = true
-                }
-
-                // Refresh overview stats but honor user-persisted visibility.
-                self.sessionOverviewModel.updateStats(from: entries)
-                // Session Overview visibility is user-persisted; do not force-show.
-                self.showInspector = true
-
-                // Enable Apply All by default so cached previews are instant from the start
-                self.applyAllEnabled = true
-
-                if isNetwork {
-                    self.statusMessage = "Downloading \(entries.count) images to local cache..."
-                    // Clear scanning overlay — download fuel bar takes over from here
-                    self.loadingPhase = .none
-                    // Header enrichment deferred to after downloads complete — reading headers
-                    // from local SSD cache is 100x faster than reading from NAS over SMB
-                } else {
-                    // Check memory budget — if over budget, shows alert and calls back
-                    self.checkMemoryBudgetAndCache(for: entries)
-                }
-                // Give table focus so keyboard navigation works immediately
-                self.focusTableAfterDelay()
-
-                // Ask for App Store review after 5th session (Apple limits to 3x/year automatically)
-                self.checkForReviewPrompt()
-
-                // Security-scoped access tracked in accessedURL, released on next session or quit
-            }
-
-            if isNetwork {
-                // Interleaved pipeline: cacheNetworkFiles starts pre-caching
-                // automatically after first 4 files download — no separate triggerApplyAll
-                await self?.cacheNetworkFiles()
-            }
-        }
+        orchestrator.loadSession(url: url)
     }
 
     // Estimate cache memory needed and warn user if it exceeds available RAM.
     // If within budget, starts caching immediately. If over budget, shows a non-blocking
     // sheet alert and starts/skips caching based on user choice.
-    private func checkMemoryBudgetAndCache(for entries: [ImageEntry]) {
+    func checkMemoryBudgetAndCache(for entries: [ImageEntry]) {
         let totalRawBytes = entries.reduce(Int64(0)) { $0 + ($1.fileSize ?? 0) }
         let physicalMemory = Int64(ProcessInfo.processInfo.physicalMemory)
         // Safe budget: 70% of physical RAM for cache (leaves 30% for OS, app, and decode buffers)
@@ -1664,7 +1209,7 @@ class TriageViewModel: ObservableObject {
     // Interleaved NAS pipeline: download files and pre-cache concurrently.
     // As each file downloads to local SSD, it becomes available for pre-caching.
     // Pre-caching starts after the first 4 files are downloaded.
-    private func cacheNetworkFiles() async {
+    func cacheNetworkFiles() async {
         guard let rootURL = sessionRootURL else { return }
         sessionCache.prepareSession(rootURL: rootURL)
 
@@ -1961,7 +1506,7 @@ class TriageViewModel: ObservableObject {
         let headers: [String: String]
     }
 
-    private func enrichWithHeaders() {
+    func enrichWithHeaders() {
         headerEnrichmentTask?.cancel()
         // Use decodingURL for actual file I/O (points to local cache for NAS files)
         // but keep original url as the dictionary key for matching
