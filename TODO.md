@@ -100,28 +100,43 @@ The big one. Snapshot tag before each step (`pre-refactor-<slice>`), build
 
 ### Patch 3 — Cross-platform + tests + concurrency
 
-- [ ] **Decoder sharing macOS ↔ iOS**: `Packages/ImageDecoder/` becomes
-  a single SPM target consumed by both apps. Reconcile the
-  `bytes:length:options:` (iOS, copy) vs. `bytesNoCopy` (macOS,
-  zero-copy) variants — pick one pattern, document why.
+- [x] **Decoder sharing macOS ↔ iOS** (commit f16a659):
+  AstroFileViewer-iOS/Packages/ImageDecoder/ retired (-610 MB from iOS
+  subtree). iOS now references `../Packages/ImageDecoder` via project.yml.
+  C++ bridge unified — macOS canonical (superset). cfitsio thread-safety
+  stays platform-specific via CFITSIO_LOCK macro: macOS no-op + _REENTRANT
+  cSettings.when(platforms:[.macOS]); iOS std::lock_guard on a static
+  std::mutex. Both apps build clean. **Manual verification before next
+  iOS App Store submission**: smoke-test FITS+XISF decoding on actual iOS
+  hardware — simulator can mask page-alignment / mutex contention issues.
 
-- [ ] **Granular telemetry toggles** — split the single
-  "Community Learning" Settings toggle into three:
-  - Performance Benchmarks (anonymous hardware/timing)
-  - Frame Quality Ratings (equipment + target metadata)
-  - Community Baselines (only aggregates)
-  Better acceptance, lower opt-out rate.
+- [x] **Granular telemetry toggles** (commit 990c4f2):
+  communityLearning master toggle split into telemetryPerformanceBenchmarks
+  / telemetryFrameQualityRatings / telemetryCommunityBaselines. One-time
+  migration in AppSettings.migrateLegacyTelemetryToggle() preserves opted-out
+  users' choice across all three new keys. Status-bar Community indicator
+  now opens a popover with three checkboxes + descriptions + "Enable all" /
+  "Disable all" master buttons. Onboarding splash keeps the single master
+  toggle. PRIVACY.md updated. Privacy bug fix in passing: BenchmarkSharing +
+  CurationService previously gated only on BenchmarkConfig.isConfigured —
+  the granular split closes that opt-out gap.
 
-- [ ] **Test coverage** — gap-fill the worst spots:
-  - `QualityEstimator` unit tests for each stage (R6 star anomaly,
-    Stage 1.5b narrowband, R7 background, isLockedKeep)
-  - `DeepSkyTargetDatabase` aliasing / canonical-name / type-classification
-  - Golden-Set-Regression in CI: 7 setups × 1638 frames, threshold ±2%
+- [x] **Test coverage** (commit 0eff9b8):
+  - QualityEstimatorTests +13 tests: R6 star anomaly (4), R7 background
+    incl. negative-deviation invariant (5), isLockedKeep absolute floor (4),
+    Stage 1.5b narrowband (1 deliberate XCTSkip — needs DI seam refactor)
+  - ScoringValidationTests +12 tests: aliasing (5), type weight modifiers (7)
+  - DecoderTests testMetalBufferCreation: pre-existing wrong-assertion bug
+    fixed (buffer.length is page-aligned for bytesNoCopy, not == totalBytes)
+  - Total: 24 active + 1 skip = 25 new tests, all passing
+  - Golden-Set in CI: still listed as a future item (synthetic golden set
+    is automated; full real-data sweep stays manual per launch-readiness M3)
 
 - [ ] **Strict Concurrency / Swift 6 migration** — there are ~30
   Sendable warnings in `TriageViewModel.Task.detached` blocks (capture
   of `var self` etc.). `swift-language-mode complete` once we're
-  ready to fix them all.
+  ready to fix them all. Deferred — should pair with Patch 2's
+  TriageViewModel split since the hot spots overlap.
 
 ### Smaller observations (quick wins, anytime)
 
