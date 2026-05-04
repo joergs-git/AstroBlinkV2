@@ -12,6 +12,63 @@ Records with `algorithmVersion < kAlgorithmVersion` are candidates for re-analys
 
 ---
 
+## Version 25 — Patch 2 (2026-05-04)
+
+**QualityEstimator.swift split into helper extension files. Pure
+mechanical move — every line of every method moved byte-for-byte; the
+only edit is replacing `private static func` with `static func` so the
+extracted methods are visible to the main file's call sites. No
+scoring-logic change. Version bump per CLAUDE.md policy ("kAlgorithmVersion
+MUST be bumped when ANY quality-critical file is modified, even when the
+edit is purely organizational — re-runs are cheap insurance").**
+
+### What changed
+The QualityEstimator type body grew to 2112 LOC across one giant file.
+Step 5 of Patch 2's TriageViewModel split (commit 1acb7c2) moved the
+scoring trigger out of the view model; this commit follows up by
+splitting QualityEstimator itself into:
+
+- `QualityEstimator.swift` (was 2112 LOC, now ~1292) keeps the public
+  API: `computeScores(for:calibrationDB:fingerprint:communityBaseline:
+  historicalBaselines:)`, the threshold constants, the
+  `filterTrailingMultiplier` / `isSolarSystemTarget` /
+  `effectiveTrailingMultiplier` helpers, and the `GroupKey` value type.
+- `QualityEstimator+Helpers.swift` (~227 LOC) — `fwhmMADFloor`,
+  `practicalMADFloor`, `zscores`, `sortedMedian`,
+  `medianAbsoluteDeviation`, `generateReasoning`. Stateless statistics
+  + reasoning-string formatter.
+- `QualityEstimator+SessionSanity.swift` (~250 LOC) — Stage 1.5
+  cross-group sanity check: `sessionSanityCheck`. Pools by
+  object+exposure across all groups (ignoring filter, night, focal
+  length) and demotes frames that are dramatically worse than the
+  session norm.
+- `QualityEstimator+Historical.swift` (~387 LOC) — Stage 1.5b cross-
+  session sanity + per-frame historical annotation:
+  `historicalBaselineCheck`, `annotateHistorical`, `normalCDF`. Reads
+  baselines from FrameHistoryDatabase + CalibrationDatabase fallback.
+
+Visibility raised on the moved methods from `private static func` to
+`static func` (internal to the module) so the main file's
+`computeScores` call site can reach them across files. The methods are
+otherwise unchanged.
+
+### Why this is safe
+- Synthetic golden-set regression (`ScoringRegressionTests`) ran clean.
+- Full real-data sweep (`BatchQualityAnalysisTests`, 896 frames across
+  multiple setups) is documented as manual per launch-readiness M3 —
+  running it per refactor slice is impractical at 30+ min / iteration.
+- No diff in the scoring math, the threshold constants, or the
+  per-stage gating logic. Anyone reviewing this commit can confirm by
+  comparing the moved bodies side-by-side with the pre-commit version
+  (snapshot tag `pre-refactor-qe-stages`).
+
+### What this enables
+Future quality-logic edits can land in the relevant extension file
+without touching the 2000-LOC monolith — finer-grained PRs, easier
+review.
+
+---
+
 ## Version 24 — v6.0.x (2026-05-03)
 
 **Defensive guards in StarMetricsCalculator RANSAC trail post-processing — no
