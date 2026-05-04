@@ -961,537 +961,22 @@ class TriageViewModel: ObservableObject {
         orchestrator.loadSession(url: url)
     }
 
-    // Estimate cache memory needed and warn user if it exceeds available RAM.
-    // If within budget, starts caching immediately. If over budget, shows a non-blocking
-    // sheet alert and starts/skips caching based on user choice.
-    func checkMemoryBudgetAndCache(for entries: [ImageEntry]) {
-        let totalRawBytes = entries.reduce(Int64(0)) { $0 + ($1.fileSize ?? 0) }
-        let physicalMemory = Int64(ProcessInfo.processInfo.physicalMemory)
-        // Safe budget: 70% of physical RAM for cache (leaves 30% for OS, app, and decode buffers)
-        let safeBudget = Int64(Double(physicalMemory) * 0.7)
-
-        // Always enrich headers regardless of cache decision
-        enrichWithHeaders()
-
-        // If estimated cache fits comfortably, proceed without warning
-        if totalRawBytes <= safeBudget {
-            applyAllEnabled = true
-            triggerApplyAll()
-            return
-        }
-
-        // Calculate how many images would fit safely
-        let avgFileSize = totalRawBytes / max(Int64(entries.count), 1)
-        let safeImageCount = avgFileSize > 0 ? Int(safeBudget / avgFileSize) : entries.count
-        let reductionPercent = Int(100.0 - Double(safeImageCount) / Double(entries.count) * 100.0)
-
-        let totalGB = String(format: "%.1f", Double(totalRawBytes) / 1_073_741_824.0)
-        let ramGB = String(format: "%.0f", Double(physicalMemory) / 1_073_741_824.0)
-        let safeGB = String(format: "%.1f", Double(safeBudget) / 1_073_741_824.0)
-
-        let alert = NSAlert()
-        alert.messageText = "Large session — memory warning"
-        alert.informativeText = """
-        This session has \(entries.count) images (~\(totalGB) GB). \
-        Caching all previews may use more memory than your system comfortably supports \
-        (\(ramGB) GB RAM, ~\(safeGB) GB available for cache).
-
-        You can proceed, but navigation may slow down once memory fills up. \
-        To avoid this, consider reducing your selection by ~\(reductionPercent)% \
-        (~\(safeImageCount) images would fit safely).
-        """
-        alert.alertStyle = .warning
-        alert.addButton(withTitle: "Cache All Anyway")
-        alert.addButton(withTitle: "Skip Caching")
-
-        // Non-blocking sheet on key window, with callback
-        if let window = NSApp.keyWindow {
-            alert.beginSheetModal(for: window) { [weak self] response in
-                guard let self = self else { return }
-                if response == .alertFirstButtonReturn {
-                    self.applyAllEnabled = true
-                    self.triggerApplyAll()
-                } else {
-                    self.statusMessage = "Caching skipped — use arrow keys for on-demand viewing"
-                    self.applyAllEnabled = false
-                }
-            }
-        } else {
-            // Fallback: app-modal (no window available yet)
-            let response = alert.runModal()
-            if response == .alertFirstButtonReturn {
-                applyAllEnabled = true
-                triggerApplyAll()
-            } else {
-                statusMessage = "Caching skipped — use arrow keys for on-demand viewing"
-                applyAllEnabled = false
-            }
-        }
-    }
-
-    // Prevent App Nap from throttling caching when app is in background
-    private var appNapAssertion: NSObjectProtocol?
-
-    // Start pre-decoding + stretching ALL images (skips already-cached)
-    private func startFullPrefetch() {
-        guard let prefetchCache = prefetchCache else { return }
-
-        benchmarkStats.markCachingStart()
-        isCaching = true
-        cachingStopped = false
-        cachingTotal = images.count
-        cachingCount = 0
-        cacheProgress = 0
-        cachingStartTime = Date()
-        cachingEstimatedSecondsRemaining = nil
-
-        // Disable App Nap during caching so background processing continues
-        appNapAssertion = ProcessInfo.processInfo.beginActivity(
-            options: [.userInitiated, .idleSystemSleepDisabled],
-            reason: "Pre-caching astrophotography images"
-        )
-
-        // Pass applied stretch target, locked STF params, and post-process params for cache baking
-        let targetBg: Float? = abs(appliedStretch - STFCalculator.defaultTargetBackground) > 0.001
-            ? appliedStretch : nil
-        let lockedParams: [STFParams]? = appliedLocked ? renderer?.lockedSTFParams : nil
-        let ppParams: (sharpening: Float, contrast: Float, darkLevel: Float)?
-        if abs(appliedSharpening) > 0.001 || abs(appliedContrast) > 0.001 || appliedDarkLevel > 0.001 {
-            ppParams = (appliedSharpening, appliedContrast, appliedDarkLevel)
-        } else {
-            ppParams = nil
-        }
-
-        // Identify frames that have cached previews but missing analysis data.
-        // These frames were skipped in a prior prefetch because their preview was cached,
-        // but the metric callbacks (onNoiseStats, onStarMetrics) never fired.
-        let needsAnalysis = Set(images.filter { $0.noiseMAD == nil && $0.computedStarCount == nil }
-                                       .map { $0.url })
-
-        prefetchCache.prefetchAll(
-            images: images,
-            debayerEnabled: debayerEnabled,
-            targetBackground: lockedParams != nil ? nil : targetBg,  // locked params override target
-            lockedSTFParams: lockedParams,
-            postProcessParams: ppParams,
-            needsAnalysis: needsAnalysis,
-            onProgress: { [weak self] completed, total in
-                guard let self = self else { return }
-                self.cachingCount = completed
-                self.cachingTotal = total
-                self.cacheProgress = total > 0 ? Double(completed) / Double(total) : 0
-
-                // Refresh table periodically so cache checkmarks appear (every 4 images)
-                if completed % 4 == 0 || completed == total {
-                    self.needsTableRefresh = true
-                    // Compute caching time estimate after 20 items
-                    if completed >= 20, let startTime = self.cachingStartTime {
-                        let elapsed = Date().timeIntervalSince(startTime)
-                        let avgPerItem = elapsed / Double(completed)
-                        let remaining = Int(avgPerItem * Double(total - completed))
-                        self.cachingEstimatedSecondsRemaining = max(1, remaining)
-                    }
-                }
-
-                if completed < total {
-                    self.statusMessage = "Analyzing \(completed)/\(total)..."
-                } else {
-                    self.isCaching = false
-                    self.cachingEstimatedSecondsRemaining = nil
-                    self.cachingStartTime = nil
-                    self.needsTableRefresh = true
-                    self.statusMessage = "instant navigation ready"
-                    self.benchmarkStats.markCachingEnd()
-                    print("[Bench] LOAD READY at \(Date().timeIntervalSince1970) — caching complete, \(self.images.count) frames")
-                    // Fire-and-forget anonymous upload of session load stats (community telemetry)
-                    self.benchmarkService.autoUploadSessionLoad(
-                        stats: self.benchmarkStats,
-                        sessionRootURL: self.sessionRootURL
-                    )
-                    // Release App Nap assertion when caching completes
-                    self.appNapAssertion = nil
-                    // Update session overview with noise stats now that all images are measured
-                    self.sessionOverviewModel.updateStats(from: self.images)
-                    // Recompute quality scores now that noiseMAD is populated for all images
-                    self.recomputeQualityScores()
-                    // Fix for MainActor Task delivery race: metric callbacks for individual
-                    // frames are dispatched as separate MainActor Tasks which may not have
-                    // executed yet when onProgress(total,total) fires. Re-check after a
-                    // short delay to catch any frames whose metrics arrived late.
-                    self.scheduleQualityRescore()
-                    // Jump to first image after precaching + quality scoring complete
-                    if !self.images.isEmpty {
-                        self.selectImage(at: 0)
-                    }
-                }
-            },
-            onNoiseStats: { [weak self] url, stats in
-                guard let self = self else { return }
-                // Store noise stats in the corresponding ImageEntry
-                if let idx = self.images.firstIndex(where: { $0.url == url }) {
-                    self.images[idx].noiseMedian = stats.median
-                    self.images[idx].noiseMAD = stats.normalizedMAD
-                }
-            },
-            onStarMetrics: { [weak self] url, metrics in
-                guard let self = self else { return }
-                if let idx = self.images.firstIndex(where: { $0.url == url }) {
-                    if metrics.medianHFR > 0 { self.images[idx].computedHFR = metrics.medianHFR }
-                    if metrics.medianFWHM > 0 { self.images[idx].computedFWHM = metrics.medianFWHM }
-                    self.images[idx].computedStarCount = metrics.totalStarCount
-                    self.images[idx].computedEccentricity = metrics.medianEccentricity
-                    self.images[idx].psfFluxSum = metrics.psfFluxSum
-                    self.images[idx].psfMeanFlux = metrics.psfMeanFlux
-                    self.images[idx].starChainFraction = metrics.starChainFraction
-                    if !metrics.starDetails.isEmpty {
-                        self.images[idx].starDetails = metrics.starDetails
-                    }
-
-                    // Run trailing analysis with orientation consensus.
-                    // focalLength may not be available yet (header enrichment runs in parallel)
-                    // — trailing scores are recomputed in recomputeQualityScores() after enrichment
-                    if !metrics.starDetails.isEmpty {
-                        let trailing = TrailingAnalyzer.analyze(
-                            starDetails: metrics.starDetails,
-                            focalLength: self.images[idx].focalLength,
-                            pixelSizeMicrons: self.images[idx].pixelSizeMicrons
-                        )
-                        if let t = trailing {
-                            self.images[idx].trailingScore = t.trailingScore
-                            self.images[idx].trailingPA = t.consensusPA
-                            self.images[idx].trailingAxisRatio = t.medianAxisRatio
-                            self.images[idx].trailingConsensus = t.consensusFraction
-                        }
-                    }
-                }
-            },
-            onFileHash: { [weak self] url, hash in
-                guard let self = self else { return }
-                if let idx = self.images.firstIndex(where: { $0.url == url }) {
-                    self.images[idx].fileHash = hash
-                    // Restore persisted per-frame user state from Frame History DB.
-                    // fileHash is the stable cross-machine identity, so this also
-                    // picks up feedback given on another Mac via the iCloud-synced DB.
-                    if let record = try? FrameHistoryDatabase.shared.frameRecord(fileHash: hash) {
-                        self.images[idx].userConfidence = record.userConfidence
-                        self.images[idx].qualityFeedback = QualityFeedback(rawValue: record.qualityFeedback) ?? .none
-                    }
-                }
-            },
-            onOrientationFingerprint: { [weak self] url, fp in
-                guard let self = self else { return }
-                if let idx = self.images.firstIndex(where: { $0.url == url }) {
-                    self.images[idx].orientationFingerprint = fp
-                }
-            }
-        )
-    }
-
-    // Tracks whether caching was stopped by user (for continue button)
+    // Tracks whether caching was stopped by user (for continue button).
+    // @Published so SwiftUI bindings on the toolbar's continue button update;
+    // the cache lifecycle itself is now driven by SessionOrchestrator (step 3).
     @Published var cachingStopped: Bool = false
 
-    // Stop the current caching process (keeps already-cached previews)
+    /// Stop the current caching process (keeps already-cached previews).
+    /// Thin forwarder — the cache pipeline lives on SessionOrchestrator.
+    /// External callers in ContentView's pause/continue toolbar binding.
     func stopCaching() {
-        prefetchCache?.stopPrefetch()
-        isCaching = false
-        cachingStopped = true
-        appNapAssertion = nil  // Release App Nap assertion
-        let cached = prefetchCache?.cachedCount ?? 0
-        statusMessage = "Caching paused"
+        orchestrator.stopCaching()
     }
 
-    // Continue caching from where it left off
+    /// Continue caching from where it left off.
+    /// Thin forwarder — see stopCaching above.
     func continueCaching() {
-        cachingStopped = false
-        startFullPrefetch()
-    }
-
-    // Interleaved NAS pipeline: download files and pre-cache concurrently.
-    // As each file downloads to local SSD, it becomes available for pre-caching.
-    // Pre-caching starts after the first 4 files are downloaded.
-    func cacheNetworkFiles() async {
-        guard let rootURL = sessionRootURL else { return }
-        sessionCache.prepareSession(rootURL: rootURL)
-
-        let total = images.count
-        let sourceURLs = images.map { $0.url }
-
-        // Reset cancellation flag for new download session
-        downloadCancelled.lock()
-        _downloadCancelled = false
-        downloadCancelled.unlock()
-
-        // Set up dedicated download fuel bar
-        isDownloading = true
-        downloadCount = 0
-        downloadTotal = total
-        downloadProgress = 0
-        downloadStartTime = Date()
-        downloadEstimatedSecondsRemaining = nil
-
-        let sessionCacheRef = sessionCache
-        let progressCounter = NSLock()
-        var progressCount = 0
-        var precacheStarted = false
-
-        // Parallel download with 4 concurrent streams
-        let cancelledRef = self.downloadCancelled
-        var cancelledFlag: Bool { cancelledRef.lock(); defer { cancelledRef.unlock() }; return self._downloadCancelled }
-
-        await Task.detached(priority: .utility) { [weak self] in
-            DispatchQueue.concurrentPerform(iterations: total) { index in
-                // Early exit if session changed (user opened another folder)
-                self?.downloadCancelled.lock()
-                let cancelled = self?._downloadCancelled ?? true
-                self?.downloadCancelled.unlock()
-                guard !cancelled else { return }
-
-                let sourceURL = sourceURLs[index]
-                let localURL = sessionCacheRef.cacheFile(sourceURL: sourceURL)
-
-                // Update decodingURL + thread-safe URL map for prefetch pipeline
-                if let localURL = localURL {
-                    // URL-based lookup (not index-based): self.images may have been
-                    // reordered by applySortByColumnOrder since concurrentPerform
-                    // snapshotted sourceURLs. An index-based write here would
-                    // cross-assign cache paths to the wrong entries, causing
-                    // enrichWithHeaders to later read headers from the wrong files
-                    // (manifests as duplicate DATE-LOC / EXPTIME across rows).
-                    Task { @MainActor [weak self] in
-                        guard let self = self else { return }
-                        if let idx = self.images.firstIndex(where: { $0.url == sourceURL }) {
-                            self.images[idx].decodingURL = localURL
-                        }
-                    }
-                    // Update thread-safe URL map (no main-thread hop needed)
-                    Task { @MainActor [weak self] in
-                        self?.networkURLUpdater?(sourceURL, localURL)
-                    }
-                }
-
-                progressCounter.lock()
-                progressCount += 1
-                let current = progressCount
-                progressCounter.unlock()
-
-                if current % 4 == 0 || current == total {
-                    Task { @MainActor [weak self] in
-                        guard let self = self else { return }
-                        self.downloadCount = current
-                        self.downloadTotal = total
-                        self.downloadProgress = total > 0 ? Double(current) / Double(total) : 0
-                        // Time estimate after 20 files
-                        if current >= 20, let startTime = self.downloadStartTime {
-                            let elapsed = Date().timeIntervalSince(startTime)
-                            let avgPerItem = elapsed / Double(current)
-                            let remaining = Int(avgPerItem * Double(total - current))
-                            self.downloadEstimatedSecondsRemaining = max(1, remaining)
-                        }
-
-                        // Start pre-caching after first 4 files are downloaded
-                        if !precacheStarted && current >= 4 {
-                            precacheStarted = true
-                            self.applyAllEnabled = true
-                            self.startFullPrefetchInterleaved()
-                        }
-                    }
-                }
-            }
-        }.value
-
-        isDownloading = false
-        downloadEstimatedSecondsRemaining = nil
-        downloadStartTime = nil
-        networkURLUpdater = nil  // Release closure + captured URL map
-
-        // Bail out if session was cancelled (user opened another folder)
-        downloadCancelled.lock()
-        let wasCancelled = _downloadCancelled
-        downloadCancelled.unlock()
-        guard !wasCancelled else { return }
-
-        // If fewer than 4 files (small session), start prefetch now
-        if !precacheStarted {
-            applyAllEnabled = true
-            triggerApplyAll()
-        }
-
-        // Now that files are local, enrich headers from SSD cache (instant vs NAS)
-        // This populates filter, gain, temp, etc. from FITS/XISF headers
-        enrichWithHeaders()
-
-        Task.detached(priority: .background) {
-            SessionCache.cleanupOldCaches()
-        }
-    }
-
-    // Start pre-caching with late URL resolution for interleaved NAS pipeline.
-    // Operations resolve decodingURL at execution time, so they use the local
-    // cache file even if it was downloaded after the operation was created.
-    private func startFullPrefetchInterleaved() {
-        guard let prefetchCache = prefetchCache else { return }
-
-        // Update applied settings so cacheMatchesCurrentSettings returns true
-        // after prefetch completes (same as triggerApplyAll does)
-        appliedStretch = stretchStrength
-        appliedSharpening = sharpening
-        appliedContrast = contrast
-        appliedDarkLevel = darkLevel
-        appliedLocked = isSTFLocked
-
-        benchmarkStats.markCachingStart()
-        isCaching = true
-        cachingStopped = false
-        cachingTotal = images.count
-        cachingCount = 0
-        cacheProgress = 0
-        cachingStartTime = Date()
-        cachingEstimatedSecondsRemaining = nil
-
-        appNapAssertion = ProcessInfo.processInfo.beginActivity(
-            options: [.userInitiated, .idleSystemSleepDisabled],
-            reason: "Pre-caching astrophotography images"
-        )
-
-        let targetBg: Float? = abs(appliedStretch - STFCalculator.defaultTargetBackground) > 0.001
-            ? appliedStretch : nil
-        let lockedParams: [STFParams]? = appliedLocked ? renderer?.lockedSTFParams : nil
-        let ppParams: (sharpening: Float, contrast: Float, darkLevel: Float)?
-        if abs(appliedSharpening) > 0.001 || abs(appliedContrast) > 0.001 || appliedDarkLevel > 0.001 {
-            ppParams = (appliedSharpening, appliedContrast, appliedDarkLevel)
-        } else {
-            ppParams = nil
-        }
-
-        // Thread-safe URL lookup for late resolution — avoids DispatchQueue.main.sync
-        // bottleneck that would serialize background operations.
-        // Downloads update this dictionary as files arrive; prefetch reads it lock-free-ish.
-        let urlLock = NSLock()
-        var urlMap: [URL: URL] = [:]
-        for entry in images {
-            urlMap[entry.url] = entry.decodingURL
-        }
-        // Expose updater for download callback
-        networkURLUpdater = { url, localURL in
-            urlLock.lock()
-            urlMap[url] = localURL
-            urlLock.unlock()
-        }
-
-        let resolveURL: (URL) -> URL = { originalURL in
-            urlLock.lock()
-            let resolved = urlMap[originalURL] ?? originalURL
-            urlLock.unlock()
-            return resolved
-        }
-
-        // Identify frames that need re-analysis (cached preview but missing metrics)
-        let needsAnalysisNAS = Set(images.filter { $0.noiseMAD == nil && $0.computedStarCount == nil }
-                                          .map { $0.url })
-
-        prefetchCache.prefetchAll(
-            images: images,
-            debayerEnabled: debayerEnabled,
-            targetBackground: lockedParams != nil ? nil : targetBg,
-            lockedSTFParams: lockedParams,
-            postProcessParams: ppParams,
-            resolveDecodingURL: resolveURL,
-            needsAnalysis: needsAnalysisNAS,
-            onProgress: { [weak self] completed, total in
-                guard let self = self else { return }
-                self.cachingCount = completed
-                self.cachingTotal = total
-                self.cacheProgress = total > 0 ? Double(completed) / Double(total) : 0
-
-                if completed % 4 == 0 || completed == total {
-                    self.needsTableRefresh = true
-                    if completed >= 20, let startTime = self.cachingStartTime {
-                        let elapsed = Date().timeIntervalSince(startTime)
-                        let avgPerItem = elapsed / Double(completed)
-                        let remaining = Int(avgPerItem * Double(total - completed))
-                        self.cachingEstimatedSecondsRemaining = max(1, remaining)
-                    }
-                }
-
-                if completed < total {
-                    self.statusMessage = "Analyzing \(completed)/\(total)..."
-                } else {
-                    self.isCaching = false
-                    self.cachingEstimatedSecondsRemaining = nil
-                    self.cachingStartTime = nil
-                    self.needsTableRefresh = true
-                    self.statusMessage = "instant navigation ready"
-                    self.benchmarkStats.markCachingEnd()
-                    // Fire-and-forget anonymous upload of session load stats (community telemetry)
-                    self.benchmarkService.autoUploadSessionLoad(
-                        stats: self.benchmarkStats,
-                        sessionRootURL: self.sessionRootURL
-                    )
-                    self.appNapAssertion = nil
-                    // Don't compute quality scores here — header enrichment hasn't run yet
-                    // for NAS sessions. enrichWithHeaders() completion handles quality scoring
-                    // + session overview update after all header data is available.
-                    if !self.images.isEmpty {
-                        self.selectImage(at: 0)
-                    }
-                }
-            },
-            onNoiseStats: { [weak self] url, stats in
-                guard let self = self else { return }
-                if let idx = self.images.firstIndex(where: { $0.url == url }) {
-                    self.images[idx].noiseMedian = stats.median
-                    self.images[idx].noiseMAD = stats.normalizedMAD
-                }
-            },
-            onStarMetrics: { [weak self] url, metrics in
-                guard let self = self else { return }
-                if let idx = self.images.firstIndex(where: { $0.url == url }) {
-                    if metrics.medianHFR > 0 { self.images[idx].computedHFR = metrics.medianHFR }
-                    if metrics.medianFWHM > 0 { self.images[idx].computedFWHM = metrics.medianFWHM }
-                    self.images[idx].computedStarCount = metrics.totalStarCount
-                    self.images[idx].computedEccentricity = metrics.medianEccentricity
-                    self.images[idx].psfFluxSum = metrics.psfFluxSum
-                    self.images[idx].psfMeanFlux = metrics.psfMeanFlux
-                    self.images[idx].starChainFraction = metrics.starChainFraction
-                    if !metrics.starDetails.isEmpty {
-                        self.images[idx].starDetails = metrics.starDetails
-                    }
-                    // Trailing analysis
-                    if !metrics.starDetails.isEmpty {
-                        let trailing = TrailingAnalyzer.analyze(
-                            starDetails: metrics.starDetails,
-                            focalLength: self.images[idx].focalLength,
-                            pixelSizeMicrons: self.images[idx].pixelSizeMicrons
-                        )
-                        if let t = trailing {
-                            self.images[idx].trailingScore = t.trailingScore
-                            self.images[idx].trailingPA = t.consensusPA
-                            self.images[idx].trailingAxisRatio = t.medianAxisRatio
-                            self.images[idx].trailingConsensus = t.consensusFraction
-                        }
-                    }
-                }
-            },
-            onFileHash: { [weak self] url, hash in
-                guard let self = self else { return }
-                if let idx = self.images.firstIndex(where: { $0.url == url }) {
-                    self.images[idx].fileHash = hash
-                    // Restore persisted per-frame user state from Frame History DB.
-                    // fileHash is the stable cross-machine identity, so this also
-                    // picks up feedback given on another Mac via the iCloud-synced DB.
-                    if let record = try? FrameHistoryDatabase.shared.frameRecord(fileHash: hash) {
-                        self.images[idx].userConfidence = record.userConfidence
-                        self.images[idx].qualityFeedback = QualityFeedback(rawValue: record.qualityFeedback) ?? .none
-                    }
-                }
-            },
-            onOrientationFingerprint: { [weak self] url, fp in
-                guard let self = self else { return }
-                if let idx = self.images.firstIndex(where: { $0.url == url }) {
-                    self.images[idx].orientationFingerprint = fp
-                }
-            }
-        )
+        orchestrator.continueCaching()
     }
 
     // MARK: - Background Header Enrichment
@@ -1832,7 +1317,7 @@ class TriageViewModel: ObservableObject {
                 // without bayerPattern (headers weren't available yet). Re-cache with debayer.
                 if foundOSC && self.debayerEnabled {
                     self.prefetchCache?.invalidateAll()
-                    self.startFullPrefetch()
+                    self.orchestrator.startFullPrefetch()
                     // Also re-display current image with debayer applied
                     self.displayCurrentImage()
                 }
@@ -1846,7 +1331,7 @@ class TriageViewModel: ObservableObject {
     /// haven't delivered yet when the initial scoring ran. Retries up to 3 times
     /// at 0.5s intervals until all analyzable frames have quality scores.
     private var rescoreRetryCount = 0
-    private func scheduleQualityRescore() {
+    func scheduleQualityRescore() {
         rescoreRetryCount = 0
         scheduleQualityRescoreStep()
     }
@@ -2473,7 +1958,7 @@ class TriageViewModel: ObservableObject {
         }
         // Re-cache with new debayer setting
         prefetchCache?.clear()
-        startFullPrefetch()
+        orchestrator.startFullPrefetch()
         // Refresh the currently displayed image so debayer takes effect immediately
         displayCurrentImage()
     }
@@ -5108,11 +4593,14 @@ class TriageViewModel: ObservableObject {
     @Published var applyAllEnabled: Bool = false
 
     // Tracks what settings are baked into cached previews
-    private(set) var appliedStretch: Float = STFCalculator.defaultTargetBackground
-    private(set) var appliedSharpening: Float = 0.0
-    private(set) var appliedContrast: Float = 0.0
-    private(set) var appliedDarkLevel: Float = 0.0
-    private(set) var appliedLocked: Bool = false  // Were locked STF params baked in?
+    // Setters internal so SessionOrchestrator can update them when starting an
+    // interleaved NAS prefetch (it needs to seed the applied-* mirrors before
+    // dispatching to PrefetchCache); see SessionHost protocol.
+    var appliedStretch: Float = STFCalculator.defaultTargetBackground
+    var appliedSharpening: Float = 0.0
+    var appliedContrast: Float = 0.0
+    var appliedDarkLevel: Float = 0.0
+    var appliedLocked: Bool = false  // Were locked STF params baked in?
 
     // Whether current slider settings match what's baked into the cache
     var cacheMatchesCurrentSettings: Bool {
@@ -5136,7 +4624,7 @@ class TriageViewModel: ObservableObject {
             appliedLocked = false
             prefetchCache?.invalidateAll()
             statusMessage = "Reverting to default caching..."
-            startFullPrefetch()
+            orchestrator.startFullPrefetch()
         }
     }
 
@@ -5149,7 +4637,7 @@ class TriageViewModel: ObservableObject {
         appliedLocked = isSTFLocked
         prefetchCache?.invalidateAll()
         statusMessage = "Applying settings to all images..."
-        startFullPrefetch()
+        orchestrator.startFullPrefetch()
     }
 
     // Reset all visual sliders to defaults
@@ -5174,7 +4662,7 @@ class TriageViewModel: ObservableObject {
         appliedLocked = false
         prefetchCache?.invalidateAll()
         statusMessage = "Resetting — re-caching with defaults..."
-        startFullPrefetch()
+        orchestrator.startFullPrefetch()
 
         // Re-render current image with default stretch
         if let image = currentDecodedImage, let mtkView = findMTKView(), let renderer = renderer {

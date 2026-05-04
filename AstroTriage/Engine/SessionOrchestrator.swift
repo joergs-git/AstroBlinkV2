@@ -12,9 +12,13 @@
 //
 // Step 2: session-loading methods moved (loadSession / loadFiles /
 // loadMultipleFolders / loadMixedSelection + wireSessionOverviewCallbacks
-// + commonAncestor static helper). Header enrichment, prefetch start,
-// and memory-budget cache live on the host until later slices, reached
-// through SessionHost bridge methods.
+// + commonAncestor static helper).
+//
+// Step 3: prefetch family moved (checkMemoryBudgetAndCache,
+// startFullPrefetch, stopCaching, continueCaching, cacheNetworkFiles,
+// startFullPrefetchInterleaved) — see SessionOrchestrator+Prefetch.swift
+// for the bodies. The orchestrator now owns the App Nap assertion that
+// keeps caching alive when the app is backgrounded.
 import Foundation
 
 /// State and actions on TriageViewModel that the SessionOrchestrator
@@ -50,9 +54,33 @@ protocol SessionHost: AnyObject {
     var isCaching: Bool { get set }
     var cacheProgress: Double { get set }
     var cachingStopped: Bool { get set }
+    var cachingCount: Int { get set }
+    var cachingTotal: Int { get set }
+    var cachingStartTime: Date? { get set }
+    var cachingEstimatedSecondsRemaining: Int? { get set }
     var isDownloading: Bool { get set }
+    var downloadCount: Int { get set }
+    var downloadTotal: Int { get set }
+    var downloadProgress: Double { get set }
+    var downloadStartTime: Date? { get set }
+    var downloadEstimatedSecondsRemaining: Int? { get set }
+    var networkURLUpdater: ((URL, URL) -> Void)? { get set }
     var applyAllEnabled: Bool { get set }
     var showInspector: Bool { get set }
+
+    // MARK: Render / post-process settings (read by prefetch)
+    var debayerEnabled: Bool { get }
+    var stretchStrength: Float { get }
+    var sharpening: Float { get }
+    var contrast: Float { get }
+    var darkLevel: Float { get }
+    var isSTFLocked: Bool { get }
+    var appliedStretch: Float { get set }
+    var appliedSharpening: Float { get set }
+    var appliedContrast: Float { get set }
+    var appliedDarkLevel: Float { get set }
+    var appliedLocked: Bool { get set }
+    var renderer: MetalRenderer? { get }
 
     // MARK: Multi-source / security-scoped resource bookkeeping
     var accessedURLs: [URL] { get set }
@@ -75,10 +103,10 @@ protocol SessionHost: AnyObject {
     func navigateToObject(_ objectName: String, filter: String?, exposure: Double?, night: String?)
 
     // MARK: Bridge methods — remove as their callers migrate into the orchestrator.
-    // enrichWithHeaders → step 4. checkMemoryBudgetAndCache + cacheNetworkFiles → step 3.
+    // enrichWithHeaders → step 4. recomputeQualityScores + scheduleQualityRescore → step 5.
     func enrichWithHeaders()
-    func checkMemoryBudgetAndCache(for entries: [ImageEntry])
-    func cacheNetworkFiles() async
+    func recomputeQualityScores()
+    func scheduleQualityRescore()
 }
 
 @MainActor
@@ -90,12 +118,18 @@ final class SessionOrchestrator {
     // Long-lived dependencies the orchestrator drives directly. Held
     // strongly here once methods migrate; for now they're injected so
     // the wiring in TriageViewModel.init() is established up front.
-    private let prefetchCache: PrefetchCache?
-    private let benchmarkStats: BenchmarkStats
-    private let benchmarkService: BenchmarkService
-    private let sessionCache: SessionCache
-    private let sessionOverviewModel: SessionOverviewModel
-    private let displayAligner: DisplayAligner
+    let prefetchCache: PrefetchCache?
+    let benchmarkStats: BenchmarkStats
+    let benchmarkService: BenchmarkService
+    let sessionCache: SessionCache
+    let sessionOverviewModel: SessionOverviewModel
+    let displayAligner: DisplayAligner
+
+    /// App Nap assertion held while caching is active. Acquired in startFullPrefetch /
+    /// startFullPrefetchInterleaved and released on completion or stopCaching, so
+    /// background pre-cache work isn't throttled by power management. Owned by the
+    /// orchestrator since only prefetch methods touch it.
+    var appNapAssertion: NSObjectProtocol?
 
     init(
         prefetchCache: PrefetchCache?,
@@ -228,7 +262,7 @@ final class SessionOrchestrator {
                     // from local SSD cache is 100x faster than reading from NAS over SMB
                 } else {
                     // Check memory budget — if over budget, shows alert and calls back
-                    host.checkMemoryBudgetAndCache(for: entries)
+                    self.checkMemoryBudgetAndCache(for: entries)
                 }
                 // Give table focus so keyboard navigation works immediately
                 host.focusTableAfterDelay()
@@ -242,7 +276,7 @@ final class SessionOrchestrator {
             if isNetwork {
                 // Interleaved pipeline: cacheNetworkFiles starts pre-caching
                 // automatically after first 4 files download — no separate triggerApplyAll
-                await self?.host?.cacheNetworkFiles()
+                await self?.cacheNetworkFiles()
             }
         }
     }
@@ -435,7 +469,7 @@ final class SessionOrchestrator {
                 host.showInspector = true
                 host.applyAllEnabled = true
 
-                host.checkMemoryBudgetAndCache(for: allEntries)
+                self.checkMemoryBudgetAndCache(for: allEntries)
 
                 // Same review/coffee prompt logic as loadSession — count this as a session.
                 host.checkForReviewPrompt()
