@@ -89,8 +89,10 @@ class TriageViewModel: ObservableObject {
     }
     private var targetOrientationRefs: [String: OrientationRef] = [:]  // key = canonical target name
 
-    // Frame History: unique session ID for the current session (reset on each folder open)
-    private var currentSessionId = UUID().uuidString
+    // Frame History: unique session ID for the current session (reset on each folder open).
+    // Visibility raised from `private` to default (internal) so SessionOrchestrator can reset
+    // it on every loadSession() — see SessionHost protocol.
+    var currentSessionId = UUID().uuidString
 
     // Prefetch progress (0.0 to 1.0)
     @Published var cacheProgress: Double = 0
@@ -310,6 +312,10 @@ class TriageViewModel: ObservableObject {
 
     // Local file cache for network volumes
     private let sessionCache = SessionCache()
+
+    // Session-lifecycle orchestrator (post-launch refactor, Patch 2).
+    // Initialized in init() after prefetchCache; methods migrate over the next slices.
+    let orchestrator: SessionOrchestrator
 
     var selectedImage: ImageEntry? {
         guard selectedIndex >= 0, selectedIndex < images.count else { return nil }
@@ -617,7 +623,26 @@ class TriageViewModel: ObservableObject {
     }
 
     init() {
+        // All stored properties without inline defaults must be assigned before
+        // any `self.x` access. `device`, `prefetchCache`, and `orchestrator` are
+        // those properties — initialize them first, then proceed with wiring.
         self.device = MTLCreateSystemDefaultDevice()
+        // Falls back to nil only when the system has no Metal device — we still
+        // construct the orchestrator in that case so call sites can dispatch
+        // through it uniformly.
+        let cache = self.device.map { PrefetchCache(device: $0) }
+        self.prefetchCache = cache
+        // Build the session orchestrator with its long-lived dependencies. The
+        // weak host back-reference is wired immediately after init via attach().
+        self.orchestrator = SessionOrchestrator(
+            prefetchCache: cache,
+            benchmarkStats: benchmarkStats,
+            benchmarkService: benchmarkService,
+            sessionCache: sessionCache,
+            sessionOverviewModel: sessionOverviewModel,
+            displayAligner: displayAligner
+        )
+
         // Wire playback controller — the controller owns the timer and the
         // index list, this view model owns the published flags and image-array
         // logic. When the timer advances, this hands the new index to selectImage.
@@ -628,8 +653,7 @@ class TriageViewModel: ObservableObject {
                 self.selectImage(at: idx)
             }
         }
-        if let device = self.device {
-            self.prefetchCache = PrefetchCache(device: device)
+        if cache != nil {
             // When a priority-queued preview completes, refresh display if it matches current image
             self.prefetchCache?.onPriorityPreviewReady = { [weak self] url in
                 guard let self = self, self.selectedImage?.url == url else { return }
@@ -705,6 +729,9 @@ class TriageViewModel: ObservableObject {
 
         // Start lightweight system stats polling (CPU + memory every 2s)
         startStatsPolling()
+
+        // Wire the orchestrator's weak back-reference now that self is fully initialized.
+        orchestrator.attach(host: self)
     }
 
     private func startStatsPolling() {
@@ -3236,7 +3263,7 @@ class TriageViewModel: ObservableObject {
     }
 
     // Assign unique 1-based session indices to all images
-    private func assignSessionIndices() {
+    func assignSessionIndices() {
         for i in images.indices {
             images[i].sessionIndex = i + 1  // 1-based for user display
         }
@@ -5569,7 +5596,7 @@ class TriageViewModel: ObservableObject {
     }
 
     // Internal: run the apply-all re-cache with current settings
-    private func triggerApplyAll() {
+    func triggerApplyAll() {
         appliedStretch = stretchStrength
         appliedSharpening = sharpening
         appliedContrast = contrast
@@ -5754,7 +5781,7 @@ class TriageViewModel: ObservableObject {
 
     // Display the currently selected image: use cached preview if available,
     // otherwise fall back to on-demand full-res decode + compute.
-    private func displayCurrentImage() {
+    func displayCurrentImage() {
         guard let image = selectedImage, let device = device else { return }
 
         currentDecodeTask?.cancel()
@@ -5913,7 +5940,7 @@ class TriageViewModel: ObservableObject {
 
     // Prompt for review after 5th session load. Apple's API automatically limits
     // to 3 prompts per 365 days and suppresses if user already reviewed.
-    private func checkForReviewPrompt() {
+    func checkForReviewPrompt() {
         let count = (AppSettings.defaults.object(forKey: AppSettings.Key.sessionCount.rawValue) as? Int ?? 0) + 1
         AppSettings.defaults.set(count, forKey: AppSettings.Key.sessionCount.rawValue)
 
@@ -6091,3 +6118,11 @@ class TriageViewModel: ObservableObject {
         // The banner view handles the "submitted" state animation
     }
 }
+
+// MARK: - SessionHost conformance
+//
+// All members required by SessionHost already exist on TriageViewModel.
+// Conformance is declared in an extension to keep the main class body
+// untouched and to make the seam visible while session methods migrate
+// into SessionOrchestrator over the next refactor slices.
+extension TriageViewModel: SessionHost {}
