@@ -54,7 +54,7 @@ enum TrailingAnalyzer {
         let allEcc = starDetails.map { $0.eccentricity }
         let allAR = starDetails.compactMap { $0.axisRatio }
         let medianEcc = sortedMedian(allEcc)
-        let medianAR = sortedMedian(allAR) ?? 1.0
+        let medianAR = sortedMedian(allAR)
 
         // Filter to stars with measurable elongation (round stars have random PA)
         let elongated = starDetails.filter {

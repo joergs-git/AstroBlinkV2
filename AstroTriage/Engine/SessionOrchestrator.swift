@@ -282,22 +282,28 @@ final class SessionOrchestrator {
             // from different threads, but each thread writes only its own index, so
             // we need a barrier — Swift Array is value type, so we use an unsafe pointer.
             entries.withUnsafeMutableBufferPointer { buffer in
-                DispatchQueue.concurrentPerform(iterations: buffer.count) { idx in
-                    let headers = MetadataExtractor.readHeaders(from: buffer[idx].decodingURL)
+                // concurrentPerform writes buffer[idx] from different workers, but
+                // each worker writes only its own index (no overlap), so the share
+                // is data-race-free. UnsafeMutableBufferPointer is not Sendable;
+                // nonisolated(unsafe) declares the cross-thread intent for Swift 6
+                // strict-concurrency.
+                nonisolated(unsafe) let bufferAlias = buffer
+                DispatchQueue.concurrentPerform(iterations: bufferAlias.count) { idx in
+                    let headers = MetadataExtractor.readHeaders(from: bufferAlias[idx].decodingURL)
                     guard !headers.isEmpty else { return }
                     // Populate JUST the WCS fields needed for the alignment skip decision
                     // and applyWCSAlignment. Full header enrichment still runs later for
                     // all the other metadata fields.
-                    if let v = headers["CRPIX1"] { buffer[idx].wcsCRPIX1 = Double(v) }
-                    if let v = headers["CRPIX2"] { buffer[idx].wcsCRPIX2 = Double(v) }
-                    if let v = headers["CD1_1"]  { buffer[idx].wcsCD11 = Double(v) }
-                    if let v = headers["CD1_2"]  { buffer[idx].wcsCD12 = Double(v) }
-                    if let v = headers["CD2_1"]  { buffer[idx].wcsCD21 = Double(v) }
-                    if let v = headers["CD2_2"]  { buffer[idx].wcsCD22 = Double(v) }
-                    if let v = headers["CRVAL1"], let val = Double(v) { buffer[idx].solvedRA = val }
-                    if let v = headers["CRVAL2"], let val = Double(v) { buffer[idx].solvedDec = val }
-                    if let v = headers["NAXIS1"], let val = Int(v), val > 0 { buffer[idx].width = val }
-                    if let v = headers["NAXIS2"], let val = Int(v), val > 0 { buffer[idx].height = val }
+                    if let v = headers["CRPIX1"] { bufferAlias[idx].wcsCRPIX1 = Double(v) }
+                    if let v = headers["CRPIX2"] { bufferAlias[idx].wcsCRPIX2 = Double(v) }
+                    if let v = headers["CD1_1"]  { bufferAlias[idx].wcsCD11 = Double(v) }
+                    if let v = headers["CD1_2"]  { bufferAlias[idx].wcsCD12 = Double(v) }
+                    if let v = headers["CD2_1"]  { bufferAlias[idx].wcsCD21 = Double(v) }
+                    if let v = headers["CD2_2"]  { bufferAlias[idx].wcsCD22 = Double(v) }
+                    if let v = headers["CRVAL1"], let val = Double(v) { bufferAlias[idx].solvedRA = val }
+                    if let v = headers["CRVAL2"], let val = Double(v) { bufferAlias[idx].solvedDec = val }
+                    if let v = headers["NAXIS1"], let val = Int(v), val > 0 { bufferAlias[idx].width = val }
+                    if let v = headers["NAXIS2"], let val = Int(v), val > 0 { bufferAlias[idx].height = val }
                 }
             }
             // Freeze the mutable scan result before crossing the actor boundary —

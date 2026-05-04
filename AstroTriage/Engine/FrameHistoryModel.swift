@@ -501,7 +501,7 @@ class FrameHistoryModel: ObservableObject {
                     hfr: f.computedHFR,
                     ambientTemp: f.ambientTemp,
                     filter: canonical,
-                    filename: f.filename ?? "unknown",
+                    filename: f.filename,
                     qualityTier: f.qualityTier,
                     pierSide: f.pierSide
                 ))

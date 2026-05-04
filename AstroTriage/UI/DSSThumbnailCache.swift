@@ -52,7 +52,7 @@ final class DSSImageCache: ObservableObject {
                     self.objectWillChange.send()
                 }
             } catch {
-                await MainActor.run { self.inFlight.remove(url) }
+                await MainActor.run { _ = self.inFlight.remove(url) }
             }
         }
     }

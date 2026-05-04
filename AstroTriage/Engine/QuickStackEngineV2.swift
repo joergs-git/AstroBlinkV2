@@ -475,7 +475,11 @@ class QuickStackEngineV2: ObservableObject {
                 encoder.dispatchThreadgroups(grid, threadsPerThreadgroup: tg)
                 encoder.endEncoding()
                 cmdBuf.commit()
-                cmdBuf.waitUntilCompleted()
+                // Block via completion handler + continuation (async-friendly).
+                // waitUntilCompleted() is unavailable from async contexts in Swift 6.
+                await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
+                    cmdBuf.addCompletedHandler { _ in cont.resume() }
+                }
             } else {
                 // Fallback: CPU warp with min/max tracking
                 let accPtrCPU = accBuffer.contents().bindMemory(to: Float.self, capacity: totalFloats)
@@ -494,16 +498,16 @@ class QuickStackEngineV2: ObservableObject {
                     width: refWidth, height: refHeight, channelCount: channelCount
                 )
 
-                accArray.withUnsafeBufferPointer { src in
+                _ = accArray.withUnsafeBufferPointer { src in
                     memcpy(accBuffer.contents(), src.baseAddress!, accByteCount)
                 }
-                wgtArray.withUnsafeBufferPointer { src in
+                _ = wgtArray.withUnsafeBufferPointer { src in
                     memcpy(wgtBuffer.contents(), src.baseAddress!, wgtByteCount)
                 }
-                minArray.withUnsafeBufferPointer { src in
+                _ = minArray.withUnsafeBufferPointer { src in
                     memcpy(minBuffer.contents(), src.baseAddress!, minMaxByteCount)
                 }
-                maxArray.withUnsafeBufferPointer { src in
+                _ = maxArray.withUnsafeBufferPointer { src in
                     memcpy(maxBuffer.contents(), src.baseAddress!, minMaxByteCount)
                 }
             }

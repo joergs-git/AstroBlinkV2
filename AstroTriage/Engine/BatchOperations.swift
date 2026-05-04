@@ -353,7 +353,15 @@ struct BatchOperations {
             if result.success == 0 {
                 // Clean up temp file on failure
                 try? FileManager.default.removeItem(atPath: tempPath)
-                return String(cString: UnsafeRawPointer([result.error]).assumingMemoryBound(to: CChar.self))
+                // Read the C error buffer safely via a stable in-place pointer.
+                // The previous form `UnsafeRawPointer([result.error])` produced a
+                // dangling pointer because the temporary array died before
+                // String(cString:) read it.
+                return withUnsafePointer(to: result.error) { ptr in
+                    ptr.withMemoryRebound(to: CChar.self, capacity: 256) { cStr in
+                        String(cString: cStr)
+                    }
+                }
             }
             // Atomic replace: remove original, rename temp
             do {

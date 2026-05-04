@@ -123,12 +123,14 @@ class AIsaacSpeechManager: ObservableObject {
         isSpeaking = true
         synthesizer.speak(utterance)
 
-        // Monitor when speech ends
-        DispatchQueue.global().async { [weak self] in
-            while self?.synthesizer.isSpeaking == true {
-                Thread.sleep(forTimeInterval: 0.2)
+        // Monitor when speech ends. Poll on the main actor so the
+        // @MainActor-isolated synthesizer is read on its own actor (Swift 6
+        // strict concurrency). Sleep happens on a background executor.
+        Task { [weak self] in
+            while await MainActor.run(body: { self?.synthesizer.isSpeaking ?? false }) {
+                try? await Task.sleep(nanoseconds: 200_000_000)
             }
-            DispatchQueue.main.async {
+            await MainActor.run { [weak self] in
                 self?.isSpeaking = false
             }
         }

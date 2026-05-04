@@ -12,6 +12,62 @@ Records with `algorithmVersion < kAlgorithmVersion` are candidates for re-analys
 
 ---
 
+## Version 26 — Patch 3 wave 3 (2026-05-04)
+
+**Strict-concurrency cleanup pass touched two quality-critical files
+(TrailingAnalyzer.swift, ColorCombineEngine.swift). No scoring-logic
+change — the touches are limited to:**
+
+- `TrailingAnalyzer.swift` — removed the `?? 1.0` nil-coalescing on
+  `sortedMedian(allAR)`. The helper returns non-optional `Double`, so the
+  fallback was unreachable. Behavior identical (both forms produced the
+  same `Double` value).
+- `ColorCombineEngine.swift` — replaced `nonisolated(unsafe)` on the
+  immutable `filterAliases: [String: String]` static with `nonisolated`.
+  `[String:String]` is already Sendable so the `unsafe` qualifier was
+  redundant; the explicit `nonisolated` keeps the property reachable from
+  background contexts under Swift 6 strict concurrency.
+
+Version bump per CLAUDE.md policy: re-runs on stale records are cheap
+insurance.
+
+### Other Patch 3 wave 3 changes (NOT scoring-logic, listed for context)
+
+Concurrency / safety cleanup elsewhere in the codebase:
+- `BatchOperations.swift` — fixed a real dangling-pointer bug in the
+  XISF write-keyword error path (`UnsafeRawPointer([result.error])` →
+  in-place `withUnsafePointer(to:)` rebind, matching the FITS branch).
+- `PrefetchCache.swift` — `cachedURLsSet` annotated `nonisolated(unsafe)`
+  to match its existing lock-protected cross-thread access pattern.
+- `PreviewGenerator`, `DisplayAligner`, `SessionCache` — declared
+  `@unchecked Sendable` so they survive capture into background
+  OperationQueue / `concurrentPerform` workers (already documented
+  thread-safe via internal locks / Metal API guarantees).
+- `SessionOrchestrator.swift` — `bufferAlias` `nonisolated(unsafe) let`
+  expresses the intentional cross-thread share inside
+  `withUnsafeMutableBufferPointer` (each `concurrentPerform` worker
+  writes only its own index, no overlap).
+- `QuickStackEngineV2.swift` — replaced `cmdBuf.waitUntilCompleted()`
+  with a `withCheckedContinuation` + `addCompletedHandler` block (Swift
+  6 disallows `waitUntilCompleted` from async contexts).
+- `QuickLookDebayer.swift` — extracted the local `func pix` to a static
+  `clampedPixel` helper so it no longer captures a non-Sendable
+  `UnsafePointer<UInt16>` inside a `@Sendable` `concurrentPerform` closure.
+- `AIsaacSpeech.swift` — replaced background `DispatchQueue.global` poll
+  of the `@MainActor`-isolated `AVSpeechSynthesizer` with a `Task` that
+  hops to MainActor for each `isSpeaking` read.
+- Misc: cleared `?? "unknown"`/`?? 1.0` redundant nil-coalescing,
+  removed unused `let T` / `let summaries` / unused `poolKey` binding,
+  added `_ = ...` to discard unused `withUnsafeBufferPointer` /
+  `Set.remove` results, `var transitGMST` → `let`.
+
+These changes do not appear in the watched-files list of
+`.github/workflows/algorithm-version-check.yml` so no version bump
+would have been required for them alone — the bump is exclusively for
+the two TrailingAnalyzer / ColorCombineEngine touches above.
+
+---
+
 ## Version 25 — Patch 2 (2026-05-04)
 
 **QualityEstimator.swift split into helper extension files. Pure

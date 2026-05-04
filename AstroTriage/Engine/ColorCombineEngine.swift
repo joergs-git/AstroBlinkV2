@@ -97,7 +97,7 @@ class ColorCombineEngine: ObservableObject {
 
     // Maps common filter name variants to canonical names.
     // NINA, SGP, Voyager, ASIAIR all use different naming conventions.
-    nonisolated(unsafe) private static let filterAliases: [String: String] = [
+    nonisolated private static let filterAliases: [String: String] = [
         // Ha (hydrogen-alpha)
         "h": "Ha", "ha": "Ha", "h-alpha": "Ha", "halpha": "Ha", "hα": "Ha", "h_alpha": "Ha",
         "ha_7nm": "Ha", "ha_3nm": "Ha", "ha_12nm": "Ha",

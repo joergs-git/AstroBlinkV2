@@ -25,8 +25,13 @@ class PrefetchCache {
     // to ask "is this already done?". `storePreview` writes `cache` first, then this set,
     // so a "set says yes" answer always implies the cache is also populated. Background
     // never reads `cache` itself, so the reverse race ("set says yes, cache empty") cannot occur.
+    // Both the lock and the set are deliberately read/written from background
+    // OperationQueue workers; the surrounding @MainActor isolation does not apply
+    // here because the contract is "always touched under cachedURLsLock". The
+    // set needs nonisolated(unsafe) to bypass the actor hop (Swift 6 strict
+    // concurrency); NSLock is already Sendable and needs no annotation.
     private let cachedURLsLock = NSLock()
-    private var cachedURLsSet = Set<URL>()
+    nonisolated(unsafe) private var cachedURLsSet = Set<URL>()
 
     // Bumped on every clear() / invalidateAll(). Workers capture this at enqueue time
     // and the MainActor completion task checks it before writing into `cache` — prevents

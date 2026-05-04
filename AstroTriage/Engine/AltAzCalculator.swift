@@ -123,9 +123,6 @@ enum AltAzCalculator {
 
     /// Approximate transit time (when target crosses meridian) for a given date.
     static func transitTime(ra: Double, longitude: Double, date: Date) -> Date {
-        let jd = julianDate(from: date)
-        let T = (jd - 2451545.0) / 36525.0
-
         // GMST at 0h UT for this date
         let calendar = Calendar(identifier: .gregorian)
         var utcCal = calendar
@@ -137,7 +134,7 @@ enum AltAzCalculator {
 
         // Transit when LST = RA → HA = 0
         // LST = GMST + longitude, so GMST_transit = RA - longitude
-        var transitGMST = normalize(ra - longitude)
+        let transitGMST = normalize(ra - longitude)
         var hoursFromMidnight = normalize(transitGMST - gmst0) / 15.04107  // sidereal → solar hours
 
         // If transit already passed, it's tomorrow

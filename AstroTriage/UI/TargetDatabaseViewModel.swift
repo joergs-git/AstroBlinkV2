@@ -340,10 +340,10 @@ class TargetDatabaseViewModel: ObservableObject {
     private func loadObserverLocationFromHistory() {
         let db = FrameHistoryDatabase.shared
         do {
-            let summaries = try db.nightlyTrendAll()
             // nightlyTrendAll doesn't include lat/lon directly,
-            // but we can try the user profile's locations which are populated from FITS headers
-            // If no profile location, the visibility features are simply disabled
+            // but the user profile's locations are populated from FITS headers.
+            // If no profile location, the visibility features are simply disabled.
+            _ = try db.nightlyTrendAll()
         } catch {
             // Non-critical
         }

@@ -111,7 +111,7 @@ class VisualAnomalyDetector {
             } else {
                 os_log("Edge failed, no own key: %{public}@", log: vlmLog, type: .error, edgeError.localizedDescription)
                 throw DetectorError.networkError(
-                    "VLM edge: \(edgeError.localizedDescription ?? "unknown"). Set API key in AIsaac Settings as fallback.")
+                    "VLM edge: \(edgeError.localizedDescription). Set API key in AIsaac Settings as fallback.")
             }
         } catch {
             // Non-DetectorError (e.g. URLSession timeout) — try own key

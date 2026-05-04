@@ -7,6 +7,22 @@ import ImageDecoderBridge
 // Same algorithm as the GPU debayer_bilinear kernel in Shaders.metal.
 struct QuickLookDebayer {
 
+    // Clamped pixel access. Lifted out of the per-row debayer worker as a
+    // static helper so it does not capture a non-Sendable UnsafePointer in
+    // an isolated local function (Swift 6 strict concurrency).
+    @inline(__always)
+    fileprivate static func clampedPixel(
+        _ pixels: UnsafePointer<UInt16>,
+        _ width: Int,
+        _ height: Int,
+        _ px: Int,
+        _ py: Int
+    ) -> Float {
+        let cx = max(0, min(width - 1, px))
+        let cy = max(0, min(height - 1, py))
+        return Float(pixels[cy * width + cx])
+    }
+
     // Bayer pattern encoding (matches Metal shader convention)
     enum BayerPattern: Int {
         case rggb = 0
@@ -103,34 +119,27 @@ struct QuickLookDebayer {
                 let center = Float(pixels[idx])
                 var r: Float, g: Float, b: Float
 
-                // Clamped pixel access helper
-                func pix(_ px: Int, _ py: Int) -> Float {
-                    let cx = max(0, min(width - 1, px))
-                    let cy = max(0, min(height - 1, py))
-                    return Float(pixels[cy * width + cx])
-                }
-
                 if myColor == 0 {
                     // Red pixel
                     r = center
-                    g = (pix(x-1, y) + pix(x+1, y) + pix(x, y-1) + pix(x, y+1)) * 0.25
-                    b = (pix(x-1, y-1) + pix(x+1, y-1) + pix(x-1, y+1) + pix(x+1, y+1)) * 0.25
+                    g = (Self.clampedPixel(pixels, width, height, x-1, y) + Self.clampedPixel(pixels, width, height, x+1, y) + Self.clampedPixel(pixels, width, height, x, y-1) + Self.clampedPixel(pixels, width, height, x, y+1)) * 0.25
+                    b = (Self.clampedPixel(pixels, width, height, x-1, y-1) + Self.clampedPixel(pixels, width, height, x+1, y-1) + Self.clampedPixel(pixels, width, height, x-1, y+1) + Self.clampedPixel(pixels, width, height, x+1, y+1)) * 0.25
                 } else if myColor == 2 {
                     // Blue pixel
                     b = center
-                    g = (pix(x-1, y) + pix(x+1, y) + pix(x, y-1) + pix(x, y+1)) * 0.25
-                    r = (pix(x-1, y-1) + pix(x+1, y-1) + pix(x-1, y+1) + pix(x+1, y+1)) * 0.25
+                    g = (Self.clampedPixel(pixels, width, height, x-1, y) + Self.clampedPixel(pixels, width, height, x+1, y) + Self.clampedPixel(pixels, width, height, x, y-1) + Self.clampedPixel(pixels, width, height, x, y+1)) * 0.25
+                    r = (Self.clampedPixel(pixels, width, height, x-1, y-1) + Self.clampedPixel(pixels, width, height, x+1, y-1) + Self.clampedPixel(pixels, width, height, x-1, y+1) + Self.clampedPixel(pixels, width, height, x+1, y+1)) * 0.25
                 } else {
                     // Green pixel — need to determine neighbor colors
                     g = center
                     let neighborPos = py * 2 + ((px + 1) % 2)
                     let neighborColor = colorMap[neighborPos]
                     if neighborColor == 0 {
-                        r = (pix(x-1, y) + pix(x+1, y)) * 0.5
-                        b = (pix(x, y-1) + pix(x, y+1)) * 0.5
+                        r = (Self.clampedPixel(pixels, width, height, x-1, y) + Self.clampedPixel(pixels, width, height, x+1, y)) * 0.5
+                        b = (Self.clampedPixel(pixels, width, height, x, y-1) + Self.clampedPixel(pixels, width, height, x, y+1)) * 0.5
                     } else {
-                        b = (pix(x-1, y) + pix(x+1, y)) * 0.5
-                        r = (pix(x, y-1) + pix(x, y+1)) * 0.5
+                        b = (Self.clampedPixel(pixels, width, height, x-1, y) + Self.clampedPixel(pixels, width, height, x+1, y)) * 0.5
+                        r = (Self.clampedPixel(pixels, width, height, x, y-1) + Self.clampedPixel(pixels, width, height, x, y+1)) * 0.5
                     }
                 }
 

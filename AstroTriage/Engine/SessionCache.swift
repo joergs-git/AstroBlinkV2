@@ -5,7 +5,9 @@ import Foundation
 // Files are copied to ~/Library/Caches/AstroBlinkV2/ on session load
 // so that browsing/decoding operates on fast local I/O.
 // Thread-safe: uses a lock for concurrent access from parallel copy tasks.
-class SessionCache {
+// Marked @unchecked Sendable so it can be captured into background download
+// workers (concurrentPerform). All mutable state is guarded by `lock`.
+final class SessionCache: @unchecked Sendable {
 
     // Session-specific cache directory
     private var sessionCacheDir: URL?

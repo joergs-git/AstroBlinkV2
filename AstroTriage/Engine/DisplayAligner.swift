@@ -89,7 +89,11 @@ struct AffineTransform2D: Equatable, Hashable {
 /// Returned transform maps FRAME pixel coordinates → REFERENCE pixel coordinates.
 /// Display code should invert this (`transform.inverse`) to sample the frame texture
 /// at positions corresponding to the reference view.
-final class DisplayAligner {
+// PrefetchCache captures `DisplayAligner?` into background OperationQueue
+// workers. The class already documents thread-safety via internal NSLock on
+// alignOrEstablish (see "thread-safe: aligner uses internal lock" callsite
+// comment). Marked @unchecked Sendable for Swift 6 strict-concurrency.
+final class DisplayAligner: @unchecked Sendable {
     // Matching parameters.
     //
     // triangleStarLimit = 30 (not 20) for one specific reason: matching across filters.

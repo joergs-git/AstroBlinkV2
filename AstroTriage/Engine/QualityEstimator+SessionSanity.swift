@@ -42,7 +42,7 @@ extension QualityEstimator {
         // Session sanity only makes sense when there are multiple groups in a pool.
         // Single-group sessions are already handled by within-group z-scoring.
         // Count distinct filter+night combos per pool to detect multi-group sessions.
-        for (poolKey, indices) in pools {
+        for (_, indices) in pools {
             // Need at least 6 frames in the session pool for meaningful comparison
             guard indices.count >= minGroupSize else { continue }
 

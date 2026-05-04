@@ -15,7 +15,12 @@ struct CachedPreview {
     var histogramBins: [Float]?   // 64-bin luminance histogram (log-normalized, 0-1)
 }
 
-class PreviewGenerator {
+// PrefetchCache hands a captured `PreviewGenerator?` reference to background
+// OperationQueue workers. Metal device / command queue / pipelines are documented
+// thread-safe, and the per-call CPU work uses local state. Marked
+// @unchecked Sendable so background-worker captures stop tripping Swift 6
+// strict-concurrency without forcing every Metal type to inherit Sendable.
+final class PreviewGenerator: @unchecked Sendable {
     let device: MTLDevice
     let commandQueue: MTLCommandQueue
     let computePipeline: MTLComputePipelineState
