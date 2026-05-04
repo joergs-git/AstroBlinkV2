@@ -362,11 +362,27 @@ All original implementation phases are complete:
 - [ ] Meteoblue/Clear Outside seeing forecast integration (7Timer + Open-Meteo already wired)
 
 ### Frame History Re-Analysis
-- [ ] Detect stale records: `WHERE algorithmVersion < kAlgorithmVersion`
-- [ ] UI indicator in History window showing how many records are outdated
-- [ ] "Re-analyze" button that re-runs quality scoring on stale records
-- [ ] Batch re-analysis for Archive Scanner results (background, resumable)
-- [ ] Option to re-analyze on session load if DB has older-version scores
+- [x] Detect stale records: `FrameHistoryDatabase.staleRecordCount()` /
+      `fetchStaleRecords()` use `algorithmVersion < kAlgorithmVersion`
+- [x] UI indicator in History window: banner with count + currently-running
+      v\(kAlgorithmVersion) (FrameHistoryWindow.swift:91)
+- [x] "Re-analyze" button that re-runs quality scoring on stale records:
+      `FrameHistoryModel.reAnalyzeStaleRecords()` reconstructs ImageEntries
+      from stored metrics, runs `QualityEstimator.computeScores`, batch-writes
+      tier + zScore + version. Frames in too-small groups get a
+      version-only bump via `bumpAlgorithmVersion(fileHashes:)` so they
+      stop showing as stale. Progress reporting: 33% conversion / 66%
+      scoring / 100% writeback.
+- [ ] Batch re-analysis for Archive Scanner results (background, resumable):
+      current implementation loads ALL stale records in one fetch and
+      processes in one pass — fine for typical sessions but could spike
+      memory + be unrecoverable on crash for archive-scanned 50K+ stale
+      sets. Chunking + per-chunk DB writes would make it resumable.
+- [ ] Auto-prompt on session load if DB has older-version scores for
+      frames in the just-loaded session: query `staleRecordCount` filtered
+      by the session's file hashes and surface a small notice or status-bar
+      hint pointing at History → Re-Analyze. Needs a new DB query
+      `staleRecordCount(forFileHashes:)`.
 
 ### SSWEIGHT Reset / Removal
 - [ ] Option to remove or reset SSWEIGHT keywords from FITS/XISF headers
