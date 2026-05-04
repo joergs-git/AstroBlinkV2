@@ -1521,4 +1521,468 @@ final class QualityEstimatorTests: XCTestCase {
             }
         }
     }
+
+    // MARK: - R6 Star Count Anomaly — Deeper Coverage (Patch 3)
+    //
+    // R6: stars > 1.8 × group median + (FWHM elevated OR HFR elevated) → .starCountAnomaly.
+    // The FWHM/HFR cross-check exists to protect against satellite-trail-style false positives
+    // where a single frame's star detector inflates the count without degrading PSF quality.
+    // Group median must be > 20 to avoid noise-driven false positives in tiny-star groups.
+
+    /// R6 fires when stars are doubled AND FWHM is elevated (>1.3× median).
+    /// Simulates a real "tracking jump after dither" frame: doubled stars from optical
+    /// shift across the sensor, accompanied by smeared PSFs.
+    func testR6_StarCountAnomaly_FiresWithFWHMElevation() {
+        // Group median: stars=500, FWHM=3.0
+        var entries = makeGroup(count: 24, fwhm: 3.0, hfr: 2.0, starCount: 500,
+                                noiseMAD: 0.01, noiseMedian: 0.05)
+
+        // Anomaly: stars=1500 (3× median, > 1.8×), FWHM=4.5 (1.5× median, > 1.3×)
+        // R6 must fire because both halves of the cross-check pass.
+        let anomaly = makeEntry(index: 99, fwhm: 4.5, hfr: 2.0, starCount: 1500,
+                                noiseMAD: 0.01, noiseMedian: 0.05)
+        entries.append(anomaly)
+
+        let scores = QualityEstimator.computeScores(for: entries)
+        guard let bd = scores[anomaly.url] else {
+            XCTFail("Anomaly frame should have a score")
+            return
+        }
+        XCTAssertTrue(bd.garbageReasons.contains(.starCountAnomaly),
+            "R6: doubled stars + elevated FWHM must trigger starCountAnomaly. Got reasons: \(bd.garbageReasons)")
+    }
+
+    /// R6 fires when stars are doubled AND HFR is elevated (FWHM happens to be unmeasured).
+    /// HFR alone can satisfy the cross-check.
+    func testR6_StarCountAnomaly_FiresWithHFRElevationOnly() {
+        // Group with HFR populated but no FWHM
+        var entries: [ImageEntry] = []
+        for i in 0..<24 {
+            entries.append(makeEntry(index: i, hfr: 2.0, starCount: 500,
+                                     noiseMAD: 0.01, noiseMedian: 0.05))
+        }
+
+        // Anomaly: stars=1500, HFR=3.0 (1.5×), no FWHM measurement.
+        let anomaly = makeEntry(index: 99, hfr: 3.0, starCount: 1500,
+                                noiseMAD: 0.01, noiseMedian: 0.05)
+        entries.append(anomaly)
+
+        let scores = QualityEstimator.computeScores(for: entries)
+        guard let bd = scores[anomaly.url] else {
+            XCTFail("Anomaly frame should have a score")
+            return
+        }
+        XCTAssertTrue(bd.garbageReasons.contains(.starCountAnomaly),
+            "R6: doubled stars + elevated HFR (no FWHM) must trigger starCountAnomaly. Got: \(bd.garbageReasons)")
+    }
+
+    /// R6 does NOT fire when star ratio is just below the 1.8× threshold,
+    /// even with elevated FWHM. The threshold is sharp.
+    func testR6_StarCountAnomaly_BelowRatioThreshold_DoesNotFire() {
+        var entries = makeGroup(count: 24, fwhm: 3.0, hfr: 2.0, starCount: 500,
+                                noiseMAD: 0.01, noiseMedian: 0.05)
+
+        // 1.7× (below 1.8 threshold), even with elevated FWHM
+        let frame = makeEntry(index: 99, fwhm: 4.5, hfr: 3.0, starCount: 850,
+                              noiseMAD: 0.01, noiseMedian: 0.05)
+        entries.append(frame)
+
+        let scores = QualityEstimator.computeScores(for: entries)
+        guard let bd = scores[frame.url] else {
+            XCTFail("Frame should have a score")
+            return
+        }
+        XCTAssertFalse(bd.garbageReasons.contains(.starCountAnomaly),
+            "R6 must not fire when star ratio (1.7×) is below 1.8× threshold")
+    }
+
+    /// R6 has a guard: median > 20. In tiny-star groups (e.g., narrowband long FL),
+    /// random ratios above 1.8× are expected. Guard prevents false positives.
+    func testR6_StarCountAnomaly_LowMedianGuard() {
+        // Group median = 15 (below the >20 guard threshold)
+        var entries = makeGroup(count: 24, fwhm: 3.0, hfr: 2.0,
+                                starCount: 15, noiseMAD: 0.01, noiseMedian: 0.05,
+                                filter: "OIII")
+
+        // Stars 50 = 3.3× median, FWHM 4.5 = 1.5×. Even though both R6 conditions look met,
+        // the median guard prevents the rule from firing on tiny-star groups.
+        let frame = makeEntry(index: 99, filter: "OIII", fwhm: 4.5, hfr: 3.0, starCount: 50,
+                              noiseMAD: 0.01, noiseMedian: 0.05)
+        entries.append(frame)
+
+        let scores = QualityEstimator.computeScores(for: entries)
+        guard let bd = scores[frame.url] else {
+            XCTFail("Frame should have a score")
+            return
+        }
+        XCTAssertFalse(bd.garbageReasons.contains(.starCountAnomaly),
+            "R6 must not fire when group median ≤ 20 stars (low-median guard)")
+    }
+
+    // MARK: - R7 Background Anomaly — Full Coverage (Patch 3)
+    //
+    // R7 (named "Rule 8" inline): backgroundAnomaly fires when (bg − bgMedian) / bgMAD
+    // exceeds the threshold (5+ raw MADs). Critical INVARIANT: only POSITIVE deviation
+    // triggers — a darker-than-median sky is BETTER (less light pollution / cleaner night).
+    // Moon-aware: broadband filters get threshold relaxed when bright moon is close.
+
+    /// R7 fires on a clearly elevated background (clouds / gradient).
+    /// Group bg ≈ 0.05; cloudy frame at 0.20 is far above 5 MADs.
+    func testR7_BackgroundAnomaly_PositiveDeviationFires() {
+        // Mostly identical group with small bg variation so MAD is non-zero
+        var entries: [ImageEntry] = []
+        for i in 0..<24 {
+            // Tiny variation (±0.0005) → small but non-zero MAD
+            let bg: Float = 0.05 + Float(i % 5) * 0.0001
+            entries.append(makeEntry(index: i, fwhm: 3.0, hfr: 2.0, starCount: 500,
+                                     noiseMAD: 0.005, noiseMedian: bg))
+        }
+
+        // Cloudy frame: bg = 0.20 (far above the median + threshold MADs)
+        let cloudy = makeEntry(index: 99, fwhm: 3.0, hfr: 2.0, starCount: 500,
+                               noiseMAD: 0.005, noiseMedian: 0.20)
+        entries.append(cloudy)
+
+        let scores = QualityEstimator.computeScores(for: entries)
+        guard let bd = scores[cloudy.url] else {
+            XCTFail("Cloudy frame should have a score")
+            return
+        }
+        XCTAssertTrue(bd.garbageReasons.contains(.backgroundAnomaly),
+            "R7: clearly elevated background must trigger backgroundAnomaly. Got: \(bd.garbageReasons)")
+    }
+
+    /// CRITICAL INVARIANT: a darker-than-median sky must NEVER trigger R7.
+    /// (CLAUDE.md: "Hard Invariants — R7 Background Anomaly: NUR positive Abweichung. Dunklerer Himmel = BESSER")
+    /// This is the load-bearing test for the directionality invariant.
+    func testR7_BackgroundAnomaly_NegativeDeviationNeverFires() {
+        // Group bg ≈ 0.05 with small spread
+        var entries: [ImageEntry] = []
+        for i in 0..<24 {
+            let bg: Float = 0.05 + Float(i % 5) * 0.0001
+            entries.append(makeEntry(index: i, fwhm: 3.0, hfr: 2.0, starCount: 500,
+                                     noiseMAD: 0.005, noiseMedian: bg))
+        }
+
+        // Exceptionally dark frame: bg = 0.001 (way below median, hundreds of MADs negative).
+        // Whatever else fires, R7 must NOT.
+        let darkSky = makeEntry(index: 99, fwhm: 3.0, hfr: 2.0, starCount: 500,
+                                noiseMAD: 0.005, noiseMedian: 0.001)
+        entries.append(darkSky)
+
+        let scores = QualityEstimator.computeScores(for: entries)
+        guard let bd = scores[darkSky.url] else {
+            XCTFail("Dark-sky frame should have a score")
+            return
+        }
+        XCTAssertFalse(bd.garbageReasons.contains(.backgroundAnomaly),
+            "R7 INVARIANT: darker-than-median background must never trigger backgroundAnomaly (dunklerer Himmel = BESSER). Got: \(bd.garbageReasons)")
+    }
+
+    /// R7 below-threshold: a slightly-elevated background (e.g., 2-3 MADs above) must NOT fire.
+    /// The 5-MAD floor is intentional — empirically calibrated to avoid 34% precision drop.
+    func testR7_BackgroundAnomaly_JustBelowThreshold_DoesNotFire() {
+        // Build group with very tight bg spread so MAD is well-defined
+        var entries: [ImageEntry] = []
+        for i in 0..<24 {
+            let bg: Float = 0.05 + Float(i % 5) * 0.001  // MAD ≈ 0.001
+            entries.append(makeEntry(index: i, fwhm: 3.0, hfr: 2.0, starCount: 500,
+                                     noiseMAD: 0.005, noiseMedian: bg))
+        }
+
+        // ~3 MADs elevation → below the 5-MAD R7 floor
+        let mild = makeEntry(index: 99, fwhm: 3.0, hfr: 2.0, starCount: 500,
+                             noiseMAD: 0.005, noiseMedian: 0.053)
+        entries.append(mild)
+
+        let scores = QualityEstimator.computeScores(for: entries)
+        guard let bd = scores[mild.url] else {
+            XCTFail("Frame should have a score")
+            return
+        }
+        XCTAssertFalse(bd.garbageReasons.contains(.backgroundAnomaly),
+            "R7 must not fire when deviation is below the 5-MAD threshold")
+    }
+
+    /// R7 moon awareness: bright nearby moon raises legitimate background for BROADBAND filters
+    /// — threshold relaxes proportionally to moonIllumination × (1 - moonDist/90).
+    /// A slightly elevated B-filter frame near full moon should NOT trigger R7.
+    func testR7_BackgroundAnomaly_MoonRelaxesBroadbandThreshold() {
+        // Build a B-filter group with full moon close by (90% illum, 20° away).
+        // moonFactor = 0.9 × (1 - 20/90) = 0.7 → bgThreshold ≈ 5 × 1.7 = 8.5 MADs.
+        var entries: [ImageEntry] = []
+        for i in 0..<24 {
+            let bg: Float = 0.05 + Float(i % 5) * 0.001
+            var e = makeEntry(index: i, filter: "B", fwhm: 3.0, hfr: 2.0, starCount: 500,
+                              noiseMAD: 0.005, noiseMedian: bg)
+            e.moonIllumination = 0.9
+            e.moonDistance = 20.0
+            entries.append(e)
+        }
+
+        // Elevated bg (~6 MADs above median): would trigger R7 without moon relaxation,
+        // but should be allowed through under bright nearby moon for broadband.
+        var moonyB = makeEntry(index: 99, filter: "B", fwhm: 3.0, hfr: 2.0, starCount: 500,
+                               noiseMAD: 0.005, noiseMedian: 0.056)
+        moonyB.moonIllumination = 0.9
+        moonyB.moonDistance = 20.0
+        entries.append(moonyB)
+
+        let scores = QualityEstimator.computeScores(for: entries)
+        guard let bd = scores[moonyB.url] else {
+            XCTFail("Moony broadband frame should have a score")
+            return
+        }
+        XCTAssertFalse(bd.garbageReasons.contains(.backgroundAnomaly),
+            "R7: bright nearby moon must relax broadband threshold (legitimate sky brightness). Got: \(bd.garbageReasons)")
+    }
+
+    /// R7 narrowband immunity: narrowband filters must NOT get the moon relaxation —
+    /// narrowband is largely immune to moonlight, so an elevated bg there is real anomaly.
+    func testR7_BackgroundAnomaly_NarrowbandIgnoresMoon() {
+        // Same scenario but with H (narrowband) filter — relaxation should not apply.
+        var entries: [ImageEntry] = []
+        for i in 0..<24 {
+            let bg: Float = 0.05 + Float(i % 5) * 0.0001
+            var e = makeEntry(index: i, filter: "H", fwhm: 3.0, hfr: 2.0, starCount: 500,
+                              noiseMAD: 0.005, noiseMedian: bg)
+            e.moonIllumination = 0.9
+            e.moonDistance = 20.0
+            entries.append(e)
+        }
+
+        // Massively elevated narrowband bg (cloud-like) — must trigger R7
+        // even with bright moon present, because narrowband doesn't legitimize moon background.
+        var moonyH = makeEntry(index: 99, filter: "H", fwhm: 3.0, hfr: 2.0, starCount: 500,
+                               noiseMAD: 0.005, noiseMedian: 0.20)
+        moonyH.moonIllumination = 0.9
+        moonyH.moonDistance = 20.0
+        entries.append(moonyH)
+
+        let scores = QualityEstimator.computeScores(for: entries)
+        guard let bd = scores[moonyH.url] else {
+            XCTFail("Narrowband frame should have a score")
+            return
+        }
+        XCTAssertTrue(bd.garbageReasons.contains(.backgroundAnomaly),
+            "R7: narrowband filter must not be relaxed by moon presence (NB is largely moon-immune). Got: \(bd.garbageReasons)")
+    }
+
+    // MARK: - isLockedKeep — Absolute Quality Floor (Patch 3)
+    //
+    // CalibrationDatabase.meetsAbsoluteFloor() returns true only when:
+    //   1. Profile has ≥30 frames (hasLearned == true)
+    //   2. Filter+exposure baseline has ≥30 frames
+    //   3. ≥2 metrics check (fwhm/hfr/stars/trailing) AND ALL pass within 1 MAD
+    //
+    // When a frame meets this floor, QualityEstimator must lock it as KEEP — z-score
+    // cannot demote below .good. This guards against the "death spiral" where z-scores
+    // always find "the worst" frame even in a uniformly excellent set.
+    //
+    // Tests below seed the singleton CalibrationDatabase with a unique random fingerprint
+    // (so they don't collide with any real calibration data) and clean up the JSON file
+    // in tearDown.
+
+    /// Random unique fingerprint per test invocation to avoid leaking state between runs.
+    private func uniqueFingerprint() -> SetupFingerprint {
+        // UUID makes telescope/camera identifiers unique → unique hash → isolated profile
+        let uniq = UUID().uuidString
+        return SetupFingerprint(telescope: "TestScope-\(uniq)",
+                                camera: "TestCam-\(uniq)",
+                                focalLength: 500,
+                                pixelSizeMicrons: 3.76)
+    }
+
+    /// Delete the JSON file written by CalibrationDatabase for a fingerprint, if present.
+    /// Best-effort cleanup so test runs don't leave residue.
+    private func cleanupCalibrationProfile(_ fp: SetupFingerprint) {
+        let dir = FileManager.default
+            .urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+            .appendingPathComponent("AstroBlinkV2/Calibration", isDirectory: true)
+        let url = dir.appendingPathComponent("\(fp.hash).json")
+        try? FileManager.default.removeItem(at: url)
+    }
+
+    /// Seed the CalibrationDatabase singleton with N retained frames for a fingerprint.
+    /// Each frame has the supplied filter/exposure and per-frame metric overrides via closure.
+    private func seedCalibration(fingerprint: SetupFingerprint, count: Int = 35,
+                                  filter: String = "L", exposure: Double = 300,
+                                  fwhm: Double = 3.0, hfr: Double = 2.0,
+                                  starCount: Int = 500, noiseMAD: Float = 0.005,
+                                  trailingScore: Double = 0.05) {
+        let entries: [ImageEntry] = (0..<count).map { i in
+            // Tiny per-frame variation so Welford MAD > 0 (otherwise isWithinMAD short-circuits)
+            let f = fwhm + Double(i % 5 - 2) * 0.05
+            return makeEntry(index: 10_000 + i, filter: filter, exposure: exposure,
+                             fwhm: f, hfr: hfr + Double(i % 5 - 2) * 0.03,
+                             starCount: starCount + (i % 5 - 2) * 10,
+                             noiseMAD: noiseMAD,
+                             noiseMedian: 0.05,
+                             trailingScore: trailingScore + Double(i % 5 - 2) * 0.005)
+        }
+        CalibrationDatabase.shared.commitSession(entries: entries, fingerprint: fingerprint)
+    }
+
+    /// A frame that meets the absolute floor is locked as KEEP — even if its z-score
+    /// would normally place it below .good in the relative comparison.
+    func testIsLockedKeep_FloorPreventsDemotionBelowGood() {
+        let fp = uniqueFingerprint()
+        defer { cleanupCalibrationProfile(fp) }
+
+        // Seed 35 frames with FWHM ~3.0 baseline
+        seedCalibration(fingerprint: fp, count: 35, filter: "L", exposure: 300,
+                        fwhm: 3.0, hfr: 2.0, starCount: 500, noiseMAD: 0.005,
+                        trailingScore: 0.05)
+
+        // Build a current session: 24 great frames + 1 frame that's "worst by relative z-score"
+        // but still well within calibration baseline (FWHM=3.05, very close to learned mean 3.0).
+        // Without the floor lock this frame might be borderline against the great group;
+        // with the floor it must be locked at ≥ .good.
+        var current: [ImageEntry] = []
+        for i in 0..<24 {
+            // Tight excellent group at FWHM 2.5 — pulls relative z-scores low for the candidate
+            current.append(makeEntry(index: i, filter: "L", exposure: 300,
+                                     fwhm: 2.5, hfr: 1.7, starCount: 500,
+                                     noiseMAD: 0.005, noiseMedian: 0.05,
+                                     trailingScore: 0.05))
+        }
+        let candidate = makeEntry(index: 999, filter: "L", exposure: 300,
+                                  fwhm: 3.05, hfr: 2.0, starCount: 500,
+                                  noiseMAD: 0.005, noiseMedian: 0.05,
+                                  trailingScore: 0.05)
+        current.append(candidate)
+
+        let scores = QualityEstimator.computeScores(for: current,
+                                                    calibrationDB: CalibrationDatabase.shared,
+                                                    fingerprint: fp)
+        guard let bd = scores[candidate.url] else {
+            XCTFail("Candidate frame should have a score")
+            return
+        }
+        XCTAssertTrue(bd.isLockedKeep,
+            "Frame within 1 MAD of learned baseline (≥2 metrics, ≥30 frames) must be locked as KEEP")
+        XCTAssertGreaterThanOrEqual(bd.tier.rawValue, QualityTier.good.rawValue,
+            "Locked-keep frame must not fall below .good. Tier=\(bd.tier)")
+    }
+
+    /// The floor requires ≥30 learned frames. Below that, isLockedKeep stays false
+    /// regardless of how close the candidate matches the (insufficient) baseline.
+    func testIsLockedKeep_RequiresMinimumLearnedFrames() {
+        let fp = uniqueFingerprint()
+        defer { cleanupCalibrationProfile(fp) }
+
+        // Seed only 25 frames — below the 30-frame learning threshold
+        seedCalibration(fingerprint: fp, count: 25, filter: "L", exposure: 300,
+                        fwhm: 3.0, hfr: 2.0, starCount: 500, noiseMAD: 0.005,
+                        trailingScore: 0.05)
+
+        var current = makeGroup(count: 24, fwhm: 2.5, hfr: 1.7, starCount: 500,
+                                noiseMAD: 0.005, filter: "L")
+        for i in 0..<current.count { current[i].exposure = 300 }
+        let candidate = makeEntry(index: 999, filter: "L", exposure: 300,
+                                  fwhm: 3.0, hfr: 2.0, starCount: 500,
+                                  noiseMAD: 0.005, noiseMedian: 0.05,
+                                  trailingScore: 0.05)
+        current.append(candidate)
+
+        let scores = QualityEstimator.computeScores(for: current,
+                                                    calibrationDB: CalibrationDatabase.shared,
+                                                    fingerprint: fp)
+        guard let bd = scores[candidate.url] else {
+            XCTFail("Candidate frame should have a score")
+            return
+        }
+        XCTAssertFalse(bd.isLockedKeep,
+            "Floor must not engage with fewer than 30 learned frames")
+    }
+
+    /// The floor requires ALL checked metrics to pass. If any single metric drifts
+    /// outside 1 MAD of baseline, isLockedKeep stays false — partial-pass is not enough.
+    func testIsLockedKeep_RequiresAllMetricsPass() {
+        let fp = uniqueFingerprint()
+        defer { cleanupCalibrationProfile(fp) }
+
+        seedCalibration(fingerprint: fp, count: 35, filter: "L", exposure: 300,
+                        fwhm: 3.0, hfr: 2.0, starCount: 500, noiseMAD: 0.005,
+                        trailingScore: 0.05)
+
+        var current: [ImageEntry] = []
+        for i in 0..<24 {
+            current.append(makeEntry(index: i, filter: "L", exposure: 300,
+                                     fwhm: 2.5, hfr: 1.7, starCount: 500,
+                                     noiseMAD: 0.005, noiseMedian: 0.05,
+                                     trailingScore: 0.05))
+        }
+        // Candidate matches baseline on FWHM/HFR but star count is dramatically off
+        // (250 vs learned ~500 with tiny MAD) — that single failed check must veto the lock.
+        let candidate = makeEntry(index: 999, filter: "L", exposure: 300,
+                                  fwhm: 3.0, hfr: 2.0, starCount: 250,
+                                  noiseMAD: 0.005, noiseMedian: 0.05,
+                                  trailingScore: 0.05)
+        current.append(candidate)
+
+        let scores = QualityEstimator.computeScores(for: current,
+                                                    calibrationDB: CalibrationDatabase.shared,
+                                                    fingerprint: fp)
+        guard let bd = scores[candidate.url] else {
+            XCTFail("Candidate frame should have a score")
+            return
+        }
+        XCTAssertFalse(bd.isLockedKeep,
+            "Floor must require ALL checked metrics to pass — a single drifted metric vetoes the lock")
+    }
+
+    /// A locked-keep frame whose combinedZ exceeds the .excellent threshold is still
+    /// allowed to be .excellent — the lock floors the tier, it doesn't cap it.
+    func testIsLockedKeep_AllowsExcellentTier() {
+        let fp = uniqueFingerprint()
+        defer { cleanupCalibrationProfile(fp) }
+
+        seedCalibration(fingerprint: fp, count: 35, filter: "L", exposure: 300,
+                        fwhm: 3.0, hfr: 2.0, starCount: 500, noiseMAD: 0.005,
+                        trailingScore: 0.05)
+
+        // Current group: 24 mediocre frames + 1 within-baseline AND clearly best-by-z frame.
+        var current: [ImageEntry] = []
+        for i in 0..<24 {
+            current.append(makeEntry(index: i, filter: "L", exposure: 300,
+                                     fwhm: 4.0, hfr: 2.7, starCount: 400,
+                                     noiseMAD: 0.012, noiseMedian: 0.05,
+                                     trailingScore: 0.10))
+        }
+        // Best frame: matches baseline (within 1 MAD) AND wins relative z-score
+        let best = makeEntry(index: 999, filter: "L", exposure: 300,
+                             fwhm: 3.0, hfr: 2.0, starCount: 500,
+                             noiseMAD: 0.005, noiseMedian: 0.05,
+                             trailingScore: 0.05)
+        current.append(best)
+
+        let scores = QualityEstimator.computeScores(for: current,
+                                                    calibrationDB: CalibrationDatabase.shared,
+                                                    fingerprint: fp)
+        guard let bd = scores[best.url] else {
+            XCTFail("Best frame should have a score")
+            return
+        }
+        XCTAssertTrue(bd.isLockedKeep, "Best-and-baseline-matching frame must be locked")
+        XCTAssertEqual(bd.tier, .excellent,
+            "Lock must NOT cap the tier — frames that clearly win z-score are still .excellent")
+    }
+
+    // MARK: - Stage 1.5b — Narrowband Bad-Night Detection (Patch 3)
+    //
+    // Stage 1.5b reads from the FrameHistoryDatabase singleton to compare a session
+    // against per-setup historical baselines. Narrowband filters get RELAXED thresholds
+    // (FWHM 6 MADs vs 3, trailing 6 vs 3, severe 10 vs 5) because narrowband PSFs are
+    // inherently bloated, resolution matters less, and exposures are expensive to discard.
+    //
+    // KNOWN COVERAGE GAP: Stage 1.5b's data source is FrameHistoryDatabase.shared, which
+    // is a singleton persisted to disk. Seeding it from a unit test would either pollute
+    // production data or require risky disk surgery. The narrowband-specific threshold
+    // logic is left untested at the integration level; full coverage would need a
+    // FrameHistoryDatabase test seam (dependency injection or in-memory mode) that does
+    // not currently exist.
+    func testStage1_5b_NarrowbandThresholds_NotCoveredHere() throws {
+        throw XCTSkip("Stage 1.5b reads FrameHistoryDatabase.shared which is a disk-backed singleton without a test seam. Adding coverage requires production refactor (dependency injection or in-memory mode) which is out of scope for Patch 3 — see comment above.")
+    }
 }

@@ -120,8 +120,17 @@ final class DecoderTests: XCTestCase {
         case .success(let decoded):
             XCTAssertGreaterThan(decoded.width, 0)
             XCTAssertGreaterThan(decoded.height, 0)
-            XCTAssertEqual(decoded.buffer.length, decoded.totalBytes)
-            print("Metal buffer: \(decoded.width)x\(decoded.height), \(decoded.buffer.length) bytes")
+            // The macOS bridge page-aligns the allocation so MTLBuffer.bytesNoCopy
+            // can wrap it zero-copy. So buffer.length is rounded up to a multiple
+            // of the page size — it must be ≥ totalBytes and page-aligned, not
+            // exactly equal. The pre-aligned remainder past totalBytes is unused.
+            let pageSize = Int(getpagesize())
+            XCTAssertGreaterThanOrEqual(decoded.buffer.length, decoded.totalBytes)
+            XCTAssertEqual(decoded.buffer.length % pageSize, 0,
+                "Buffer length must be page-aligned for bytesNoCopy")
+            XCTAssertLessThan(decoded.buffer.length - decoded.totalBytes, pageSize,
+                "Padding cannot exceed one page")
+            print("Metal buffer: \(decoded.width)x\(decoded.height), \(decoded.buffer.length) bytes (\(decoded.buffer.length - decoded.totalBytes) page padding)")
         case .failure(let error):
             XCTFail("Decode failed: \(error)")
         }

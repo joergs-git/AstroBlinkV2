@@ -716,4 +716,184 @@ final class ScoringValidationTests: XCTestCase {
         XCTAssertEqual(scores.count, 10,
             "All 10 frames should be scored when canonical names match")
     }
+
+    // =========================================================================
+    // MARK: - J. DeepSkyTargetDatabase — Aliasing & Canonical Resolution (Patch 3)
+    // =========================================================================
+    //
+    // DeepSkyTargetDatabase.targetType(for:) runs the input through TargetCatalog.canonicalName()
+    // before lookup, so all naming variants (catalog spacing, casing, common names, alias
+    // catalog IDs) must resolve to the same target. These tests pin down the contract.
+
+    /// "M 42", "M42", "NGC1976" (alias), "Orion Nebula" (common name) must all resolve to
+    /// the same DeepSkyTarget record (canonicalName "M42", emissionNebula type).
+    func testTargetAliasing_M42_AllVariantsResolveToSameTarget() {
+        // targetType(for:) runs canonicalName() then lookup
+        let typeFromSpaced = DeepSkyTargetDatabase.targetType(for: "M 42")
+        let typeFromCompact = DeepSkyTargetDatabase.targetType(for: "M42")
+        let typeFromNGC = DeepSkyTargetDatabase.targetType(for: "NGC1976")
+        let typeFromCommon = DeepSkyTargetDatabase.targetType(for: "Orion Nebula")
+
+        XCTAssertEqual(typeFromSpaced, .emissionNebula, "'M 42' must resolve to M42 emissionNebula")
+        XCTAssertEqual(typeFromCompact, .emissionNebula, "'M42' must resolve to M42 emissionNebula")
+        XCTAssertEqual(typeFromNGC, .emissionNebula,
+            "'NGC1976' (alias for M42) must resolve to M42 emissionNebula")
+        XCTAssertEqual(typeFromCommon, .emissionNebula,
+            "'Orion Nebula' (common name) must resolve to M42 emissionNebula")
+
+        // Direct canonical-name path: lookup() with the canonical M42 should match
+        let direct = DeepSkyTargetDatabase.lookup("M42")
+        XCTAssertNotNil(direct)
+        XCTAssertEqual(direct?.commonName, "Orion Nebula")
+
+        // Reverse path: lookup() also accepts the alias directly (it's pre-indexed)
+        let viaAlias = DeepSkyTargetDatabase.lookup("NGC1976")
+        XCTAssertEqual(viaAlias?.canonicalName, "M42",
+            "lookup() must accept the indexed alias 'NGC1976' and return canonical M42")
+    }
+
+    /// Casing must not affect resolution: "m42", "M42", "Mm42" (typo), "M 42 " (whitespace)
+    /// all canonicalize to the same lookup key.
+    func testTargetAliasing_CasingAndWhitespaceIgnored() {
+        XCTAssertEqual(DeepSkyTargetDatabase.targetType(for: "m42"), .emissionNebula,
+            "Lowercase 'm42' must resolve")
+        XCTAssertEqual(DeepSkyTargetDatabase.targetType(for: "M42"), .emissionNebula,
+            "Uppercase 'M42' must resolve")
+        XCTAssertEqual(DeepSkyTargetDatabase.targetType(for: "  M 42  "), .emissionNebula,
+            "Surrounding whitespace must be trimmed")
+        XCTAssertEqual(DeepSkyTargetDatabase.targetType(for: "ngc 7000"), .emissionNebula,
+            "Lowercase NGC with space must resolve")
+        XCTAssertEqual(DeepSkyTargetDatabase.targetType(for: "NgC-7000"), .emissionNebula,
+            "Mixed-case NGC with dash separator must resolve")
+    }
+
+    /// Common-name → catalog ID resolution: well-known popular names must reach the
+    /// same DeepSkyTarget as their catalog ID.
+    func testTargetAliasing_CommonNamesResolveToCatalogIDs() {
+        // Andromeda Galaxy → M31 (galaxy)
+        XCTAssertEqual(DeepSkyTargetDatabase.targetType(for: "Andromeda Galaxy"), .galaxy,
+            "'Andromeda Galaxy' must resolve to M31 (galaxy)")
+        // Pinwheel Galaxy → M101 (galaxy)
+        XCTAssertEqual(DeepSkyTargetDatabase.targetType(for: "Pinwheel Galaxy"), .galaxy,
+            "'Pinwheel Galaxy' must resolve to M101 (galaxy)")
+        // North America Nebula → NGC7000 (emissionNebula)
+        XCTAssertEqual(DeepSkyTargetDatabase.targetType(for: "North America Nebula"), .emissionNebula,
+            "'North America Nebula' must resolve to NGC7000")
+    }
+
+    /// Common name with non-canonical type suffix variants ("Orion Nebula", "orion nebula")
+    /// must canonicalize to the same target.
+    func testTargetAliasing_CommonNameCaseVariants() {
+        let variants = ["Orion Nebula", "orion nebula", "ORION NEBULA", "  Orion  Nebula  "]
+        let types = variants.map { DeepSkyTargetDatabase.targetType(for: $0) }
+        for (input, type) in zip(variants, types) {
+            XCTAssertEqual(type, .emissionNebula,
+                "'\(input)' must resolve to .emissionNebula (M42)")
+        }
+    }
+
+    /// targetType(for:) treats nil and empty string as unknown (returns nil),
+    /// not as accidental matches.
+    func testTargetAliasing_NilAndEmptyAreUnknown() {
+        XCTAssertNil(DeepSkyTargetDatabase.targetType(for: nil), "nil target → nil type")
+        XCTAssertNil(DeepSkyTargetDatabase.targetType(for: ""), "empty string → nil type")
+        XCTAssertNil(DeepSkyTargetDatabase.targetType(for: "   "), "whitespace-only → nil type")
+    }
+
+    // =========================================================================
+    // MARK: - K. DeepSkyTargetDatabase — Type Weight Modifier Values (Patch 3)
+    // =========================================================================
+    //
+    // The exact modifier values are part of the public scoring contract. Pinning them
+    // protects against silent value drift during refactors.
+
+    /// Galaxy modifiers (per DeepSkyTargetDatabase.swift): fwhm 1.4, stars 0.8, noise 0.8, trailing 1.2.
+    /// Galaxies need resolution (high FWHM weight), star count is less critical (small angular size),
+    /// trailing destroys spiral-arm detail.
+    func testTypeWeightModifiers_Galaxy_ExactValues() {
+        XCTAssertEqual(TargetType.galaxy.fwhmWeightModifier, 1.4, accuracy: 0.001,
+            "Galaxy FWHM modifier must be 1.4 (resolution critical)")
+        XCTAssertEqual(TargetType.galaxy.starWeightModifier, 0.8, accuracy: 0.001,
+            "Galaxy star modifier must be 0.8 (small angular size, fewer stars matter)")
+        XCTAssertEqual(TargetType.galaxy.noiseWeightModifier, 0.8, accuracy: 0.001,
+            "Galaxy noise modifier must be 0.8")
+        XCTAssertEqual(TargetType.galaxy.trailingWeightModifier, 1.2, accuracy: 0.001,
+            "Galaxy trailing modifier must be 1.2 (elongation visible against extended disk)")
+    }
+
+    /// Emission nebula modifiers: fwhm 0.7, stars 0.6, noise 1.4, trailing 0.6.
+    /// Diffuse emission dominates — FWHM/trailing matter less, every photon (noise) matters more.
+    func testTypeWeightModifiers_EmissionNebula_ExactValues() {
+        XCTAssertEqual(TargetType.emissionNebula.fwhmWeightModifier, 0.7, accuracy: 0.001)
+        XCTAssertEqual(TargetType.emissionNebula.starWeightModifier, 0.6, accuracy: 0.001)
+        XCTAssertEqual(TargetType.emissionNebula.noiseWeightModifier, 1.4, accuracy: 0.001,
+            "Emission-nebula noise modifier must be 1.4 (diffuse signal needs every photon)")
+        XCTAssertEqual(TargetType.emissionNebula.trailingWeightModifier, 0.6, accuracy: 0.001,
+            "Emission-nebula trailing modifier must be 0.6 (elongation hides in diffuse emission)")
+    }
+
+    /// Globular-cluster modifiers: fwhm 1.3, stars 0.2 (saturated cores), noise 0.8, trailing 1.0.
+    /// Star count is meaningless because individual stars are unresolvable in the dense core.
+    func testTypeWeightModifiers_GlobularCluster_ExactValues() {
+        XCTAssertEqual(TargetType.globularCluster.fwhmWeightModifier, 1.3, accuracy: 0.001)
+        XCTAssertEqual(TargetType.globularCluster.starWeightModifier, 0.2, accuracy: 0.001,
+            "Globular cluster star modifier must be 0.2 — counts are saturated/meaningless")
+        XCTAssertEqual(TargetType.globularCluster.noiseWeightModifier, 0.8, accuracy: 0.001)
+        XCTAssertEqual(TargetType.globularCluster.trailingWeightModifier, 1.0, accuracy: 0.001)
+    }
+
+    /// Open-cluster modifiers: fwhm 1.2, stars 0.3 (crowding), noise 0.8, trailing 1.0.
+    /// Open clusters are stars-as-target but crowding makes raw counts unreliable.
+    func testTypeWeightModifiers_OpenCluster_ExactValues() {
+        XCTAssertEqual(TargetType.openCluster.fwhmWeightModifier, 1.2, accuracy: 0.001)
+        XCTAssertEqual(TargetType.openCluster.starWeightModifier, 0.3, accuracy: 0.001,
+            "Open cluster star modifier must be 0.3 — too many stars, crowding")
+        XCTAssertEqual(TargetType.openCluster.noiseWeightModifier, 0.8, accuracy: 0.001)
+        XCTAssertEqual(TargetType.openCluster.trailingWeightModifier, 1.0, accuracy: 0.001)
+    }
+
+    /// IFN (Integrated Flux Nebula) modifiers: fwhm 0.4, stars 0.5, noise 2.0, trailing 0.3.
+    /// Extreme outlier — faintest galactic cirrus, where FWHM/trailing barely matter
+    /// but every single photon counts.
+    func testTypeWeightModifiers_IFN_ExtremeNoiseDominant() {
+        XCTAssertEqual(TargetType.ifn.fwhmWeightModifier, 0.4, accuracy: 0.001,
+            "IFN FWHM modifier must be 0.4 (resolution irrelevant for diffuse cirrus)")
+        XCTAssertEqual(TargetType.ifn.noiseWeightModifier, 2.0, accuracy: 0.001,
+            "IFN noise modifier must be 2.0 (faintest target — every photon counts)")
+        XCTAssertEqual(TargetType.ifn.trailingWeightModifier, 0.3, accuracy: 0.001,
+            "IFN trailing modifier must be 0.3 (elongation invisible in diffuse cirrus)")
+    }
+
+    /// Sanity invariant: across ALL TargetType cases, every modifier must be strictly positive
+    /// (zero/negative would invert scoring). This guards against accidental sign flips.
+    func testTypeWeightModifiers_AllPositive() {
+        for type in TargetType.allCases {
+            XCTAssertGreaterThan(type.fwhmWeightModifier, 0,
+                "\(type): fwhmWeightModifier must be > 0")
+            XCTAssertGreaterThan(type.starWeightModifier, 0,
+                "\(type): starWeightModifier must be > 0")
+            XCTAssertGreaterThan(type.noiseWeightModifier, 0,
+                "\(type): noiseWeightModifier must be > 0")
+            XCTAssertGreaterThan(type.trailingWeightModifier, 0,
+                "\(type): trailingWeightModifier must be > 0")
+        }
+    }
+
+    /// Cross-type ordering invariant: galaxies care more about FWHM than emission nebulae
+    /// (galaxy detail demands resolution; nebula emission is diffuse).
+    /// IFN is the lowest FWHM-weight class.
+    func testTypeWeightModifiers_RelativeOrdering() {
+        XCTAssertGreaterThan(TargetType.galaxy.fwhmWeightModifier,
+                             TargetType.emissionNebula.fwhmWeightModifier,
+            "Galaxies must weight FWHM more than emission nebulae")
+        XCTAssertGreaterThan(TargetType.emissionNebula.noiseWeightModifier,
+                             TargetType.galaxy.noiseWeightModifier,
+            "Emission nebulae must weight noise more than galaxies (diffuse signal)")
+        XCTAssertLessThan(TargetType.ifn.fwhmWeightModifier,
+                          TargetType.galaxy.fwhmWeightModifier,
+            "IFN must weight FWHM less than galaxies")
+        XCTAssertGreaterThan(TargetType.ifn.noiseWeightModifier,
+                             TargetType.galaxy.noiseWeightModifier,
+            "IFN must weight noise more than galaxies")
+    }
 }
