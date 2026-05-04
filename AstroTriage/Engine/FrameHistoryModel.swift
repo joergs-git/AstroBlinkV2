@@ -180,36 +180,52 @@ class FrameHistoryModel: ObservableObject {
                 self.reAnalysisProgress = total * 2 / 3  // ~66% — scoring done
             }
 
-            // Build update list — re-scored frames get new tier + version bump
-            var allUpdates: [(hash: String, tier: Int, zScore: Double)] = []
-            var scoredHashes: Set<String> = []
-            for (i, entry) in entries.enumerated() {
-                if let bd = scores[entry.url] {
-                    allUpdates.append((
-                        hash: records[i].fileHash,
-                        tier: bd.tier.rawValue,
-                        zScore: bd.combinedZScore
-                    ))
-                    scoredHashes.insert(records[i].fileHash)
-                }
-            }
+            // Resumable chunked writes. The scoring stays one-shot above so cross-
+            // group invariants (Stage 1.5 session sanity, calibration floor) keep
+            // the same population they had before. The DB writes split into
+            // chunkSize-record transactions so a crash mid-pass loses at most the
+            // in-flight chunk — already-written records carry kAlgorithmVersion
+            // and the next run's `staleRecordCount` query skips them naturally.
+            //
+            // 500 is a middle-ground chunk size: larger means fewer commits but
+            // more lost-on-crash work; smaller means smoother progress + finer
+            // recovery but per-transaction overhead piles up. SQLite WAL on
+            // local SSD handles 500-row UPDATE batches in low single-digit ms.
+            let chunkSize = 500
+            for chunkStart in stride(from: 0, to: total, by: chunkSize) {
+                let chunkEnd = min(chunkStart + chunkSize, total)
 
-            // Frames that couldn't be re-scored (group too small) — bump version
-            // with their existing tier so they're no longer flagged as stale
-            var versionOnlyHashes: [String] = []
-            for record in records {
-                if !scoredHashes.contains(record.fileHash) {
-                    versionOnlyHashes.append(record.fileHash)
+                var allUpdates: [(hash: String, tier: Int, zScore: Double)] = []
+                var versionOnlyHashes: [String] = []
+                allUpdates.reserveCapacity(chunkEnd - chunkStart)
+                for i in chunkStart..<chunkEnd {
+                    let hash = records[i].fileHash
+                    if let bd = scores[entries[i].url] {
+                        allUpdates.append((
+                            hash: hash,
+                            tier: bd.tier.rawValue,
+                            zScore: bd.combinedZScore
+                        ))
+                    } else {
+                        // Group too small for QualityEstimator to score — bump the
+                        // version with the existing tier so we stop flagging it.
+                        versionOnlyHashes.append(hash)
+                    }
                 }
-            }
 
-            // Batch write re-scored results
-            if !allUpdates.isEmpty {
-                try? FrameHistoryDatabase.shared.updateQualityTiersAndVersion(allUpdates)
-            }
-            // Bump version for un-scorable frames (keeps existing tier)
-            if !versionOnlyHashes.isEmpty {
-                try? FrameHistoryDatabase.shared.bumpAlgorithmVersion(fileHashes: versionOnlyHashes)
+                if !allUpdates.isEmpty {
+                    try? FrameHistoryDatabase.shared.updateQualityTiersAndVersion(allUpdates)
+                }
+                if !versionOnlyHashes.isEmpty {
+                    try? FrameHistoryDatabase.shared.bumpAlgorithmVersion(fileHashes: versionOnlyHashes)
+                }
+
+                let processed = chunkEnd
+                DispatchQueue.main.async {
+                    // Ramp from the post-scoring 66% mark up to total as chunks land.
+                    let writeProgress = total * 2 / 3 + processed / 3
+                    self.reAnalysisProgress = min(total, writeProgress)
+                }
             }
 
             // Refresh UI

@@ -373,11 +373,13 @@ All original implementation phases are complete:
       version-only bump via `bumpAlgorithmVersion(fileHashes:)` so they
       stop showing as stale. Progress reporting: 33% conversion / 66%
       scoring / 100% writeback.
-- [ ] Batch re-analysis for Archive Scanner results (background, resumable):
-      current implementation loads ALL stale records in one fetch and
-      processes in one pass — fine for typical sessions but could spike
-      memory + be unrecoverable on crash for archive-scanned 50K+ stale
-      sets. Chunking + per-chunk DB writes would make it resumable.
+- [x] Batch re-analysis for Archive Scanner results (background, resumable):
+      `reAnalyzeStaleRecords()` now writes results in 500-record chunks so
+      a mid-pass crash loses at most the in-flight chunk; remaining chunks
+      resume on next run because their records still satisfy
+      `algorithmVersion < kAlgorithmVersion`. Scoring stays one-shot to
+      preserve cross-group invariants (Stage 1.5 session sanity, calibration
+      floor) — chunking applies only to the post-scoring DB writes.
 - [ ] Auto-prompt on session load if DB has older-version scores for
       frames in the just-loaded session: query `staleRecordCount` filtered
       by the session's file hashes and surface a small notice or status-bar
@@ -390,15 +392,22 @@ All original implementation phases are complete:
 - [ ] Could be per-file (context menu) or batch (whole session)
 - [ ] Must also handle the CSV backup file (`AstroBlinkV2_SSWEIGHT.csv`)
 
-### PSFSignalWeight Compatibility
-- [ ] Compute PixInsight-compatible PSFSignalWeight (PSFSW) from existing star detection
-- [ ] ΣPSFFlux: sum of detected star brightness values (total star signal per frame)
-- [ ] ΣPSFMeanFlux: mean star brightness (resolution/seeing proxy)
-- [ ] N*: robust noise from noiseMAD (already computed)
-- [ ] M*: background level from noiseMedian (already computed)
-- [ ] Write PSFSW keyword alongside SSWEIGHT so WBPP can use either
-- [ ] More robust than SNRWeight — PSF fitting inherently rejects non-PSF sources (satellites, hot pixels)
-- [ ] Reference: PixInsight 1.8.9+ SubframeSelector PSF Signal Weight algorithm
+### PSFSignalWeight Compatibility — SHIPPED
+- [x] PSFSWGHT keyword written alongside SSWEIGHT in FITS / XISF headers
+      (`TriageViewModel.swift:1131` / `:1137`).
+- [x] Formula: `clamp(0, 100, log10(psfFluxSum / noiseMAD²) × 10)` — uses
+      ΣPSFFlux from GPU psf_fit_gaussian (Shaders.metal) and noiseMAD
+      already computed by STFCalculator.measureNoise. PixInsight 1.8.9+
+      SubframeSelector compatible (`AIsaacContextBuilder.swift:716`).
+- [x] CSV backup column in `AstroBlinkV2_SSWEIGHT.csv` next to SSWEIGHT
+      (`TriageViewModel.swift:1095`).
+- [x] Removable via Batch Rename (Cmd+Shift+R) → scope "Delete Key" →
+      keyword "PSFSWGHT" (same path as SSWEIGHT — uses
+      `delete_xisf_keyword` / `delete_fits_keyword` C bridge).
+- [x] Release notes call-out: "PixInsight 1.8.9+ compatible PSFSWGHT
+      keyword written alongside SSWEIGHT. More robust than SNRWeight —
+      PSF flux inherently rejects hot pixels and satellites."
+      (`ReleaseNotesWindow.swift:179`).
 
 ### False Positive Reporting
 - [ ] Right-click → "Report Wrong Detection" on any garbage/trash frame
