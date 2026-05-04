@@ -125,12 +125,14 @@ The big one. Snapshot tag before each step (`pre-refactor-<slice>`), build
 
 ### Smaller observations (quick wins, anytime)
 
-- [ ] Status-bar Community Learning indicator → click info-icon to open
-      PRIVACY.md on GitHub
-- [ ] `AIsaacUserProfile.delete()` — also reset in-memory profile state
-      via a `Notification.Name.aisaacProfileDeleted` so
-      `AIsaacContextBuilder` doesn't keep serving the old profile
-      until next launch
+- [x] Status-bar Community Learning indicator: sibling `info.circle`
+      button opens PRIVACY.md on GitHub (commit 5c58729). Lives
+      outside the toggle tap-area to avoid accidental opt-out flips.
+- [x] `AIsaacUserProfile.delete()` posts `Notification.Name.aisaacProfileDeleted`
+      (commit 5c58729). `TargetDatabaseViewModel` observes it and
+      refreshes its cached `equipmentSetups` / `allLocations`
+      mirrors. Other callers freshly `.load()` each time, so they
+      already see the blank profile — no observer needed.
 
 ---
 
