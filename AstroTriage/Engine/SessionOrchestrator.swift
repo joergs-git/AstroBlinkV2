@@ -19,6 +19,10 @@
 // startFullPrefetchInterleaved) — see SessionOrchestrator+Prefetch.swift
 // for the bodies. The orchestrator now owns the App Nap assertion that
 // keeps caching alive when the app is backgrounded.
+//
+// Step 4: enrichWithHeaders moved into SessionOrchestrator+Headers.swift.
+// The headerEnrichmentTask handle that lets a new session cancel a stale
+// header-read pass now lives on the orchestrator.
 import Foundation
 
 /// State and actions on TriageViewModel that the SessionOrchestrator
@@ -49,6 +53,12 @@ protocol SessionHost: AnyObject {
     var needsScrollToTop: Bool { get set }
     var needsQualityResort: Bool { get set }
     var hasOSCImages: Bool { get set }
+    var headerProgress: Double { get set }
+    var headerReadCount: Int { get set }
+    var headerReadTotal: Int { get set }
+    var headerReadStartTime: Date? { get set }
+    var headerEstimatedSecondsRemaining: Int? { get set }
+    var pendingColumnOrder: [String]? { get set }
 
     // MARK: Cache + download state
     var isCaching: Bool { get set }
@@ -103,10 +113,17 @@ protocol SessionHost: AnyObject {
     func navigateToObject(_ objectName: String, filter: String?, exposure: Double?, night: String?)
 
     // MARK: Bridge methods — remove as their callers migrate into the orchestrator.
-    // enrichWithHeaders → step 4. recomputeQualityScores + scheduleQualityRescore → step 5.
-    func enrichWithHeaders()
+    // recomputeQualityScores + scheduleQualityRescore + computeMoonData +
+    // refineBortleOnline + detectMeridianFlip + applyWCSAlignment +
+    // updateMeridianRotation + checkForMixedDimensions all migrate in step 5.
     func recomputeQualityScores()
     func scheduleQualityRescore()
+    func computeMoonData()
+    func refineBortleOnline()
+    func detectMeridianFlip()
+    func applyWCSAlignment()
+    func updateMeridianRotation()
+    func checkForMixedDimensions()
 }
 
 @MainActor
@@ -130,6 +147,12 @@ final class SessionOrchestrator {
     /// background pre-cache work isn't throttled by power management. Owned by the
     /// orchestrator since only prefetch methods touch it.
     var appNapAssertion: NSObjectProtocol?
+
+    /// Cancellable handle for the in-flight header-enrichment pass. Cancelled at
+    /// the start of every new session load so a stale background read doesn't
+    /// stomp on the new session's images. Owned by the orchestrator since only
+    /// enrichWithHeaders writes to it.
+    var headerEnrichmentTask: Task<Void, Never>?
 
     init(
         prefetchCache: PrefetchCache?,
@@ -387,7 +410,7 @@ final class SessionOrchestrator {
                 host.applyAllEnabled = true
                 host.triggerApplyAll()
                 // Read headers in background for metadata enrichment
-                host.enrichWithHeaders()
+                self.enrichWithHeaders()
                 // Give table focus so keyboard navigation works immediately
                 host.focusTableAfterDelay()
 
@@ -599,7 +622,7 @@ final class SessionOrchestrator {
                 host.showInspector = true
                 host.applyAllEnabled = true
                 host.triggerApplyAll()
-                host.enrichWithHeaders()
+                self.enrichWithHeaders()
                 host.focusTableAfterDelay()
 
                 host.statusMessage = "\(sorted.count) frames loaded from \(summary)"

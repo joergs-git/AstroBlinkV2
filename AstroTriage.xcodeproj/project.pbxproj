@@ -76,6 +76,7 @@
 		7A69119E8C46AEEEC3903EDA /* TexturePool.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABAF1B6D447B16F3447CF29C /* TexturePool.swift */; };
 		7E187CD20A1C9AC1C616BCEB /* SessionOrchestrator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E0874C66A110F635EE92265 /* SessionOrchestrator.swift */; };
 		7E8C4EF0CF4108B17C2096A8 /* ColumnDefinition.swift in Sources */ = {isa = PBXBuildFile; fileRef = F25FB10B9861BFEE190684C8 /* ColumnDefinition.swift */; };
+		7EC7610C9924AD1164019F0E /* SessionOrchestrator+Headers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8540C9E125E41BA9B2D59F49 /* SessionOrchestrator+Headers.swift */; };
 		8042B085C948F458CE1A217A /* FrameHistoryDatabaseTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45F32B6422A0EB353A91C74B /* FrameHistoryDatabaseTests.swift */; };
 		838E8483E80592C0D2B096C7 /* PreviewProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = FCF6C6DC0784120E20CE9CF9 /* PreviewProvider.swift */; };
 		8B28123AE5CD7FA6D046CD8A /* AstroTriageQuickLookPreview.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = C17E45E7EC559D0FCD362808 /* AstroTriageQuickLookPreview.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
@@ -269,6 +270,7 @@
 		80A7F31F7DBA920A68B6787D /* FrameHistoryMigrations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FrameHistoryMigrations.swift; sourceTree = "<group>"; };
 		82255D613953DAE86F6B6A9B /* VisualValidationWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VisualValidationWindow.swift; sourceTree = "<group>"; };
 		837394D162B707B718C708C9 /* AstroTriageQuickLookThumbnail.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = AstroTriageQuickLookThumbnail.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		8540C9E125E41BA9B2D59F49 /* SessionOrchestrator+Headers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SessionOrchestrator+Headers.swift"; sourceTree = "<group>"; };
 		85A0D5497E7EBF43F03546F6 /* BatchRenameWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatchRenameWindow.swift; sourceTree = "<group>"; };
 		8840EA9D612D56DC3123EC77 /* MetalRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetalRenderer.swift; sourceTree = "<group>"; };
 		8B1B8C7785F451D0AB30D571 /* CalibrationDatabaseTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CalibrationDatabaseTests.swift; sourceTree = "<group>"; };
@@ -500,6 +502,7 @@
 				F51EC131A3171F9475C7979F /* QuickStackEngineV2.swift */,
 				72BFE1A73BD5AD652BD34CB8 /* SessionCache.swift */,
 				3E0874C66A110F635EE92265 /* SessionOrchestrator.swift */,
+				8540C9E125E41BA9B2D59F49 /* SessionOrchestrator+Headers.swift */,
 				3B33772E7CA2FB77F9998ADB /* SessionOrchestrator+Prefetch.swift */,
 				B7D54DB9FE9BF17CD5203F2D /* SessionScanner.swift */,
 				B15B13B846B735B87DB35B31 /* StarDetector.swift */,
@@ -927,6 +930,7 @@
 				4E6737835242429BC0A1C652 /* ReleaseNotesWindow.swift in Sources */,
 				F94F15A86ED041565AB8DB76 /* STFCalculator.swift in Sources */,
 				F1ABC93BE5D945B448028500 /* SessionCache.swift in Sources */,
+				7EC7610C9924AD1164019F0E /* SessionOrchestrator+Headers.swift in Sources */,
 				182F8D75FBC0C2240569F416 /* SessionOrchestrator+Prefetch.swift in Sources */,
 				7E187CD20A1C9AC1C616BCEB /* SessionOrchestrator.swift in Sources */,
 				BD7A31D9AF626FB19873EC7E /* SessionOverviewView.swift in Sources */,

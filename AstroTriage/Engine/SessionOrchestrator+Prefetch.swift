@@ -27,7 +27,7 @@ extension SessionOrchestrator {
         let safeBudget = Int64(Double(physicalMemory) * 0.7)
 
         // Always enrich headers regardless of cache decision
-        host.enrichWithHeaders()
+        self.enrichWithHeaders()
 
         // If estimated cache fits comfortably, proceed without warning
         if totalRawBytes <= safeBudget {
@@ -370,7 +370,7 @@ extension SessionOrchestrator {
 
         // Now that files are local, enrich headers from SSD cache (instant vs NAS)
         // This populates filter, gain, temp, etc. from FITS/XISF headers
-        host.enrichWithHeaders()
+        self.enrichWithHeaders()
 
         Task.detached(priority: .background) {
             SessionCache.cleanupOldCaches()
