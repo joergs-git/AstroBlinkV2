@@ -5,14 +5,31 @@
 #include <cstring>
 #include <cstdlib>
 #include <string>
+#include <TargetConditionals.h>
 
-// cfitsio thread safety: compiled with _REENTRANT, cfitsio uses internal
-// pthread locks (FFLOCK/FFUNLOCK) to protect shared global state (file handle
-// table, one-time initialization, decompression buffers).
-// Different files can be decoded concurrently — no external mutex needed.
-// The one-time init is double-checked inside fits_init_cfitsio() using
-// Fitsio_InitLock (statically initialized) + FFLOCK, so it's safe even
-// when multiple threads call fits_open_file() simultaneously.
+// ----------------------------------------------------------------------------
+// cfitsio thread safety — platform split
+//
+// macOS (TARGET_OS_OSX): cfitsio is compiled with _REENTRANT (see Package.swift),
+// so its internal pthread locks (FFLOCK/FFUNLOCK) protect global state. Different
+// files can be decoded concurrently with no extra mutex.
+//
+// iOS (TARGET_OS_IOS): _REENTRANT is NOT defined for cfitsio on iOS — the
+// internal lock path triggered a driver double-registration on iOS where the
+// FFLOCK macros expand to no-ops without _REENTRANT. We guard every cfitsio
+// call with an external std::mutex instead. Cost: serialised FITS decodes on
+// iOS. macOS keeps full concurrency.
+//
+// CFITSIO_LOCK is the single point that picks one strategy. Adding a new
+// platform means defining CFITSIO_LOCK for it here.
+// ----------------------------------------------------------------------------
+#if TARGET_OS_OSX
+    #define CFITSIO_LOCK ((void)0)
+#else
+    #include <mutex>
+    static std::mutex cfitsio_mutex;
+    #define CFITSIO_LOCK std::lock_guard<std::mutex> _cflock(cfitsio_mutex)
+#endif
 
 // ============================================================================
 // XISF Decode — uses libxisf (C++17)
@@ -127,6 +144,7 @@ extern "C" DecodeResult decode_fits(const char* path) {
     DecodeResult result;
     memset(&result, 0, sizeof(result));
 
+    CFITSIO_LOCK;  // no-op on macOS; serialises on iOS — see top-of-file rationale
     fitsfile* fptr = nullptr;
     int status = 0;
 
@@ -314,6 +332,7 @@ extern "C" HeaderResult read_fits_headers(const char* path) {
     HeaderResult result;
     memset(&result, 0, sizeof(result));
 
+    CFITSIO_LOCK;  // no-op on macOS; serialises on iOS — see top-of-file rationale
     fitsfile* fptr = nullptr;
     int status = 0;
 
@@ -377,6 +396,7 @@ extern "C" WriteResult write_fits_keyword(const char* path, const char* keyword,
     WriteResult result;
     memset(&result, 0, sizeof(result));
 
+    CFITSIO_LOCK;  // no-op on macOS; serialises on iOS — see top-of-file rationale
     fitsfile* fptr = nullptr;
     int status = 0;
 
@@ -442,6 +462,7 @@ extern "C" WriteResult delete_fits_keyword(const char* path, const char* keyword
     WriteResult result;
     memset(&result, 0, sizeof(result));
 
+    CFITSIO_LOCK;  // no-op on macOS; serialises on iOS — see top-of-file rationale
     fitsfile* fptr = nullptr;
     int status = 0;
 

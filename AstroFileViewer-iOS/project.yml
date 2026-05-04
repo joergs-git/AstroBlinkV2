@@ -7,7 +7,11 @@ options:
 
 packages:
   ImageDecoder:
-    path: Packages/ImageDecoder
+    # Shared SPM package — same source tree consumed by the macOS app
+    # at the repo root. Local copy under AstroFileViewer-iOS/Packages/
+    # was retired in Patch 3 (W3.3) to keep cfitsio/libxisf updates in
+    # one place.
+    path: ../Packages/ImageDecoder
 
 targets:
   AstroFileViewer:

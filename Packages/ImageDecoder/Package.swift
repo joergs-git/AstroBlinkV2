@@ -3,7 +3,10 @@ import PackageDescription
 
 let package = Package(
     name: "ImageDecoder",
-    platforms: [.macOS("13.3")],
+    // Shared between macOS app (AstroBlinkV2) and iOS app (AstroFileViewer).
+    // The iOS project references this package via `path: ../Packages/ImageDecoder`
+    // — there is intentionally no second copy under AstroFileViewer-iOS/Packages/.
+    platforms: [.macOS("13.3"), .iOS("16.4")],
     products: [
         .library(name: "ImageDecoderBridge", targets: ["ImageDecoderBridge"])
     ],
@@ -43,10 +46,15 @@ let package = Package(
                 .define("HAVE_LONGLONG"),
                 // HAVE_NET_SERVICES intentionally NOT defined — disables ROOT/XRootD,
                 // HTTP, and FTP drivers which we don't need and whose init() would fail.
-                // _REENTRANT enables cfitsio's internal pthread locks (FFLOCK/FFUNLOCK)
-                // for thread-safe concurrent access to DIFFERENT file handles.
-                // No external mutex needed — cfitsio handles its own synchronization.
-                .define("_REENTRANT"),
+                //
+                // _REENTRANT is macOS-only on purpose. On macOS it activates
+                // cfitsio's internal FFLOCK/FFUNLOCK pthread locks so the bridge
+                // can decode different files concurrently. On iOS the same flag
+                // produced a driver double-registration; we serialise instead via
+                // an external std::mutex inside ImageDecoderBridge.cpp (CFITSIO_LOCK).
+                // Keep the two strategies in lockstep with the bridge — see the
+                // top-of-file comment in ImageDecoderBridge.cpp.
+                .define("_REENTRANT", .when(platforms: [.macOS])),
             ],
             linkerSettings: [
                 .linkedLibrary("z")
