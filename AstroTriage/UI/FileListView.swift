@@ -142,7 +142,9 @@ struct FileListView: NSViewRepresentable {
 
         // Apply pending column reorder (triggered after header enrichment for single/multi-object)
         if let newOrder = viewModel.pendingColumnOrder {
-            viewModel.pendingColumnOrder = nil
+            // Defer the @Published reset off the current update tick — see
+            // the same pattern below at line 263 et al for full rationale.
+            DispatchQueue.main.async { viewModel.pendingColumnOrder = nil }
             reorderTableColumns(tableView, to: newOrder)
             viewModel.applySortByColumnOrder(newOrder)
             coordinator.displayedImages = isFiltered ? viewModel.visibleImages : viewModel.images
@@ -154,7 +156,7 @@ struct FileListView: NSViewRepresentable {
         // Persist only when NOT in blind mode, so the blind-set doesn't overwrite
         // the user's normal layout in AppSettings.
         if let newVisibility = viewModel.pendingColumnVisibility {
-            viewModel.pendingColumnVisibility = nil
+            DispatchQueue.main.async { viewModel.pendingColumnVisibility = nil }
             applyColumnVisibility(to: tableView, visibleIds: newVisibility)
             if !viewModel.isBlindCurationMode {
                 let visibleIds = tableView.tableColumns.map { $0.identifier.rawValue }
@@ -168,7 +170,7 @@ struct FileListView: NSViewRepresentable {
         // Re-sort after quality scores become available (once per session)
         // Always uses recommended order for sort (not saved column layout — that's visual only)
         if viewModel.needsQualityResort {
-            viewModel.needsQualityResort = false
+            DispatchQueue.main.async { viewModel.needsQualityResort = false }
             let uniqueTargets = Set(viewModel.images.compactMap { $0.target?.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty })
             let uniqueFilters = Set(viewModel.images.compactMap { $0.filter?.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty })
             let order = ColumnDefinition.recommendedColumnOrder(
@@ -239,7 +241,15 @@ struct FileListView: NSViewRepresentable {
                 NSAnimationContext.beginGrouping()
                 NSAnimationContext.current.duration = 0
                 tableView.reloadData()
-                if forcesSingle { viewModel.needsForceSingleSelection = false }
+                // Defer the flag reset off the current update tick — mutating
+                // viewModel @Published properties from inside updateNSView is
+                // exactly what triggers SwiftUI's "Publishing changes from
+                // within view updates" runtime warning. The actual work
+                // (reloadData, selection, scroll restore) is done synchronously;
+                // only the bookkeeping flag flip is dispatched.
+                if forcesSingle {
+                    DispatchQueue.main.async { viewModel.needsForceSingleSelection = false }
+                }
 
                 if !savedSelection.isEmpty && savedSelection.last! < newCountRefreshed {
                     tableView.selectRowIndexes(savedSelection, byExtendingSelection: false)
@@ -251,7 +261,8 @@ struct FileListView: NSViewRepresentable {
                 }
                 NSAnimationContext.endGrouping()
             }
-            viewModel.needsTableRefresh = false
+            // Defer flag reset (see comment above on needsForceSingleSelection).
+            DispatchQueue.main.async { viewModel.needsTableRefresh = false }
 
             // Handle programmatic multi-row selection from AIsaac
             if let highlightRows = viewModel.pendingHighlightRows {
@@ -259,7 +270,7 @@ struct FileListView: NSViewRepresentable {
                 if let first = highlightRows.first {
                     tableView.scrollRowToVisible(first)
                 }
-                viewModel.pendingHighlightRows = nil
+                DispatchQueue.main.async { viewModel.pendingHighlightRows = nil }
             }
 
             // After first load, make file list the first responder for arrow key navigation
@@ -270,7 +281,7 @@ struct FileListView: NSViewRepresentable {
 
         // Scroll to top on new session load
         if viewModel.needsScrollToTop {
-            viewModel.needsScrollToTop = false
+            DispatchQueue.main.async { viewModel.needsScrollToTop = false }
             if newCount > 0 {
                 tableView.scrollRowToVisible(0)
                 tableView.selectRowIndexes(IndexSet(integer: 0), byExtendingSelection: false)
