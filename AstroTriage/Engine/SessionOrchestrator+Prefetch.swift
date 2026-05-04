@@ -169,12 +169,12 @@ extension SessionOrchestrator {
                     // Update session overview with noise stats now that all images are measured
                     self.sessionOverviewModel.updateStats(from: host.images)
                     // Recompute quality scores now that noiseMAD is populated for all images
-                    host.recomputeQualityScores()
+                    self.recomputeQualityScores()
                     // Fix for MainActor Task delivery race: metric callbacks for individual
                     // frames are dispatched as separate MainActor Tasks which may not have
                     // executed yet when onProgress(total,total) fires. Re-check after a
                     // short delay to catch any frames whose metrics arrived late.
-                    host.scheduleQualityRescore()
+                    self.scheduleQualityRescore()
                     // Jump to first image after precaching + quality scoring complete
                     if !host.images.isEmpty {
                         host.selectImage(at: 0)

@@ -298,13 +298,13 @@ extension SessionOrchestrator {
                 self.sessionOverviewModel.updateStats(from: host.images)
                 host.hasOSCImages = foundOSC
                 // Compute moon illumination + target distance (needs date + coordinates from headers)
-                host.computeMoonData()
+                self.computeMoonData()
                 // Refine Bortle online (one call per unique coordinate, fire-and-forget)
-                host.refineBortleOnline()
+                self.refineBortleOnline()
                 // Compute relative quality scores now that all header metadata is available
-                host.recomputeQualityScores()
+                self.recomputeQualityScores()
                 // Fix for MainActor Task delivery race (same as local path)
-                host.scheduleQualityRescore()
+                self.scheduleQualityRescore()
                 host.detectMeridianFlip()
                 // Apply WCS-based alignment (fast, exact) now that headers are available.
                 // For every frame with complete plate-solve data, overrides whatever the
@@ -321,7 +321,7 @@ extension SessionOrchestrator {
                                 host.communityBaseline = bl
                                 // Recompute scores with community baseline if local calibration insufficient
                                 if !CalibrationDatabase.shared.profile(for: fp).hasLearned {
-                                    host.recomputeQualityScores()
+                                    self.recomputeQualityScores()
                                 }
                             }
                         }

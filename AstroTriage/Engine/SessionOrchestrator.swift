@@ -23,6 +23,14 @@
 // Step 4: enrichWithHeaders moved into SessionOrchestrator+Headers.swift.
 // The headerEnrichmentTask handle that lets a new session cancel a stale
 // header-read pass now lives on the orchestrator.
+//
+// Step 5: scoring + post-scoring cascade moved into
+// SessionOrchestrator+Scoring.swift (recomputeQualityScores,
+// scheduleQualityRescore, recomputeSNRRetention, updateConvergence,
+// saveToFrameHistory, computeMoonData, refineBortleOnline). The
+// rescore-retry counter that gates scheduleQualityRescore now lives on
+// the orchestrator. Quality logic itself unchanged — kAlgorithmVersion
+// not bumped — but Golden-Set regression run as insurance.
 import Foundation
 
 /// State and actions on TriageViewModel that the SessionOrchestrator
@@ -59,6 +67,13 @@ protocol SessionHost: AnyObject {
     var headerReadStartTime: Date? { get set }
     var headerEstimatedSecondsRemaining: Int? { get set }
     var pendingColumnOrder: [String]? { get set }
+
+    // MARK: Scoring outputs
+    var snrRetention: Double { get set }
+    var snrRetentionDetail: String { get set }
+    var cullingStatus: TriageViewModel.CullingStatus? { get set }
+    var isConverged: Bool { get set }
+    var convergenceResult: ConvergenceResult? { get set }
 
     // MARK: Cache + download state
     var isCaching: Bool { get set }
@@ -112,18 +127,15 @@ protocol SessionHost: AnyObject {
     func checkForReviewPrompt()
     func navigateToObject(_ objectName: String, filter: String?, exposure: Double?, night: String?)
 
-    // MARK: Bridge methods — remove as their callers migrate into the orchestrator.
-    // recomputeQualityScores + scheduleQualityRescore + computeMoonData +
-    // refineBortleOnline + detectMeridianFlip + applyWCSAlignment +
-    // updateMeridianRotation + checkForMixedDimensions all migrate in step 5.
-    func recomputeQualityScores()
-    func scheduleQualityRescore()
-    func computeMoonData()
-    func refineBortleOnline()
+    // MARK: Bridge methods — meridian flip + WCS alignment + dimension check
+    // and the column-order sort all stay on TriageViewModel. They're tied to
+    // display orientation rather than session lifecycle, so they're out of
+    // scope for SessionOrchestrator splits.
     func detectMeridianFlip()
     func applyWCSAlignment()
     func updateMeridianRotation()
     func checkForMixedDimensions()
+    func applySortByColumnOrder(_ columnIdentifiers: [String])
 }
 
 @MainActor
@@ -153,6 +165,12 @@ final class SessionOrchestrator {
     /// stomp on the new session's images. Owned by the orchestrator since only
     /// enrichWithHeaders writes to it.
     var headerEnrichmentTask: Task<Void, Never>?
+
+    /// Retry counter for the delayed rescore loop. Reset on each scheduleQualityRescore
+    /// entry; bounded at 3 to keep stale metric callbacks from triggering an
+    /// unbounded rescore chain. Owned by the orchestrator since only the
+    /// scheduleQualityRescore* pair touches it.
+    var rescoreRetryCount = 0
 
     init(
         prefetchCache: PrefetchCache?,
