@@ -4,6 +4,43 @@ All notable changes to AstroBlink & AIsaac will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [6.0.1] — 2026-05-05
+
+Stability point release. No new features, no scoring changes, no
+`kAlgorithmVersion` bump.
+
+### Fixed
+
+- **NAS-load hang on Xcode 26 / Swift 6.1**. A `nonisolated(unsafe)`
+  buffer alias introduced during the strict-concurrency wave silently
+  dropped WCS header writes on the new toolchain. Symptoms: every frame
+  ended up with `nil` plate-solve fields, the prefetch pipeline could
+  not skip star matching, the resulting MainActor Task storm starved
+  SwiftUI, and the app beachballed mid-load on NAS folders > 500 frames.
+  Reverted to the pre-Wave-3 form (`5b60a6f`).
+- **SwiftUI "Publishing changes from within view updates" warning storm**
+  cleared on two more emitters: `FileListView.updateNSView` flag resets
+  (`288c6ad`) and the `applySortDescriptors` write set (`a14491c`). Both
+  are routed through `DispatchQueue.main.async` so the on-screen state
+  matches within the same tick while the @Published assignment lands on
+  the next runloop turn.
+- **`SystemStats` no-op when value unchanged** (`db9b695`). The 2-second
+  stats timer was firing `objectWillChange` on every tick — 1,800
+  rebuilds per hour even when neither memory nor core count had moved.
+  `SystemStats` is now `Equatable` and the assignment is value-guarded;
+  idle apps emit zero updates from this path.
+
+### Changed
+
+- **AIsaac sees the community-baseline summary** in its system prompt
+  (`1dd59b9`). Lets the assistant compare your frame's metrics against
+  what other equipment-matched users typically achieve.
+
+### Compatibility
+
+- Built against the **macOS 26 (Tahoe) SDK in Xcode 26.3**. Deployment
+  target stays macOS 14. Build is warning-clean under the new SDK.
+
 ## [6.0.0] — 2026-05-03
 
 ### Privacy & Security

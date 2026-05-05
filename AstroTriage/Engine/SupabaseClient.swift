@@ -14,7 +14,7 @@ enum SupabaseClient {
     static var isConfigured: Bool { BenchmarkConfig.isConfigured }
 
     /// Build identifier sent as `X-App-Version` on every request, e.g.
-    /// "AstroBlinkV2/6.0.0 (89)". Used server-side for telemetry / debugging.
+    /// "AstroBlinkV2/6.0.1 (90)". Used server-side for telemetry / debugging.
     static let appVersionHeader: String = {
         let info = Bundle.main.infoDictionary
         let version = (info?["CFBundleShortVersionString"] as? String) ?? "unknown"
