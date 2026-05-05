@@ -318,8 +318,14 @@ class TriageViewModel: ObservableObject {
         }
     }
 
-    // Real-time system stats (CPU + memory), updated every 2 seconds
-    struct SystemStats {
+    // Real-time system stats (CPU + memory), updated every 2 seconds.
+    // Equatable so the 2 s timer can no-op when neither field has changed —
+    // assigning the same value to a non-Equatable @Published still fires
+    // objectWillChange, which previously rebuilt every SwiftUI view bound to
+    // the view model 14,400 times overnight even when the strings were
+    // identical. With Equatable + a value guard in updateSystemStats(), idle
+    // sessions emit zero @Published events from this path.
+    struct SystemStats: Equatable {
         var memory: String   // "MEM 2.1 GB"
         var cpu: String      // "CPU 34% | 28 cores"
     }
@@ -814,7 +820,13 @@ class TriageViewModel: ObservableObject {
             cpuStr = "\(cores) cores"
         }
 
-        systemStats = SystemStats(memory: memGB, cpu: cpuStr)
+        // Only publish when something actually changed. The string formats
+        // step in 1 MB / 1 % buckets, so an idle app emits zero updates here
+        // — see the Equatable note on SystemStats above.
+        let next = SystemStats(memory: memGB, cpu: cpuStr)
+        if systemStats != next {
+            systemStats = next
+        }
     }
 
     // MARK: - Compare with Best
