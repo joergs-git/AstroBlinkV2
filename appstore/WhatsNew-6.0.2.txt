@@ -1,0 +1,9 @@
+Stability triple — three independent fixes, no scoring change.
+
+• LightspeedStacker no longer aborts on fast frames. A Metal completion-handler race caused ~5% of frames in long stacks to crash the process. The handler is now attached before commit, eliminating the race entirely.
+
+• NAS-folder open no longer traps on macOS 15.7+. A MainActor.assumeIsolated call inside the prefetch worker pool aborted the process under the new strict-concurrency runtime. Cancellation reads now go through nonisolated, lock-protected accessors.
+
+• NAS sessions now finish quality-scoring every frame. Late-arriving Stars/FWHM/SNR/HFR measurements were debounced into a rescore on the local-prefetch path but not on the NAS path — frames that arrived after the post-header recompute stayed "Quality Assessment Incomplete" forever. Both NAS callbacks are now wired, with an end-of-cache safety net.
+
+Algorithm version unchanged (kAlgorithmVersion stays 27). Frame History DB records remain compatible. Built against the macOS 26 (Tahoe) SDK in Xcode 26.3; deployment target stays macOS 14.

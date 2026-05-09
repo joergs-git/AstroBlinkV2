@@ -4,6 +4,44 @@ All notable changes to AstroBlink & AIsaac will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [6.0.2] — 2026-05-09
+
+Stability triple. Three independent fixes — pure logic, no scoring
+change, `kAlgorithmVersion` stays 27.
+
+### Fixed
+
+- **LightspeedStacker abort on fast-GPU dispatches.** The per-frame
+  Metal command buffer in `QuickStackEngineV2` had `addCompletedHandler`
+  attached *after* `commit()`. On fast frames the buffer could finish
+  first, and Metal aborts the process with "Completion handler added
+  after command buffer completed". Reproduced as ~5 % of frames
+  crashing during a 200-frame stack. Handler is now attached before
+  commit; behaviour identical, no race.
+- **NAS-folder open trapped on macOS 15.7+.** `MainActor.assumeIsolated`
+  was being called from `DispatchQueue.concurrentPerform` workers in
+  the prefetch pool — the strict-concurrency suppression that silenced
+  a Swift 6 warning aborts the process at runtime under the new
+  enforcement. Cancellation reads now go through nonisolated,
+  lock-protected accessors on `TriageViewModel`; the worker pool no
+  longer touches `MainActor` at all.
+- **NAS sessions left frames "Quality Assessment Incomplete"
+  indefinitely.** The local-prefetch pipeline already had a debouncer
+  hook for late-arriving Stars / FWHM / SNR / HFR measurements, but
+  the parallel NAS-prefetch callbacks were never wired to it. Frames
+  whose measurements arrived after the post-header recompute never got
+  a final score on slow shares. Both `onNoiseStats` and
+  `onStarMetrics` in the NAS path now request a debounced rescore
+  (1.5 s quiescence, no-op while bulk caching), and an end-of-cache
+  safety net catches anything that landed during the suppression
+  window. New `[Bench] LOAD READY (NAS)` log line mirrors the local
+  one.
+
+### Compatibility
+
+- Built against the **macOS 26 (Tahoe) SDK in Xcode 26.3**. Deployment
+  target stays macOS 14. Build is warning-clean under the new SDK.
+
 ## [6.0.1] — 2026-05-05
 
 Stability point release. No new features, no scoring changes, no

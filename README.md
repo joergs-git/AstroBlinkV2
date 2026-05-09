@@ -14,13 +14,34 @@ Nice side effect: Finally you have a native XISF and FITS Quicklook for macOS. (
 
 ---
 
-## What's New in v5.29.0 (Build 88)
+## What's New in v6.0.2 (Build 91)
+
+Stability triple — three independent fixes, no scoring change.
+
+- **LightspeedStacker no longer aborts on fast frames.** A Metal-completion-handler race caused ~5 % of frames in a long stack to crash the process with "Completion handler added after command buffer completed". The handler is now attached before commit, eliminating the race entirely.
+- **NAS-folder open no longer traps on macOS 15.7+.** A `MainActor.assumeIsolated` call inside the prefetch worker pool aborted the process on the new strict-concurrency runtime. Cancellation reads now go through nonisolated, lock-protected accessors — the worker pool no longer touches `MainActor` at all.
+- **NAS sessions now finish quality-scoring every frame.** A debouncer hook for late-arriving Stars / FWHM / SNR / HFR measurements existed only on the local-prefetch side; the NAS path didn't have it, so frames whose measurements landed after the post-header recompute stayed "Quality Assessment Incomplete" forever. Both NAS callbacks now request a debounced rescore (1.5 s quiescence, no-op while bulk caching), with an end-of-cache safety net for anything that landed during the suppression window.
+
+> **Algorithm version unchanged** (`kAlgorithmVersion` stays 27). Frame History DB records remain compatible.
+
+## Previously in v6.0.1 (Build 90)
+
+- **NAS-load hang on Xcode 26 / Swift 6.1 fix** — A `nonisolated(unsafe)` buffer alias from the strict-concurrency wave silently dropped WCS header writes on the new toolchain, causing every frame to lose plate-solve fields and the prefetch pipeline to beachball mid-load on > 500-frame folders. Reverted to the pre-Wave-3 form.
+- **SwiftUI "Publishing changes from within view updates" warnings cleared** on two more emitters (`FileListView.updateNSView` flag resets and `applySortDescriptors` write set), routed through `DispatchQueue.main.async` so on-screen state matches within the same tick while `@Published` lands on the next runloop turn.
+- **`SystemStats` value-guarded** — the 2-second stats timer was firing `objectWillChange` on every tick (~1,800 idle rebuilds/hour). `SystemStats` is now `Equatable` and the assignment is value-guarded; idle apps emit zero updates from this path.
+- **AIsaac sees the community baseline** in its system prompt — the assistant can now compare your frame's metrics against equipment-matched community averages.
+- Built against the **macOS 26 (Tahoe) SDK in Xcode 26.3**. Deployment target stays macOS 14. Build is warning-clean under the new SDK.
+
+## Previously in v6.0.0 (Build 89)
+
+- **Privacy & security overhaul.** PRIVACY.md fully rewritten to match what the app actually sends — explicit sections for anonymous telemetry, approximate location from FITS `SITELAT`/`SITELONG` rounded to 0.1°, in-app email collection for entitlements, and curated-frame uploads. Region corrected from US to EU. Onboarding screen now discloses telemetry with an inline opt-out checkbox. Supabase RLS hardened across 6 migrations applied to eu-west-1 prod, with `X-Device-Id` header injection on every write.
+- **~4 k-line file-organisation sweep.** `AstroTriageApp` 1934 → 512, `FrameHistoryWindow` 1666 → 667, 7 chart structs split out, `PlaybackController` extracted as the first `TriageViewModel` slice, new `SupabaseClient` helper.
+
+## Previously in v5.29.0 (Build 88)
 
 - **BETA notice on the Lightspeed Stacker** — the in-app stacker is great for fast previews and validation, but it's not a replacement for full integration in WBPP / PixInsight. The progress panel now states this clearly: a "BETA: LightspeedStacker" title plus a red one-liner so first-time users know what they're looking at.
-- **"Buy me a coffee" support dialog** — once between every 10–100 sessions you'll see a small, friendly dialog with a portrait of the developer and three options: yes, maybe later (snoozes 2 sessions), or no thanks (snoozes ~50 sessions). One-click opens [buymeacoffee.com/joergsflow](https://buymeacoffee.com/joergsflow). Honors night mode. Random schedule means it's never a fixed cadence and won't fire on the first install.
-- **Review prompt fix** — the App Store review prompt was wired only into the single-folder load path, missing single-file (`Cmd+O` → individual files) and multi-folder selections. All three load paths now bump the session counter and trigger the prompt — fixes a quiet bug present since the review prompt was added.
-
-> **Algorithm version unchanged** in this release — no quality/scoring logic touched. Frame History DB records remain compatible.
+- **"Buy me a coffee" support dialog** — once between every 10–100 sessions you'll see a small, friendly dialog with three options: yes, maybe later (snoozes 2 sessions), or no thanks (snoozes ~50 sessions). Honors night mode.
+- **Review prompt fix** — the App Store review prompt was wired only into the single-folder load path, missing single-file (`Cmd+O`) and multi-folder selections. All three load paths now bump the session counter.
 
 ## Previously in v5.28.0 (Build 87)
 
