@@ -188,6 +188,10 @@ extension SessionOrchestrator {
                     host.images[idx].noiseMedian = stats.median
                     host.images[idx].noiseMAD = stats.normalizedMAD
                 }
+                // Re-arm the rescore debouncer. Late metrics on slow NAS loads
+                // would otherwise miss the end-of-cache rescore window and the
+                // affected frames would sit "Quality Assessment Incomplete".
+                self.requestQualityRescoreDebounced()
             },
             onStarMetrics: { [weak self] url, metrics in
                 guard let self = self, let host = self.host else { return }
@@ -220,6 +224,8 @@ extension SessionOrchestrator {
                         }
                     }
                 }
+                // Re-arm the rescore debouncer (see onNoiseStats for rationale).
+                self.requestQualityRescoreDebounced()
             },
             onFileHash: { [weak self] url, hash in
                 guard let self = self, let host = self.host else { return }
@@ -292,14 +298,21 @@ extension SessionOrchestrator {
         var precacheStarted = false
 
         // Parallel download with 4 concurrent streams. The cancellation flag is
-        // observed on every iteration via the host's wrapped accessor — the
-        // underlying NSLock stays private to TriageViewModel.
-        await Task.detached(priority: .utility) { [weak self] in
+        // observed on every iteration via the host's nonisolated wrapped
+        // accessor — the underlying NSLock stays private to TriageViewModel.
+        // We snapshot `host` here (still on the main actor) and capture it
+        // weakly into the detached task so the worker threads never touch
+        // the orchestrator's @MainActor `host` property. Reading
+        // `isDownloadCancelled` from a worker is safe because the accessor is
+        // marked `nonisolated` on SessionHost (lock-protected internally).
+        // Previously this path used `MainActor.assumeIsolated`, which traps
+        // when called from `concurrentPerform` workers (utility-qos pool).
+        let hostForWorker: any SessionHost = host
+        await Task.detached(priority: .utility) { [weak self, weak hostForWorker] in
             DispatchQueue.concurrentPerform(iterations: total) { index in
                 // Early exit if session changed (user opened another folder)
-                let host = MainActor.assumeIsolated { self?.host }
-                let cancelled = MainActor.assumeIsolated { host?.isDownloadCancelled ?? true }
-                guard !cancelled else { return }
+                guard let workerHost = hostForWorker else { return }
+                guard !workerHost.isDownloadCancelled else { return }
 
                 let sourceURL = sourceURLs[index]
                 let localURL = sessionCacheRef.cacheFile(sourceURL: sourceURL)
@@ -475,6 +488,7 @@ extension SessionOrchestrator {
                     host.needsTableRefresh = true
                     host.statusMessage = "instant navigation ready"
                     self.benchmarkStats.markCachingEnd()
+                    print("[Bench] LOAD READY (NAS) at \(Date().timeIntervalSince1970) — caching complete, \(host.images.count) frames")
                     // Fire-and-forget anonymous upload of session load stats (community telemetry)
                     self.benchmarkService.autoUploadSessionLoad(
                         stats: self.benchmarkStats,
@@ -484,6 +498,16 @@ extension SessionOrchestrator {
                     // Don't compute quality scores here — header enrichment hasn't run yet
                     // for NAS sessions. enrichWithHeaders() completion handles quality scoring
                     // + session overview update after all header data is available.
+                    //
+                    // BUT: header enrichment may finish BEFORE bulk prefetch. In that
+                    // case the post-header recompute scores only the early-measured
+                    // frames; late metric callbacks arrive while isCaching is still
+                    // true so the debouncer (correctly) suppresses itself. Now that
+                    // isCaching has flipped off, fire a final debouncer pass +
+                    // legacy retry chain to pick up any frame whose metrics landed
+                    // during that gap.
+                    self.requestQualityRescoreDebounced()
+                    self.scheduleQualityRescore()
                     if !host.images.isEmpty {
                         host.selectImage(at: 0)
                     }
@@ -495,6 +519,10 @@ extension SessionOrchestrator {
                     host.images[idx].noiseMedian = stats.median
                     host.images[idx].noiseMAD = stats.normalizedMAD
                 }
+                // NAS path was previously missing the debouncer hook — that's why
+                // late-arriving frames on slow networks stayed "Quality Assessment
+                // Incomplete" indefinitely (no rescore triggered).
+                self.requestQualityRescoreDebounced()
             },
             onStarMetrics: { [weak self] url, metrics in
                 guard let self = self, let host = self.host else { return }
@@ -524,6 +552,8 @@ extension SessionOrchestrator {
                         }
                     }
                 }
+                // Debouncer hook (see onNoiseStats above for rationale).
+                self.requestQualityRescoreDebounced()
             },
             onFileHash: { [weak self] url, hash in
                 guard let self = self, let host = self.host else { return }

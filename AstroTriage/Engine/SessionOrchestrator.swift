@@ -55,8 +55,13 @@ import Foundation
 /// (enrichWithHeaders, checkMemoryBudgetAndCache, cacheNetworkFiles)
 /// will be removed once their owning code moves into the orchestrator
 /// in subsequent slices.
+// Sendable: main-actor-bound class instances are inherently Sendable, and the
+// only members touched from non-main contexts are the nonisolated, lock-gated
+// download-cancellation accessors below. Marking the protocol Sendable lets
+// the prefetch worker capture a weak host reference into a @Sendable closure
+// without spurious warnings.
 @MainActor
-protocol SessionHost: AnyObject {
+protocol SessionHost: AnyObject, Sendable {
     // MARK: Session identity / state
     var images: [ImageEntry] { get set }
     var sessionRootURL: URL? { get set }
@@ -131,9 +136,12 @@ protocol SessionHost: AnyObject {
     func stopAllAccessedURLs()
     func beginSecurityScopes(for urls: [URL])
 
-    // MARK: Download cancellation seam (wraps the NSLock dance on the host)
-    var isDownloadCancelled: Bool { get }
-    func setDownloadCancelled(_ value: Bool)
+    // MARK: Download cancellation seam (wraps the NSLock dance on the host).
+    // These are nonisolated because the implementation is lock-protected, so
+    // worker threads inside `DispatchQueue.concurrentPerform` can read/write
+    // the flag directly without bouncing through the main actor.
+    nonisolated var isDownloadCancelled: Bool { get }
+    nonisolated func setDownloadCancelled(_ value: Bool)
 
     // MARK: Session-load actions performed on the host
     func selectImage(at index: Int)
@@ -188,6 +196,13 @@ final class SessionOrchestrator {
     /// unbounded rescore chain. Owned by the orchestrator since only the
     /// scheduleQualityRescore* pair touches it.
     var rescoreRetryCount = 0
+
+    /// Debouncer handle for `requestQualityRescoreDebounced`. Each new metric
+    /// callback (noiseStats / starMetrics) cancels the pending work item and
+    /// reschedules; when the stream goes quiet for the quiescence window, the
+    /// rescore fires once with whatever has arrived. Replaces the prior fixed
+    /// 3-retry / 1.5-s budget that lost late-arriving frames on slow NAS loads.
+    var pendingRescoreWorkItem: DispatchWorkItem?
 
     /// Cancellable handle for the in-flight VLM mosaic generation task.
     /// startVisualValidation populates it; cancelVisualValidation tears it down.

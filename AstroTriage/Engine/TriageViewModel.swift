@@ -123,9 +123,14 @@ class TriageViewModel: ObservableObject {
     // Network file download progress (separate from header reading — runs concurrently)
     // Callback to update thread-safe URL map in the prefetch pipeline
     var networkURLUpdater: ((URL, URL) -> Void)?
-    // Cancellation flag for network downloads (checked per-file in concurrentPerform)
-    private let downloadCancelled = NSLock()
-    private var _downloadCancelled = false
+    // Cancellation flag for network downloads (checked per-file in
+    // concurrentPerform). nonisolated(unsafe) is correct here — every
+    // access goes through the NSLock above, so the storage is thread-safe
+    // even though TriageViewModel itself is @MainActor. This lets the
+    // nonisolated `isDownloadCancelled` / `setDownloadCancelled` accessors
+    // be called from worker threads without trapping.
+    nonisolated(unsafe) private let downloadCancelled = NSLock()
+    nonisolated(unsafe) private var _downloadCancelled = false
     @Published var isDownloading: Bool = false
     @Published var downloadCount: Int = 0
     @Published var downloadTotal: Int = 0
@@ -644,7 +649,9 @@ class TriageViewModel: ObservableObject {
     /// Lock-protected read of the NAS download cancellation flag.
     /// Exposed via SessionHost so the orchestrator can observe cancellation
     /// without owning the underlying NSLock. The lock + flag stay private here.
-    var isDownloadCancelled: Bool {
+    /// Nonisolated so `DispatchQueue.concurrentPerform` workers can poll it
+    /// directly without trapping in `MainActor.assumeIsolated`.
+    nonisolated var isDownloadCancelled: Bool {
         downloadCancelled.lock(); defer { downloadCancelled.unlock() }
         return _downloadCancelled
     }
@@ -652,7 +659,7 @@ class TriageViewModel: ObservableObject {
     /// Lock-protected setter for the NAS download cancellation flag.
     /// Used by SessionOrchestrator at the start of every session load to
     /// abort any in-flight downloads from a previous session.
-    func setDownloadCancelled(_ value: Bool) {
+    nonisolated func setDownloadCancelled(_ value: Bool) {
         downloadCancelled.lock(); _downloadCancelled = value; downloadCancelled.unlock()
     }
 

@@ -19,6 +19,12 @@ extension SessionOrchestrator {
     /// Delayed quality rescore: catches frames whose MainActor metric callbacks
     /// haven't delivered yet when the initial scoring ran. Retries up to 3 times
     /// at 0.5s intervals until all analyzable frames have quality scores.
+    ///
+    /// Used as the end-of-cache safety net. The continuous-stream case is now
+    /// covered by `requestQualityRescoreDebounced`, fired from each metric
+    /// callback — that path keeps re-arming itself as long as metrics keep
+    /// arriving, so late-arriving frames on slow NAS loads no longer slip
+    /// through the old fixed 1.5-s budget.
     func scheduleQualityRescore() {
         rescoreRetryCount = 0
         scheduleQualityRescoreStep()
@@ -41,6 +47,54 @@ extension SessionOrchestrator {
                 self.scheduleQualityRescoreStep()
             }
         }
+    }
+
+    /// Self-resetting quality rescore. Each call cancels any pending work item
+    /// and re-arms the deadline `quiescenceSeconds` into the future. While
+    /// metric callbacks keep arriving, the rescore keeps getting deferred;
+    /// once the stream goes quiet for one full window, the rescore fires once
+    /// with whatever metrics have landed.
+    ///
+    /// Why this exists: prefetch dispatches `onNoiseStats` / `onStarMetrics`
+    /// per frame as separate MainActor Tasks. On slow NAS loads, the very last
+    /// per-night cohort can deliver after the fixed 3-retry / 1.5-s budget in
+    /// `scheduleQualityRescore` has already expired, leaving those frames with
+    /// metrics but no quality score until something else triggers a rescore.
+    /// The debouncer collapses any burst of metric arrivals into a single
+    /// rescore and never gives up while frames are still being measured.
+    ///
+    /// Called from `onNoiseStats` and `onStarMetrics` only — call sites that
+    /// need an immediate, full-pipeline rescore (header enrichment finished,
+    /// PRE-DELETE flow, etc.) keep calling `recomputeQualityScores()` directly.
+    func requestQualityRescoreDebounced(quiescenceSeconds: TimeInterval = 1.5) {
+        // Skip while the initial load pipeline is actively running. Header
+        // enrichment + end-of-cache already call recomputeQualityScores() at
+        // well-chosen moments; firing in between just rescores against
+        // header-less GroupKeys (focalLength=0, sensor=0×0) and burns CPU
+        // for ~80 partial passes during a 181-frame NAS load. The debouncer
+        // is only a safety net for metrics that arrive AFTER those
+        // canonical triggers — i.e. once `isCaching` and the header phase
+        // have finished.
+        if let host = host, host.isCaching {
+            return
+        }
+        pendingRescoreWorkItem?.cancel()
+        let item = DispatchWorkItem { [weak self] in
+            guard let self = self, let host = self.host else { return }
+            // Bail if there's nothing to do — no measured-but-unscored frames.
+            // This also makes the work item idempotent: re-armings during the
+            // quiescence window settle into a single eventual rescore, and
+            // post-rescore tail callbacks become no-ops here.
+            let needsRescore = host.images.contains {
+                $0.qualityBreakdown == nil && ($0.noiseMAD != nil || $0.computedStarCount != nil)
+            }
+            guard needsRescore else { return }
+            self.recomputeQualityScores()
+            host.needsTableRefresh = true
+            self.sessionOverviewModel.updateStats(from: host.images)
+        }
+        pendingRescoreWorkItem = item
+        DispatchQueue.main.asyncAfter(deadline: .now() + quiescenceSeconds, execute: item)
     }
 
     /// Compute or recompute quality tiers for all images using QualityEstimator.

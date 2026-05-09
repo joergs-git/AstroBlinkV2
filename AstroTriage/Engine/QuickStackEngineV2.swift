@@ -474,11 +474,13 @@ class QuickStackEngineV2: ObservableObject {
                 let grid = MTLSize(width: (refWidth + 31) / 32, height: (refHeight + 31) / 32, depth: 1)
                 encoder.dispatchThreadgroups(grid, threadsPerThreadgroup: tg)
                 encoder.endEncoding()
-                cmdBuf.commit()
-                // Block via completion handler + continuation (async-friendly).
+                // Attach the completion handler BEFORE commit. Otherwise a fast GPU dispatch
+                // can finish before addCompletedHandler runs, and Metal aborts the process
+                // with an assertion ("Completion handler added after command buffer completed").
                 // waitUntilCompleted() is unavailable from async contexts in Swift 6.
                 await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
                     cmdBuf.addCompletedHandler { _ in cont.resume() }
+                    cmdBuf.commit()
                 }
             } else {
                 // Fallback: CPU warp with min/max tracking
