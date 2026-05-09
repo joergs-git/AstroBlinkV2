@@ -2,7 +2,7 @@
 
 Status: [ ] offen | [~] in Arbeit | [x] fertig
 
-Current version: **v6.0.0** (build 89) — shipped 2026-05-03 ([release notes](https://github.com/joergs-git/AstroBlinkV2/releases/tag/v6.0.0))
+Current version: **v6.0.2** (build 91 GH / 92 ASC) — shipped 2026-05-09 ([release notes](https://github.com/joergs-git/AstroBlinkV2/releases/tag/v6.0.2))
 
 ---
 
