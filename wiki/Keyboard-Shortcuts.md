@@ -4,8 +4,9 @@
 | Key | Action |
 |-----|--------|
 | ← / → | Previous / Next image |
-| Page Up / Home | Jump to first image |
-| Page Down / End | Jump to last image |
+| Page Up / Page Down | Page up / down through the file list (one viewport, 1 row overlap) |
+| Home | Jump to first image |
+| End | Jump to last image |
 
 ## Triage
 | Key | Action |

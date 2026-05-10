@@ -108,15 +108,17 @@ struct KeyboardHandler {
                 return true
             }
 
-        case 116: // Page Up — jump to first image
+        case 116: // Page Up — page up by visible rows (one viewport, minus 1 for overlap)
             if noModifiers {
-                Task { @MainActor in viewModel.navigateToFirst() }
+                let step = pageStepRows()
+                Task { @MainActor in viewModel.navigateByPage(-step) }
                 return true
             }
 
-        case 121: // Page Down — jump to last image
+        case 121: // Page Down — page down by visible rows (one viewport, minus 1 for overlap)
             if noModifiers {
-                Task { @MainActor in viewModel.navigateToLast() }
+                let step = pageStepRows()
+                Task { @MainActor in viewModel.navigateByPage(step) }
                 return true
             }
 
@@ -305,6 +307,18 @@ struct KeyboardHandler {
         }
 
         return false
+    }
+
+    // How many rows to step on a Page Up / Page Down keypress.
+    // Counts the rows currently visible in the file list table and subtracts one
+    // for the standard "keep one row of overlap between pages" UX. Falls back
+    // to a sensible default when the table can't be located.
+    private static func pageStepRows() -> Int {
+        guard let table = findTableView() else { return 20 }
+        let range = table.rows(in: table.visibleRect)
+        let visible = range.length
+        if visible <= 1 { return max(1, visible) }
+        return visible - 1
     }
 
     // Find the NSTableView in the key window's view hierarchy

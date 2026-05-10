@@ -517,8 +517,10 @@ Fallback: Filename-Token-Parsing
 | Taste            | Aktion                                              |
 |------------------|-----------------------------------------------------|
 | ← / →            | Prev / Next (stops at boundaries)                   |
-| Page Up / Home   | Jump to first image                                 |
-| Page Down / End  | Jump to last image                                  |
+| Page Up          | Page up through file list (one viewport, 1 row overlap) |
+| Page Down        | Page down through file list (one viewport, 1 row overlap) |
+| Home             | Jump to first image                                 |
+| End              | Jump to last image                                  |
 | Space            | Toggle Pre-Delete mark (single or multi-selection)  |
 | Cmd+Backspace    | Move marked files to PRE-DELETE folder              |
 | Cmd+Z            | Undo last pre-delete                                |

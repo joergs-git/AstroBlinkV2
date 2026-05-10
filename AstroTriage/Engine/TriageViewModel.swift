@@ -2413,6 +2413,31 @@ class TriageViewModel: ObservableObject {
         }
     }
 
+    // Move selection by `rows` (signed; negative = up, positive = down).
+    // Respects skipMarked: counts only unmarked frames towards the page step,
+    // landing on the n-th unmarked frame in the requested direction. Clamps
+    // to the first/last (unmarked) frame when the step would overshoot.
+    func navigateByPage(_ rows: Int) {
+        guard !images.isEmpty, rows != 0 else { return }
+        let step = rows > 0 ? 1 : -1
+        let count = abs(rows)
+        var index = selectedIndex
+        var moved = 0
+        var lastValid = index
+        while moved < count {
+            let next = index + step
+            if next < 0 || next >= images.count { break }
+            index = next
+            if !skipMarked || !images[index].isMarkedForDeletion {
+                lastValid = index
+                moved += 1
+            }
+        }
+        if lastValid != selectedIndex {
+            selectImage(at: lastValid)
+        }
+    }
+
     // Jump to first image in the list
     func navigateToFirst() {
         guard !images.isEmpty else { return }

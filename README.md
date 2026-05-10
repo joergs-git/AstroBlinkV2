@@ -238,7 +238,7 @@ After a night of imaging you might have 200-600 sub-exposures. Some have clouds,
 - Full undo stack — Cmd+Z undoes both PRE-DELETE and Cmd+M moves, unlimited depth
 - Multi-select — Shift/Cmd+click in the file list, then Space to mark all selected at once
 - Arrow keys stop at boundaries (no wrap-around)
-- Page Up/Home and Page Down/End for jump to first/last image
+- Page Up / Page Down to page through the file list one viewport at a time; Home / End to jump to first / last image
 
 ### Computed Star Metrics (HFR & FWHM)
 - **GPU-accelerated star detection** — during session loading, every frame is analyzed for stars using a Metal compute kernel on the GPU (~3-5ms per image)
@@ -348,8 +348,9 @@ After a night of imaging you might have 200-600 sub-exposures. Some have clouds,
 | Key | Action |
 |-----|--------|
 | `←` `→` | Previous / next image |
-| `Page Up/Home` | Jump to first image |
-| `Page Down/End` | Jump to last image |
+| `Page Up` / `Page Down` | Page up / down through the file list (one viewport, 1 row overlap) |
+| `Home` | Jump to first image |
+| `End` | Jump to last image |
 | `+` `-` | Zoom in / out |
 | `Space` | Toggle pre-delete mark (single or multi-select) |
 | `Cmd+Backspace` | Move marked files to PRE-DELETE folder |
