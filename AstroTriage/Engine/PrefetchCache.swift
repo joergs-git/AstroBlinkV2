@@ -101,6 +101,50 @@ class PrefetchCache {
         self.previewGenerator = PreviewGenerator(device: device)
     }
 
+    // Pick the channel with the strongest star signal for HFR / FWHM / detection.
+    //
+    // Hardcoding green (channel 1) was correct for broadband OSC frames, where
+    // RGGB sees roughly equal stellar continuum across all three channels and
+    // green wins by virtue of being the most-sampled colour. It is wrong for
+    // narrowband OSC (Lextr / L-eXtreme / Optolong / SHO duo-band): those
+    // filters pass Ha at 656 nm (deep red) plus a narrow OIII band at ~500 nm,
+    // so stellar continuum lands almost entirely in the red channel and the
+    // green channel sees only OIII-band photons. The 60 brightest unsaturated
+    // green-channel stars are then too faint to fit cleanly, every frame
+    // collapses to the all-zero partial-metrics path, and the UI shows "!"
+    // for every HFR/FWHM cell.
+    //
+    // The pick uses a simple count of bright pixels (> half of full range) on
+    // a 5 % subsample per channel — it is filter-agnostic, runs in ~5 ms total
+    // for 25 MP, needs no extra metadata, and tracks where the star signal
+    // actually went rather than where we expected it to be.
+    static func bestMeasurementChannel(of image: DecodedImage) -> Int {
+        guard image.channelCount > 1 else { return 0 }
+        let w = image.width, h = image.height
+        let planeSize = w * h
+        let ptr = image.buffer.contents().bindMemory(
+            to: UInt16.self, capacity: planeSize * image.channelCount
+        )
+        let stride = 20  // 5 % subsample
+        let threshold: UInt16 = 32768  // half of full UInt16 range
+        var bestChannel = 0
+        var bestCount = -1
+        for ch in 0..<image.channelCount {
+            let chOff = ch * planeSize
+            var count = 0
+            var i = 0
+            while i < planeSize {
+                if ptr[chOff + i] > threshold { count += 1 }
+                i += stride
+            }
+            if count > bestCount {
+                bestCount = count
+                bestChannel = ch
+            }
+        }
+        return bestChannel
+    }
+
     // Retrieve a cached pre-stretched preview, nil if not yet ready
     func getPreview(for url: URL) -> CachedPreview? {
         return cache[url]
@@ -218,6 +262,24 @@ class PrefetchCache {
                     imageForSTF = decoded
                 }
 
+                // Measurement image: ALWAYS debayered when BAYERPAT is known,
+                // independent of the user's display-debayer toggle. HFR/FWHM
+                // apertures and Gaussian fits assume a smooth PSF; the raw Bayer
+                // mosaic corrupts both with R/G/G/B striation, which silently
+                // returns the all-zero partial-metrics path for OSC frames whenever
+                // display debayer is off. Reuses the display-debayered buffer when
+                // the user toggle already computed it (zero extra GPU cost).
+                let measurementImage: DecodedImage
+                if imageForSTF.channelCount == 3 {
+                    measurementImage = imageForSTF
+                } else if decoded.channelCount == 1,
+                          let pat = entry.bayerPattern, !pat.isEmpty,
+                          let debayered = generator?.debayer(image: decoded, pattern: pat) {
+                    measurementImage = debayered
+                } else {
+                    measurementImage = imageForSTF
+                }
+
                 // Pixel-based orientation fingerprint — cheap (<1 ms on M-series
                 // for 50 MP). Runs on the RAW decoded buffer so it's consistent
                 // across OSC/mono and doesn't depend on debayer availability.
@@ -226,21 +288,23 @@ class PrefetchCache {
                     fingerprintResult = OrientationFingerprint.compute(from: decoded)
                 }
 
-                // Compute metrics synchronously on background thread
+                // Compute metrics synchronously on background thread.
+                // Use measurementImage so OSC noise/HFR/FWHM see smooth, single-color
+                // data even when the user has display debayer off.
                 var noiseStatsResult: STFCalculator.NoiseStats?
                 if onNoiseStats != nil {
-                    noiseStatsResult = STFCalculator.measureNoise(from: imageForSTF)
+                    noiseStatsResult = STFCalculator.measureNoise(from: measurementImage)
                 }
 
                 var starMetricsResult: StarMetrics?
                 var alignmentResult: AffineTransform2D?
                 if onStarMetrics != nil {
-                    let channel = imageForSTF.channelCount == 3 ? 1 : 0
-                    let stars = generator?.detectStarsFromImage(imageForSTF, channel: channel) ?? []
+                    let channel = Self.bestMeasurementChannel(of: measurementImage)
+                    let stars = generator?.detectStarsFromImage(measurementImage, channel: channel) ?? []
                     let totalStarCount = generator?.lastTotalStarCount ?? stars.count
                     if !stars.isEmpty {
                         let metrics = StarMetricsCalculator.measure(
-                            stars: stars, fullResImage: imageForSTF, channel: channel,
+                            stars: stars, fullResImage: measurementImage, channel: channel,
                             totalStarCount: totalStarCount,
                             generator: generator,
                             arcsecPerPixel: entry.arcsecPerPixel
@@ -416,6 +480,10 @@ class PrefetchCache {
                 let url = entry.url
                 let fallbackDecodingURL = entry.decodingURL
                 let bayerPattern = bayerPatterns[entry.url]
+                // Pull entry.bayerPattern out separately — bayerPatterns above is gated
+                // by the user's display-debayer toggle; measurement must always debayer
+                // OSC mosaics, so we need the raw header field independent of that.
+                let measurementBayerPattern = entry.bayerPattern
 
                 let urlsLock = self?.cachedURLsLock
                 let urlsSetRef = self
@@ -467,6 +535,20 @@ class PrefetchCache {
                         imageForSTF = decoded
                     }
 
+                    // Measurement image: ALWAYS debayered when BAYERPAT is known.
+                    // See detailed rationale in prioritizeCaching path. Reuses the
+                    // display-debayered buffer when display debayer was already on.
+                    let measurementImage: DecodedImage
+                    if imageForSTF.channelCount == 3 {
+                        measurementImage = imageForSTF
+                    } else if decoded.channelCount == 1,
+                              let pat = measurementBayerPattern, !pat.isEmpty,
+                              let debayered = generator?.debayer(image: decoded, pattern: pat) {
+                        measurementImage = debayered
+                    } else {
+                        measurementImage = imageForSTF
+                    }
+
                     // 2a. Pixel-based orientation fingerprint (<1 ms). Used as the
                     // last-resort signal for auto-rotate when headers are silent
                     // and star matching fails (RASA, rotation-invariant fields).
@@ -475,13 +557,12 @@ class PrefetchCache {
                         fingerprintResult = OrientationFingerprint.compute(from: decoded)
                     }
 
-                    // 2b. Measure noise stats (uses same 5% subsample as STF — ~2ms)
-                    // Computed synchronously on background thread; dispatched to MainActor
-                    // together with star metrics and progress in a single Task to guarantee
-                    // all data is populated before scoring runs.
+                    // 2b. Measure noise stats on the (always-debayered for OSC)
+                    // measurement image, so SNR is consistent independent of the
+                    // user's display debayer toggle.
                     var noiseStatsResult: STFCalculator.NoiseStats?
                     if onNoiseStats != nil {
-                        noiseStatsResult = STFCalculator.measureNoise(from: imageForSTF)
+                        noiseStatsResult = STFCalculator.measureNoise(from: measurementImage)
                     }
 
                     // 2c. GPU star detection + CPU HFR/FWHM measurement (~5-7ms per image)
@@ -489,12 +570,14 @@ class PrefetchCache {
                     var starMetricsResult: StarMetrics?
                     var alignmentResult: AffineTransform2D?
                     if onStarMetrics != nil {
-                        let channel = imageForSTF.channelCount == 3 ? 1 : 0  // Green for OSC
-                        let stars = generator?.detectStarsFromImage(imageForSTF, channel: channel) ?? []
+                        // Pick the channel with the strongest star signal per-frame
+                        // (broadband → green; narrowband Lextr/L-eXtreme → red, etc.)
+                        let channel = Self.bestMeasurementChannel(of: measurementImage)
+                        let stars = generator?.detectStarsFromImage(measurementImage, channel: channel) ?? []
                         let totalStarCount = generator?.lastTotalStarCount ?? stars.count
                         if !stars.isEmpty {
                             let metrics = StarMetricsCalculator.measure(
-                                stars: stars, fullResImage: imageForSTF, channel: channel,
+                                stars: stars, fullResImage: measurementImage, channel: channel,
                                 totalStarCount: totalStarCount,
                                 generator: generator,
                                 arcsecPerPixel: entry.arcsecPerPixel

@@ -12,6 +12,73 @@ Records with `algorithmVersion < kAlgorithmVersion` are candidates for re-analys
 
 ---
 
+## Version 28 — OSC measurement always debayered + per-frame channel pick (2026-05-10)
+
+**Fixes silent HFR/FWHM failure on OSC frames.** Two coupled
+issues:
+
+1. When the user had **display debayer off** on an OSC sensor, the
+   star-metrics pipeline ran HFR/FWHM aperture integration and Gaussian
+   fits on the *raw Bayer mosaic*. The 10-pixel-radius aperture saw
+   alternating R/G/G/B intensities — a striated, non-smooth pattern that
+   the smooth-PSF assumption in `computeHFR` and `computeFWHMGaussian`
+   could not handle. Both routines returned out-of-bound values that
+   failed the `0.5–15` / `1–20` bounds checks; `hfrValues.count <
+   minStars` tripped, `StarMetricsCalculator.measure` returned the
+   partial-metrics sentinel (`medianHFR: 0, medianFWHM: 0,
+   measuredStarCount: 0, totalStarCount: …`), and the UI showed `!` in
+   every HFR/FWHM cell with the misleading "all bright stars saturated"
+   tooltip.
+
+2. Even when display debayer was on, the measurement channel was
+   hardcoded to `1` (green). For broadband OSC this is fine — RGGB sees
+   roughly equal stellar continuum across all three channels and green
+   wins by being the most-sampled colour. For **narrowband OSC** (Lextr,
+   L-eXtreme, Optolong, SHO duo-band, anything passing Ha + OIII or
+   Ha + OIII + SII), stellar continuum lands almost entirely in the red
+   channel and the green channel sees only OIII-band photons. The 60
+   brightest unsaturated green-channel stars are then too faint to fit
+   cleanly, and the same partial-metrics path fires.
+
+### What changes
+
+- `PrefetchCache.swift` (both priority and background queue paths) now
+  computes a separate `measurementImage` that is **always debayered when
+  `BAYERPAT` is known**, independent of the user's display-debayer
+  toggle. Reuses the display-debayered buffer when display debayer is
+  already on (zero extra GPU cost). Otherwise pays one extra debayer
+  pass (~3–5 ms / frame on M-series).
+- New `PrefetchCache.bestMeasurementChannel(of:)` helper picks the
+  channel with the strongest star signal per-frame by counting bright
+  pixels (> half full range) on a 5 % subsample. Filter-agnostic — no
+  parsing of the FILTER header required. Cost ~5 ms total for 25 MP.
+- Both noise stats (`STFCalculator.measureNoise`) and star metrics
+  (`StarMetricsCalculator.measure`) now run on `measurementImage` with
+  the picked channel. Display alignment (`generatePreviewAsync`, STF
+  params, MTLTexture caching) continues to use `imageForSTF` so the
+  user's display debayer choice is respected.
+
+### Impact
+
+- OSC frames whose HFR/FWHM previously collapsed to `!` because of
+  Bayer-striated apertures or dim-green narrowband signal now produce
+  measurable values. SNR is also more accurate on those frames because
+  noise stats use a smooth single-channel buffer instead of a striated
+  mosaic.
+- Mono frames are unaffected — `channelCount == 1 && bayerPattern ==
+  nil` keeps `measurementImage == imageForSTF == decoded`.
+- Broadband OSC frames are usually unaffected — `bestMeasurementChannel`
+  picks green for them (most bright pixels), matching the previous
+  hardcoded behaviour.
+- Frame History DB records scored at version 27 with `medianHFR == 0 &&
+  medianFWHM == 0 && totalStarCount > 0` are stale candidates for
+  re-analysis under v28.
+
+### Files
+
+- `AstroTriage/Engine/PrefetchCache.swift` — `measurementImage` + helper
+- `AstroTriage/Model/FrameRecord.swift` — `kAlgorithmVersion` 27 → 28
+
 ## Version 27 — Curation-Driven Threshold Learning Phase 2 (2026-05-04)
 
 **First scoring change with real behavioural impact since v22.** Adds
