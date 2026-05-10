@@ -172,30 +172,23 @@ enum StarMetricsCalculator {
         }
         guard filtered.count >= minStars else { return nil }
 
-        // Full-resolution saturation check BEFORE prefix(60): the bin2x-based saturation
-        // filter in filterStars() can miss stars that are saturated in full-res but averaged
-        // below threshold in bin2x. On broadband B-filter 120s at gain 100 (bright open
-        // clusters), the brightest 60 candidates may ALL be saturated — leaving zero valid
-        // FWHM measurements. By filtering here, we skip saturated stars and select the
-        // brightest 60 NON-SATURATED stars, which have good signal for accurate Gaussian fits.
-        let unsaturated = filtered.filter { star -> Bool in
-            let cx = Int(star.x.rounded())
-            let cy = Int(star.y.rounded())
-            guard cx - 2 >= 0, cx + 2 < w, cy - 2 >= 0, cy + 2 < h else { return false }
-            var peak: UInt16 = 0
-            for dy in -2...2 {
-                for dx in -2...2 {
-                    let val = ptr[channelOffset + (cy + dy) * w + (cx + dx)]
-                    if val > peak { peak = val }
-                }
-            }
-            return peak < saturationThreshold
-        }
-        // Only use unsaturated candidates — saturated stars produce wrong FWHM/HFR.
-        // If too few unsaturated stars exist, measure() will return nil for FWHM/HFR,
-        // which is the honest answer: "we can't reliably measure this frame."
-        // Quality scoring falls back to other metrics (stars, noise, trailing).
-        let toMeasure = Array(unsaturated.prefix(maxMeasuredStars))
+        // Use `filtered` directly — its 3×3 saturation cut (99.5 %, see
+        // `filterStars`) already excludes stars whose central pixels are entirely
+        // pegged at the ADC ceiling. The remaining candidates either are
+        // unsaturated, or have one or two saturated central pixels surrounded
+        // by clean wings. The HFR / FWHM / shape calculators handle the latter
+        // via annular measurement (skip the inner 3 px), so we no longer want
+        // to filter them out before measurement.
+        //
+        // Historic note: a separate 5×5 / 98 % full-res re-filter used to live
+        // here. It made dim-star fallback work on broadband + 120 s at gain 100,
+        // but for fast f/2.2 RASAs at 300 s on Lextr / L-eXtreme OSC sensors —
+        // where dozens of stars saturate per frame — it left the candidate pool
+        // with only dim stars whose HFR / FWHM measurements then failed the
+        // 0.5–15 / 1–20 px bounds, collapsing the whole frame to the
+        // partial-metrics path. Annular measurement is the correct fix; the
+        // re-filter is redundant once filterStars uses the relaxed 99.5 % cut.
+        let toMeasure = Array(filtered.prefix(maxMeasuredStars))
 
         // ── Pass 1: Compute HFR and FWHM (on streak-filtered stars only) ──
         var hfrValues: [Double] = []
@@ -233,9 +226,20 @@ enum StarMetricsCalculator {
             let noise = max(bg, 1.0).squareRoot()
             perStarPeakSNR[i] = Double(peakAboveBg / noise)
 
+            // Detect bright stars whose central 1-2 pixels are saturated but whose
+            // wings are clean. Annular HFR/FWHM measurement skips the saturated core
+            // and recovers a useful value from the wings — the same trick the shape
+            // calculation already uses (see line ~1055). Without this, fast f/2.2
+            // RASAs at 300 s on Lextr/L-eXtreme OSC sensors (where dozens of stars
+            // saturate per frame) produce HFR < 0.5 from the flat-topped cores,
+            // which then fails the lower-bound check and trips the partial-metrics
+            // fallback for the whole frame.
+            let isBright = peakPixel > Float(shapeSaturationThreshold - 5000)
+
             if let hfr = computeHFR(
                 ptr: ptr, channelOffset: channelOffset, width: w,
-                cx: star.x, cy: star.y, radius: apertureRadius, background: bg
+                cx: star.x, cy: star.y, radius: apertureRadius, background: bg,
+                skipSaturatedCore: isBright
             ), hfr >= 0.5 && hfr <= 15.0 {
                 hfrValues.append(hfr)
                 perStarHFR[i] = hfr
@@ -243,7 +247,8 @@ enum StarMetricsCalculator {
 
             if let fwhm = computeFWHMGaussian(
                 ptr: ptr, channelOffset: channelOffset, width: w,
-                cx: star.x, cy: star.y, radius: apertureRadius, background: bg
+                cx: star.x, cy: star.y, radius: apertureRadius, background: bg,
+                skipSaturatedCore: isBright
             ), fwhm >= 1.0 && fwhm <= 20.0 {
                 fwhmValues.append(fwhm)
                 perStarFWHM[i] = fwhm
@@ -692,8 +697,16 @@ enum StarMetricsCalculator {
         channelOffset: Int,
         useCenterCrop: Bool = true
     ) -> [DetectedStar] {
+        // Use the relaxed (99.5 %) saturation cut: bright stars with one or two
+        // saturated central pixels are admitted because the HFR / FWHM /
+        // eccentricity calculators can skip the saturated core via annular
+        // measurement and still produce a valid result from the unsaturated
+        // wings. The strict 98 % cut used to discard them entirely on fast
+        // f/2.2 systems at long exposures, where dozens of bright stars
+        // saturate per frame and the dim-star fallback then failed the HFR /
+        // FWHM bounds for the whole frame.
         return filterStarsImpl(stars, width: width, height: height, ptr: ptr, channelOffset: channelOffset,
-                               useCenterCrop: useCenterCrop, satThreshold: saturationThreshold)
+                               useCenterCrop: useCenterCrop, satThreshold: shapeSaturationThreshold)
     }
 
     // MARK: - Star Filtering (relaxed — for shape/eccentricity measurement)
@@ -815,7 +828,8 @@ enum StarMetricsCalculator {
         width: Int,
         cx: Float, cy: Float,
         radius: Float,
-        background: Float
+        background: Float,
+        skipSaturatedCore: Bool = false
     ) -> Double? {
         let steps = Int(radius / 0.5) + 1
         var cumulativeFlux = [Double](repeating: 0, count: steps)
@@ -825,6 +839,12 @@ enum StarMetricsCalculator {
         let intCx = Int(cx.rounded())
         let intCy = Int(cy.rounded())
 
+        // For bright stars with a saturated core: skip the inner 3 px (~9 px²)
+        // and integrate only the unsaturated wings. The flat-topped core would
+        // otherwise concentrate the cumulative flux at small radii and the
+        // returned HFR would be < 0.5 (failing the lower-bound check).
+        let innerSkipRadiusSq: Float = skipSaturatedCore ? 9.0 : 0.0
+
         struct PixelFlux {
             let distance: Float
             let flux: Float
@@ -833,7 +853,9 @@ enum StarMetricsCalculator {
 
         for dy in -r...r {
             for dx in -r...r {
-                let dist = Float(dx * dx + dy * dy).squareRoot()
+                let distSq = Float(dx * dx + dy * dy)
+                if distSq < innerSkipRadiusSq { continue }
+                let dist = distSq.squareRoot()
                 if dist <= radius {
                     let px = intCx + dx
                     let py = intCy + dy
@@ -882,7 +904,8 @@ enum StarMetricsCalculator {
         width: Int,
         cx: Float, cy: Float,
         radius: Float,
-        background: Float
+        background: Float,
+        skipSaturatedCore: Bool = false
     ) -> Double? {
         let intCx = Int(cx.rounded())
         let intCy = Int(cy.rounded())
@@ -900,11 +923,22 @@ enum StarMetricsCalculator {
 
         let fitRadius = min(radius, 5.0)
         let fitRadiusSq = fitRadius * fitRadius
+        // For bright stars with a saturated core: skip the inner 3 px (~9 px²)
+        // so the flat top doesn't drag the linear log(I)-vs-r² fit horizontal.
+        // The fit then runs on the unsaturated wings only, which still hold a
+        // clean Gaussian profile.
+        let innerSkipRadiusSq: Float = skipSaturatedCore ? 9.0 : 0.0
         // 3% threshold (was 10%) to capture more of the Gaussian profile for tight stars.
         // At FWHM ~1.3px (σ=0.55), pixels at distance 1.0 are ~19% of peak (pass),
         // at distance √2 are ~3.7% (pass with 3%, fail with 10%). This yields ~9 qualifying
         // pixels instead of ~5, enabling reliable fits on undersampled stars.
         let threshold = peakValue * 0.03
+        // Hard cap: pixels at peak are flat-topped saturated cores even when the
+        // outer ring is below saturationThreshold (peakValue is bg-subtracted, so
+        // a raw saturated value still produces peakValue ≈ saturationThreshold-bg).
+        // Reject anything ≥ 99 % of peak to guarantee saturation pixels never
+        // enter the fit.
+        let upperCap = peakValue * 0.99
 
         var sumR2: Double = 0
         var sumLnI: Double = 0
@@ -917,12 +951,13 @@ enum StarMetricsCalculator {
             for dx in -fitR...fitR {
                 let distSq = Float(dx * dx + dy * dy)
                 if distSq > fitRadiusSq { continue }
+                if distSq < innerSkipRadiusSq { continue }
 
                 let px = intCx + dx
                 let py = intCy + dy
                 let val = Float(ptr[channelOffset + py * width + px]) - background
 
-                if val > threshold && val < peakValue * 1.1 {
+                if val > threshold && val < upperCap {
                     let r2 = Double(distSq)
                     let lnI = log(Double(val))
                     sumR2 += r2

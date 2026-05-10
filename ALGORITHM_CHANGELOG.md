@@ -12,6 +12,74 @@ Records with `algorithmVersion < kAlgorithmVersion` are candidates for re-analys
 
 ---
 
+## Version 29 — Annular HFR / FWHM for saturated-core stars (2026-05-10)
+
+**Recovers HFR and FWHM measurements on fast optics at long exposures.**
+v28 fixed OSC channel selection but still showed `!` for HFR on every
+frame from the user's RASA f/2.2 + 300 s + Lextr OSC dataset. Root cause:
+saturated-core stars systematically failed both `computeHFR` and
+`computeFWHMGaussian`, then the dim-star fallback couldn't find enough
+in-bounds measurements for the partial-metrics path to be avoided.
+
+### Why HFR specifically failed
+
+`computeHFR` sums background-subtracted flux into 0.5-px-wide annuli, then
+returns the radius where cumulative flux first reaches half the total.
+A saturated star has a flat-topped core — multiple central pixels at the
+ADC ceiling — which inflates the cumulative flux at the smallest radii.
+The half-flux radius then comes back below 0.5 px and trips the
+`hfr >= 0.5` bound. Several saturated stars per frame are enough to
+collapse `hfrValues.count < minStars` and route the whole frame to the
+all-zero partial-metrics sentinel that the UI renders as `!`.
+
+### Why FWHM also silently failed (but was masked by header fallback)
+
+`computeFWHMGaussian` runs a linear regression of `log(I)` vs `r²` over
+pixels in `(3 % of peak, 110 % of peak)`. Saturated peak pixels are
+admitted by that range and flatten the slope, returning either an
+out-of-bounds value or — once below the lower bound — `nil`. When all
+group entries have `STARFWHM` headers the QualityEstimator falls back to
+the header value (`QualityEstimator.swift:416`), so the FWHM cell looked
+populated and the failure stayed invisible.
+
+### What changes
+
+- `StarMetricsCalculator.computeHFR` and `.computeFWHMGaussian` gain a
+  `skipSaturatedCore: Bool` parameter. When true (peak >
+  `shapeSaturationThreshold − 5000`, the same definition the shape
+  calculator already uses), the inner 3 px (~9 px²) are skipped and the
+  measurement runs on the unsaturated wings.
+- `computeFWHMGaussian` also tightens its upper inclusion bound from
+  `peakValue * 1.1` to `peakValue * 0.99`, so any pixel pegged at the
+  flat top is rejected outright even when `skipSaturatedCore` is false.
+- `filterStars` switches to the relaxed 99.5 % saturation cut (was
+  98 %), matching `filterStarsForShape`. Bright stars with one or two
+  saturated central pixels are now admitted to the measurement set —
+  the annular calculators handle them correctly and on fast optics they
+  are often *the* in-bounds candidates.
+- The redundant 5×5 / 98 % full-res re-filter at the top of `measure()`
+  is removed. `filterStars`' relaxed cut already covers the bin2x-vs-
+  full-res discrepancy that motivated it, and keeping it would have
+  silently re-excluded the saturated-core stars we just admitted.
+
+### Impact
+
+- OSC frames at fast f-ratios + long exposures (RASA f/2.2 + 300 s and
+  similar) now produce real HFR / FWHM values instead of `!`. This is
+  the immediate user-visible fix.
+- Mono frames at slow f-ratios behave as before (negligible saturation,
+  `skipSaturatedCore` stays false).
+- Frame History DB records scored at v28 with `medianHFR == 0 &&
+  medianFWHM == 0 && totalStarCount > 0` are stale candidates for
+  re-analysis under v29.
+
+### Files
+
+- `AstroTriage/Engine/StarMetricsCalculator.swift` — annular HFR / FWHM,
+  saturated-peak rejection in Gaussian, relaxed `filterStars` cut,
+  measurement-pool tidy-up
+- `AstroTriage/Model/FrameRecord.swift` — `kAlgorithmVersion` 28 → 29
+
 ## Version 28 — OSC measurement always debayered + per-frame channel pick (2026-05-10)
 
 **Fixes silent HFR/FWHM failure on OSC frames.** Two coupled

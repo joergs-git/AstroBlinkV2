@@ -295,6 +295,71 @@ All original implementation phases are complete:
       "Type-Based Metric Weight Modifiers" the data is already computed,
       just not surfaced to the user).
 
+### Unattended Night-After Auto-Triage (NINA → AstroBlink hand-off)
+
+End-to-end "I wake up, the cull is done" pipeline. AstroBlink polls one or
+more configured drop folders for an `astroblink-session-*.json` manifest
+written by a small NINA plugin at session end, then auto-triages the
+shoot, dumps the garbage, and pushes a Pushover summary — all without
+the user touching the app.
+
+- [ ] **NINA plugin** (separate repo / project) writes a session manifest
+      JSON at "session ended" time. Schema captures session root path,
+      target name(s), filter list, total frame count per filter,
+      capture-window start/end, equipment fingerprint hint (telescope +
+      camera + focal length), and an `astroblink_state` field initially
+      `"pending"`. Manifest filename includes a UTC timestamp so multiple
+      sessions in one folder don't collide.
+- [ ] **Background poller in AstroBlink** — `SessionDropWatcher` (new
+      `AstroTriage/Engine/`). Watches N user-configured directories via
+      `DispatchSourceFileSystemObject` (FSEvents-style) for `*.json`
+      files matching the manifest schema. Validates the schema before
+      acting. Settings UI: list of watch folders + per-folder enable
+      toggle.
+- [ ] **Idempotency safeguards** — never run twice on the same manifest:
+      - on pickup, atomically rename to `*.processing.json` (lock); on
+        success rename to `*.finished.json`; on failure rename to
+        `*.failed-<reason>.json` with a short error tag
+      - keep an internal SQLite ledger of `(manifestHash, fileHash,
+        timestamp, status)` so a manifest renamed back by the user can't
+        re-trigger
+      - skip manifests older than a configurable max-age (default 7 d)
+- [ ] **Auto-triage preset** — three-level menu (`conservative` /
+      `balanced` / `aggressive`) reusing the existing Auto-Mark
+      autopilot logic. Configurable per watch folder, with a global
+      default. Aggressive preset additionally moves marked frames to
+      PRE-DELETE (or even Trash, behind a separate "auto-empty"
+      double-confirm setting that is OFF by default — see CLAUDE.md
+      non-negotiables on permanent deletion).
+- [ ] **Headless run mode** — load session, finish prefetch + scoring,
+      apply autopilot, optionally move-to-PRE-DELETE, run / refresh
+      Frame History DB, fire community telemetry, write a per-session
+      report. No window pops to front; macOS app stays unobtrusive
+      (LSUIElement-style behaviour for unattended runs only).
+- [ ] **Pushover report at end** — uses the existing `BenchmarkSharing`
+      Pushover credentials path. Body content: target + filter + total
+      frames, kept vs trashed counts, mean / median FWHM and HFR,
+      best-and-worst frame thumbnails (optional — Pushover supports
+      images), AIsaac-generated 1-sentence summary ("Decent night —
+      FWHM tight at 6.1 px median, three Ha 300 s frames lost to wind
+      gust at 03:14"). Failure path also pushes ("AstroBlink couldn't
+      score session X — reason: …") so silent failures don't pile up.
+- [ ] **AIsaac comment** — short generated paragraph from the session's
+      QualityBreakdown distribution, group counts, and any sanity-check
+      flags. Re-uses the existing AIsaac system prompt / community
+      baseline context. Cap response at ~400 chars to fit Pushover.
+- [ ] **Console / log artefact** — alongside `*.finished.json`, write a
+      sibling `*.report.txt` with the full triage breakdown for the
+      user's records (in case they want more detail than the Pushover
+      blob).
+- [ ] **Manual "run now" trigger** — settings panel button to point at
+      a specific manifest and run the full pipeline against it (useful
+      for re-runs and debugging the JSON schema).
+- [ ] **Throttle / serialise** — only one unattended run at a time even
+      if multiple manifests appear simultaneously (NAS folder with
+      backlog). FIFO queue. Visible in a small status badge in the
+      window if/when the user does open the app.
+
 ### Imaging Calendar / Planner
 - [ ] Monthly calendar view with moon phases and darkness hours
 - [ ] Target altitude curves per night from user's location
