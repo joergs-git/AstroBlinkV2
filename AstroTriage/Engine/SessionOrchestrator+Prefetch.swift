@@ -121,7 +121,10 @@ extension SessionOrchestrator {
         // Identify frames that have cached previews but missing analysis data.
         // These frames were skipped in a prior prefetch because their preview was cached,
         // but the metric callbacks (onNoiseStats, onStarMetrics) never fired.
-        let needsAnalysis = Set(host.images.filter { $0.noiseMAD == nil && $0.computedStarCount == nil }
+        // Use OR (||): if EITHER metric is missing the frame is half-measured and
+        // must be re-analysed. AND (&&) silently strands frames where one callback
+        // landed and the other was dropped (generation race, NAS late delivery, etc.).
+        let needsAnalysis = Set(host.images.filter { $0.noiseMAD == nil || $0.computedStarCount == nil }
                                             .map { $0.url })
 
         prefetchCache.prefetchAll(
@@ -451,8 +454,9 @@ extension SessionOrchestrator {
             return resolved
         }
 
-        // Identify frames that need re-analysis (cached preview but missing metrics)
-        let needsAnalysisNAS = Set(host.images.filter { $0.noiseMAD == nil && $0.computedStarCount == nil }
+        // Identify frames that need re-analysis (cached preview but missing metrics).
+        // OR not AND — see the local-path comment above for the rationale.
+        let needsAnalysisNAS = Set(host.images.filter { $0.noiseMAD == nil || $0.computedStarCount == nil }
                                                .map { $0.url })
 
         prefetchCache.prefetchAll(
