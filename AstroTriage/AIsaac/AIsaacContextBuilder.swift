@@ -610,6 +610,13 @@ struct AIsaacContextBuilder {
           empirical validation against 4540 user-rated frames — it had ~34% precision (65 FPs for every \
           33 TPs) and only fired on frames where FWHM was the sole flag. Genuinely bad frames fail \
           multiple metrics simultaneously and are caught by the 2-flag rule.
+          * When the user asks WHY a specific frame is trash, ALWAYS check the 'verdict' column in \
+          PER-FRAME DATA first. It contains the literal Stage 1 garbage rule (e.g. "star trailing/elongation") \
+          OR the Stage 1.5/1.5b/4 reasoning text (e.g. "Session sanity: star count far below session norm, \
+          trailing far above session norm"). Quote it verbatim — do NOT speculate. A frame with combinedZ \
+          near zero but tier=trash is almost always a Stage 1.5 demotion; the verdict column tells you which \
+          flags fired. A within-group z-score near zero is irrelevant if Stage 1.5 fired — Stage 1.5 uses a \
+          different (cross-night, cross-filter) pool and overrides the z-score tier.
         - MINIMUM GROUP SIZE: Groups with < 6 frames get NO quality score — too few for statistics. \
         These frames are NOT bad — just in a group too small to compare. \
         Groups with 6-7 frames that have ambiguous quality may receive the "uncertain" tier (blue "?" icon) \
@@ -1057,7 +1064,14 @@ struct AIsaacContextBuilder {
 
         var lines: [String] = ["PER-FRAME DATA (use for deep analysis):"]
         lines.append("The 'id' column shows the hash-based short ID visible in the # column (e.g. '4A-7566'). ALWAYS use this ID when referencing specific frames in text. For app commands, use the session index in the 'idx' column.")
-        lines.append("id|idx|filename|filter|exp|object|night|tier|z|fwhm|hfr|stars|snr|noise|ecc|trail|moon%|moonDist|marked|reason|twilight")
+        // 'verdict' column carries the literal reason a frame was demoted: Stage 1 hard
+        // garbage rules (e.g. "no signal detected", "star trailing/elongation") OR the
+        // Stage 1.5/1.5b/4 reasoning text (e.g. "Session sanity: star count far below
+        // session norm, trailing far above session norm"). They are mutually exclusive
+        // — Stage 1.5 only runs when garbageReasons is empty — so a single column is
+        // unambiguous. NEVER speculate why a frame is trash if this column is non-empty
+        // — quote it verbatim.
+        lines.append("id|idx|filename|filter|exp|object|night|tier|z|fwhm|hfr|stars|snr|noise|ecc|trail|moon%|moonDist|marked|verdict|twilight")
 
         for f in framesToInclude {
             let z = f.zScore.map { String(format: "%+.2f", $0) } ?? "-"
@@ -1071,12 +1085,16 @@ struct AIsaacContextBuilder {
             let moonPct = f.moonPct.map { String(format: "%.0f", $0) } ?? "-"
             let moonDist = f.moonDist.map { String(format: "%.0f", $0) } ?? "-"
             let marked = f.isMarked ? "YES" : ""
-            let reason = f.garbageReason ?? ""
+            // Verdict: garbageReason takes precedence (Stage 1 hard rules), else the
+            // QualityBreakdown.reasoningText (Stage 1.5 session sanity, Stage 1.5b
+            // historical baseline, Stage 4 rescue). Strip pipe chars to keep the row
+            // parseable as a delimited table.
+            let verdict = (f.garbageReason ?? f.reasoning ?? "").replacingOccurrences(of: "|", with: "/")
             let twilight = f.twilight ?? ""
             let object = f.object ?? "-"
             let night = f.night ?? "-"
 
-            lines.append("\(f.shortId)|\(f.index)|\(f.filename)|\(f.filter)|\(Int(f.exposure))|\(object)|\(night)|\(f.tier)|\(z)|\(fwhm)|\(hfr)|\(stars)|\(snr)|\(noise)|\(ecc)|\(trail)|\(moonPct)|\(moonDist)|\(marked)|\(reason)|\(twilight)")
+            lines.append("\(f.shortId)|\(f.index)|\(f.filename)|\(f.filter)|\(Int(f.exposure))|\(object)|\(night)|\(f.tier)|\(z)|\(fwhm)|\(hfr)|\(stars)|\(snr)|\(noise)|\(ecc)|\(trail)|\(moonPct)|\(moonDist)|\(marked)|\(verdict)|\(twilight)")
         }
 
         if truncated {
