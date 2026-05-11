@@ -3868,16 +3868,9 @@ class TriageViewModel: ObservableObject {
 
         let selectedURL = selectedImage?.url
 
-        // Sort into a local copy. Mutating self.images directly fires
-        // @Published, and two of this method's callers
-        // (FileListView.updateNSView line ~149 and ~179) are inside a
-        // SwiftUI update closure, where mutating an owned ObservableObject
-        // produces the "Publishing changes from within view updates"
-        // runtime warning. Sorting locally + dispatching the @Published
-        // writes off the current runloop tick keeps the call-site contract
-        // simple (callers don't need to wrap us) while staying correct.
-        var sortedImages = images
-        sortedImages.sort { a, b in
+        // Sort comparator — pure function over a pair of ImageEntry, no
+        // captures of the (potentially stale) sorted snapshot.
+        let comparator: (ImageEntry, ImageEntry) -> Bool = { a, b in
             for descriptor in descriptors {
                 guard let key = descriptor.key else { continue }
                 let ascending = descriptor.ascending
@@ -3915,21 +3908,29 @@ class TriageViewModel: ObservableObject {
             return (a.dateTime ?? "") < (b.dateTime ?? "")
         }
 
-        let newSelectedIndex: Int = {
-            if let url = selectedURL,
-               let idx = sortedImages.firstIndex(where: { $0.url == url }) {
-                return idx
-            }
-            return selectedIndex
-        }()
-
         let sortInfo = descriptors.map { d in
             "\(d.key ?? "?") \(d.ascending ? "↑" : "↓")"
         }.joined(separator: " > ")
 
+        // Defer the @Published mutation off the current runloop tick. Two
+        // callers (FileListView.updateNSView line ~149 and ~179) are inside
+        // a SwiftUI update closure, where mutating an owned ObservableObject
+        // produces the "Publishing changes from within view updates" runtime
+        // warning. Dispatching pushes it to the next tick.
+        //
+        // We sort IN PLACE on `self.images` instead of pre-sorting a snapshot
+        // and reassigning. Reassignment would silently overwrite any prefetch
+        // metric callback (noiseStats / starMetrics) that landed on
+        // `self.images[idx]` between the snapshot capture and the dispatch
+        // execution — that race left 40+ frames per session permanently
+        // unrated on fast f/2.2 loads where the prefetch pipeline finishes
+        // a wave of measurements in exactly that gap.
         DispatchQueue.main.async {
-            self.images = sortedImages
-            self.selectedIndex = newSelectedIndex
+            self.images.sort(by: comparator)
+            if let url = selectedURL,
+               let idx = self.images.firstIndex(where: { $0.url == url }) {
+                self.selectedIndex = idx
+            }
             self.needsTableRefresh = true
             self.statusMessage = "Sorted: \(sortInfo)"
         }

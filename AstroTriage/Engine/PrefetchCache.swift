@@ -368,19 +368,28 @@ class PrefetchCache {
                 semaphore.wait()
 
                 // Single MainActor task: deliver ALL results atomically.
-                // Skip everything if the session was cleared/invalidated mid-decode —
-                // the captured `workerGeneration` no longer matches.
                 Task { @MainActor [weak self] in
-                    guard self?.sessionGeneration == workerGeneration else { return }
+                    let isStale = (self?.sessionGeneration ?? -1) != workerGeneration
+
+                    // Metric callbacks land regardless of generation — they are
+                    // URL-keyed and a wrong-URL no-op is harmless. Same reasoning
+                    // as the bg-queue delivery path. Without this, frames touched
+                    // by the priority queue (current image + ±2 neighbours at
+                    // load time) lose their metrics when header-time OSC detection
+                    // or Apply All triggers an `invalidateAll()` mid-flight.
                     if let hash = fileHashResult { onFileHash?(url, hash) }
                     if let fp = fingerprintResult { onOrientationFingerprint?(url, fp) }
                     if let stats = noiseStatsResult { onNoiseStats?(url, stats) }
                     if let metrics = starMetricsResult { onStarMetrics?(url, metrics) }
                     if let transform = alignmentResult { onAligned?(url, transform) }
-                    if let preview = resultPreview {
-                        self?.storePreview(preview, for: url)
+
+                    // Preview storage + priority-ready notification stay session-coupled.
+                    if !isStale {
+                        if let preview = resultPreview {
+                            self?.storePreview(preview, for: url)
+                        }
+                        self?.onPriorityPreviewReady?(url)
                     }
-                    self?.onPriorityPreviewReady?(url)
                 }
             }
         }
@@ -643,16 +652,32 @@ class PrefetchCache {
                     // populating the freshly-cleared cache.
                     let completed = completedCount.increment()
                     Task { @MainActor [weak self] in
-                        guard self?.sessionGeneration == workerGeneration else { return }
+                        let isStale = (self?.sessionGeneration ?? -1) != workerGeneration
+
+                        // Metric callbacks land regardless of generation — they are
+                        // URL-keyed and the orchestrator looks the index up via
+                        // `firstIndex(where: { $0.url == url })`. If the new
+                        // generation doesn't have this URL, it's a harmless no-op.
+                        // This recovers the (expensive) measurement work for frames
+                        // that were in flight when `invalidateAll()` fired — without
+                        // this, header-time OSC detection / Apply All / settings
+                        // changes silently strand whichever frames were mid-pipeline.
                         if let hash = fileHashResult { onFileHash?(url, hash) }
                         if let fp = fingerprintResult { onOrientationFingerprint?(url, fp) }
                         if let stats = noiseStatsResult { onNoiseStats?(url, stats) }
                         if let metrics = starMetricsResult { onStarMetrics?(url, metrics) }
                         if let transform = alignmentResult { onAligned?(url, transform) }
-                        if let preview = resultPreview {
-                            self?.storePreview(preview, for: url)
+
+                        // Preview storage and onProgress are session-coupled — the
+                        // cache was cleared by the new generation and `completed`
+                        // is per-prefetchAll-call. Skip these for stale workers;
+                        // the new generation's workers will re-do them.
+                        if !isStale {
+                            if let preview = resultPreview {
+                                self?.storePreview(preview, for: url)
+                            }
+                            onProgress(completed, total)
                         }
-                        onProgress(completed, total)
                     }
                 }
             }

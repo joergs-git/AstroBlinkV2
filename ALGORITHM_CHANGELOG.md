@@ -12,6 +12,37 @@ Records with `algorithmVersion < kAlgorithmVersion` are candidates for re-analys
 
 ---
 
+## Sort-in-place fix (no algo version bump, 2026-05-11)
+
+**Not a scoring change** — fixes a data-delivery race that left 35-50
+frames per session permanently unrated on fast f/2.2 OSC loads. The
+prefetch's per-frame metric callbacks (`onNoiseStats`, `onStarMetrics`)
+write to `host.images[idx]`; concurrently, `TriageViewModel.
+applySortDescriptors` was capturing `images` into a local snapshot,
+sorting that snapshot, and async-dispatching `self.images =
+sortedImages`. Any callback that landed between the snapshot capture
+and the dispatch execution wrote to the live array, then got
+silently overwritten by the stale snapshot. The cleanup is to defer
+to the same dispatch tick but sort `self.images` IN PLACE so concurrent
+writes are preserved.
+
+Also recovered: priority-queue and bg-queue metric callbacks now land
+even when `sessionGeneration` advances mid-flight (header-time OSC
+detection / Apply All / settings change). Metrics are URL-keyed and
+the orchestrator does its own lookup, so the generation guard only
+gates session-coupled state (preview storage, onProgress, priority
+ready notification). Same race, different actor.
+
+Also bumped: the GPU star-detection cap from 200 → 1000 candidates per
+frame (PreviewGenerator.detectStarsFromImage). On Lextr OSC at 300 s
+the brightest 200 are commonly all saturated; `filterStars` then
+rejected every one of them and the candidate pool collapsed to zero.
+1000 keeps brightness priority but adds 800 mid-brightness candidates
+so unsaturated stars always survive.
+
+These are correctness fixes for measurement delivery, not scoring
+logic. `kAlgorithmVersion` stays 29.
+
 ## Version 29 — Annular HFR / FWHM for saturated-core stars (2026-05-10)
 
 **Recovers HFR and FWHM measurements on fast optics at long exposures.**

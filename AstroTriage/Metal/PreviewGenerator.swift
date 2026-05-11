@@ -670,12 +670,20 @@ final class PreviewGenerator: @unchecked Sendable {
             stars.append(DetectedStar(x: fullX, y: fullY, brightness: val))
         }
 
-        // Sort by brightness (brightest first) and cap at 200
-        // StarMetricsCalculator filters heavily (center crop 70%, saturation, crowding 10px),
-        // so we need ~200 input stars to get ~50 through the filter for shape measurement.
+        // Sort by brightness (brightest first) and cap at 1000.
+        //
+        // Was 200. On fast f/2.2 RASA + 300 s + Lextr / L-eXtreme OSC the
+        // brightest 200 stars in the picked channel can ALL saturate the 3×3
+        // central patch — `filterStars` then rejects every one of them, the
+        // candidate pool collapses to zero, and `StarMetricsCalculator.measure`
+        // returns nil for every frame. Bumping to 1000 keeps the brightness-
+        // priority sort but adds 800 mid-brightness candidates so unsaturated
+        // stars survive the filter even when the top of the distribution is
+        // a saturation cliff. Cost is negligible (filterStars is O(n) and the
+        // GPU candidate buffer already holds up to 16 384).
         stars.sort()
         lastTotalStarCount = rawCount  // True total from GPU atomic counter (not capped)
-        return Array(stars.prefix(200))
+        return Array(stars.prefix(1000))
     }
 
     /// Detect stars from a full-resolution image: GPU bin2x + GPU star detection.
