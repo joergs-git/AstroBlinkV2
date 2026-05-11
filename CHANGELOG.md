@@ -4,6 +4,58 @@ All notable changes to AstroBlink & AIsaac will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [6.0.4] — 2026-05-11
+
+**Stage 1.5 P90 outlier clamp + AIsaac verdict-column context fix.**
+Two surgical fixes from one user investigation into why a "normal-
+looking" frame (`Stars Z +0.84 σ`, `combinedZ -0.35 σ`) was marked
+Trash with the contradictory verdict "star count far below norm". The
+investigation surfaced two independent root causes — one a scoring
+edge-case, one a long-standing context bug — both fixed here.
+`kAlgorithmVersion` bumps 29 → 30.
+
+### Fixed
+
+- **Stage 1.5 session-sanity `P90` is no longer hijackable by a single
+  outlier** (algorithm v30). The pool's "best decile" benchmark for
+  star count and SNR is now `min(P90_raw, 2.5 × median)`. A single
+  anomalous frame (e.g. one 4928-star detection burst in a pool whose
+  peers measure 900-1200 stars) used to single-handedly define the
+  benchmark, dragging the "far below norm" threshold up to ~2000 stars
+  and false-flagging every normal frame. Combined with even moderate
+  trailing on the same frame, the 2-flag rule fired and demoted
+  typical frames to Trash. The clamp is a no-op when no outlier is
+  present (the common case), so the vast majority of sessions are
+  unchanged. P10 metrics (FWHM / Ecc / Trailing) deliberately stay
+  unclamped — their symmetric failure mode hasn't been observed in
+  practice and Trailing already has an absolute floor.
+- **AIsaac per-frame context now surfaces Stage 1.5 / 1.5b / 4
+  verdict text.** The per-frame data table the LLM reads previously
+  emitted only Stage 1 hard-garbage rule names in its `reason`
+  column. Frames demoted by session sanity, historical baseline, or
+  rescued at Stage 4 reached AIsaac with `reason = ""` — so when a
+  user asked "why is this trash" AIsaac would speculate, occasionally
+  contradict itself, and once recommended pressing **A** (Disagree)
+  on a frame whose `trailingZ` was at the +3.0 σ cap. The column is
+  now renamed `verdict` and falls back to
+  `QualityBreakdown.reasoningText` when no Stage 1 rule fired. The
+  Stage 1.5 prompt section directs AIsaac to quote the verdict
+  verbatim instead of guessing from z-scores. UI/context only — no
+  scoring impact.
+
+### Validation
+
+- 305 tests across all suites, 0 failures.
+- New regression `testSessionSanity_starCountOutlierDoesNotInflateP90`
+  captures the exact failure mode — 16 pool frames, one with 4928
+  stars. Asserts no normal frame carries the "star count" Stage 1.5
+  flag.
+- Marathon `testAnalyzeAllSetups` re-runs the full 7-setup,
+  1638-frame curated corpus through the v30 pipeline. No regression.
+- `testM82_JanuaryFramesMustNotBeGood` still flags the uniformly-bad
+  January M82 night correctly (those frames fail on FWHM + trailing +
+  chain, not on the clamped metrics).
+
 ## [6.0.3] — 2026-05-11
 
 **OSC measurement overhaul + delivery-race fix.** Five fixes that

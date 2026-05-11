@@ -299,6 +299,93 @@ few bright stars in an open cluster field, a single clipped star can dominate th
 
 ---
 
+## v6.0.4 — Stage 1.5 P90 Outlier Clamp (2026-05-11, Algorithm v30)
+
+### Problem Statement
+
+Real-user OIII 180 s pool on Rosette A (RC12red08, 1964 mm): one frame
+measured 4928 detected stars while peers measured ~900–1200. The Stage 1.5
+star-count benchmark is the pool's P90; the outlier became the P90, so the
+"far below norm" threshold collapsed to 0.4 × 4928 ≈ 1971 stars. Every
+normal frame failed that bar. Combined with even moderate trailing on one
+frame, the 2-flag rule fired and demoted a typical-star-count frame
+(1185 stars) to Trash. From the user's perspective: within-group
+Stars Z = +0.84 σ ("normal") yet tier = Trash with verdict "star count
+far below norm" — visually contradictory and a real false positive.
+
+### Fix
+
+`QualityEstimator+SessionSanity.swift` — the two higher-is-better
+benchmarks (stars P90 and SNR P90) are now clamped:
+
+```swift
+let starsP90 = min(starsP90Raw, starsMedian * 2.5)
+let snrP90   = min(snrP90Raw,   snrMedian   * 2.5)
+```
+
+A single outlier (≥ 2.5× pool median) can no longer single-handedly
+define what "best" looks like. Legitimate session-spanning variation
+(within ~2× of typical) still passes through. The clamp is inert when
+P90_raw ≤ 2.5 × median (the common case) — only pools with a real
+outlier see different behaviour.
+
+P10 metrics (FWHM / Ecc / Trailing) deliberately stay unclamped — their
+contamination failure mode is rare in practice and trailing already has
+an absolute floor.
+
+### Validation Results
+
+**Test Suite: 305 tests across all suites, 0 failures.**
+
+| Test Suite | Tests | Status |
+|---|---|---|
+| QualityEstimatorTests (incl. new P90 regression) | 73 | PASS |
+| ScoringValidationTests | 53 | PASS |
+| ScoringRegressionTests | 9 | PASS |
+| BatchQualityAnalysisTests (1638 real curated frames) | 2 | PASS |
+| StarAnalyzerTests (long-running real-data harness) | — | PASS |
+| All other suites | remaining | PASS |
+
+**Marathon validation: PASS** — `testAnalyzeAllSetups` processed the full
+7-setup, 1638-frame curated corpus through the v30 pipeline. No regression
+on any setup.
+
+**Key existing tests still pass:**
+- `testM82_JanuaryFramesMustNotBeGood` — the uniformly-bad January M82
+  night is still flagged correctly (those frames fail on FWHM + trailing
+  + chain, not on the clamped metrics).
+- `testSessionSanityCheck_demotesBadCrossGroup` — bad B frames (FWHM 10
+  vs 3, SNR 8 vs 50) still demoted via the 2-flag rule (clamp is a no-op
+  on this fixture: P90 < 2.5 × median).
+- `testSessionSanityCheck_mixedPlateScale*` — stars sanity already
+  disabled for mixed pools, unchanged.
+
+**New regression test:**
+- `testSessionSanity_starCountOutlierDoesNotInflateP90` — 16 pool frames
+  where one has 4928 stars, peers ~1050-1190. Asserts no normal frame
+  carries the "star count far below session norm" flag. Captures the
+  exact failure mode.
+
+### Companion Fix (AIsaac context, no algo bump)
+
+AIsaac's per-frame data table was missing Stage 1.5 / 1.5b / 4 reasoning
+text — only Stage 1 garbage rules appeared in the `reason` column. The
+column is now renamed `verdict` and falls back to
+`QualityBreakdown.reasoningText` when no Stage 1 rule fired. The Stage 1.5
+prompt section now directs AIsaac to quote the verdict verbatim instead of
+speculating from z-scores. Frames demoted by Stage 1.5 with a Stars Z near
+zero are no longer mystery cases.
+
+### Impact
+
+- Pools with a single anomalous frame stop falsely flagging the rest.
+- The vast majority of sessions (no outlier present) are unchanged — the
+  clamp is a no-op.
+- AIsaac can now answer "why is this trash" honestly, citing the exact
+  Stage 1.5 reasons instead of guessing.
+
+---
+
 *This log is maintained as part of the AstroTriage/AstroBlink quality assurance process.
 Each new detection feature or threshold change requires a full regression test across all
 7 setups before release.*

@@ -14,7 +14,42 @@ Nice side effect: Finally you have a native XISF and FITS Quicklook for macOS. (
 
 ---
 
-## What's New in v6.0.3 (Build 93)
+## What's New in v6.0.4 (Build 94)
+
+**Stage 1.5 fairness fix + AIsaac honesty fix.** Two surgical fixes that
+together remove a confusing false-positive in the cross-night quality
+benchmark and let the in-app AI assistant cite the real reason a frame
+was demoted instead of speculating. `kAlgorithmVersion` 29 → 30.
+
+- **Stage 1.5 session-sanity no longer false-flags whole pools because
+  of one anomalous frame.** If one frame in a multi-night pool measured
+  dramatically more detected stars than the others — say a detection-
+  burst from a hot-pixel cluster or transient — it could single-handedly
+  define the "what good looks like" benchmark and false-flag every
+  normal frame as "star count far below session norm". Combined with any
+  trailing flag on the same frame, the 2-flag rule fired and demoted a
+  typical frame to Trash with a verdict you couldn't visually justify.
+  The benchmark is now clamped to `min(P90_raw, 2.5 × pool median)`, so
+  a single outlier can no longer drag it up. Pools without an outlier
+  are unaffected.
+- **AIsaac can finally answer "why is this trash" without guessing.**
+  When the algorithm demoted a frame via cross-night session sanity
+  (Stage 1.5), historical baseline (1.5b), or a Stage 4 rescue, the
+  reasoning text was computed but **never reached AIsaac's per-frame
+  context**. The LLM saw `tier = trash` with no concrete reason and
+  speculated — sometimes recommending Disagree feedback on a frame
+  whose trailing was at the algorithm cap. The verdict text now lands
+  in AIsaac's context directly, and the system prompt directs the
+  model to quote it verbatim.
+
+Validated against the full 7-setup, 1638-frame curated regression
+corpus. 305 tests pass.
+
+> **Algorithm version 29 → 30.** Frame History DB records scored at the
+> old version are stale candidates for re-analysis. The existing
+> stale-record detection surfaces them on next session load.
+
+## Previously in v6.0.3 (Build 93)
 
 **OSC measurement overhaul.** If you shoot one-shot-colour with a fast scope (RASA, Hyperstar, RedCat, ASIAIR setups, etc.) and noticed that 30-50 frames per session showed empty HFR / Stars / SNR / Q cells, this release fixes it. `kAlgorithmVersion` 27 → 29.
 
