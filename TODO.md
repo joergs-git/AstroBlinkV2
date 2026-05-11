@@ -2,7 +2,7 @@
 
 Status: [ ] offen | [~] in Arbeit | [x] fertig
 
-Current version: **v6.0.2** (build 91 GH / 92 ASC) — shipped 2026-05-09 ([release notes](https://github.com/joergs-git/AstroBlinkV2/releases/tag/v6.0.2))
+Current version: **v6.0.3** (build 93) — in flight 2026-05-11 (OSC measurement overhaul, kAlgorithmVersion 27 → 29)
 
 ---
 

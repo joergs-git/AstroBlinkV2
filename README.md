@@ -14,15 +14,27 @@ Nice side effect: Finally you have a native XISF and FITS Quicklook for macOS. (
 
 ---
 
-## What's New in v6.0.2 (Build 91)
+## What's New in v6.0.3 (Build 93)
+
+**OSC measurement overhaul.** If you shoot one-shot-colour with a fast scope (RASA, Hyperstar, RedCat, ASIAIR setups, etc.) and noticed that 30-50 frames per session showed empty HFR / Stars / SNR / Q cells, this release fixes it. `kAlgorithmVersion` 27 → 29.
+
+- **HFR / FWHM now work on saturated OSC frames.** Bright stars at long exposures on f/2.2 optics saturate their cores; the old algorithm rejected those stars entirely, the dim-star fallback then failed the HFR/FWHM bounds, and the whole frame collapsed to the "!" partial-metrics state. New annular measurement skips the saturated core (inner 3 px) and integrates only the clean unsaturated wings — the brightest stars per frame now produce valid measurements.
+- **Smarter measurement channel per frame.** Was hardcoded to green for OSC. Wrong for narrowband filters (Lextr / L-eXtreme / Optolong / SHO duo-band) where stellar continuum lands in red — green-channel stars are too faint and every fit failed. The picker now counts bright pixels per channel and routes broadband to green, narrowband to red, automatically. No FILTER-header parsing required, works for any OSC + filter combo.
+- **Measurement always debayers.** When you had display debayer OFF on an OSC sensor, measurement was running on the raw Bayer mosaic — the radius-10-pixel aperture saw R/G/G/B striation and the Gaussian fit collapsed. Display still honours your toggle; measurement uses a separate debayered buffer.
+- **Star detection candidate pool 200 → 1000.** Was rejecting all 200 brightest on Lextr-OSC because they were all saturated, leaving no candidates for the filter. 1000 keeps brightness priority but adds mid-brightness fallbacks so unsaturated stars always survive.
+- **Sort no longer drops concurrent metric writes.** Files sorted while prefetch callbacks were landing had their fresh measurements silently overwritten by a stale snapshot reassignment. Sort is now in place — that was the single biggest cause of the 40-frames-unrated-per-session pattern.
+- **Metric callbacks survive mid-load `invalidateAll()`.** When header enrichment detected OSC and triggered a re-cache, every worker in flight lost its measurements to the generation guard. The guard now only gates display state; URL-keyed metric writes land regardless.
+- **Page Up / Page Down actually page** through the file list (was: jump to first / last). `Home` / `End` keep the jump behaviour.
+
+> **Algorithm version 27 → 29.** Frame History DB records scored at the old version with `medianHFR == 0 && medianFWHM == 0 && totalStarCount > 0` are stale candidates for re-analysis. The existing stale-record detection surfaces them on next session load.
+
+## Previously in v6.0.2 (Build 91)
 
 Stability triple — three independent fixes, no scoring change.
 
-- **LightspeedStacker no longer aborts on fast frames.** A Metal-completion-handler race caused ~5 % of frames in a long stack to crash the process with "Completion handler added after command buffer completed". The handler is now attached before commit, eliminating the race entirely.
-- **NAS-folder open no longer traps on macOS 15.7+.** A `MainActor.assumeIsolated` call inside the prefetch worker pool aborted the process on the new strict-concurrency runtime. Cancellation reads now go through nonisolated, lock-protected accessors — the worker pool no longer touches `MainActor` at all.
-- **NAS sessions now finish quality-scoring every frame.** A debouncer hook for late-arriving Stars / FWHM / SNR / HFR measurements existed only on the local-prefetch side; the NAS path didn't have it, so frames whose measurements landed after the post-header recompute stayed "Quality Assessment Incomplete" forever. Both NAS callbacks now request a debounced rescore (1.5 s quiescence, no-op while bulk caching), with an end-of-cache safety net for anything that landed during the suppression window.
-
-> **Algorithm version unchanged** (`kAlgorithmVersion` stays 27). Frame History DB records remain compatible.
+- **LightspeedStacker no longer aborts on fast frames.** A Metal-completion-handler race caused ~5 % of frames in a long stack to crash the process. The handler is now attached before commit.
+- **NAS-folder open no longer traps on macOS 15.7+.** A `MainActor.assumeIsolated` call inside the prefetch worker pool aborted the process under the new strict-concurrency runtime. Cancellation reads now go through nonisolated, lock-protected accessors.
+- **NAS sessions now finish quality-scoring every frame.** The debouncer hook for late-arriving measurements existed only on the local-prefetch side; both NAS callbacks are now wired, with an end-of-cache safety net.
 
 ## Previously in v6.0.1 (Build 90)
 

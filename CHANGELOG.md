@@ -4,6 +4,98 @@ All notable changes to AstroBlink & AIsaac will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [6.0.3] — 2026-05-11
+
+**OSC measurement overhaul + delivery-race fix.** Five fixes that
+together recover HFR / FWHM measurement on fast-optics OSC sessions
+(RASA / Hyperstar / RedCat at long exposures) and stop the 35-50
+silently-unrated-frames-per-session pattern that was visible on every
+multi-night OSC load. `kAlgorithmVersion` bumps 27 → 29.
+
+### Fixed
+
+- **Page Up / Page Down now page** through the file list one viewport
+  at a time (was: jump to first / last). `Home` and `End` keep the
+  jump-to-end behaviour. Docs in `CLAUDE.md`, `README`, and
+  `wiki/Keyboard-Shortcuts.md` updated to match.
+- **OSC star metrics always debayer for measurement** (algorithm v28).
+  When display debayer was off and `BAYERPAT` was known, HFR / FWHM
+  ran on the raw Bayer mosaic — the radius-10-pixel aperture saw
+  R/G/G/B striation, the Gaussian fit assumes a smooth PSF, and the
+  measurement collapsed to the all-zero partial-metrics sentinel
+  ("!" in every HFR cell). Measurement now uses a separate always-
+  debayered buffer; display still honours the user toggle. Reuses
+  the display buffer when display debayer is already on (zero extra
+  GPU cost).
+- **Per-frame measurement channel pick** (algorithm v28). Was
+  hardcoded to green (channel 1) on debayered OSC. Fine for broadband
+  but wrong for narrowband (Lextr / L-eXtreme / Optolong / SHO duo-
+  band) where stellar continuum lands in red. New
+  `bestMeasurementChannel` picks per-frame by counting bright pixels
+  on a 5 % subsample — filter-agnostic, no FILTER-header parsing.
+- **Annular HFR / FWHM for saturated-core stars** (algorithm v29).
+  On RASA f/2.2 + 300 s, dozens of bright stars saturate per frame.
+  `computeHFR`'s flat-topped saturated core inflated the cumulative
+  flux at small radii and returned HFR < 0.5, failing the lower-bound
+  check; `computeFWHMGaussian` admitted the flat top and the linear
+  log(I) vs r² fit collapsed. Both calculators now accept a
+  `skipSaturatedCore` flag and integrate only the unsaturated wings
+  when the star peak is within 5000 ADU of the saturation ceiling
+  (the same "isBright" test the shape calculator was already using).
+  `computeFWHMGaussian` additionally tightens its upper inclusion
+  bound from `peakValue × 1.1` to `peakValue × 0.99` so saturated
+  pixels never enter the fit even when `skipSaturatedCore` is false.
+- **`filterStars` relaxed saturation cut** (algorithm v29). Was 98 %,
+  now 99.5 % (matches `filterStarsForShape`). Bright stars with one
+  or two saturated central pixels but clean wings now enter the
+  measurement set — the annular calculators handle them correctly.
+  The redundant 5×5 / 98 % full-res re-filter at the top of `measure`
+  is gone.
+- **GPU star-detection cap bumped 200 → 1000.** On Lextr OSC at
+  300 s the brightest 200 are commonly all saturated; `filterStars`'
+  3×3 patch then rejected every one of them and the candidate pool
+  collapsed to zero. 1000 keeps brightness-priority sorting but adds
+  800 mid-brightness candidates so unsaturated stars always survive.
+  The GPU candidate buffer already holds 16 384, no resource
+  constraint.
+- **Half-measured frames re-analyse on resume** (`needsAnalysis &&` →
+  `||` in both local and NAS prefetch paths). Was: if a frame had
+  noise stats but not star metrics (or vice versa), it was excluded
+  from re-analysis on the next prefetch and stayed half-measured
+  forever. Now any frame missing EITHER metric goes through the full
+  pipeline again.
+- **Sort-in-place preserves concurrent metric callbacks.**
+  `TriageViewModel.applySortDescriptors` was capturing `images` into
+  a snapshot, sorting it locally, then async-dispatching
+  `self.images = sortedImages`. Any prefetch callback that wrote to
+  `self.images[idx]` between the snapshot capture and the dispatch
+  execution was silently overwritten by the stale snapshot — leaving
+  35-50 frames per OSC session permanently unrated. Sort now happens
+  in place on the deferred dispatch tick; concurrent writes survive.
+- **Metric callbacks land across `invalidateAll`.** Both the priority-
+  queue and bg-queue MainActor delivery tasks guarded ALL post-work
+  side effects behind `sessionGeneration == workerGeneration`. When
+  header enrichment detected OSC and called `invalidateAll()` mid-
+  load (gen bumps 0 → 1 → 2 → 3 on a typical OSC open), every worker
+  that finished AFTER the bump lost its metric callbacks. The
+  generation guard now only gates session-coupled state (preview
+  storage, `onProgress`, priority-ready notification); metric
+  callbacks are URL-keyed and harmless on a mismatch, so they land
+  regardless.
+
+### Algorithm version
+
+- `kAlgorithmVersion` 27 → 29. Frame History DB records scored at
+  versions ≤ 28 with `medianHFR == 0 && medianFWHM == 0 &&
+  totalStarCount > 0` are stale candidates for re-analysis. The
+  existing stale-record detection surfaces them on next session
+  load.
+
+### Compatibility
+
+- Built against the **macOS 26 (Tahoe) SDK in Xcode 26.3**. Deployment
+  target stays macOS 14.
+
 ## [6.0.2] — 2026-05-09
 
 Stability triple. Three independent fixes — pure logic, no scoring

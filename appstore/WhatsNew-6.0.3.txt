@@ -1,0 +1,17 @@
+OSC measurement overhaul — fixes the silent unrated-frames pattern on fast-optics one-shot-colour sessions (RASA, Hyperstar, RedCat, etc.). Algorithm version 27 → 29.
+
+• HFR / FWHM now work on saturated bright stars. f/2.2 + long exposures saturate cores; new annular measurement skips the saturated centre and reads only the clean wings. Bright stars finally produce valid HFR/FWHM instead of collapsing the whole frame to "!".
+
+• Smarter measurement channel per frame. Was hardcoded to green for OSC, wrong for narrowband (Lextr / L-eXtreme / Optolong / SHO duo-band) where stellar continuum lands in red. The picker now auto-routes broadband to green and narrowband to red — works for any OSC + filter combo.
+
+• Measurement always debayers when BAYERPAT is known, regardless of your display debayer toggle. The old behaviour ran HFR/FWHM on the raw Bayer mosaic when display debayer was off, which corrupted every fit.
+
+• Star detection candidate pool 200 → 1000. On bright fields the top-200-by-brightness were commonly all saturated and got filtered out, leaving zero candidates. Larger pool always reaches unsaturated mid-brightness stars.
+
+• File-list sort no longer drops concurrent metric callbacks. The biggest cause of the 30-50 unrated frames per OSC session — sort was capturing a stale snapshot and overwriting fresh measurements. Sort is now in place.
+
+• Metric callbacks survive mid-load cache invalidation. When OSC detection triggered a re-cache, in-flight workers lost their measurements to the generation guard. Fixed.
+
+• Page Up / Page Down now page through the file list one viewport at a time. Home / End keep the jump-to-end behaviour.
+
+Frame History DB records scored at the old version with empty HFR/FWHM are stale candidates for re-analysis — surfaced on next session load. Built against the macOS 26 (Tahoe) SDK in Xcode 26.3; deployment target stays macOS 14.
