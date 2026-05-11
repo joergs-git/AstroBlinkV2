@@ -12,6 +12,83 @@ Records with `algorithmVersion < kAlgorithmVersion` are candidates for re-analys
 
 ---
 
+## Version 30 — Stage 1.5 P90 outlier clamp (2026-05-11)
+
+**Removes a false-positive trash demotion when one frame in a multi-night
+pool has anomalous star count (or SNR) ≥ 2.5× the pool median.**
+
+### Failure mode
+
+Captured from a real user's O-filter 180 s pool on Rosette A. The pool of
+~15 frames contained one frame with 4928 detected stars — peers measured
+between ~900 and ~1200 stars. The Stage 1.5 session-sanity star-count
+benchmark is the pool's P90 (`stars[count * 9 / 10]`), and the trigger
+threshold is `0.4 × P90`. The outlier became the P90, so the threshold
+collapsed to 0.4 × 4928 ≈ 1971 stars — meeting which would have required
+the pool to be uniformly bright. Every normal frame failed the bar.
+
+Combined with even moderate trailing on a single frame (trailing flag is
+real on those frames), the 2-flag rule fires and the normal frame is
+demoted to trash. The user saw within-group stars Z = +0.84 σ ("normal"
+by within-group comparison) and tier = Trash with a Stage 1.5 reason
+"star count far below session norm" — the contradiction was confusing and
+visually inaccurate (the frame really did have a typical star count for
+the target).
+
+### Fix
+
+`QualityEstimator+SessionSanity.swift` — the two higher-is-better
+benchmarks (stars P90 and SNR P90) are now clamped:
+
+```swift
+let starsP90 = min(starsP90Raw, starsMedian * 2.5)
+let snrP90   = min(snrP90Raw,   snrMedian   * 2.5)
+```
+
+Effect: when one frame's value is more than 2.5× the pool median, it can
+no longer single-handedly define what "best" looks like. The 2.5× factor
+is generous enough to admit legitimate session-spanning variation (a
+genuinely better night should be within a factor of ~2 of typical), while
+sharp enough to cap the failure mode.
+
+For the captured pool: median ≈ 1093 stars → effective P90 = 2.5 × 1093
+= 2732 → threshold = 0.4 × 2732 ≈ 1093. Frames in the normal ~900-1200
+range no longer flag "star count far below norm". The outlier frame
+itself is *unchanged* — it just stops dominating the benchmark.
+
+### Why P10 metrics (FWHM / Ecc / Trailing) are NOT clamped
+
+Their failure mode (one anomalously low value tightening the threshold) is
+rare in practice — FWHM rarely measures below 1 px on real frames, ecc
+below 0.1, trailing below 0.0. Trailing additionally has an absolute
+floor (`max(P10 × 2.0, P10 + 0.15)`) that already covers small-P10
+contamination. Adding a P10 clamp would risk over-protecting genuinely
+better-decile frames from being recognised as the benchmark in clean
+pools.
+
+### Validation
+
+- `testSessionSanity_starCountOutlierDoesNotInflateP90` — exercises the
+  exact failure mode. 16 pool frames where one has 4928 stars, peers
+  ~1050-1190. Asserts no normal frame carries the "star count" Stage 1.5
+  flag. Fails without the clamp; passes with it.
+- `testSessionSanityCheck_demotesBadCrossGroup` — verifies the existing
+  2-flag rule still demotes uniformly bad cross-group frames (FWHM 10
+  vs 3, SNR 8 vs 50). Clamp is inert on this fixture (P90 < 2.5×
+  median already), so behaviour is unchanged.
+- `testSessionSanityCheck_mixedPlateScale*` — unchanged. Stars sanity is
+  already disabled for mixed-plate-scale pools.
+- Full QualityEstimator + Scoring* suite: 135 tests, 0 failures.
+
+### Impact
+
+Pools with a single outlier frame stop falsely flagging the rest. Pools
+without outliers (the vast majority) are unaffected — the clamp is a
+no-op when `P90_raw ≤ 2.5 × median`. No change to within-group z-score
+math, garbage rules, or any other stage.
+
+---
+
 ## Sort-in-place fix (no algo version bump, 2026-05-11)
 
 **Not a scoring change** — fixes a data-delivery race that left 35-50

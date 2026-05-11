@@ -126,9 +126,27 @@ extension QualityEstimator {
             // counts, not mathematical P10. Empirical check on the 4540-frame curated
             // set (2026-04-18) showed switching to interpolated P10 produced tiny
             // deltas (median 0.02px FWHM) with no clear accuracy gain. Kept as-is.
+            //
+            // Median-clamp on the higher-is-better benchmarks (P90 for stars and
+            // SNR). A single anomalous frame (artifact-driven detection burst,
+            // detector cosmic-ray cluster reading as "stars", a transient burst
+            // of unusually high SNR) can become the pool's P90 in small multi-
+            // night pools (10–20 frames), inflating the "far below norm"
+            // threshold above the rest of the pool's normal range. Clamping
+            // P90 ≤ 2.5× median keeps the benchmark within a plausible factor
+            // of the pool's typical good frame, while still letting legitimate
+            // ~2× variation through. P10 metrics (FWHM/Ecc/Trailing) are
+            // deliberately NOT clamped — their failure mode (a single
+            // anomalously low value tightening the threshold) is rare in
+            // practice and the floor wording on Trailing ("max(P10×2.0,
+            // P10+0.15)") already mitigates it.
             let fwhmP10 = fwhms[max(0, fwhms.count / 10)]                         // Best 10% FWHM
-            let snrP90 = snrs.isEmpty ? 0 : snrs[min(snrs.count - 1, snrs.count * 9 / 10)]  // Best 10% SNR
-            let starsP90 = stars.isEmpty ? 0 : stars[min(stars.count - 1, stars.count * 9 / 10)]
+            let starsMedian = stars.isEmpty ? 0 : stars[stars.count / 2]
+            let snrMedian = snrs.isEmpty ? 0 : snrs[snrs.count / 2]
+            let snrP90Raw = snrs.isEmpty ? 0 : snrs[min(snrs.count - 1, snrs.count * 9 / 10)]
+            let starsP90Raw = stars.isEmpty ? 0 : stars[min(stars.count - 1, stars.count * 9 / 10)]
+            let snrP90 = snrMedian > 0 ? min(snrP90Raw, snrMedian * 2.5) : snrP90Raw
+            let starsP90 = starsMedian > 0 ? min(starsP90Raw, starsMedian * 2.5) : starsP90Raw
             let eccP10 = eccs.isEmpty ? 0 : eccs[max(0, eccs.count / 10)]         // Best 10% Ecc
             let trailP10 = trails.isEmpty ? 0 : trails[max(0, trails.count / 10)] // Best 10% trailing
 

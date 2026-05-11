@@ -2116,4 +2116,62 @@ final class QualityEstimatorTests: XCTestCase {
                        "Out-of-range trailingCeilingOffset must clamp to -0.15 floor on decode")
         XCTAssertEqual(decoded.sampleCount, 100)
     }
+
+    // MARK: - Algorithm v30 regression tests (P90 outlier clamp, 2026-05-11)
+
+    /// P90 outlier protection: a single anomalous frame with 4× the typical
+    /// star count must NOT inflate the pool's star-count P90 high enough to
+    /// flag normal frames as "star count far below session norm".
+    ///
+    /// Captured from real-user O-filter 180s pool on Rosette A where one
+    /// frame with 4928 detected stars (peers ~900-1200) drove the threshold
+    /// `0.4 × P90` to 1971 — every normal frame failed that bar, and any
+    /// frame that also tripped a trailing flag was demoted to trash by the
+    /// 2-flag rule. The clamp `min(P90_raw, 2.5 × median)` keeps the
+    /// benchmark within a plausible factor of the pool's typical frame.
+    func testSessionSanity_starCountOutlierDoesNotInflateP90() {
+        let fwhmJitter = [-0.10, -0.05, 0.0, 0.05, 0.08, 0.10, 0.12, 0.15, 0.18, 0.20]
+
+        // Night A — 10 OIII frames, typical detection (~1100 stars each)
+        let nightA: [ImageEntry] = (0..<10).map { i in
+            var e = makeEntry(index: i, filter: "O", target: "Rosette A", exposure: 180,
+                              noiseMAD: 0.003, noiseMedian: 0.04,
+                              computedFWHM: 7.0 + fwhmJitter[i],
+                              computedStarCount: 1100 + i * 10,
+                              computedEccentricity: 0.40)
+            e.date = "2026-03-18"; e.time = "22:00:00"
+            return e
+        }
+        // Night B — 5 normal frames + 1 anomalous "detection burst" frame (4×).
+        // The burst is the only frame whose computedStarCount approaches a
+        // value that would inflate a P90 in a small pool.
+        var nightB: [ImageEntry] = (0..<5).map { i in
+            var e = makeEntry(index: 100 + i, filter: "O", target: "Rosette A", exposure: 180,
+                              noiseMAD: 0.003, noiseMedian: 0.04,
+                              computedFWHM: 7.2 + fwhmJitter[i],
+                              computedStarCount: 1050 + i * 10,
+                              computedEccentricity: 0.42)
+            e.date = "2026-03-21"; e.time = "21:00:00"
+            return e
+        }
+        var burst = makeEntry(index: 200, filter: "O", target: "Rosette A", exposure: 180,
+                              noiseMAD: 0.003, noiseMedian: 0.04,
+                              computedFWHM: 7.5,
+                              computedStarCount: 4928,
+                              computedEccentricity: 0.42)
+        burst.date = "2026-03-21"; burst.time = "22:30:00"
+        nightB.append(burst)
+
+        let scores = QualityEstimator.computeScores(for: nightA + nightB)
+
+        // No NORMAL frame (≤2000 stars in a pool whose typical is ~1100)
+        // should carry the "star count" Stage 1.5 flag. Without the clamp,
+        // every normal frame would carry it (threshold = 0.4 × 4928 = 1971).
+        for entry in (nightA + nightB) where (entry.computedStarCount ?? 0) < 2000 {
+            guard let bd = scores[entry.url] else { continue }
+            let hasStarFlag = bd.sessionSanityReasons.contains(where: { $0.contains("star count") })
+            XCTAssertFalse(hasStarFlag,
+                "Frame with \(entry.computedStarCount ?? 0) stars (pool median ~1100) must not be flagged 'star count far below session norm' when one anomalous frame inflates P90 to 4928. Reasons: \(bd.sessionSanityReasons)")
+        }
+    }
 }
