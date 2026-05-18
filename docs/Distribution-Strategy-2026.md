@@ -275,7 +275,81 @@ in den Anzeigen-Slot allein.
 
 ---
 
-## 6. Die Kurzantwort
+## 6. Pre-mortem — angenommen, der Plan ist nach 12 Monaten gescheitert
+
+Übung: Es ist Mai 2027, Downloads flach, keine Community-Traktion. Warum?
+Failure-Modes nach Wahrscheinlichkeit × Impact, dann Plan-Änderungen.
+
+**1. Solo-Dev-Persistenz-Kollaps (sehr hoch / hoch) — der eigentliche Killer.**
+„Niedriger Aufwand" ist falsch etikettiert: laufendes Discord-Membership,
+monatlicher Content, Follow-ups = Dauertropf. Niedrig pro Instanz, hoch in
+Persistenz. Bei parallelem schnellem Codebase gewinnt ab Woche 3 das Coden;
+der Marketing-Tropf versiegt still. So sterben Solo-Pläne — an
+Vernachlässigung, nicht an Strategie.
+
+**2. „Nico-or-bust" + niedrige Cold-Outreach-Konversion (hoch / hoch).**
+Die Creator-Korrektur hat die Single-Point-Abhängigkeit *verschärft*. Ein
+Mac-only-Nischentool schrumpft die Watch-Time eines Creators → er ist
+*disincentiviert*, selbst bei Sympathie. Konversion einstellig %/null,
+Zeithorizont Monate, kein Fallback.
+
+**3. Die „nachweislich"-Schicht scheitert leise + Telemetrie-Backlash
+(mittel-hoch / hoch).** Post-ATT/SKAN ist Viewer→AstroBlink individuell
+oft *nicht* beweisbar; Opt-in-Ping <30% (verzerrt) und in FOSS-/Astro-
+Audience reputationsrisikant. Ergebnis: faktisch unmessbar → die Kern-
+Feedbackschleife („auf Konverter verdoppeln") ist nicht ausführbar.
+
+**4. Aktivierungs-Leck unter dem Funnel (mittel / hoch) — unsichtbar.**
+Gatekeeper/Notarization-Friction, Versions-Skew GitHub↔App Store, Cold-
+Cache-Perf auf M1/Netzlaufwerk, AIsaac-Onboarding-Klippe. Top-of-Funnel
+sieht gut aus, Retention null — macht Mundpropaganda/Creator-Demo *negativ*.
+
+**5. Viewer-ASO-Zirkularität (mittel / mittel-hoch).** ASO-Ranking braucht
+Velocity/Ratings/Retention; ein $0-Nischen-Viewer ohne Reviews rankt nicht
+ohne initiale Traffic-Injektion. Der Viewer *verschiebt* das Funnel-Problem,
+löst es nicht. „Leichter viral" = unbelegte Behauptung.
+
+**6. Vitamin statt Schmerzmittel (mittel / hoch).** Wer den Cull-Schmerz
+nicht fühlt (WBPP-Dumper), für den ist „gratis Blink-Ersatz" kein Sog.
+
+**7. Konkurrenz/Timing (mittel / mittel).** Siril (gratis, aktiv, große
+Community) kann die GPU-/Blink-Lücke im Fenster schließen.
+
+**Meta-Fehler:** To-do-Liste statt Entscheidungsbaum. Solo + viele Kanäle
+„ein bisschen von allem" = keiner erreicht Fluchtgeschwindigkeit. Keine
+Kill-Kriterien, kein Frühwin-Milestone für die Moral.
+
+### Mitigationen (verbindliche Plan-Änderungen)
+
+- **Kritischer Pfad nur = kontrollierbar:** 60-Tage-Spearhead = SEO/
+  QuickLook-Landingpage + Homebrew (objektiv messbar *ohne* Telemetrie:
+  GitHub-Download-Counts, öffentliche Homebrew-Stats, MAS-Units). Creator-
+  Outreach läuft parallel als Lottoscheine, **nie kritischer Pfad**.
+- **Opt-in-Telemetrie streichen** (oder trivial + laut-Consent, Backlash-
+  Risiko explizit akzeptiert). Attribution via objektive externe Zähler +
+  distinkte UTM-Landingpfade + *eine* weiche „woher?"-Frage.
+- **Aktivierung als getrackte Stufe:** vor *jedem* Traffic Notarization
+  fixen, Versions-Skew GitHub↔App Store killen, Cold-Start-Perf auf M1/
+  Netzlaufwerk verifizieren. Kein Traffic in lecken First-Run.
+- **Kill-Gates:** Nico-Tier 8 Wochen kein Biss → Outreach stoppen, voll
+  Owned Channels. Viewer-ASO 60 Tage kein Organik-Lift → Viewer ist *kein*
+  Entlastungsventil, neu planen.
+- **Schmerz führen:** *„PixInsight Blink crasht bei 200 XISF — du hast
+  Culling aufgegeben, deine Stacks sind schlechter."* + Ein-Klick-
+  „Auto-Cull, sieh was du weggeworfen hättest"-Demo.
+- **Nachhaltigkeit:** fixer wöchentlicher Marketing-Block wie ein
+  Release-Task; 90-Tage-Frühwin-Milestone; 12–18 Monate Schwungrad
+  akzeptieren.
+
+**Wenn nur eine Zeile zählt:** Risiken 1+3 kombiniert = Marketing wird
+fürs Coden gedroppt *und* Wirkung ist ohnehin nicht messbar → der Plan
+„scheitert" nicht, er wird nie ausgeführt und niemand merkt es. Owned +
+objektiv-messbar + kill-gated schlägt ambitioniert + creator-abhängig +
+unmessbar.
+
+---
+
+## 7. Die Kurzantwort
 
 Der eine größte Hebel bei minimalem Aufwand: **YouTube-Creator-Seeding**
 (kostenlos, async, evergreen, hyper-zielgenau, messbar). Der
