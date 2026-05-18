@@ -35,7 +35,7 @@ Foren sind heute v. a. ein durchsuchbares Archiv, kein Verbreitungsmotor.
 |------|-------|---------|-------|----------|
 | **S** | YouTube-Creator-Seeding | niedrig (async, einmalig) | sehr hoch, evergreen | ja (UTM/Referrer) |
 | **S** | Reddit r/astrophotography (Value-Post) | niedrig | hoch, schnell | ja (Referrer/Link) |
-| **S** | Discord (NINA/Cuiv/AstroBin) als echtes Mitglied | mittel (laufend) | hoch | teilweise |
+| **S** | Discord (NINA/AstroBin/große Imaging-Server) als echtes Mitglied | mittel (laufend) | hoch | teilweise |
 | **A** | Homebrew Cask | sehr niedrig (1× PR) | dauerhaft + Stats | **ja (Homebrew-Analytics)** |
 | **A** | SEO-Landingpage (GitHub Pages) | niedrig–mittel | evergreen Inbound | ja (Search Console) |
 | **A** | PixInsight-Forum (Importer-Plugin) | niedrig | hoch (seriöseste Imager) | ja |
@@ -56,15 +56,34 @@ Mac-Astrofotografen, **evergreen** (liefert über YouTube-Suche jahrelang weiter
 und sauber messbar. Da die App **kostenlos + Open Source** ist, ist das „Ja"
 für Creator nahezu reibungslos.
 
+**Auswahl nach Kriterien, NICHT nach Prominenz.** Ein Creator passt nur bei
+(a) Audience-Überlappung mit Mac-Astrofotografen, (b) FOSS-/Gratis-Tool-
+Affinität, (c) **Processing/Workflow**-Content statt Capture/Automation.
+Capture-Automation-Kanäle sind naturgemäß Windows/NINA-zentriert (NINA ist
+Windows) und damit schlechter Fit für ein Mac-Tool — unabhängig von der
+persönlichen Plattform-Haltung des Creators. Processing-Kanäle sind viel
+Mac-gemischter, weil PixInsight/Siril/APP alle auf dem Mac laufen und viele
+Imager auf einem Mac-Laptop verarbeiten.
+
+> **Pre-Screen-Pflicht (5 Min, Nullkosten):** vor jedem Outreach die letzten
+> ~5 Videos prüfen — auf welchem Rechner wird verarbeitet? Mac-Erwähnungen?
+> Das filtert Windows-only-Kanäle raus, *bevor* Aufwand investiert wird.
+> Niemals auf einen einzelnen Creator anchoren.
+
 **Internationale Zielliste (priorisiert):**
-1. **Cuiv, The Lazy Geek** — extrem workflow-/tool-fokussiert, technische
-   NINA/Automatisierungs-Audience, macht regelmäßig „dieses kostenlose Tool"-Videos.
-   **Top-Ziel.**
-2. **Nico Carver (Nebula Photos)** — große Einsteiger/Fortgeschrittenen-Audience,
-   Champion für kostenlose Workflows (Siril-Publikum = oft Mac-Nutzer). **Top-Ziel.**
-3. **Trevor Jones (AstroBackyard)** — größte Reichweite, mainstream.
-4. Peter Zelinka, Russ' Astrophotography, Visible Dark, Deep Sky Detail,
-   Patriot Astro, The Astro Imaging Channel (TAIC-Livestreams), Connect the Dots.
+1. **Nico Carver (Nebula Photos)** — championt explizit *kostenlose* Tools
+   (Siril, GIMP), bedient Mac-User direkt, FOSS-positiv, große
+   Einsteiger/Fortgeschrittenen-Audience. Für eine gratis GPLv3-Mac-App der
+   mit Abstand beste Fit. **Top-Ziel.**
+2. **Trevor Jones (AstroBackyard)** — größte Reichweite, plattform-agnostisch,
+   nicht anti-Mac, DSLR/Einsteiger-lastig.
+3. Peter Zelinka, Russ' Astrophotography, Visible Dark, Deep Sky Detail,
+   Patriot Astro, The Astro Imaging Channel (TAIC-Livestreams), Connect the Dots
+   — alle erst nach Pre-Screen.
+4. **Capture/Automation-Kanäle (z. B. Cuiv, The Lazy Geek):** *nicht* für das
+   Mac-Tool — Lane passt nicht (Windows/NINA). **Aber:** sehr wohl für den
+   plattform-agnostischen iOS-Viewer (s. Abschnitt 5) — „FITS am Handy" geht
+   auch in einem Windows-Capture-Kanal ohne Widerspruch.
 
 **DACH (für Astrotreff-Reichweite ohne Foren-Zähigkeit):**
 - Astro mit Frank (Frank Sackenheim), AstroPhotonsTV, Clear-Sky-Channel u. a.
@@ -88,10 +107,13 @@ kostenlos + Open Source. Monatliche „What's your workflow?"-Threads sind
 natürliche Mention-Stellen. Messbar über Reddit-Referrer + getrackten Link.
 
 #### 2.3 Discord — wo die Community wirklich lebt
-Genau hier sind die aktiven Leute, die in Foren fehlen. Server: großer
-allgemeiner Astro-Imaging-Discord, Cuiv-Discord, AstroBin-Discord,
-Nebula-Photos/Nico-Discord, ZWO/ASIAIR-Communities, **NINA-Discord** (die App
-integriert NINA-Metadaten tief → natürlicher, glaubwürdiger Touchpoint).
+Genau hier sind die aktiven Leute, die in Foren fehlen. Server: große
+allgemeine Astro-Imaging-Discords, AstroBin-Discord, Nebula-Photos/Nico-
+Discord, ZWO/ASIAIR-Communities, **NINA-Discord** (die App integriert
+NINA-Metadaten tief → natürlicher, glaubwürdiger Touchpoint). Hinweis:
+Discord-Präsenz ist Community-Mitgliedschaft, kein Creator-Endorsement —
+auch in Windows-lastigen Servern sitzen Mac-User, die „bestes Cull-Tool
+für Mac?" fragen.
 Strategie: **echtes hilfreiches Mitglied** sein, ein #showcase/#tools-Post,
 und die ständig auftauchende Frage „bestes Cull-Tool für Mac?" beantworten
 (heute lautet die Antwort schwach „PixInsight in einer VM" oder „Siril" —
@@ -178,9 +200,11 @@ Ohne Messung ist es eine Wunschliste. Minimal-Setup:
 - PixInsight-Forum-Thread zum Importer.
 
 **Woche 2–4:**
-- Personalisierte Outreach an 6–10 Creator (gestaffelt: Cuiv & Nico Carver
-  zuerst, dann DACH). 1-Seiten-Presskit + Demo-Footage beilegen, damit es
-  für den Creator **null Aufwand** ist.
+- 5-Min-Pre-Screen der Kandidaten (verarbeitet er auf Mac? FOSS-affin?),
+  dann personalisierte Outreach an 6–10 Creator (Mac-Tool: Nico Carver
+  zuerst, dann DACH; iOS-Viewer separat auch an Capture-Kanäle). 1-Seiten-
+  Presskit + Demo-Footage beilegen, damit es für den Creator **null
+  Aufwand** ist.
 - 2–3 Discords als echtes Mitglied seeden.
 - *Ein* starker Value-First-Reddit-Post.
 
