@@ -192,12 +192,75 @@ Ohne Messung ist es eine Wunschliste. Minimal-Setup:
 
 ---
 
-## 5. Die Kurzantwort
+## 5. AstroFileViewer (iOS) — Wachstumsmotor, nicht nur Anzeigen-Slot
+
+**Idee:** Die häufiger geladene iOS-App `AstroFileViewer` (v1.5.0,
+iPhone+iPad, teilt `ImageDecoder` mit macOS) als Werbefläche für AstroBlink
+nutzen. **Richtig — aber mit einem entscheidenden Reframe.**
+
+**Der Reframe:** Cross-Promo ist ein **Multiplikator, keine Quelle**. Eine
+kleine Zahl multipliziert bleibt klein. Der Hebel ist nicht „Anzeige in den
+Viewer bauen", sondern:
+
+> AstroFileViewer ist **strukturell das bessere Top-of-Funnel** als die
+> Mac-App. Also den Viewer zum Wachstumsmotor machen und die Cross-Promo
+> nur als **Conversion-Schritt** nutzen.
+
+**Warum der iOS-Viewer der stärkere Keil ist:**
+- Breiteres Publikum: jeder Astrofotograf mit iPhone/iPad — nicht nur
+  Mac-Besitzer (Device-Family 1,2 → auch iPad).
+- Universeller, emotionaler Daily-Hook: „Sind die Daten von letzter Nacht
+  was geworden?" — aus dem Bett/Büro/weg vom Rig. Gewohnheit, nicht 1×/Session.
+- Sofort vorführbar/viral: „Schau, ich öffne mein FITS am Handy" verbreitet
+  sich selbst; ein Mac-Cull-Tool hat diesen Party-Trick nicht.
+- iOS-ASO ist ein echter, messbarer, aufwandsarmer Hebel: „FITS viewer",
+  „XISF viewer", „astrophotography file viewer" — gesuchte, **konkurrenzlose**
+  App-Store-Keywords, die niemand besitzt.
+- Klinkt sich in bestehende Workflows ein: Files-App / QuickLook /
+  Share-Sheet / AirDrop-vom-Mac.
+
+**Reihenfolge:** (1) Viewer wachsen lassen (iOS-ASO + universeller Hook +
+dieselben Creator/Reddit/Discord-Kanäle — „FITS am Handy" ist ein 30-Sek-
+Aside in *jedem* Astro-Video, noch einfacheres „Ja" als die Mac-App).
+(2) Cross-Promo konvertiert die größere Basis zu AstroBlink.
+
+**Cross-Promo, die wirklich konvertiert (minimaler Aufwand):**
+- Status quo: einziger AstroBlink-Verweis in iOS ist ein vergrabener
+  GitHub-Link (`ContentView.swift:544`). Kein echter Funnel → Near-Zero-
+  Aufwand-Lücke.
+- **Kontextuell statt Banner:** im Moment der Intention auslösen — User
+  swipt durch viele Files → *„Machst du das auf einem Mac? AstroBlink
+  blinkt 300 Subs in 20 s — gratis."* Verhaltenstrigger konvertiert,
+  statischer Banner wird ignoriert.
+- **Apples messbares Plumbing:** App-Store-Kampagnen-/Provider-Token-Link
+  → App Store Connect „App Referrer" zeigt exakt die Viewer→AstroBlink-
+  Installs = wörtlich das „nachweislich".
+- **Gemeinsame Developer-Page** im App Store (Apps verlinken sich
+  automatisch) + Custom Product Page.
+- **Bidirektional:** auch *in AstroBlink* „Sieh deine Subs am Handy"
+  zeigen. Mac-User = High-Intent → holen den Viewer, werden dann die
+  Vorführer, die ihn verbreiten (Reverse-Funnel).
+- **Shared-Backend-Story:** beide nutzen `ImageDecoder`; macOS hat schon
+  Supabase/iCloud → minimaler Sync = „deine Sessions folgen dir aufs
+  Handy", starker Grund für *beide* Apps.
+
+**Ehrlicher Tradeoff:** zahlt sich nur aus, wenn das Viewer-Top-of-Funnel
+real wächst. Wächst keine App, ist Cross-Promo Stühlerücken. Grenzaufwand
+also in **Viewer-ASO + universellen Hook + Creator-Seeding** stecken, nicht
+in den Anzeigen-Slot allein.
+
+---
+
+## 6. Die Kurzantwort
 
 Der eine größte Hebel bei minimalem Aufwand: **YouTube-Creator-Seeding**
 (kostenlos, async, evergreen, hyper-zielgenau, messbar). Der
 aufwandsärmste Dauerkanal: **Homebrew-Cask + SEO-Landingpage**. Foren
 sind der schlechteste Aufwand/Nutzen → degradieren, nicht abschaffen.
+**Der iOS-Viewer ist der beste Trojaner**, weil er breiteren, viraleren
+Top-of-Funnel hat als die Mac-App — aber als Wachstumsmotor behandeln
+(eigenes ASO + Hook), nicht nur als Anzeigen-Slot; die Cross-Promo ist
+der messbare Conversion-Schritt.
 Weil die App gratis + Open Source + auf einer unterversorgten Plattform mit
 klarer 10×-Differenzierung ist, ist Verbreitung ein reines Sichtbarkeits-
 problem — und genau das lösen die S-Tier-Kanäle.
