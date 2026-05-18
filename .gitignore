@@ -50,4 +50,9 @@ PERFORMANCE.md
 RESOURCES.md
 TODO.md
 tasks/
+# Claude Code / internal working docs — keep local only, never push
+CLAUDE.md
+stagingcheckundpruefanweisungsdatei.md
+supabase/RLS_AUDIT.md
+docs/Competitive-Analysis-2026.md
 /project.yml
