@@ -14,7 +14,28 @@ Nice side effect: Finally you have a native XISF and FITS Quicklook for macOS. (
 
 ---
 
-## What's New in v6.0.4 (Build 94)
+## What's New in v6.1.0 (Build 95)
+
+**MCP Integration — drive AstroBlink from Claude Desktop in plain language.**
+A purpose-built [Model Context Protocol](https://modelcontextprotocol.io)
+helper now ships inside the app bundle. Once installed (one click via
+**Window → MCP Connector (Claude)…**), any MCP-capable LLM client can
+query your entire frame history, kick off headless scans by name, and
+ask the algorithm to identify trash candidates — all in plain
+conversation. Read-only queries hit the FrameHistory SQLite directly
+and work even when AstroBlink isn't running. Move-to-PRE-DELETE stays
+user-driven; nothing is ever silently deleted. Everything runs locally
+— no network listener, no remote tunneling. See the [MCP Integration
+section](#mcp-integration--drive-astroblink-from-claude-desktop--claude-code)
+for the seven prototypical questions and the architecture.
+
+13 tools, two new windows (Astrofile Locations + MCP Connector), one
+new DB migration (v10). No scoring changes; `kAlgorithmVersion` is
+unchanged.
+
+---
+
+## Previously in v6.0.4 (Build 94)
 
 **Stage 1.5 fairness fix + AIsaac honesty fix.** Two surgical fixes that
 together remove a confusing false-positive in the cross-night quality
@@ -176,7 +197,7 @@ AstroBlink ships an embedded [Model Context Protocol](https://modelcontextprotoc
 
 **Architecture:** Read-only queries (`list_setups`, `night_summary`, `quality_summary`, etc.) hit the FrameHistory SQLite database directly — the app does NOT need to be running. App-driving tools (`scan_for_new_frames`, `mark_auto_garbage_for_predelete`) fire the `astroblink://` URL scheme; LaunchServices opens AstroBlink if needed, and the MCP server polls a small status table for completion. Move-to-PRE-DELETE always stays user-driven (Cmd+Backspace) — no silent deletion.
 
-**Privacy:** Everything runs locally. Nothing leaves your Mac. The MCP helper is just a subprocess Claude Desktop launches and talks to over stdin/stdout.
+**Privacy:** Everything runs locally. Nothing leaves your Mac. The MCP helper is just a subprocess Claude Desktop launches and talks to over stdin/stdout. There is no network listener and no remote tunneling — by design.
 
 ---
 

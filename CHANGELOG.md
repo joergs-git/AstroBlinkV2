@@ -4,6 +4,52 @@ All notable changes to AstroBlink & AIsaac will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [6.1.0] — 2026-05-23
+
+**MCP Integration — drive AstroBlink from Claude Desktop / Claude Code.**
+AstroBlink now ships an embedded [Model Context Protocol](https://modelcontextprotocol.io)
+helper (`AstroBlinkMCPServer`) so an external LLM client can query your
+entire frame history and trigger headless scans by name. Pure addition —
+no scoring changes, `kAlgorithmVersion` unchanged.
+
+### Added
+
+- **`AstroBlinkMCPServer` CLI helper** bundled inside the .app at
+  `Contents/Helpers/AstroBlinkMCPServer`. Built as a separate Swift
+  executable target using the official `mcp-swift-sdk 0.12`, automatically
+  re-signed during the app's build.
+- **13 MCP tools** exposed over stdio JSON-RPC:
+  - Read-only (FrameHistory SQLite, no app needed): `list_setups`,
+    `list_astro_roots`, `list_nights`, `night_summary`, `recent_sessions`,
+    `target_integration`, `frames`, `setup_summary`, `quality_summary`,
+    `filter_advice`.
+  - App-delegating (via `astroblink://` URL scheme): `scan_for_new_frames`,
+    `mark_auto_garbage_for_predelete`. Move-to-PRE-DELETE stays user-driven
+    (Cmd+Backspace) — no silent deletion.
+  - Health: `ping`.
+- **"Window → Astrofile Locations…"** — register default folders (NAS
+  roots, local archives) with security-scoped bookmarks and an optional
+  setup tag (e.g. `RC12`) so MCP queries can resolve human-friendly names.
+- **"Window → MCP Connector (Claude)…"** — one-click installer that
+  patches Claude Desktop's `claude_desktop_config.json` to register the
+  embedded helper. Existing config is preserved; a timestamped `.bak`
+  file is written before any change.
+- **Database v10 migration** adds two tables:
+  - `astro_root` — persistent default folders with security-scoped bookmarks.
+  - `mcp_command_status` — async rendezvous table for URL-scheme commands.
+
+### Changed
+
+- `astroblink://` URL scheme now handles three verbs: `open` (existing),
+  `scan` (new), `mark-garbage` (new). Each new verb inserts a status row
+  and dispatches via NotificationCenter to `MCPCommandRunner`.
+
+### Privacy
+
+- Everything runs locally. The MCP helper is just a subprocess Claude
+  Desktop launches and talks to over stdin/stdout. No network listener,
+  no remote tunneling.
+
 ## [6.0.4] — 2026-05-11
 
 **Stage 1.5 P90 outlier clamp + AIsaac verdict-column context fix.**
