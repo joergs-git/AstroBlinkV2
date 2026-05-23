@@ -57,7 +57,14 @@ targets:
         product: GRDB
       - target: AstroTriageQuickLookThumbnail
       - target: AstroTriageQuickLookPreview
-      - target: AstroBlinkMCPServer  # build order — embedded via postBuildScripts below
+      # MCP helper: build-order only. XcodeGen would otherwise auto-embed the
+      # binary into Contents/Resources/ (creating a duplicate alongside the
+      # postBuildScripts copy in Contents/Helpers/) and App Store validation
+      # then trips on the un-sandboxed second copy. `embed: false, link: false`
+      # keeps just the dependency edge — placement is explicit via the script.
+      - target: AstroBlinkMCPServer
+        embed: false
+        link: false
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.joergsflow.AstroBlinkV2
@@ -93,12 +100,22 @@ targets:
           find "${CODESIGNING_FOLDER_PATH}/Contents/Resources" -name "*.bundle" -print0 | while IFS= read -r -d '' bundle; do
             codesign --force --sign "${SIGN_IDENTITY}" --generate-entitlement-der "$bundle"
           done
-      - name: "Embed AstroBlinkMCPServer"
+      - name: "Embed AstroBlinkMCPServer (skipped for App Store builds)"
         script: |
           # Bundle the MCP server binary inside the .app so the path stays stable
           # across rebuilds and so Claude Desktop's config doesn't break when
           # DerivedData is cleaned. Path inside the bundle:
           #   AstroBlinkV2.app/Contents/Helpers/AstroBlinkMCPServer
+          #
+          # SKIPPED when SKIP_MCP_HELPER=1 (set by the App Store archive job):
+          # App Store distribution requires every embedded executable to declare
+          # app-sandbox=true. A sandboxed MCP helper can't read the main app's
+          # container database, so MCP integration is intentionally GitHub-only.
+          # MAS users who want MCP can also download the notarized .zip from GH.
+          if [ "${SKIP_MCP_HELPER:-0}" = "1" ]; then
+            echo "SKIP_MCP_HELPER=1 — App Store build, not embedding MCP helper"
+            exit 0
+          fi
           MCP_SRC="${CONFIGURATION_BUILD_DIR}/AstroBlinkMCPServer"
           DEST_DIR="${CODESIGNING_FOLDER_PATH}/Contents/Helpers"
           if [ ! -f "$MCP_SRC" ]; then

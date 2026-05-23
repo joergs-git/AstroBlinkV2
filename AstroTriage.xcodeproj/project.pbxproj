@@ -145,7 +145,6 @@
 		CCC0A640BC6FB06A49C4F621 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 048345D935BF6D509B7E7C8D /* OnboardingView.swift */; };
 		D1C96F46237D0B999DA95C52 /* BenchmarkStats.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E3E8374566F596C93B1AE16 /* BenchmarkStats.swift */; };
 		D4A041A8487DE17C0BBF8DCC /* AppMessage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43550D7E1EF1A01C304E9765 /* AppMessage.swift */; };
-		D71348844CAE9701CCDF53A0 /* AstroBlinkMCPServer in Resources */ = {isa = PBXBuildFile; fileRef = 1F5E491429C5DAEB8CBBF236 /* AstroBlinkMCPServer */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		D8490084CA833D518635A281 /* ImageDecoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7AE6DE7943D690C501401C4C /* ImageDecoder.swift */; };
 		D8CFF1148342DB49FB72D618 /* QuickLookDecoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = CAB86491BE4F5019B5883E46 /* QuickLookDecoder.swift */; };
 		DAC6D8E84989CFAB2D257222 /* AIsaacContextBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD52DEA0A1A02E46E1C26A18 /* AIsaacContextBuilder.swift */; };
@@ -780,7 +779,7 @@
 				BC786999CCE07E4A537B72CA /* Frameworks */,
 				A594E1D0E625ED953C41896C /* Embed Foundation Extensions */,
 				F45602B565BF814B6EE77C5F /* Sign SPM Resource Bundles */,
-				1721AA856D94A83CE46547A2 /* Embed AstroBlinkMCPServer */,
+				01380448B84EDC040DD46AFC /* Embed AstroBlinkMCPServer (skipped for App Store builds) */,
 			);
 			buildRules = (
 			);
@@ -904,14 +903,13 @@
 				1E96A2D9C4227C9FDD1B0C55 /* BortleGrid.bin in Resources */,
 				BC5A88BD113B62D7A7442646 /* ExportOptions-AppStore.plist in Resources */,
 				FA9170E94F3C3174975726E0 /* ExportOptions-DeveloperID.plist in Resources */,
-				D71348844CAE9701CCDF53A0 /* AstroBlinkMCPServer in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
-		1721AA856D94A83CE46547A2 /* Embed AstroBlinkMCPServer */ = {
+		01380448B84EDC040DD46AFC /* Embed AstroBlinkMCPServer (skipped for App Store builds) */ = {
 			isa = PBXShellScriptBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -920,14 +918,14 @@
 			);
 			inputPaths = (
 			);
-			name = "Embed AstroBlinkMCPServer";
+			name = "Embed AstroBlinkMCPServer (skipped for App Store builds)";
 			outputFileListPaths = (
 			);
 			outputPaths = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "# Bundle the MCP server binary inside the .app so the path stays stable\n# across rebuilds and so Claude Desktop's config doesn't break when\n# DerivedData is cleaned. Path inside the bundle:\n#   AstroBlinkV2.app/Contents/Helpers/AstroBlinkMCPServer\nMCP_SRC=\"${CONFIGURATION_BUILD_DIR}/AstroBlinkMCPServer\"\nDEST_DIR=\"${CODESIGNING_FOLDER_PATH}/Contents/Helpers\"\nif [ ! -f \"$MCP_SRC\" ]; then\n  echo \"warning: AstroBlinkMCPServer binary not found at $MCP_SRC — skipping embed\"\n  exit 0\nfi\nmkdir -p \"$DEST_DIR\"\ncp -f \"$MCP_SRC\" \"$DEST_DIR/AstroBlinkMCPServer\"\n# Re-sign so the embedded helper validates against the app's signature.\nif [ \"${CONFIGURATION}\" = \"Release\" ]; then\n  SIGN_IDENTITY=\"Apple Distribution: Joerg Klaas (FDSVBU33S8)\"\nelse\n  SIGN_IDENTITY=\"${EXPANDED_CODE_SIGN_IDENTITY}\"\nfi\ncodesign --force --sign \"${SIGN_IDENTITY}\" --options runtime --timestamp=none \"$DEST_DIR/AstroBlinkMCPServer\"\n";
+			shellScript = "# Bundle the MCP server binary inside the .app so the path stays stable\n# across rebuilds and so Claude Desktop's config doesn't break when\n# DerivedData is cleaned. Path inside the bundle:\n#   AstroBlinkV2.app/Contents/Helpers/AstroBlinkMCPServer\n#\n# SKIPPED when SKIP_MCP_HELPER=1 (set by the App Store archive job):\n# App Store distribution requires every embedded executable to declare\n# app-sandbox=true. A sandboxed MCP helper can't read the main app's\n# container database, so MCP integration is intentionally GitHub-only.\n# MAS users who want MCP can also download the notarized .zip from GH.\nif [ \"${SKIP_MCP_HELPER:-0}\" = \"1\" ]; then\n  echo \"SKIP_MCP_HELPER=1 — App Store build, not embedding MCP helper\"\n  exit 0\nfi\nMCP_SRC=\"${CONFIGURATION_BUILD_DIR}/AstroBlinkMCPServer\"\nDEST_DIR=\"${CODESIGNING_FOLDER_PATH}/Contents/Helpers\"\nif [ ! -f \"$MCP_SRC\" ]; then\n  echo \"warning: AstroBlinkMCPServer binary not found at $MCP_SRC — skipping embed\"\n  exit 0\nfi\nmkdir -p \"$DEST_DIR\"\ncp -f \"$MCP_SRC\" \"$DEST_DIR/AstroBlinkMCPServer\"\n# Re-sign so the embedded helper validates against the app's signature.\nif [ \"${CONFIGURATION}\" = \"Release\" ]; then\n  SIGN_IDENTITY=\"Apple Distribution: Joerg Klaas (FDSVBU33S8)\"\nelse\n  SIGN_IDENTITY=\"${EXPANDED_CODE_SIGN_IDENTITY}\"\nfi\ncodesign --force --sign \"${SIGN_IDENTITY}\" --options runtime --timestamp=none \"$DEST_DIR/AstroBlinkMCPServer\"\n";
 		};
 		F45602B565BF814B6EE77C5F /* Sign SPM Resource Bundles */ = {
 			isa = PBXShellScriptBuildPhase;

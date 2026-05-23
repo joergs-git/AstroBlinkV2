@@ -8,5 +8,11 @@
 	<string>upload</string>
 	<key>teamID</key>
 	<string>FDSVBU33S8</string>
+	<key>signingStyle</key>
+	<string>automatic</string>
+	<key>signingCertificate</key>
+	<string>Apple Distribution</string>
+	<key>manageAppVersionAndBuildNumber</key>
+	<false/>
 </dict>
 </plist>
