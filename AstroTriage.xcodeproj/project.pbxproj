@@ -94,6 +94,7 @@
 		8B3DCC9E6EA086B6F111AAC2 /* StackResultView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B1DF8104819C65DE1BF3EE5 /* StackResultView.swift */; };
 		8B9102B9DEB924145CD66AAA /* AstroTriageApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = D60FDB5923A652383E3ABEB7 /* AstroTriageApp.swift */; };
 		8D073D0D163390286003304D /* SunCalculator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C731CAA9FB954423A4E9179 /* SunCalculator.swift */; };
+		8D25E45D70F2C1822D552DF8 /* MCPConnectorWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = DCF74E5E4FB5BA8074C43D1D /* MCPConnectorWindow.swift */; };
 		8E0065CC0AD50D664CCC77DE /* QuickLookDebayer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41189836F6D85A8AB207DF34 /* QuickLookDebayer.swift */; };
 		8E60ECF523C4BA722AC43548 /* AIsaacKnowledgeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 977D1208D10ED6C156B236C7 /* AIsaacKnowledgeTests.swift */; };
 		8FA72A48F52D443B9723AE85 /* MCP in Frameworks */ = {isa = PBXBuildFile; productRef = 3384F305504B7DD7592E77CF /* MCP */; };
@@ -144,6 +145,7 @@
 		CCC0A640BC6FB06A49C4F621 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 048345D935BF6D509B7E7C8D /* OnboardingView.swift */; };
 		D1C96F46237D0B999DA95C52 /* BenchmarkStats.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E3E8374566F596C93B1AE16 /* BenchmarkStats.swift */; };
 		D4A041A8487DE17C0BBF8DCC /* AppMessage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43550D7E1EF1A01C304E9765 /* AppMessage.swift */; };
+		D71348844CAE9701CCDF53A0 /* AstroBlinkMCPServer in Resources */ = {isa = PBXBuildFile; fileRef = 1F5E491429C5DAEB8CBBF236 /* AstroBlinkMCPServer */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		D8490084CA833D518635A281 /* ImageDecoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7AE6DE7943D690C501401C4C /* ImageDecoder.swift */; };
 		D8CFF1148342DB49FB72D618 /* QuickLookDecoder.swift in Sources */ = {isa = PBXBuildFile; fileRef = CAB86491BE4F5019B5883E46 /* QuickLookDecoder.swift */; };
 		DAC6D8E84989CFAB2D257222 /* AIsaacContextBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD52DEA0A1A02E46E1C26A18 /* AIsaacContextBuilder.swift */; };
@@ -178,6 +180,13 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
+		2572C141FD575E7F67C33CF4 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 8FA7FD3B876F5A0346C02F50 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = D2F16637861D14B35603B14C;
+			remoteInfo = AstroBlinkMCPServer;
+		};
 		2C3178893B2B338DD12F350C /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 8FA7FD3B876F5A0346C02F50 /* Project object */;
@@ -359,6 +368,7 @@
 		D294FBAA33E829B384E0D16A /* SupabaseClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupabaseClient.swift; sourceTree = "<group>"; };
 		D60FDB5923A652383E3ABEB7 /* AstroTriageApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AstroTriageApp.swift; sourceTree = "<group>"; };
 		DB80D59623FFC14D180C6451 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		DCF74E5E4FB5BA8074C43D1D /* MCPConnectorWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPConnectorWindow.swift; sourceTree = "<group>"; };
 		DE83C9556D164ED7CC41C0FC /* DecoderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DecoderTests.swift; sourceTree = "<group>"; };
 		DF64C891421EA884F38DC4E3 /* TargetDatabaseViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TargetDatabaseViewModel.swift; sourceTree = "<group>"; };
 		E10083CA51B9CA8F2790A556 /* ContentViewSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentViewSupport.swift; sourceTree = "<group>"; };
@@ -658,6 +668,7 @@
 				BA64AC3E56CA52677C9BF553 /* ImagePreviewWindow.swift */,
 				ED760805A7C9C85AB7BB391E /* ImageViewerView.swift */,
 				763931350538CED5EA81290D /* KeyboardHandler.swift */,
+				DCF74E5E4FB5BA8074C43D1D /* MCPConnectorWindow.swift */,
 				3B3E41AED2C1FD9826CD93D3 /* MetricsChart.swift */,
 				740CADC7ADA01E2160E95DCC /* QuickStackWindow.swift */,
 				F523409C99088A95634ED4F9 /* ReleaseNotesWindow.swift */,
@@ -769,12 +780,14 @@
 				BC786999CCE07E4A537B72CA /* Frameworks */,
 				A594E1D0E625ED953C41896C /* Embed Foundation Extensions */,
 				F45602B565BF814B6EE77C5F /* Sign SPM Resource Bundles */,
+				1721AA856D94A83CE46547A2 /* Embed AstroBlinkMCPServer */,
 			);
 			buildRules = (
 			);
 			dependencies = (
 				BF9E23646F35CC3022D01D03 /* PBXTargetDependency */,
 				5EEBC7FF460CDF83ECE3DADF /* PBXTargetDependency */,
+				F479B2FC04FFA62FD95B9F20 /* PBXTargetDependency */,
 			);
 			name = AstroTriage;
 			packageProductDependencies = (
@@ -891,12 +904,31 @@
 				1E96A2D9C4227C9FDD1B0C55 /* BortleGrid.bin in Resources */,
 				BC5A88BD113B62D7A7442646 /* ExportOptions-AppStore.plist in Resources */,
 				FA9170E94F3C3174975726E0 /* ExportOptions-DeveloperID.plist in Resources */,
+				D71348844CAE9701CCDF53A0 /* AstroBlinkMCPServer in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
+		1721AA856D94A83CE46547A2 /* Embed AstroBlinkMCPServer */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Embed AstroBlinkMCPServer";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "# Bundle the MCP server binary inside the .app so the path stays stable\n# across rebuilds and so Claude Desktop's config doesn't break when\n# DerivedData is cleaned. Path inside the bundle:\n#   AstroBlinkV2.app/Contents/Helpers/AstroBlinkMCPServer\nMCP_SRC=\"${CONFIGURATION_BUILD_DIR}/AstroBlinkMCPServer\"\nDEST_DIR=\"${CODESIGNING_FOLDER_PATH}/Contents/Helpers\"\nif [ ! -f \"$MCP_SRC\" ]; then\n  echo \"warning: AstroBlinkMCPServer binary not found at $MCP_SRC — skipping embed\"\n  exit 0\nfi\nmkdir -p \"$DEST_DIR\"\ncp -f \"$MCP_SRC\" \"$DEST_DIR/AstroBlinkMCPServer\"\n# Re-sign so the embedded helper validates against the app's signature.\nif [ \"${CONFIGURATION}\" = \"Release\" ]; then\n  SIGN_IDENTITY=\"Apple Distribution: Joerg Klaas (FDSVBU33S8)\"\nelse\n  SIGN_IDENTITY=\"${EXPANDED_CODE_SIGN_IDENTITY}\"\nfi\ncodesign --force --sign \"${SIGN_IDENTITY}\" --options runtime --timestamp=none \"$DEST_DIR/AstroBlinkMCPServer\"\n";
+		};
 		F45602B565BF814B6EE77C5F /* Sign SPM Resource Bundles */ = {
 			isa = PBXShellScriptBuildPhase;
 			buildActionMask = 2147483647;
@@ -1044,6 +1076,7 @@
 				2AC85F5C8AE08A1DB6A74261 /* KeyboardHandler.swift in Sources */,
 				768887DBEF2EA267BC292E8B /* MCPCommandRunner.swift in Sources */,
 				C1C033612C3EDA262C67E420 /* MCPCommandStatus.swift in Sources */,
+				8D25E45D70F2C1822D552DF8 /* MCPConnectorWindow.swift in Sources */,
 				390301387CB9257F1DAE9235 /* MetadataExtractor.swift in Sources */,
 				B6A89CE09C96403D52C0CAE5 /* MetalRenderer.swift in Sources */,
 				3A2CBDE8B15293A433A58D90 /* MetricsChart.swift in Sources */,
@@ -1126,6 +1159,11 @@
 			isa = PBXTargetDependency;
 			target = 13825CA60ACE1A81CDE8BCAF /* AstroTriageQuickLookThumbnail */;
 			targetProxy = FDA69F31517F5B1E6EF4B967 /* PBXContainerItemProxy */;
+		};
+		F479B2FC04FFA62FD95B9F20 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = D2F16637861D14B35603B14C /* AstroBlinkMCPServer */;
+			targetProxy = 2572C141FD575E7F67C33CF4 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 

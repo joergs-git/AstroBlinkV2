@@ -57,6 +57,7 @@ targets:
         product: GRDB
       - target: AstroTriageQuickLookThumbnail
       - target: AstroTriageQuickLookPreview
+      - target: AstroBlinkMCPServer  # build order — embedded via postBuildScripts below
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.joergsflow.AstroBlinkV2
@@ -92,6 +93,27 @@ targets:
           find "${CODESIGNING_FOLDER_PATH}/Contents/Resources" -name "*.bundle" -print0 | while IFS= read -r -d '' bundle; do
             codesign --force --sign "${SIGN_IDENTITY}" --generate-entitlement-der "$bundle"
           done
+      - name: "Embed AstroBlinkMCPServer"
+        script: |
+          # Bundle the MCP server binary inside the .app so the path stays stable
+          # across rebuilds and so Claude Desktop's config doesn't break when
+          # DerivedData is cleaned. Path inside the bundle:
+          #   AstroBlinkV2.app/Contents/Helpers/AstroBlinkMCPServer
+          MCP_SRC="${CONFIGURATION_BUILD_DIR}/AstroBlinkMCPServer"
+          DEST_DIR="${CODESIGNING_FOLDER_PATH}/Contents/Helpers"
+          if [ ! -f "$MCP_SRC" ]; then
+            echo "warning: AstroBlinkMCPServer binary not found at $MCP_SRC — skipping embed"
+            exit 0
+          fi
+          mkdir -p "$DEST_DIR"
+          cp -f "$MCP_SRC" "$DEST_DIR/AstroBlinkMCPServer"
+          # Re-sign so the embedded helper validates against the app's signature.
+          if [ "${CONFIGURATION}" = "Release" ]; then
+            SIGN_IDENTITY="Apple Distribution: Joerg Klaas (FDSVBU33S8)"
+          else
+            SIGN_IDENTITY="${EXPANDED_CODE_SIGN_IDENTITY}"
+          fi
+          codesign --force --sign "${SIGN_IDENTITY}" --options runtime --timestamp=none "$DEST_DIR/AstroBlinkMCPServer"
 
   AstroTriageQuickLookThumbnail:
     type: app-extension

@@ -6,6 +6,46 @@ import AppKit
 
 // MARK: - Content View Modifiers (extracted to reduce type-check complexity)
 
+/// MCP-related observers split into their own ViewModifier so the parent
+/// modifier chains stay below SwiftUI's type-check budget.
+struct ContentViewMCPModifiers: ViewModifier {
+    @ObservedObject var viewModel: TriageViewModel
+
+    func body(content: Content) -> some View {
+        content
+            .onReceive(NotificationCenter.default.publisher(for: .showMCPConnector)) { _ in
+                MCPConnectorWindowController.shared.show()
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .mcpApplyGarbageMarks)) { notification in
+                // MCP requested: mark these file hashes as PRE-DELETE in the
+                // currently loaded session. Move-to-trash stays user-driven
+                // (Cmd+Backspace) per non-negotiable rule #1.
+                guard let info = notification.userInfo,
+                      let commandId = info["commandId"] as? String,
+                      let hashes = info["fileHashes"] as? [String] else { return }
+                let result = viewModel.markByFileHashes(Set(hashes))
+                let summary: [String: Any] = [
+                    "dryRun": false,
+                    "markedCount": result.marked,
+                    "notFoundInSession": result.notFound,
+                    "totalRequested": hashes.count,
+                    "hint": result.marked == 0
+                        ? "No matching frames in the active session. Open the relevant folder in AstroBlink first, or run scan_for_new_frames."
+                        : "Press Cmd+Backspace in AstroBlink to move the marked frames to PRE-DELETE."
+                ]
+                let json = (try? JSONSerialization.data(withJSONObject: summary, options: [.sortedKeys]))
+                    .flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
+                let status = MCPCommandStatus(
+                    commandId: commandId, verb: "mark-garbage", state: "completed",
+                    startedAt: nil, completedAt: MCPCommandStatus.nowISO8601(),
+                    progressCurrent: nil, progressTotal: nil,
+                    resultSummary: json, errorMessage: nil
+                )
+                try? FrameHistoryDatabase.shared.saveMCPCommandStatus(status)
+            }
+    }
+}
+
 struct ContentViewModifiers: ViewModifier {
     @ObservedObject var viewModel: TriageViewModel
     @Binding var sliderValue: Double
@@ -61,33 +101,6 @@ struct ContentViewModifiers: ViewModifier {
             .onReceive(NotificationCenter.default.publisher(for: .showAstroRootsSettings)) { _ in
                 AstroRootsSettingsWindowController.shared.show()
             }
-            .onReceive(NotificationCenter.default.publisher(for: .mcpApplyGarbageMarks)) { notification in
-                // MCP requested: mark these file hashes as PRE-DELETE in the
-                // currently loaded session. Move-to-trash stays user-driven
-                // (Cmd+Backspace) per non-negotiable rule #1.
-                guard let info = notification.userInfo,
-                      let commandId = info["commandId"] as? String,
-                      let hashes = info["fileHashes"] as? [String] else { return }
-                let result = viewModel.markByFileHashes(Set(hashes))
-                let summary: [String: Any] = [
-                    "dryRun": false,
-                    "markedCount": result.marked,
-                    "notFoundInSession": result.notFound,
-                    "totalRequested": hashes.count,
-                    "hint": result.marked == 0
-                        ? "No matching frames in the active session. Open the relevant folder in AstroBlink first, or run scan_for_new_frames."
-                        : "Press Cmd+Backspace in AstroBlink to move the marked frames to PRE-DELETE."
-                ]
-                let json = (try? JSONSerialization.data(withJSONObject: summary, options: [.sortedKeys]))
-                    .flatMap { String(data: $0, encoding: .utf8) } ?? "{}"
-                let status = MCPCommandStatus(
-                    commandId: commandId, verb: "mark-garbage", state: "completed",
-                    startedAt: nil, completedAt: MCPCommandStatus.nowISO8601(),
-                    progressCurrent: nil, progressTotal: nil,
-                    resultSummary: json, errorMessage: nil
-                )
-                try? FrameHistoryDatabase.shared.saveMCPCommandStatus(status)
-            }
             .onReceive(NotificationCenter.default.publisher(for: .showAIsaac)) { _ in
                 AIsaacWindowController.shared.updateContext(images: viewModel.images, viewModel: viewModel)
                 AIsaacWindowController.shared.toggleWindow()
@@ -116,6 +129,7 @@ struct ContentViewModifiers2: ViewModifier {
 
     func body(content: Content) -> some View {
         content
+            .modifier(ContentViewMCPModifiers(viewModel: viewModel))
             .onReceive(NotificationCenter.default.publisher(for: .resetFrameHistory)) { _ in
                 let alert = NSAlert()
                 alert.alertStyle = .critical

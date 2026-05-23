@@ -212,6 +212,9 @@ struct AstroBlinkV2App: App {
                 Button("Astrofile Locations…") {
                     NotificationCenter.default.post(name: .showAstroRootsSettings, object: nil)
                 }
+                Button("MCP Connector (Claude)…") {
+                    NotificationCenter.default.post(name: .showMCPConnector, object: nil)
+                }
             }
 
             // Advanced menu (safety net for Frame History Database)
@@ -563,6 +566,7 @@ extension Notification.Name {
     static let openFolderAtPath = Notification.Name("openFolderAtPath")  // URL scheme: astroblink://open?folder=...
     static let showTargetDatabase = Notification.Name("showTargetDatabase")
     static let showAstroRootsSettings = Notification.Name("showAstroRootsSettings")
+    static let showMCPConnector = Notification.Name("showMCPConnector")
 }
 
 // AppDelegate extension for help window
