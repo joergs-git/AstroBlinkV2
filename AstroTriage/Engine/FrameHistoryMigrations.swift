@@ -187,6 +187,39 @@ extension FrameHistoryDatabase {
             try db.execute(sql: "ALTER TABLE frame_record ADD COLUMN qualityFeedback INTEGER NOT NULL DEFAULT 0")
         }
 
+        // v10: MCP integration scaffolding.
+        //   astro_root          — user-configured default folders containing astro files,
+        //                         resolvable by an external MCP server via list_astro_roots.
+        //                         bookmark column stores a security-scoped bookmark so the
+        //                         app can re-access the folder without re-prompting.
+        //   mcp_command_status  — async rendezvous table. MCP server inserts a row with a
+        //                         fresh command_id, fires a URL-scheme verb on the app,
+        //                         then polls this row until state == "completed"|"failed".
+        migrator.registerMigration("v10_mcp_integration") { db in
+            try db.create(table: "astro_root") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("path", .text).notNull().unique()
+                t.column("bookmark", .blob)
+                t.column("setupTag", .text)
+                t.column("nickname", .text)
+                t.column("createdAt", .text).notNull()
+                t.column("lastUsedAt", .text)
+            }
+
+            try db.create(table: "mcp_command_status") { t in
+                t.primaryKey("commandId", .text).notNull()
+                t.column("verb", .text).notNull()
+                t.column("state", .text).notNull()
+                t.column("startedAt", .text)
+                t.column("completedAt", .text)
+                t.column("progressCurrent", .integer)
+                t.column("progressTotal", .integer)
+                t.column("resultSummary", .text)
+                t.column("errorMessage", .text)
+            }
+            try db.create(index: "idx_mcp_status_state", on: "mcp_command_status", columns: ["state"])
+        }
+
         try migrator.migrate(db)
     }
 }

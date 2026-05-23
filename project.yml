@@ -18,6 +18,12 @@ schemes:
       config: Debug
       targets:
         - AstroTriageTests
+  AstroBlinkMCPServer:
+    build:
+      targets:
+        AstroBlinkMCPServer: all
+    run:
+      config: Debug
 
 packages:
   ImageDecoder:
@@ -25,6 +31,9 @@ packages:
   GRDB:
     url: https://github.com/groue/GRDB.swift
     from: "7.4.0"
+  MCP:
+    url: https://github.com/modelcontextprotocol/swift-sdk
+    from: "0.12.0"
 
 settings:
   base:
@@ -167,3 +176,27 @@ targets:
         CODE_SIGN_STYLE: Automatic
         TEST_HOST: "$(BUILT_PRODUCTS_DIR)/AstroBlinkV2.app/Contents/MacOS/AstroBlinkV2"
         BUNDLE_LOADER: "$(TEST_HOST)"
+
+  # Standalone CLI binary that exposes AstroBlinkV2 to LLM clients (Claude Desktop,
+  # Claude Code, etc.) via the Model Context Protocol. Reads the same FrameHistory
+  # SQLite read-only, and delegates ingest/mark actions back to the running app via
+  # the astroblink:// URL scheme. Not sandboxed (CLI tools aren't by default).
+  AstroBlinkMCPServer:
+    type: tool
+    platform: macOS
+    sources:
+      - path: MCPServer
+        excludes:
+          - "**/.DS_Store"
+    dependencies:
+      - package: GRDB
+        product: GRDB
+      - package: MCP
+        product: MCP
+    settings:
+      base:
+        PRODUCT_NAME: AstroBlinkMCPServer
+        DEVELOPMENT_TEAM: FDSVBU33S8
+        CODE_SIGN_STYLE: Automatic
+        ENABLE_HARDENED_RUNTIME: YES
+        SKIP_INSTALL: YES

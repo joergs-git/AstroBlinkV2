@@ -943,6 +943,46 @@ final class FrameHistoryDatabase {
         }
     }
 
+    // MARK: - Astro Roots (v10 / MCP integration)
+
+    func allAstroRoots() throws -> [AstroRoot] {
+        try dbQueue.read { db in
+            try AstroRoot.order(Column("createdAt").asc).fetchAll(db)
+        }
+    }
+
+    func astroRoot(id: Int64) throws -> AstroRoot? {
+        try dbQueue.read { db in
+            try AstroRoot.fetchOne(db, key: id)
+        }
+    }
+
+    func astroRoot(matchingSetupTag tag: String) throws -> AstroRoot? {
+        try dbQueue.read { db in
+            try AstroRoot.filter(Column("setupTag") == tag).fetchOne(db)
+        }
+    }
+
+    /// Insert a new astro_root. The record's `id` is populated on success.
+    /// Throws on UNIQUE constraint violation (same path already present).
+    func insertAstroRoot(_ record: inout AstroRoot) throws {
+        try dbQueue.write { db in
+            try record.insert(db)
+        }
+    }
+
+    func updateAstroRoot(_ record: AstroRoot) throws {
+        try dbQueue.write { db in
+            try record.update(db)
+        }
+    }
+
+    func deleteAstroRoot(id: Int64) throws {
+        _ = try dbQueue.write { db in
+            try AstroRoot.deleteOne(db, key: id)
+        }
+    }
+
     // MARK: - Scan Progress
 
     /// Save or update scan progress (UPSERT).

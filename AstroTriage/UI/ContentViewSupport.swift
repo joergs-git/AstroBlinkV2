@@ -58,6 +58,9 @@ struct ContentViewModifiers: ViewModifier {
                 let sessionTargets = Set(viewModel.images.compactMap { $0.canonicalTarget })
                 TargetDatabaseWindowController.shared.show(sessionTargets: sessionTargets)
             }
+            .onReceive(NotificationCenter.default.publisher(for: .showAstroRootsSettings)) { _ in
+                AstroRootsSettingsWindowController.shared.show()
+            }
             .onReceive(NotificationCenter.default.publisher(for: .showAIsaac)) { _ in
                 AIsaacWindowController.shared.updateContext(images: viewModel.images, viewModel: viewModel)
                 AIsaacWindowController.shared.toggleWindow()

@@ -154,6 +154,9 @@ struct AstroBlinkV2App: App {
                 Button("Target Catalog") {
                     NotificationCenter.default.post(name: .showTargetDatabase, object: nil)
                 }
+                Button("Astrofile Locations…") {
+                    NotificationCenter.default.post(name: .showAstroRootsSettings, object: nil)
+                }
             }
 
             // Advanced menu (safety net for Frame History Database)
@@ -501,6 +504,7 @@ extension Notification.Name {
     static let zoomPresetLarge = Notification.Name("zoomPresetLarge")
     static let openFolderAtPath = Notification.Name("openFolderAtPath")  // URL scheme: astroblink://open?folder=...
     static let showTargetDatabase = Notification.Name("showTargetDatabase")
+    static let showAstroRootsSettings = Notification.Name("showAstroRootsSettings")
 }
 
 // AppDelegate extension for help window
