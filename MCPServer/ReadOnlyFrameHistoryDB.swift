@@ -324,6 +324,227 @@ struct ReadOnlyFrameHistoryDB {
         }
     }
 
+    // MARK: - Quality Summary (AIsaac parity)
+
+    struct QualitySummary: Codable {
+        let scope: String
+        let totalFrames: Int
+        let perFilter: [PerFilterStats]
+        let qualityTierCounts: [String: Int]
+        let topGarbageReasons: [GarbageReasonCount]
+        let topWorstFrames: [WorstFrame]
+
+        struct PerFilterStats: Codable {
+            let filter: String
+            let frameCount: Int
+            let trashCount: Int
+            let medianFWHM: Double?
+            let medianHFR: Double?
+            let medianStars: Int?
+            let totalIntegrationSeconds: Double
+        }
+
+        struct GarbageReasonCount: Codable {
+            let reason: String
+            let count: Int
+        }
+
+        struct WorstFrame: Codable {
+            let filename: String
+            let observingNight: String?
+            let filter: String?
+            let combinedZScore: Double?
+            let garbageReasons: String?
+        }
+    }
+
+    /// Quality summary scoped to:
+    ///   - .session(sessionId) — frames in one session
+    ///   - .night(date)        — frames on one observing night (all setups)
+    ///   - .setup(hash)        — all frames for one setup
+    ///   - .global             — everything
+    func qualitySummary(setupHash: String? = nil, night: String? = nil, sessionId: String? = nil) throws -> QualitySummary {
+        try queue.read { db in
+            var where_ = "1=1"
+            var args: [DatabaseValueConvertible] = []
+            if let s = setupHash { where_ += " AND setupHash = ?"; args.append(s) }
+            if let n = night { where_ += " AND observingNight = ?"; args.append(n) }
+            if let sid = sessionId { where_ += " AND sessionId = ?"; args.append(sid) }
+
+            let scope: String = sessionId.map { "session:\($0)" } ?? night.map { "night:\($0)" } ?? setupHash.map { "setup:\($0.prefix(8))" } ?? "global"
+
+            let total = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM frame_record WHERE \(where_)",
+                                         arguments: StatementArguments(args)) ?? 0
+
+            // Per-filter aggregates.
+            let perFilterRows = try Row.fetchAll(db, sql: """
+                SELECT filter,
+                       COUNT(*) AS frameCount,
+                       SUM(CASE WHEN qualityTier = 0 THEN 1 ELSE 0 END) AS trashCount,
+                       SUM(exposure) AS integration
+                FROM frame_record
+                WHERE \(where_)
+                GROUP BY filter
+                ORDER BY frameCount DESC
+                """, arguments: StatementArguments(args))
+
+            var perFilter: [QualitySummary.PerFilterStats] = []
+            for r in perFilterRows {
+                let filter = (r["filter"] as String?) ?? "(none)"
+                var medianWhere = where_
+                var medianArgs = args
+                if let f = (r["filter"] as String?) {
+                    medianWhere += " AND filter = ?"; medianArgs.append(f)
+                } else {
+                    medianWhere += " AND filter IS NULL"
+                }
+                func mFetch(_ col: String) -> [Double] {
+                    (try? Double.fetchAll(db,
+                        sql: "SELECT \(col) FROM frame_record WHERE \(medianWhere) AND \(col) IS NOT NULL ORDER BY \(col)",
+                        arguments: StatementArguments(medianArgs))) ?? []
+                }
+                let fwhm = Self.medianOf(mFetch("computedFWHM"))
+                let hfr = Self.medianOf(mFetch("computedHFR"))
+                let stars = Self.medianOf(mFetch("computedStarCount")).map { Int($0.rounded()) }
+                perFilter.append(.init(
+                    filter: filter,
+                    frameCount: r["frameCount"],
+                    trashCount: r["trashCount"],
+                    medianFWHM: fwhm, medianHFR: hfr, medianStars: stars,
+                    totalIntegrationSeconds: (r["integration"] as Double?) ?? 0
+                ))
+            }
+
+            // Tier counts.
+            let tierRows = try Row.fetchAll(db, sql: """
+                SELECT qualityTier, COUNT(*) AS c FROM frame_record WHERE \(where_)
+                GROUP BY qualityTier
+                """, arguments: StatementArguments(args))
+            var tierCounts: [String: Int] = [:]
+            for r in tierRows {
+                let t = r["qualityTier"] as Int? ?? -1
+                let label: String
+                switch t {
+                case 0: label = "trash"
+                case 1: label = "borderline"
+                case 2: label = "good"
+                case 3: label = "excellent"
+                case 4: label = "uncertain"
+                default: label = "unscored"
+                }
+                tierCounts[label] = r["c"]
+            }
+
+            // Top garbage reasons (count each unique reason token).
+            let reasonRows = try Row.fetchAll(db, sql: """
+                SELECT garbageReasons FROM frame_record
+                WHERE \(where_) AND qualityTier = 0 AND garbageReasons IS NOT NULL
+                """, arguments: StatementArguments(args))
+            var reasonCounts: [String: Int] = [:]
+            for r in reasonRows {
+                guard let raw = r["garbageReasons"] as String? else { continue }
+                // The column is a JSON-encoded array of strings written by the
+                // QualityEstimator (e.g. `["star trailing","abnormal background"]`).
+                // Parse, dedupe per row, then accumulate.
+                guard let data = raw.data(using: .utf8),
+                      let arr = try? JSONSerialization.jsonObject(with: data) as? [String] else { continue }
+                for tok in Set(arr) where !tok.isEmpty {
+                    reasonCounts[tok, default: 0] += 1
+                }
+            }
+            let topReasons = reasonCounts.sorted { $0.value > $1.value }
+                .prefix(10)
+                .map { QualitySummary.GarbageReasonCount(reason: $0.key, count: $0.value) }
+
+            // Top 10 worst frames by combinedZScore.
+            let worstRows = try Row.fetchAll(db, sql: """
+                SELECT filename, observingNight, filter, combinedZScore, garbageReasons
+                FROM frame_record
+                WHERE \(where_) AND combinedZScore IS NOT NULL
+                ORDER BY combinedZScore ASC
+                LIMIT 10
+                """, arguments: StatementArguments(args))
+            let worst = worstRows.map {
+                QualitySummary.WorstFrame(
+                    filename: $0["filename"],
+                    observingNight: $0["observingNight"],
+                    filter: $0["filter"],
+                    combinedZScore: $0["combinedZScore"],
+                    garbageReasons: $0["garbageReasons"]
+                )
+            }
+
+            return QualitySummary(
+                scope: scope, totalFrames: total,
+                perFilter: perFilter, qualityTierCounts: tierCounts,
+                topGarbageReasons: Array(topReasons),
+                topWorstFrames: worst
+            )
+        }
+    }
+
+    // MARK: - Filter Advice (AIsaac parity)
+
+    struct FilterAdvice: Codable {
+        let target: String
+        let perFilter: [PerFilterIntegration]
+        let recommendedNext: String?
+        let notes: String
+
+        struct PerFilterIntegration: Codable {
+            let filter: String
+            let totalHours: Double
+            let goodOrExcellentHours: Double
+            let frameCount: Int
+        }
+    }
+
+    /// Filter integration breakdown for a target with a simple "next filter" hint.
+    /// The hint is: pick the filter with the LEAST accumulated good/excellent
+    /// integration, weighted by the typical narrowband-vs-broadband effort ratio.
+    /// This is a heuristic — the real "what to image next" needs target type
+    /// (galaxy vs HII region) which lives in DeepSkyTargetDatabase, deferred to V2.
+    func filterAdvice(target: String) throws -> FilterAdvice {
+        try queue.read { db in
+            let rows = try Row.fetchAll(db, sql: """
+                SELECT filter,
+                       SUM(exposure) AS totalSec,
+                       SUM(CASE WHEN qualityTier >= 2 AND wasDeleted = 0 THEN exposure ELSE 0 END) AS keepSec,
+                       COUNT(*) AS frameCount
+                FROM frame_record
+                WHERE canonicalTarget = ? AND wasDeleted = 0
+                GROUP BY filter
+                """, arguments: [target])
+
+            let perFilter = rows.map {
+                FilterAdvice.PerFilterIntegration(
+                    filter: ($0["filter"] as String?) ?? "(none)",
+                    totalHours: (($0["totalSec"] as Double?) ?? 0) / 3600,
+                    goodOrExcellentHours: (($0["keepSec"] as Double?) ?? 0) / 3600,
+                    frameCount: $0["frameCount"]
+                )
+            }
+
+            // Heuristic recommendation: among filters with < 5h good/excellent integration,
+            // pick the one with the FEWEST hours so far. Skip "(none)".
+            let candidates = perFilter
+                .filter { $0.filter != "(none)" && $0.goodOrExcellentHours < 5.0 }
+                .sorted { $0.goodOrExcellentHours < $1.goodOrExcellentHours }
+            let recommended = candidates.first?.filter
+
+            let notes: String
+            if perFilter.isEmpty {
+                notes = "No history for this target. Anything is a good first choice."
+            } else if let r = recommended {
+                notes = "Suggest \(r): \(String(format: "%.1f", candidates.first!.goodOrExcellentHours))h kept so far, below the 5h heuristic threshold."
+            } else {
+                notes = "All filters already have ≥5h of kept integration. Consider improving SNR on the weakest channel or moving to a new target."
+            }
+
+            return FilterAdvice(target: target, perFilter: perFilter, recommendedNext: recommended, notes: notes)
+        }
+    }
+
     // MARK: - MCP Command Status (polling)
 
     /// Read the latest state of an MCP command launched via the astroblink:// URL scheme.

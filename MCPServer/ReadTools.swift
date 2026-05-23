@@ -94,6 +94,29 @@ enum ReadTools {
                         "setupHash": .object(["type": .string("string")])
                     ])
                 ])
+            ),
+            Tool(
+                name: "quality_summary",
+                description: "Rich quality breakdown for a scope: total frames, per-filter aggregates (frame count, trash count, median FWHM/HFR/stars, integration), quality tier counts, top 10 garbage reasons, top 10 worst frames by combinedZScore. Mirrors the AIsaac 'Quality Summary' preset. Pass exactly one scope filter: setupHash, night, or sessionId — leaving all blank scopes the whole DB.",
+                inputSchema: .object([
+                    "type": .string("object"),
+                    "properties": .object([
+                        "setupHash": .object(["type": .string("string")]),
+                        "night": .object(["type": .string("string"), "description": .string("YYYY-MM-DD")]),
+                        "sessionId": .object(["type": .string("string")])
+                    ])
+                ])
+            ),
+            Tool(
+                name: "filter_advice",
+                description: "Integration time per filter for a target, plus a heuristic recommendation for which filter to image next (the one with the fewest good/excellent hours, capped at 5h). Mirrors the AIsaac 'Filter Advice' preset.",
+                inputSchema: .object([
+                    "type": .string("object"),
+                    "required": .array([.string("target")]),
+                    "properties": .object([
+                        "target": .object(["type": .string("string"), "description": .string("Canonical target name, e.g. \"NGC 7635\"")])
+                    ])
+                ])
             )
         ]
     }
@@ -158,6 +181,19 @@ enum ReadTools {
                 return errorText("Missing required argument: setupHash")
             }
             return runTool { try db.setupSummary(setupHash: setup) }
+        case "quality_summary":
+            return runTool {
+                try db.qualitySummary(
+                    setupHash: stringArg(arguments, "setupHash"),
+                    night: stringArg(arguments, "night"),
+                    sessionId: stringArg(arguments, "sessionId")
+                )
+            }
+        case "filter_advice":
+            guard let target = stringArg(arguments, "target") else {
+                return errorText("Missing required argument: target")
+            }
+            return runTool { try db.filterAdvice(target: target) }
         default:
             return nil
         }
