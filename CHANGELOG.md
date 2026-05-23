@@ -4,6 +4,57 @@ All notable changes to AstroBlink & AIsaac will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [6.2.0] — 2026-05-23
+
+**MCP architecture refactor — in-app HTTP server instead of bundled helper.**
+Same 13 tools, same one-click installer, but the entire MCP server now runs
+inside `AstroBlinkV2.app` itself on `http://127.0.0.1:8765/mcp`. The
+v6.1.0 helper binary, postBuildScript embedding, URL-scheme `scan`/`mark-garbage`
+verbs, and `mcp_command_status` polling table are all gone. Result: same
+feature works identically in the App Store version (just needs the
+`network.server` entitlement). `kAlgorithmVersion` unchanged.
+
+### Added
+
+- In-process `MCPHTTPServer` based on swift-nio HTTP1 + the official
+  `mcp-swift-sdk`'s `StatefulHTTPServerTransport`. Auto-binds to the first
+  free port starting at 8765.
+- MCP Connector window now shows the running endpoint URL (live-polled
+  until the server is ready) and has a "Test Connection" button that
+  probes the running server with an `initialize` round-trip.
+- `network.server` entitlement on the main app target so a sandboxed App
+  Store build can also listen on `localhost`.
+
+### Changed
+
+- Tool handlers call `FrameHistoryDatabase.shared`, `AstroRootStore.shared`,
+  `ArchiveScanner.shared`, and the active `TriageViewModel` directly,
+  via `MCPViewModelBridge`. No URL-scheme indirection, no status-table
+  polling. `scan_for_new_frames` is a regular `async` function that
+  awaits `ArchiveScanner.isScanning == false`.
+- Claude config snippet format: `{"url": "http://127.0.0.1:8765/mcp"}`
+  instead of `{"command": "/path/to/binary"}`. Both Claude Desktop (recent
+  versions) and Claude Code accept this form.
+
+### Removed
+
+- `AstroBlinkMCPServer` standalone executable target (and the `MCPServer/`
+  directory).
+- `Embed AstroBlinkMCPServer` postBuildScript and the `SKIP_MCP_HELPER`
+  build-time switch.
+- `astroblink://scan` and `astroblink://mark-garbage` URL verbs.
+- `MCPCommandRunner.swift`, `MCPCommandStatus.swift`, the
+  `saveMCPCommandStatus` / `updateMCPProgress` DB helpers.
+
+### Migration
+
+- No user action required. The v10 schema migration's `mcp_command_status`
+  table is still present (unused now) — left in place to avoid an
+  immediate v11 migration. A future cleanup can drop it.
+- Previously-installed Claude Desktop configs that point at the old
+  helper-binary path still exist but are inert. Re-run "Install to Claude
+  Desktop" from the MCP Connector window to overwrite with the URL.
+
 ## [6.1.0] — 2026-05-23
 
 **MCP Integration — drive AstroBlink from Claude Desktop / Claude Code.**

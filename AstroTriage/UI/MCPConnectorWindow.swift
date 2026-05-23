@@ -1,7 +1,7 @@
-// "MCP Connector" — one-click install of the bundled AstroBlinkMCPServer into
-// Claude Desktop's config file. Reads the current bundled-helper path from
-// Bundle.main so it works whether the .app lives in /Applications/, Xcode's
-// DerivedData, or anywhere else.
+// "MCP Connector" — one-click install of AstroBlink's in-process HTTP MCP
+// server into Claude Desktop / Claude Code config. v6.2.0 architecture:
+// no helper binary, no DerivedData paths — just an http://127.0.0.1:<port>/mcp
+// URL that points to the server running inside this app.
 //
 // What the install does:
 //   1. Reads ~/Library/Application Support/Claude/claude_desktop_config.json
@@ -49,36 +49,37 @@ class MCPConnectorWindowController {
 final class MCPConnectorModel: ObservableObject {
     @Published var status: String = ""
     @Published var statusIsError = false
+    @Published var endpointURL: String = "(server starting…)"
 
-    let helperPath: String
     let claudeConfigPath: String
-    let configSnippet: String
+
+    private var refreshTimer: Timer?
 
     init() {
-        let bundled = Bundle.main.bundleURL
-            .appendingPathComponent("Contents/Helpers/AstroBlinkMCPServer", isDirectory: false)
-            .path
-        self.helperPath = bundled
-
-        let cfg = (NSString(string: "~/Library/Application Support/Claude/claude_desktop_config.json")
+        self.claudeConfigPath = (NSString(string: "~/Library/Application Support/Claude/claude_desktop_config.json")
             .expandingTildeInPath)
-        self.claudeConfigPath = cfg
-
-        let escaped = bundled.replacingOccurrences(of: "\\", with: "\\\\")
-                              .replacingOccurrences(of: "\"", with: "\\\"")
-        self.configSnippet = """
-        {
-          "mcpServers": {
-            "astroblink": {
-              "command": "\(escaped)"
-            }
-          }
+        refreshEndpoint()
+        // Poll the server endpoint every 500 ms until it's bound (server starts
+        // async at launch; usually ready in <1s but can take longer on cold disk).
+        refreshTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.refreshEndpoint() }
         }
-        """
     }
 
-    var helperExists: Bool {
-        FileManager.default.fileExists(atPath: helperPath)
+    deinit {
+        refreshTimer?.invalidate()
+    }
+
+    func refreshEndpoint() {
+        if let url = MCPHTTPServer.shared.endpointURL {
+            endpointURL = url
+            refreshTimer?.invalidate()
+            refreshTimer = nil
+        }
+    }
+
+    var serverReady: Bool {
+        MCPHTTPServer.shared.isRunning && MCPHTTPServer.shared.endpointURL != nil
     }
 
     var claudeInstalled: Bool {
@@ -86,7 +87,25 @@ final class MCPConnectorModel: ObservableObject {
             || FileManager.default.fileExists(atPath: (NSString(string: "~/Applications/Claude.app").expandingTildeInPath))
     }
 
+    var configSnippet: String {
+        let url = MCPHTTPServer.shared.endpointURL ?? "http://127.0.0.1:8765/mcp"
+        return """
+        {
+          "mcpServers": {
+            "astroblink": {
+              "url": "\(url)"
+            }
+          }
+        }
+        """
+    }
+
     func installToClaudeDesktop() {
+        guard let url = MCPHTTPServer.shared.endpointURL else {
+            status = "Server is not running yet — wait a moment and try again."
+            statusIsError = true
+            return
+        }
         let fm = FileManager.default
         let cfgURL = URL(fileURLWithPath: claudeConfigPath)
         let cfgDir = cfgURL.deletingLastPathComponent()
@@ -94,20 +113,17 @@ final class MCPConnectorModel: ObservableObject {
         do {
             try fm.createDirectory(at: cfgDir, withIntermediateDirectories: true)
 
-            // Load existing or start fresh.
             var json: [String: Any] = [:]
             if let data = try? Data(contentsOf: cfgURL),
                let parsed = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
                 json = parsed
-                // Backup with timestamp.
                 let stamp = DateFormatter.backupStamp.string(from: Date())
                 let backupURL = cfgURL.appendingPathExtension("bak.\(stamp)")
                 try? data.write(to: backupURL)
             }
 
-            // Merge mcpServers.astroblink.
             var servers = (json["mcpServers"] as? [String: Any]) ?? [:]
-            servers["astroblink"] = ["command": helperPath]
+            servers["astroblink"] = ["url": url]
             json["mcpServers"] = servers
 
             let out = try JSONSerialization.data(withJSONObject: json, options: [.prettyPrinted, .sortedKeys])
@@ -130,22 +146,43 @@ final class MCPConnectorModel: ObservableObject {
         }
     }
 
-    func revealHelper() {
-        let url = URL(fileURLWithPath: helperPath)
-        if FileManager.default.fileExists(atPath: helperPath) {
-            NSWorkspace.shared.activateFileViewerSelecting([url])
-        } else {
-            status = "Helper binary not found at \(helperPath). Re-build the app to embed it."
-            statusIsError = true
-        }
-    }
-
     func copySnippet() {
         let pb = NSPasteboard.general
         pb.clearContents()
         pb.setString(configSnippet, forType: .string)
         status = "Snippet copied to clipboard."
         statusIsError = false
+    }
+
+    func testEndpoint() {
+        guard let url = MCPHTTPServer.shared.endpointURL else {
+            status = "Server is not running yet."
+            statusIsError = true
+            return
+        }
+        // Probe via curl-equivalent — initialize MCP request expecting an error
+        // response (we're not sending Mcp-Session-Id) which proves the port is live.
+        Task {
+            do {
+                var req = URLRequest(url: URL(string: url)!)
+                req.httpMethod = "POST"
+                req.setValue("application/json, text/event-stream", forHTTPHeaderField: "Accept")
+                req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                req.httpBody = #"{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"0"}}}"#.data(using: .utf8)
+                let (data, response) = try await URLSession.shared.data(for: req)
+                let code = (response as? HTTPURLResponse)?.statusCode ?? 0
+                await MainActor.run {
+                    let preview = String(data: data, encoding: .utf8)?.prefix(120) ?? ""
+                    status = "HTTP \(code) — \(preview)"
+                    statusIsError = code >= 500
+                }
+            } catch {
+                await MainActor.run {
+                    status = "Connection failed: \(error.localizedDescription)"
+                    statusIsError = true
+                }
+            }
+        }
     }
 }
 
@@ -184,24 +221,22 @@ struct MCPConnectorView: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Connect AstroBlink to Claude Desktop")
-                .font(.title3)
-                .fontWeight(.semibold)
-            Text("This installs the bundled AstroBlinkMCPServer helper into Claude Desktop's MCP configuration. Once installed, you can ask Claude things like “Which setups do I have?” or “Verarbeite die Aufnahmen der letzten Nacht vom RC12” and Claude will call back into AstroBlink to get the answer.")
-                .font(.callout)
-                .foregroundColor(.secondary)
+            Text("Connect AstroBlink to Claude Desktop / Claude Code")
+                .font(.title3).fontWeight(.semibold)
+            Text("AstroBlink runs an HTTP MCP server inside the app itself. Once installed in your client's MCP config, you can ask things like \"Welche Setups habe ich?\" or \"Verarbeite die Aufnahmen der letzten Nacht vom RC12 Teleskop\" and the client will call back into this app to get the answer.")
+                .font(.callout).foregroundColor(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
 
     private var preflight: some View {
         VStack(alignment: .leading, spacing: 6) {
-            preflightRow(ok: model.helperExists,
-                         okText: "Helper binary embedded in this app bundle",
-                         badText: "Helper binary not found — re-build the app once.")
+            preflightRow(ok: model.serverReady,
+                         okText: "MCP server is running at \(model.endpointURL)",
+                         badText: "MCP server is not yet bound — give it a moment.")
             preflightRow(ok: model.claudeInstalled,
                          okText: "Claude Desktop is installed",
-                         badText: "Claude Desktop is not installed. Download from claude.ai/download — the connector only works with the desktop app, not the web version.")
+                         badText: "Claude Desktop is not installed. Download from claude.ai/download. (Claude Code also works — write to ~/.claude/mcp.json or your project's .mcp.json.)")
         }
     }
 
@@ -218,8 +253,7 @@ struct MCPConnectorView: View {
 
     private var actions: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("One-click install")
-                .font(.headline)
+            Text("One-click install").font(.headline)
             HStack(spacing: 10) {
                 Button {
                     model.installToClaudeDesktop()
@@ -227,27 +261,31 @@ struct MCPConnectorView: View {
                     Label("Install to Claude Desktop", systemImage: "wand.and.stars")
                 }
                 .controlSize(.large)
-                .disabled(!model.helperExists)
+                .disabled(!model.serverReady)
 
                 Button {
                     model.revealConfig()
                 } label: {
                     Label("Show Config in Finder", systemImage: "doc.text.magnifyingglass")
                 }
+
+                Button {
+                    model.testEndpoint()
+                } label: {
+                    Label("Test Connection", systemImage: "antenna.radiowaves.left.and.right")
+                }
+                .disabled(!model.serverReady)
             }
             Text("Existing entries in the config are preserved. A timestamped .bak file is written next to the config before any change.")
-                .font(.caption)
-                .foregroundColor(.secondary)
+                .font(.caption).foregroundColor(.secondary)
         }
     }
 
     private var manualSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Or paste this manually")
-                .font(.headline)
-            Text("If you maintain your Claude config yourself, copy the snippet below and merge it under \"mcpServers\".")
-                .font(.caption)
-                .foregroundColor(.secondary)
+            Text("Or paste this manually").font(.headline)
+            Text("If you maintain your client config yourself (Claude Desktop, Claude Code, custom), copy the snippet below and merge it under \"mcpServers\".")
+                .font(.caption).foregroundColor(.secondary)
             Text(model.configSnippet)
                 .font(.system(.callout, design: .monospaced))
                 .padding(8)
@@ -257,7 +295,6 @@ struct MCPConnectorView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             HStack(spacing: 10) {
                 Button("Copy Snippet") { model.copySnippet() }
-                Button("Reveal Helper Binary…") { model.revealHelper() }
             }
         }
     }
@@ -266,9 +303,7 @@ struct MCPConnectorView: View {
         HStack(alignment: .top, spacing: 8) {
             Image(systemName: model.statusIsError ? "xmark.octagon.fill" : "info.circle.fill")
                 .foregroundColor(model.statusIsError ? .red : .accentColor)
-            Text(model.status)
-                .font(.callout)
-                .fixedSize(horizontal: false, vertical: true)
+            Text(model.status).font(.callout).fixedSize(horizontal: false, vertical: true)
         }
         .padding(10)
         .background(Color.gray.opacity(0.12))

@@ -14,7 +14,22 @@ Nice side effect: Finally you have a native XISF and FITS Quicklook for macOS. (
 
 ---
 
-## What's New in v6.1.0 (Build 95)
+## What's New in v6.2.0 (Build 96)
+
+**MCP architecture refactor — same 13 tools, now built into the app.**
+The v6.1.0 helper-binary + URL-scheme + status-polling indirection is
+gone. AstroBlinkV2 now runs an HTTP MCP server at
+`http://127.0.0.1:8765/mcp` while it's open, and tool calls hit
+FrameHistoryDatabase / TriageViewModel / ArchiveScanner directly with
+no in-between layer. Result: the same feature works identically in the
+App Store version, no bundled helper to sign, no DerivedData paths to
+keep alive. One-click install via **Window → MCP Connector** is unchanged.
+Trade-off: the app must be running for MCP to answer (the v6.1.0
+"works even when app closed" stdio helper is gone).
+
+---
+
+## Previously in v6.1.0 (Build 95)
 
 **MCP Integration — drive AstroBlink from Claude Desktop in plain language.**
 A purpose-built [Model Context Protocol](https://modelcontextprotocol.io)
@@ -197,7 +212,7 @@ AstroBlink ships an embedded [Model Context Protocol](https://modelcontextprotoc
 
 **Architecture:** Read-only queries (`list_setups`, `night_summary`, `quality_summary`, etc.) hit the FrameHistory SQLite database directly — the app does NOT need to be running. App-driving tools (`scan_for_new_frames`, `mark_auto_garbage_for_predelete`) fire the `astroblink://` URL scheme; LaunchServices opens AstroBlink if needed, and the MCP server polls a small status table for completion. Move-to-PRE-DELETE always stays user-driven (Cmd+Backspace) — no silent deletion.
 
-**Privacy:** Everything runs locally. Nothing leaves your Mac. The MCP helper is just a subprocess Claude Desktop launches and talks to over stdin/stdout. There is no network listener and no remote tunneling — by design.
+**Privacy:** Everything runs locally. The MCP server binds to `127.0.0.1` only — never reachable from the LAN, never reachable from the internet, no remote tunneling. By design.
 
 ---
 

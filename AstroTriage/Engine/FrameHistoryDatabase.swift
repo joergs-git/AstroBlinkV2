@@ -83,6 +83,11 @@ final class FrameHistoryDatabase {
         )
         icloudSync.attach(database: self)
         icloudSync.startResolution()
+
+        // Surface the queue to the FrameHistoryDatabase+MCP extension so the
+        // in-app MCP HTTP server can run its queries without leaking dbQueue
+        // visibility globally. See FrameHistoryDatabase+MCP.swift.
+        MCPDBQueueAccess.queue = dbQueue
     }
 
     // MARK: - iCloud Forwarders
@@ -983,31 +988,7 @@ final class FrameHistoryDatabase {
         }
     }
 
-    // MARK: - MCP Command Status (v10 / MCP integration)
-
-    /// Insert or update an MCP command status row (UPSERT keyed on commandId).
-    func saveMCPCommandStatus(_ status: MCPCommandStatus) throws {
-        try dbQueue.write { db in try status.save(db) }
-    }
-
-    func mcpCommandStatus(commandId: String) throws -> MCPCommandStatus? {
-        try dbQueue.read { db in
-            try MCPCommandStatus.fetchOne(db, key: commandId)
-        }
-    }
-
-    /// Update only the progress counters of an in-flight command. Lightweight
-    /// alternative to a full save() — avoids writing the whole row each tick.
-    func updateMCPProgress(commandId: String, current: Int, total: Int) throws {
-        try dbQueue.write { db in
-            try db.execute(
-                sql: "UPDATE mcp_command_status SET progressCurrent = ?, progressTotal = ? WHERE commandId = ?",
-                arguments: [current, total, commandId]
-            )
-        }
-    }
-
-    /// Frames the auto-garbage tool would mark as PRE-DELETE candidates:
+/// Frames the auto-garbage tool would mark as PRE-DELETE candidates:
     /// algorithm classified as trash (tier=0), not yet deleted, not locked-keep.
     /// Optionally filtered to a specific setup and/or observing night.
     func autoGarbageCandidates(setupHash: String? = nil, night: String? = nil, limit: Int = 1000) throws -> [(fileHash: String, filePath: String, filename: String)] {
