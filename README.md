@@ -154,6 +154,32 @@ AIsaac knows your equipment, remembers your imaging history, understands light p
 
 ---
 
+## MCP Integration — Drive AstroBlink from Claude Desktop / Claude Code
+
+AstroBlink ships an embedded [Model Context Protocol](https://modelcontextprotocol.io) helper (`AstroBlinkMCPServer`) inside the .app bundle. Once registered with an MCP-capable client like Claude Desktop, you can drive the app — and query your entire frame history — by talking to Claude in plain language.
+
+**Set it up in 30 seconds:**
+
+1. In AstroBlink, open **Window → MCP Connector (Claude)…**
+2. Click **Install to Claude Desktop**. Existing config is preserved, a timestamped backup is written.
+3. Quit and re-open Claude Desktop. The 13 AstroBlink tools appear under the wrench icon.
+4. (Optional but recommended) Open **Window → Astrofile Locations…** and register your NAS/local image folders. Tag each with a setup name like `RC12` or `RASA` so you can refer to them by name.
+
+**Then you can ask Claude things like:**
+- *"Welche Setups habe ich in AstroBlink?"* — `list_setups`
+- *"Zeig mir die letzten 3 Sessions vom RC12"* — `recent_sessions`
+- *"Wie viele Stunden Ha habe ich schon bei NGC 7635 gesammelt?"* — `target_integration`
+- *"Verarbeite die Aufnahmen der letzten Nacht vom RC12 Teleskop"* — `scan_for_new_frames` → polls 2–5 min → `night_summary`
+- *"Welcher Filter braucht bei IC 1396 noch Belichtung?"* — `filter_advice`
+- *"Gib mir eine Quality-Zusammenfassung der letzten Nacht"* — `quality_summary` with garbage-reason histogram and 10 worst frames
+- *"Markiere den Schrott von gestern als dry-run"* — `mark_auto_garbage_for_predelete(dry_run=true)`
+
+**Architecture:** Read-only queries (`list_setups`, `night_summary`, `quality_summary`, etc.) hit the FrameHistory SQLite database directly — the app does NOT need to be running. App-driving tools (`scan_for_new_frames`, `mark_auto_garbage_for_predelete`) fire the `astroblink://` URL scheme; LaunchServices opens AstroBlink if needed, and the MCP server polls a small status table for completion. Move-to-PRE-DELETE always stays user-driven (Cmd+Backspace) — no silent deletion.
+
+**Privacy:** Everything runs locally. Nothing leaves your Mac. The MCP helper is just a subprocess Claude Desktop launches and talks to over stdin/stdout.
+
+---
+
 ## Highlights
 
 - **AIsaac AI Assistant** — built-in astrophotography AI powered by Claude. Quality summaries, smart culling suggestions, filter advice, imaging plans, voice input, equipment memory. Free Sonnet tier included; bring your own API key for Opus.
