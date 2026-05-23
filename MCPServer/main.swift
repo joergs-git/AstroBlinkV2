@@ -17,11 +17,11 @@ import MCP
 
 let server = Server(
     name: "AstroBlinkMCPServer",
-    version: "0.2.0",
+    version: "0.3.0",
     capabilities: .init(tools: .init(listChanged: false))
 )
 
-// List tools — `ping` (health check) plus the 8 read-only tools.
+// List tools: ping + 8 read-only + 2 app-delegating action tools.
 await server.withMethodHandler(ListTools.self) { _ in
     var tools: [Tool] = [
         Tool(
@@ -31,6 +31,7 @@ await server.withMethodHandler(ListTools.self) { _ in
         )
     ]
     tools.append(contentsOf: ReadTools.toolList())
+    tools.append(contentsOf: ActionTools.toolList())
     return .init(tools: tools)
 }
 
@@ -41,12 +42,17 @@ await server.withMethodHandler(CallTool.self) { params in
         let user = ProcessInfo.processInfo.environment["USER"] ?? "unknown"
         let path = ReadOnlyFrameHistoryDB.resolveDBPath()
         let exists = FileManager.default.fileExists(atPath: path) ? "present" : "MISSING"
-        let msg = "pong — AstroBlinkMCPServer 0.2.0, user=\(user), db=\(path) (\(exists))"
+        let msg = "pong — AstroBlinkMCPServer 0.3.0, user=\(user), db=\(path) (\(exists))"
         return .init(content: [.text(text: msg, annotations: nil, _meta: nil)], isError: false)
     }
 
     // Read-only tools.
     if let result = ReadTools.handle(name: params.name, arguments: params.arguments) {
+        return result
+    }
+
+    // App-delegating action tools.
+    if let result = await ActionTools.handle(name: params.name, arguments: params.arguments) {
         return result
     }
 

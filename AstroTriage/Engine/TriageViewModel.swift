@@ -2894,6 +2894,29 @@ class TriageViewModel: ObservableObject {
         recomputeSNRRetention()
     }
 
+    /// Mark frames in the currently loaded session whose computed fileHash is in
+    /// the provided set. Used by the MCP `mark_auto_garbage_for_predelete` flow.
+    /// Returns (markedCount, notFoundInSessionCount).
+    func markByFileHashes(_ hashes: Set<String>) -> (marked: Int, notFound: Int) {
+        guard !hashes.isEmpty else { return (0, 0) }
+        var seen = Set<String>()
+        var count = 0
+        for i in images.indices {
+            if let h = images[i].fileHash, hashes.contains(h) {
+                seen.insert(h)
+                if !images[i].isMarkedForDeletion {
+                    images[i].isMarkedForDeletion = true
+                    count += 1
+                }
+            }
+        }
+        needsTableRefresh = true
+        recomputeSNRRetention()
+        let notFound = hashes.subtracting(seen).count
+        statusMessage = "MCP: marked \(count) frame\(count == 1 ? "" : "s") (\(notFound) not in current session)"
+        return (count, notFound)
+    }
+
     // Clear all deletion marks across the entire session
     func unmarkAll() {
         var count = 0

@@ -4,7 +4,12 @@ import SwiftUI
 // MARK: - App Store URL (update when published)
 let appStoreURL = "https://apps.apple.com/app/astroblinkv2/id6760241266?mt=12"
 
-// Singleton handler registered before SwiftUI takes over the event pipeline
+// Singleton handler registered before SwiftUI takes over the event pipeline.
+// Handles all astroblink:// verbs:
+//   open?folder=<path>                                 — open a folder (existing)
+//   scan?root=<path>&id=<uuid>                         — MCP: start headless scan
+//   mark-garbage?id=<uuid>&setup=<hash>&night=<date>   — MCP: identify/mark garbage
+//                       &dry_run=true|false
 class URLSchemeHandler: NSObject {
     static let shared = URLSchemeHandler()
     @objc func handleGetURL(_ event: NSAppleEventDescriptor, withReply reply: NSAppleEventDescriptor) {
@@ -12,11 +17,61 @@ class URLSchemeHandler: NSObject {
               let url = URL(string: urlString),
               url.scheme == "astroblink",
               let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
-              components.host == "open",
-              let folderPath = components.queryItems?.first(where: { $0.name == "folder" })?.value else { return }
-        let folderURL = URL(fileURLWithPath: folderPath)
+              let host = components.host else { return }
+        let params = (components.queryItems ?? []).reduce(into: [String: String]()) { acc, item in
+            if let v = item.value { acc[item.name] = v }
+        }
+
+        // Defer to allow AppKit/SwiftUI to finish launching when the URL arrives
+        // immediately at startup. Once running, the dispatch is essentially a no-op.
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-            NotificationCenter.default.post(name: .openFolderAtPath, object: folderURL)
+            switch host {
+            case "open":
+                guard let folder = params["folder"] else { return }
+                NotificationCenter.default.post(
+                    name: .openFolderAtPath, object: URL(fileURLWithPath: folder))
+
+            case "scan":
+                guard let root = params["root"], let id = params["id"] else { return }
+                // Insert pending status so the MCP server poller sees state="pending"
+                // immediately, even before the runner picks up the notification.
+                let status = MCPCommandStatus(
+                    commandId: id, verb: "scan", state: "pending",
+                    startedAt: MCPCommandStatus.nowISO8601(), completedAt: nil,
+                    progressCurrent: 0, progressTotal: 0,
+                    resultSummary: nil, errorMessage: nil
+                )
+                try? FrameHistoryDatabase.shared.saveMCPCommandStatus(status)
+                _ = MCPCommandRunner.shared  // ensure observers registered
+                NotificationCenter.default.post(
+                    name: .mcpScanRequested, object: nil,
+                    userInfo: ["rootPath": root, "commandId": id])
+
+            case "mark-garbage":
+                guard let id = params["id"] else { return }
+                let setupHash = params["setup"]
+                let night = params["night"]
+                let dryRun = (params["dry_run"] ?? "true").lowercased() != "false"
+                let status = MCPCommandStatus(
+                    commandId: id, verb: "mark-garbage", state: "pending",
+                    startedAt: MCPCommandStatus.nowISO8601(), completedAt: nil,
+                    progressCurrent: 0, progressTotal: 0,
+                    resultSummary: nil, errorMessage: nil
+                )
+                try? FrameHistoryDatabase.shared.saveMCPCommandStatus(status)
+                _ = MCPCommandRunner.shared
+                NotificationCenter.default.post(
+                    name: .mcpMarkGarbageRequested, object: nil,
+                    userInfo: [
+                        "commandId": id,
+                        "setupHash": setupHash as Any,
+                        "night": night as Any,
+                        "dryRun": dryRun
+                    ])
+
+            default:
+                break  // unknown verb — silently ignore
+            }
         }
     }
 }
@@ -314,6 +369,9 @@ class AstroBlinkV2AppDelegate: NSObject, NSApplicationDelegate {
         // Initialize Frame History database (local SQLite only — instant)
         if !isTestHost {
             _ = FrameHistoryDatabase.shared
+            // Register MCP notification observers up front so any astroblink://
+            // URL fired during early launch sees a runner ready to handle it.
+            _ = MCPCommandRunner.shared
         }
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {

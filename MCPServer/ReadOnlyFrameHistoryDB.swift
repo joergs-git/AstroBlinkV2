@@ -324,6 +324,28 @@ struct ReadOnlyFrameHistoryDB {
         }
     }
 
+    // MARK: - MCP Command Status (polling)
+
+    /// Read the latest state of an MCP command launched via the astroblink:// URL scheme.
+    /// Returns nil if no row exists yet (handler hasn't fired). Returns the full row
+    /// once the app's handler has inserted it; the caller polls until state ∈
+    /// {completed, failed} or a timeout elapses.
+    func commandStatus(commandId: String) throws -> (state: String, progressCurrent: Int?, progressTotal: Int?, resultSummary: String?, errorMessage: String?)? {
+        try queue.read { db in
+            guard let row = try Row.fetchOne(db,
+                sql: "SELECT state, progressCurrent, progressTotal, resultSummary, errorMessage FROM mcp_command_status WHERE commandId = ?",
+                arguments: [commandId])
+            else { return nil }
+            return (
+                state: row["state"],
+                progressCurrent: row["progressCurrent"],
+                progressTotal: row["progressTotal"],
+                resultSummary: row["resultSummary"],
+                errorMessage: row["errorMessage"]
+            )
+        }
+    }
+
     // MARK: - Frames
 
     func frames(night: String? = nil, target: String? = nil, filter: String? = nil,
