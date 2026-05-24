@@ -24,18 +24,26 @@ class AstroRootsSettingsWindowController {
 
         let rootView = AstroRootsSettingsView(model: model, nightMode: nightMode)
             .environment(\.fontScale, savedScale)
-        let hostingView = NSHostingView(rootView: rootView)
+            // Hard-cap the SwiftUI proposal so NSHostingView can't compute a
+            // tall+narrow intrinsic size from long unbreakable strings (was
+            // the root cause of "window goes off-screen, all white").
+            .frame(width: 620, height: 480)
 
-        let win = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 720, height: 480),
-            styleMask: [.titled, .closable, .resizable, .miniaturizable],
-            backing: .buffered, defer: false
-        )
+        // NSHostingController owns the SwiftUI lifecycle and reports a sane
+        // preferredContentSize to AppKit. Plain NSHostingView + setContentSize
+        // is racey: the first layout pass picks up SwiftUI's intrinsic size
+        // before our setContentSize call, and the window snaps to that.
+        let controller = NSHostingController(rootView: rootView)
+        controller.preferredContentSize = NSSize(width: 620, height: 480)
+
+        let win = NSWindow(contentViewController: controller)
+        win.styleMask = [.titled, .closable, .resizable, .miniaturizable]
         win.title = "Astrofile Locations"
-        win.contentView = hostingView
+        win.isRestorable = false
+        win.setContentSize(NSSize(width: 620, height: 480))
+        win.minSize = NSSize(width: 540, height: 380)
         win.center()
         win.isReleasedWhenClosed = false
-        win.minSize = NSSize(width: 600, height: 360)
         win.makeKeyAndOrderFront(nil)
         self.window = win
     }
@@ -80,7 +88,7 @@ struct AstroRootsSettingsView: View {
     let nightMode: Bool
 
     var body: some View {
-        VStack(spacing: 0) {
+        VStack(alignment: .leading, spacing: 0) {
             header
 
             if model.roots.isEmpty {
@@ -101,28 +109,45 @@ struct AstroRootsSettingsView: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Default Astrofile Folders")
-                .font(.headline)
-            Text("Folders listed here can be referenced by name when driving AstroBlink from an external tool (e.g. via the MCP server: \"scan the RC12 folder\"). Adding a folder also persists a security-scoped bookmark so the sandboxed app can re-access it across launches.")
-                .font(.caption)
-                .foregroundColor(.secondary)
+            Text("Astrofile Locations").font(.title3).fontWeight(.semibold)
+            Text("These are tag→path shortcuts for the MCP server, **not** where AstroBlink learns about your data. Tag a NAS or local folder here (e.g. \"RC12\" → /Volumes/NAS/RC12), then say things like \"scan the RC12 folder from last night\" to Claude — instead of typing the full path.")
+                .font(.callout).foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Text("To open a single session for triage, use Cmd+O. To bulk-import an existing archive, use Window → Frame History → Scan Archive. Neither needs anything configured here.")
+                .font(.caption).foregroundColor(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding()
     }
 
     private var emptyState: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "folder.badge.questionmark")
-                .font(.system(size: 36))
-                .foregroundColor(.secondary)
-            Text("No folders configured yet.")
-                .foregroundColor(.secondary)
-            Button("Add Folder…") {
-                model.addRoot()
+        // Bounded height (no maxHeight: .infinity) so the window doesn't
+        // look giant-and-blank on first open — the empty state sits right
+        // under the header instead of being centered in a sea of space.
+        VStack(spacing: 14) {
+            Image(systemName: "folder.badge.plus")
+                .font(.system(size: 44))
+                .foregroundColor(.accentColor.opacity(0.7))
+            Text("No folders tagged yet").font(.headline)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Add the root folder of one or more of your astro setups. Each gets a setup tag (e.g. \"RC12\", \"RASA\") and an optional nickname.")
+                Text("Example: register \"/Volumes/NAS/Astro/RC12_imaging\" with tag **RC12**. Then in Claude you can ask \"verarbeite die Aufnahmen der letzten Nacht vom RC12\" and AstroBlink resolves the tag automatically.")
             }
+            .font(.callout).foregroundColor(.secondary)
+            .multilineTextAlignment(.leading)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.horizontal, 32)
+            Button {
+                model.addRoot()
+            } label: {
+                Label("Add Your First Folder…", systemImage: "plus.circle.fill")
+            }
+            .controlSize(.large)
+            .buttonStyle(.borderedProminent)
+            .padding(.top, 4)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 28)
     }
 
     private var footer: some View {

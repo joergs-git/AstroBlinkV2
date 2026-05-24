@@ -18,6 +18,7 @@ AIsaac is your built-in AI astrophotography assistant, named after **Isaac Newto
 - **[Quality Pipeline Review 2026-04-18](quality-pipeline-review-2026-04-18)** — Algorithm v23 curation-driven tune-up, methodology, and per-finding decisions
 - **[VLM Check](VLM-Check)** — AI visual anomaly detection: ice crystals, dew, clouds, obstructions
 - **[AIsaac Guide](AIsaac-Guide)** — How to use the AI assistant, all presets, voice, Opus upgrade
+- **[MCP Integration](MCP-Integration)** — Drive AstroBlink from Claude Desktop / Claude Code (v6.4+)
 - **[Keyboard Shortcuts](Keyboard-Shortcuts)** — Complete keyboard reference
 - **[FAQ](FAQ)** — Frequently asked questions
 - **[Competitive Comparison](Competitive-Comparison)** — AstroBlink vs PixInsight vs Siril vs APP

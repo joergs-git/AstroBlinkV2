@@ -4,6 +4,34 @@ All notable changes to AstroBlink & AIsaac will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [6.4.1] — 2026-05-24
+
+**Astrofile Locations window UI fix + MCP work paused as WIP.** Patch
+release closing the v6.4.0 cycle.
+
+### Fixed
+
+- "Window → Astrofile Locations…" was rendering as a narrow strip that
+  extended below the screen edge with no visible content. Root cause:
+  `NSHostingView(rootView:)` derives its initial frame from SwiftUI's
+  intrinsic content size before AppKit's `setContentSize` runs. The
+  empty-state body had several `.fixedSize(horizontal: false, vertical: true)`
+  Text views whose intrinsic width was minimal and intrinsic height
+  was huge — so the window snapped to that pre-layout. Switched the
+  panel to `NSHostingController` + a hard `.frame(width: 620, height: 480)`
+  cap on the SwiftUI root, plus `isRestorable = false` to stop AppKit's
+  state restoration from re-applying old huge frames.
+
+### Note
+
+MCP integration is paused as work-in-progress at the v6.4.x line. The
+in-app HTTPS server + bundled stdio proxy work end-to-end with Claude
+Desktop (DevID/GitHub build) and Claude Code (direct URL). Next
+iteration will: (a) iterate on which MCP tools are most useful in
+practice based on real Claude Desktop usage, (b) revisit the App Store
+path once Apple ships either Claude-Desktop URL-config support or a
+sandbox-compatible CLI helper story.
+
 ## [6.4.0] — 2026-05-24
 
 **Bundled stdio→HTTPS proxy so Claude Desktop just works.** v6.3.0 shipped

@@ -14,7 +14,18 @@ Nice side effect: Finally you have a native XISF and FITS Quicklook for macOS. (
 
 ---
 
-## What's New in v6.4.0 (Build 98)
+## What's New in v6.4.1 (Build 99)
+
+**Patch closing the v6.4.x MCP cycle.** Fixes the Astrofile Locations
+window that was rendering as a narrow, off-screen strip with no
+visible content (an `NSHostingView` intrinsic-size pitfall — switched
+to `NSHostingController` with a hard SwiftUI frame cap). MCP
+integration paused as work-in-progress at this version; next iteration
+will be driven by what proves useful in real Claude Desktop usage.
+
+---
+
+## Previously in v6.4.0 (Build 98)
 
 **Bundled stdio↔HTTPS proxy so Claude Desktop just works.** v6.3.0
 turned out to be a half-fix: Claude Desktop accepts only stdio MCP
