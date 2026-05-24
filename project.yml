@@ -33,6 +33,20 @@ packages:
   swift-nio:
     url: https://github.com/apple/swift-nio
     from: "2.100.0"
+  # swift-nio-ssl for TLS termination — Claude Desktop only accepts HTTPS MCP
+  # endpoints, so the in-app server must serve TLS with a self-signed cert
+  # the user trusts via Keychain (see MCPCertificate.swift).
+  swift-nio-ssl:
+    url: https://github.com/apple/swift-nio-ssl
+    from: "2.30.0"
+  # swift-crypto for the EC key pair, swift-certificates for X.509 cert
+  # construction. Both pure-Swift, sandbox-safe.
+  swift-crypto:
+    url: https://github.com/apple/swift-crypto
+    from: "3.10.0"
+  swift-certificates:
+    url: https://github.com/apple/swift-certificates
+    from: "1.10.0"
 
 settings:
   base:
@@ -62,6 +76,12 @@ targets:
         product: NIOPosix
       - package: swift-nio
         product: NIOHTTP1
+      - package: swift-nio-ssl
+        product: NIOSSL
+      - package: swift-crypto
+        product: Crypto
+      - package: swift-certificates
+        product: X509
       - target: AstroTriageQuickLookThumbnail
       - target: AstroTriageQuickLookPreview
     settings:
@@ -69,8 +89,8 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.joergsflow.AstroBlinkV2
         GENERATE_INFOPLIST_FILE: NO
         INFOPLIST_FILE: AstroTriage/Info.plist
-        CURRENT_PROJECT_VERSION: 96
-        MARKETING_VERSION: "6.2.0"
+        CURRENT_PROJECT_VERSION: 97
+        MARKETING_VERSION: "6.3.0"
         SWIFT_EMIT_LOC_STRINGS: YES
         ENABLE_APP_SANDBOX: YES
         ENABLE_HARDENED_RUNTIME: YES
@@ -116,8 +136,8 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.joergsflow.AstroBlinkV2.QuickLookThumbnail
         GENERATE_INFOPLIST_FILE: NO
         INFOPLIST_FILE: QuickLookExtension/Info.plist
-        CURRENT_PROJECT_VERSION: 96
-        MARKETING_VERSION: "6.2.0"
+        CURRENT_PROJECT_VERSION: 97
+        MARKETING_VERSION: "6.3.0"
         MACOSX_DEPLOYMENT_TARGET: "14.0"
         SWIFT_VERSION: "5.9"
         CLANG_CXX_LANGUAGE_STANDARD: c++17
@@ -151,8 +171,8 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.joergsflow.AstroBlinkV2.QuickLookPreview
         GENERATE_INFOPLIST_FILE: NO
         INFOPLIST_FILE: QuickLookPreview/Info.plist
-        CURRENT_PROJECT_VERSION: 96
-        MARKETING_VERSION: "6.2.0"
+        CURRENT_PROJECT_VERSION: 97
+        MARKETING_VERSION: "6.3.0"
         MACOSX_DEPLOYMENT_TARGET: "14.0"
         SWIFT_VERSION: "5.9"
         CLANG_CXX_LANGUAGE_STANDARD: c++17

@@ -4,6 +4,48 @@ All notable changes to AstroBlink & AIsaac will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [6.3.0] — 2026-05-24
+
+**HTTPS for the in-app MCP server.** Claude Desktop refuses plain `http://`
+URLs as a security policy, even for localhost. v6.3.0 generates a
+self-signed TLS certificate at first launch and serves the MCP endpoint
+over HTTPS at `https://127.0.0.1:8765/mcp`. The MCP Connector window now
+has a "1. Install Certificate" button that adds the cert to the user's
+login keychain and marks it trusted for SSL — one click, one keychain
+prompt, no admin password, no Node, no `npx mcp-remote` proxy.
+`kAlgorithmVersion` unchanged.
+
+### Added
+
+- `MCPCertificate.swift` — generates a P-256 EC key and a self-signed
+  X.509 certificate via Apple's `swift-crypto` + `swift-certificates`
+  packages. Valid 10 years, with SAN entries for `localhost` and
+  `127.0.0.1`. Persists to `~/Library/Containers/<id>/.../Application
+  Support/AstroBlinkV2/mcp-tls/{cert,key}.pem` with 0600 perms on the key.
+- NIOSSL wired into the NIO HTTP1 pipeline as the first handler, so the
+  server speaks TLS over the same `127.0.0.1:8765` socket.
+- MCP Connector "1. Install Certificate" button calls
+  `SecItemAdd` + `SecTrustSettingsSetTrustSettings(.user)`. The
+  `.user` domain avoids the admin password prompt. macOS shows a single
+  keychain access prompt the first time and never again.
+- Live preflight in MCP Connector shows three traffic-light rows: server
+  running, certificate trusted, Claude Desktop installed.
+
+### Changed
+
+- Claude config snippet format: `{"url": "https://127.0.0.1:8765/mcp"}`
+  (scheme is now `https`, not `http`).
+- "Test Connection" button is disabled until the certificate has been
+  installed, so users don't see a confusing TLS handshake failure.
+
+### Migration
+
+- No user action besides clicking "1. Install Certificate" once in the MCP
+  Connector window. Existing `mcpServers.astroblink` entries that still
+  point at `http://…` are overwritten with the HTTPS URL on next "Install
+  to Claude Desktop" click.
+- The `mcp_command_status` v10 migration table remains unused.
+
 ## [6.2.0] — 2026-05-23
 
 **MCP architecture refactor — in-app HTTP server instead of bundled helper.**

@@ -23,6 +23,7 @@ import Logging
 @preconcurrency import NIOCore
 @preconcurrency import NIOPosix
 @preconcurrency import NIOHTTP1
+@preconcurrency import NIOSSL
 
 @MainActor
 final class MCPHTTPServer {
@@ -39,6 +40,7 @@ final class MCPHTTPServer {
     private(set) var configuration = Configuration()
     private(set) var boundPort: Int?       // actual port we ended up on (may differ from configuration.port)
     private(set) var isRunning = false
+    private(set) var tlsCertificateDER: Data?  // cached for "Install Certificate" UI
 
     private var coordinator: HTTPCoordinator?
     private let logger = Logger(label: "mcp.http.server", factory: { _ in SwiftLogNoOpLogHandler() })
@@ -48,7 +50,18 @@ final class MCPHTTPServer {
         guard !isRunning else { return }
         self.configuration = configuration
 
-        let coord = HTTPCoordinator(configuration: configuration, logger: logger)
+        // Load (or generate on first launch) the self-signed cert that lets
+        // Claude Desktop accept the HTTPS endpoint without warning.
+        let certMaterial: MCPCertificate.Material
+        do {
+            certMaterial = try MCPCertificate.loadOrGenerate()
+        } catch {
+            NSLog("MCPHTTPServer cert load/generate failed: \(error.localizedDescription)")
+            return
+        }
+        self.tlsCertificateDER = certMaterial.certDER
+
+        let coord = HTTPCoordinator(configuration: configuration, logger: logger, cert: certMaterial)
         self.coordinator = coord
 
         Task.detached(priority: .utility) {
@@ -68,11 +81,11 @@ final class MCPHTTPServer {
         }
     }
 
-    /// The URL clients should connect to (e.g. http://127.0.0.1:8765/mcp).
+    /// The HTTPS URL clients should connect to (e.g. https://127.0.0.1:8765/mcp).
     /// Returns nil if the server hasn't successfully bound yet.
     var endpointURL: String? {
         guard let port = boundPort else { return nil }
-        return "http://\(configuration.host):\(port)\(configuration.endpoint)"
+        return "https://\(configuration.host):\(port)\(configuration.endpoint)"
     }
 }
 
@@ -81,6 +94,7 @@ final class MCPHTTPServer {
 private actor HTTPCoordinator {
     let configuration: MCPHTTPServer.Configuration
     let logger: Logger
+    let cert: MCPCertificate.Material
     private var channel: Channel?
     private var sessions: [String: SessionContext] = [:]
     private var group: MultiThreadedEventLoopGroup?
@@ -92,9 +106,10 @@ private actor HTTPCoordinator {
         var lastAccessedAt: Date
     }
 
-    init(configuration: MCPHTTPServer.Configuration, logger: Logger) {
+    init(configuration: MCPHTTPServer.Configuration, logger: Logger, cert: MCPCertificate.Material) {
         self.configuration = configuration
         self.logger = logger
+        self.cert = cert
     }
 
     /// Start the server, returning the port we actually bound to. If the
@@ -103,11 +118,25 @@ private actor HTTPCoordinator {
         let group = MultiThreadedEventLoopGroup(numberOfThreads: 1)
         self.group = group
 
+        // Build the NIOSSL context from our self-signed cert + key.
+        let nioCert = try NIOSSLCertificate(bytes: Array(cert.certPEM.utf8), format: .pem)
+        let nioKey = try NIOSSLPrivateKey(bytes: Array(cert.keyPEM.utf8), format: .pem)
+        let tlsConfig = TLSConfiguration.makeServerConfiguration(
+            certificateChain: [.certificate(nioCert)],
+            privateKey: .privateKey(nioKey)
+        )
+        let sslContext = try NIOSSLContext(configuration: tlsConfig)
+
         let bootstrap = ServerBootstrap(group: group)
             .serverChannelOption(ChannelOptions.backlog, value: 16)
             .serverChannelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
             .childChannelInitializer { channel in
-                channel.pipeline.configureHTTPServerPipeline().flatMap {
+                // TLS handler MUST be first in the pipeline — it decrypts the
+                // raw socket bytes before NIO's HTTP1 codec sees them.
+                let sslHandler = NIOSSLServerHandler(context: sslContext)
+                return channel.pipeline.addHandler(sslHandler).flatMap {
+                    channel.pipeline.configureHTTPServerPipeline()
+                }.flatMap {
                     channel.pipeline.addHandler(MCPHTTPHandler(coordinator: self))
                 }
             }
@@ -182,7 +211,7 @@ private actor HTTPCoordinator {
         do {
             let server = Server(
                 name: "AstroBlinkV2",
-                version: "6.2.0",
+                version: "6.3.0",
                 capabilities: .init(tools: .init(listChanged: false))
             )
             await MCPToolRegistry.register(on: server)

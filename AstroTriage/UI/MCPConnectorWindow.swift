@@ -1,7 +1,14 @@
-// "MCP Connector" — one-click install of AstroBlink's in-process HTTP MCP
-// server into Claude Desktop / Claude Code config. v6.2.0 architecture:
-// no helper binary, no DerivedData paths — just an http://127.0.0.1:<port>/mcp
-// URL that points to the server running inside this app.
+// "MCP Connector" — one-click install of AstroBlink's in-process HTTPS MCP
+// server into Claude Desktop / Claude Code config. v6.3.0 adds TLS termination
+// (Claude Desktop refuses plain http://), so the user has to trust the
+// self-signed cert once via Keychain.
+//
+// Two-step UX:
+//   1. Click "Install Certificate" — adds the self-signed cert to the user's
+//      login keychain as trusted for SSL on 127.0.0.1. macOS shows ONE
+//      "Allow AstroBlinkV2 to access your keychain" prompt the first time.
+//   2. Click "Install to Claude Desktop" — writes the URL config to
+//      claude_desktop_config.json. No more dependencies.
 //
 // What the install does:
 //   1. Reads ~/Library/Application Support/Claude/claude_desktop_config.json
@@ -12,6 +19,7 @@
 // Existing keys (preferences, other mcpServers entries) are preserved.
 import SwiftUI
 import AppKit
+import Security
 
 @MainActor
 class MCPConnectorWindowController {
@@ -59,10 +67,14 @@ final class MCPConnectorModel: ObservableObject {
         self.claudeConfigPath = (NSString(string: "~/Library/Application Support/Claude/claude_desktop_config.json")
             .expandingTildeInPath)
         refreshEndpoint()
+        refreshCertificateTrust()
         // Poll the server endpoint every 500 ms until it's bound (server starts
         // async at launch; usually ready in <1s but can take longer on cold disk).
         refreshTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.refreshEndpoint() }
+            Task { @MainActor in
+                self?.refreshEndpoint()
+                self?.refreshCertificateTrust()
+            }
         }
     }
 
@@ -85,6 +97,66 @@ final class MCPConnectorModel: ObservableObject {
     var claudeInstalled: Bool {
         FileManager.default.fileExists(atPath: "/Applications/Claude.app")
             || FileManager.default.fileExists(atPath: (NSString(string: "~/Applications/Claude.app").expandingTildeInPath))
+    }
+
+    /// True if our self-signed cert is already present in the user's keychain
+    /// AND marked as trusted for SSL. We re-check on each panel show.
+    @Published var certificateTrusted: Bool = false
+
+    func refreshCertificateTrust() {
+        certificateTrusted = checkCertificateTrust()
+    }
+
+    private func checkCertificateTrust() -> Bool {
+        guard let der = MCPHTTPServer.shared.tlsCertificateDER,
+              let cert = SecCertificateCreateWithData(nil, der as CFData) else { return false }
+        // Probe: does an SSL trust eval against this cert succeed?
+        let policy = SecPolicyCreateSSL(true, "127.0.0.1" as CFString)
+        var trust: SecTrust?
+        let createStatus = SecTrustCreateWithCertificates(cert, policy, &trust)
+        guard createStatus == errSecSuccess, let trust else { return false }
+        var error: CFError?
+        return SecTrustEvaluateWithError(trust, &error)
+    }
+
+    func installCertificate() {
+        guard let der = MCPHTTPServer.shared.tlsCertificateDER,
+              let cert = SecCertificateCreateWithData(nil, der as CFData) else {
+            status = "Certificate not yet generated. Try again in a moment."
+            statusIsError = true
+            return
+        }
+
+        // 1. Add the cert to the user's login keychain.
+        let addQuery: [String: Any] = [
+            kSecClass as String: kSecClassCertificate,
+            kSecValueRef as String: cert,
+            kSecAttrLabel as String: "AstroBlinkV2 MCP (localhost)"
+        ]
+        let addStatus = SecItemAdd(addQuery as CFDictionary, nil)
+        if addStatus != errSecSuccess && addStatus != errSecDuplicateItem {
+            status = "Couldn't add cert to keychain (OSStatus \(addStatus)). Try again or contact support."
+            statusIsError = true
+            return
+        }
+
+        // 2. Mark it trusted for the SSL policy in the user's trust settings.
+        //    Writing to .user (not .admin) avoids the admin password prompt.
+        let trustSettings: [[String: Any]] = [[
+            kSecTrustSettingsResult as String: NSNumber(value: SecTrustSettingsResult.trustRoot.rawValue),
+            kSecTrustSettingsPolicy as String: SecPolicyCreateSSL(true, nil)
+        ]]
+        let trustStatus = SecTrustSettingsSetTrustSettings(cert, .user, trustSettings as CFArray)
+        if trustStatus != errSecSuccess {
+            status = "Cert added to keychain but trust setting failed (OSStatus \(trustStatus)). Open Keychain Access → login → Certificates → 'AstroBlinkV2 MCP' and mark it 'Always Trust' for SSL."
+            statusIsError = true
+            certificateTrusted = false
+            return
+        }
+
+        certificateTrusted = true
+        status = "Certificate installed and trusted. You can now click Install to Claude Desktop."
+        statusIsError = false
     }
 
     var configSnippet: String {
@@ -234,6 +306,9 @@ struct MCPConnectorView: View {
             preflightRow(ok: model.serverReady,
                          okText: "MCP server is running at \(model.endpointURL)",
                          badText: "MCP server is not yet bound — give it a moment.")
+            preflightRow(ok: model.certificateTrusted,
+                         okText: "TLS certificate is installed and trusted",
+                         badText: "TLS certificate not yet trusted — click \"Install Certificate\" below.")
             preflightRow(ok: model.claudeInstalled,
                          okText: "Claude Desktop is installed",
                          badText: "Claude Desktop is not installed. Download from claude.ai/download. (Claude Code also works — write to ~/.claude/mcp.json or your project's .mcp.json.)")
@@ -253,31 +328,41 @@ struct MCPConnectorView: View {
 
     private var actions: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("One-click install").font(.headline)
+            Text("Two-step install").font(.headline)
             HStack(spacing: 10) {
+                Button {
+                    model.installCertificate()
+                } label: {
+                    Label(model.certificateTrusted ? "Certificate Installed ✓" : "1. Install Certificate",
+                          systemImage: "lock.shield")
+                }
+                .controlSize(.large)
+                .disabled(model.certificateTrusted || !model.serverReady)
+
                 Button {
                     model.installToClaudeDesktop()
                 } label: {
-                    Label("Install to Claude Desktop", systemImage: "wand.and.stars")
+                    Label("2. Install to Claude Desktop", systemImage: "wand.and.stars")
                 }
                 .controlSize(.large)
                 .disabled(!model.serverReady)
-
+            }
+            HStack(spacing: 10) {
                 Button {
                     model.revealConfig()
                 } label: {
                     Label("Show Config in Finder", systemImage: "doc.text.magnifyingglass")
                 }
-
                 Button {
                     model.testEndpoint()
                 } label: {
                     Label("Test Connection", systemImage: "antenna.radiowaves.left.and.right")
                 }
-                .disabled(!model.serverReady)
+                .disabled(!model.serverReady || !model.certificateTrusted)
             }
-            Text("Existing entries in the config are preserved. A timestamped .bak file is written next to the config before any change.")
+            Text("The certificate is a self-signed cert valid for 10 years, scoped to localhost only. macOS may show a one-time keychain prompt the first time. Existing config entries are preserved; a timestamped .bak file is written next to the Claude config before any change.")
                 .font(.caption).foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 

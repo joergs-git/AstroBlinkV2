@@ -234,7 +234,7 @@ enum MCPToolRegistry {
         let count = vm?.images.count ?? 0
         let folder = vm?.sessionRootURL?.path ?? "(no session loaded)"
         let port = MCPHTTPServer.shared.boundPort.map(String.init) ?? "?"
-        let msg = "pong — AstroBlinkV2 MCP 6.2.0, port=\(port), session=\(count) images, folder=\(folder)"
+        let msg = "pong — AstroBlinkV2 MCP 6.3.0, port=\(port), session=\(count) images, folder=\(folder)"
         return .init(content: [.text(text: msg, annotations: nil, _meta: nil)], isError: false)
     }
 

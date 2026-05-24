@@ -49,8 +49,10 @@
 		3D029D52F10611A437BC2B5F /* NINAFilenameParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = 958EAAFB0801AA6BF89E7E57 /* NINAFilenameParser.swift */; };
 		3ED3F0F9A74454F562857A09 /* ConditionsChart.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8C040E3CFD178726618C93F /* ConditionsChart.swift */; };
 		40557783208A1A13EB363AF9 /* FrameHistoryModel+Domain.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FF1A1ABDDC0D8F5A76F24E7 /* FrameHistoryModel+Domain.swift */; };
+		419BC0421E6AC4B288626582 /* MCPCertificate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7397D39B2A1E4534DDA49642 /* MCPCertificate.swift */; };
 		458EC62EC43F48825111DDEB /* AstroRootStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6CA403E08B94D8B54CCF812 /* AstroRootStore.swift */; };
 		46B1B8F966ADC9FDC262D7A6 /* CoffeeSupportDialog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0C8D25832AC0BBE69EE662AF /* CoffeeSupportDialog.swift */; };
+		46D6E019F63A16B563DC3155 /* NIOSSL in Frameworks */ = {isa = PBXBuildFile; productRef = B64E480C709131A549E84FB8 /* NIOSSL */; };
 		46DC95B31DFC767922E2AA34 /* ThresholdLearnerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 32608B6B9596DA5E7F7C9F1D /* ThresholdLearnerTests.swift */; };
 		47D998D3FD88DF482089211D /* SetupComparisonChart.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6087ADC4D2B2398C1923BC7E /* SetupComparisonChart.swift */; };
 		49AAD6D113938C331D999DBC /* MosaicGenerator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E6FA09107C45349725E7DCF /* MosaicGenerator.swift */; };
@@ -106,6 +108,7 @@
 		9B91613EEB76EB27A7DCB3FC /* CalibrationDatabase.swift in Sources */ = {isa = PBXBuildFile; fileRef = 511D5503EE634473FF2EC433 /* CalibrationDatabase.swift */; };
 		9CDAC0C839D728DDA6F4E8D5 /* QualityEstimator+Historical.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CFD7069A619FC9F6E4DB412 /* QualityEstimator+Historical.swift */; };
 		9D950EBF4E4EBC1A00430834 /* StarAnalyzerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C73F68266BEC1BE0872283EB /* StarAnalyzerTests.swift */; };
+		9DA053B075ACAF50B435905E /* Crypto in Frameworks */ = {isa = PBXBuildFile; productRef = 041D79A454A1682F8A5DCE31 /* Crypto */; };
 		9F741F47A7830BD9A405A511 /* FrameHistoryMigrations.swift in Sources */ = {isa = PBXBuildFile; fileRef = 80A7F31F7DBA920A68B6787D /* FrameHistoryMigrations.swift */; };
 		9FE0865A0F4D4378F7A43D7A /* ArchiveScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 32B55DBDF2FD18BEF1399C8D /* ArchiveScanner.swift */; };
 		A1C2006F19F3C1DEE8EEAB9C /* SessionScoreChart.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55ABE4E540ACACE563997661 /* SessionScoreChart.swift */; };
@@ -129,6 +132,7 @@
 		B6FAD33DBA5A722B4EC6F6AA /* Shaders.metal in Sources */ = {isa = PBXBuildFile; fileRef = ADBD75B471EEBE3262306C84 /* Shaders.metal */; };
 		BB2883D764B3CBC10EBB66BB /* WienerDeconvolution.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5DAC3DD9E30EB2E746271068 /* WienerDeconvolution.swift */; };
 		BC5A88BD113B62D7A7442646 /* ExportOptions-AppStore.plist in Resources */ = {isa = PBXBuildFile; fileRef = 18EE01FC0CDFE150906040B3 /* ExportOptions-AppStore.plist */; };
+		BCCE630F18EC9F83F0BD6A1C /* X509 in Frameworks */ = {isa = PBXBuildFile; productRef = 6EF3E4A01DC7C719F1007BF5 /* X509 */; };
 		BD7A31D9AF626FB19873EC7E /* SessionOverviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D35D584AE1D7CFEB4B41638 /* SessionOverviewView.swift */; };
 		BF9CBFE8BFFC1A572EE95211 /* AIsaacView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4EC26299CC364924D0AF79AC /* AIsaacView.swift */; };
 		BFD9D646DC78249F8654CC1D /* PreviewGenerator.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0EFA1508203190F9C1216AE /* PreviewGenerator.swift */; };
@@ -287,6 +291,7 @@
 		7196FBBA0783630389EA7125 /* FileListView+Coordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FileListView+Coordinator.swift"; sourceTree = "<group>"; };
 		72482E3B4DA87C1D05E5BC54 /* PlaybackController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaybackController.swift; sourceTree = "<group>"; };
 		72BFE1A73BD5AD652BD34CB8 /* SessionCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionCache.swift; sourceTree = "<group>"; };
+		7397D39B2A1E4534DDA49642 /* MCPCertificate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MCPCertificate.swift; sourceTree = "<group>"; };
 		740CADC7ADA01E2160E95DCC /* QuickStackWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickStackWindow.swift; sourceTree = "<group>"; };
 		763931350538CED5EA81290D /* KeyboardHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardHandler.swift; sourceTree = "<group>"; };
 		76A68D583C36500C4A7BD068 /* AIsaacService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIsaacService.swift; sourceTree = "<group>"; };
@@ -401,6 +406,9 @@
 				7B1D9FF8DB1944D136F0F370 /* NIOCore in Frameworks */,
 				F864163455D858895EDDCDEC /* NIOPosix in Frameworks */,
 				90D66094225C0B673556F5CB /* NIOHTTP1 in Frameworks */,
+				46D6E019F63A16B563DC3155 /* NIOSSL in Frameworks */,
+				9DA053B075ACAF50B435905E /* Crypto in Frameworks */,
+				BCCE630F18EC9F83F0BD6A1C /* X509 in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -541,6 +549,7 @@
 				AA671A0260128DA976044970 /* FrameHistoryModel.swift */,
 				9FF1A1ABDDC0D8F5A76F24E7 /* FrameHistoryModel+Domain.swift */,
 				3BCBBE41D0B90CC98443F843 /* GradientRemoval.swift */,
+				7397D39B2A1E4534DDA49642 /* MCPCertificate.swift */,
 				902BCBDCAFC1512717C38357 /* MCPHTTPServer.swift */,
 				A226549D37668A050D48CEC5 /* MCPToolRegistry.swift */,
 				52B1105B97D63754F8E1C54C /* MCPViewModelBridge.swift */,
@@ -762,6 +771,9 @@
 				D711DA2B67C4940FBDCFC8DB /* NIOCore */,
 				9E63F9A690DC9EF63EFBC9F9 /* NIOPosix */,
 				E363B2B8ABDF5BCBDBF274D8 /* NIOHTTP1 */,
+				B64E480C709131A549E84FB8 /* NIOSSL */,
+				041D79A454A1682F8A5DCE31 /* Crypto */,
+				6EF3E4A01DC7C719F1007BF5 /* X509 */,
 			);
 			productName = AstroTriage;
 			productReference = FE4AA1827176F2392E89D989 /* AstroTriage.app */;
@@ -824,7 +836,10 @@
 			packageReferences = (
 				25C99D2C35845C466F7C0B6A /* XCRemoteSwiftPackageReference "GRDB.swift" */,
 				D1BD6C474B8B6D883E2EC661 /* XCRemoteSwiftPackageReference "swift-sdk" */,
+				7E8070EFD3BB031E29014F41 /* XCRemoteSwiftPackageReference "swift-certificates" */,
+				55454F53199585BA38150D61 /* XCRemoteSwiftPackageReference "swift-crypto" */,
 				B21990F400821782A35E53C4 /* XCRemoteSwiftPackageReference "swift-nio" */,
+				CBFA3C4EE7214FF3E5791476 /* XCRemoteSwiftPackageReference "swift-nio-ssl" */,
 				711A8E73ED2A7AA4A852AE7C /* XCLocalSwiftPackageReference "Packages/ImageDecoder" */,
 			);
 			preferredProjectObjectVersion = 77;
@@ -988,6 +1003,7 @@
 				1473E32DB057975151C0B24F /* ImagePreviewWindow.swift in Sources */,
 				F47A29B58D39DCB30BDB290A /* ImageViewerView.swift in Sources */,
 				2AC85F5C8AE08A1DB6A74261 /* KeyboardHandler.swift in Sources */,
+				419BC0421E6AC4B288626582 /* MCPCertificate.swift in Sources */,
 				8D25E45D70F2C1822D552DF8 /* MCPConnectorWindow.swift in Sources */,
 				E56D72CDE056EB4C345B1AE1 /* MCPHTTPServer.swift in Sources */,
 				0356B8132747B06A5AE18BE8 /* MCPToolRegistry.swift in Sources */,
@@ -1085,7 +1101,7 @@
 				CODE_SIGN_ENTITLEMENTS = QuickLookExtension/QuickLookExtension.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 96;
+				CURRENT_PROJECT_VERSION = 97;
 				DEVELOPMENT_TEAM = FDSVBU33S8;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -1097,7 +1113,7 @@
 					"@executable_path/../../../../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 6.2.0;
+				MARKETING_VERSION = 6.3.0;
 				OTHER_LDFLAGS = (
 					"-lz",
 				);
@@ -1116,7 +1132,7 @@
 				CODE_SIGN_ENTITLEMENTS = QuickLookPreview/QuickLookPreview.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 96;
+				CURRENT_PROJECT_VERSION = 97;
 				DEVELOPMENT_TEAM = FDSVBU33S8;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -1128,7 +1144,7 @@
 					"@executable_path/../../../../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 6.2.0;
+				MARKETING_VERSION = 6.3.0;
 				OTHER_LDFLAGS = (
 					"-lz",
 				);
@@ -1147,7 +1163,7 @@
 				CODE_SIGN_ENTITLEMENTS = QuickLookExtension/QuickLookExtension.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 96;
+				CURRENT_PROJECT_VERSION = 97;
 				DEVELOPMENT_TEAM = FDSVBU33S8;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -1159,7 +1175,7 @@
 					"@executable_path/../../../../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 6.2.0;
+				MARKETING_VERSION = 6.3.0;
 				OTHER_LDFLAGS = (
 					"-lz",
 				);
@@ -1178,7 +1194,7 @@
 				CODE_SIGN_ENTITLEMENTS = AstroTriage/AstroTriage.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 96;
+				CURRENT_PROJECT_VERSION = 97;
 				DEVELOPMENT_TEAM = FDSVBU33S8;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -1188,7 +1204,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 6.2.0;
+				MARKETING_VERSION = 6.3.0;
 				METAL_COMPILER_FLAGS = "";
 				OTHER_LDFLAGS = (
 					"-lz",
@@ -1311,7 +1327,7 @@
 				CODE_SIGN_ENTITLEMENTS = AstroTriage/AstroTriage.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 96;
+				CURRENT_PROJECT_VERSION = 97;
 				DEVELOPMENT_TEAM = FDSVBU33S8;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -1321,7 +1337,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 6.2.0;
+				MARKETING_VERSION = 6.3.0;
 				METAL_COMPILER_FLAGS = "";
 				OTHER_LDFLAGS = (
 					"-lz",
@@ -1399,7 +1415,7 @@
 				CODE_SIGN_ENTITLEMENTS = QuickLookPreview/QuickLookPreview.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 96;
+				CURRENT_PROJECT_VERSION = 97;
 				DEVELOPMENT_TEAM = FDSVBU33S8;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -1411,7 +1427,7 @@
 					"@executable_path/../../../../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 6.2.0;
+				MARKETING_VERSION = 6.3.0;
 				OTHER_LDFLAGS = (
 					"-lz",
 				);
@@ -1489,12 +1505,36 @@
 				minimumVersion = 7.4.0;
 			};
 		};
+		55454F53199585BA38150D61 /* XCRemoteSwiftPackageReference "swift-crypto" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/apple/swift-crypto";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 3.10.0;
+			};
+		};
+		7E8070EFD3BB031E29014F41 /* XCRemoteSwiftPackageReference "swift-certificates" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/apple/swift-certificates";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.10.0;
+			};
+		};
 		B21990F400821782A35E53C4 /* XCRemoteSwiftPackageReference "swift-nio" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/apple/swift-nio";
 			requirement = {
 				kind = upToNextMajorVersion;
 				minimumVersion = 2.100.0;
+			};
+		};
+		CBFA3C4EE7214FF3E5791476 /* XCRemoteSwiftPackageReference "swift-nio-ssl" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/apple/swift-nio-ssl";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.30.0;
 			};
 		};
 		D1BD6C474B8B6D883E2EC661 /* XCRemoteSwiftPackageReference "swift-sdk" */ = {
@@ -1508,6 +1548,11 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
+		041D79A454A1682F8A5DCE31 /* Crypto */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 55454F53199585BA38150D61 /* XCRemoteSwiftPackageReference "swift-crypto" */;
+			productName = Crypto;
+		};
 		0823264441FF3A7874FE3975 /* ImageDecoderBridge */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = ImageDecoderBridge;
@@ -1522,6 +1567,11 @@
 			package = 25C99D2C35845C466F7C0B6A /* XCRemoteSwiftPackageReference "GRDB.swift" */;
 			productName = GRDB;
 		};
+		6EF3E4A01DC7C719F1007BF5 /* X509 */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 7E8070EFD3BB031E29014F41 /* XCRemoteSwiftPackageReference "swift-certificates" */;
+			productName = X509;
+		};
 		8A263D3D8B89B08DB446B5AB /* ImageDecoderBridge */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = ImageDecoderBridge;
@@ -1534,6 +1584,11 @@
 		A7854A8F318978072FE7EB54 /* ImageDecoderBridge */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = ImageDecoderBridge;
+		};
+		B64E480C709131A549E84FB8 /* NIOSSL */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = CBFA3C4EE7214FF3E5791476 /* XCRemoteSwiftPackageReference "swift-nio-ssl" */;
+			productName = NIOSSL;
 		};
 		D711DA2B67C4940FBDCFC8DB /* NIOCore */ = {
 			isa = XCSwiftPackageProductDependency;

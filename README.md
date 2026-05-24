@@ -14,7 +14,21 @@ Nice side effect: Finally you have a native XISF and FITS Quicklook for macOS. (
 
 ---
 
-## What's New in v6.2.0 (Build 96)
+## What's New in v6.3.0 (Build 97)
+
+**HTTPS for the in-app MCP server — Claude Desktop now works out of the box.**
+Claude Desktop refuses `http://` URLs (security policy), so v6.3.0 adds
+TLS. AstroBlink generates a self-signed certificate at first launch; the
+**MCP Connector** window has a new "1. Install Certificate" button that
+trusts it in your login keychain (no admin password, one click). Then
+the existing "2. Install to Claude Desktop" wires the HTTPS URL into
+Claude's config. Zero external dependencies — no Node, no proxies. Same
+13 tools, just a TLS handshake added underneath. `kAlgorithmVersion`
+unchanged.
+
+---
+
+## Previously in v6.2.0 (Build 96)
 
 **MCP architecture refactor — same 13 tools, now built into the app.**
 The v6.1.0 helper-binary + URL-scheme + status-polling indirection is
