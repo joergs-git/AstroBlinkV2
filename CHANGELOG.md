@@ -4,6 +4,53 @@ All notable changes to AstroBlink & AIsaac will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [6.4.0] — 2026-05-24
+
+**Bundled stdio→HTTPS proxy so Claude Desktop just works.** v6.3.0 shipped
+an HTTPS MCP server inside the app and tried to wire Claude Desktop to it
+via a `{"url": …}` config entry. That doesn't work — Claude Desktop
+silently rejects URL entries in `claude_desktop_config.json` (only stdio
+configs `{"command": …}` are accepted). v6.4.0 ships a tiny stdio↔HTTPS
+proxy bundled inside `AstroBlinkV2.app/Contents/Helpers/AstroBlinkMCPProxy`.
+The MCP Connector window now installs Claude Desktop to launch that
+proxy, which forwards bytes to the in-app HTTPS server.
+`kAlgorithmVersion` unchanged.
+
+### Added
+
+- **AstroBlinkMCPProxy** — ~120 LOC Swift CLI binary, bundled in
+  `Contents/Helpers/`. Reads JSON-RPC lines from stdin, POSTs each to
+  `https://127.0.0.1:8765/mcp` with the captured session ID, parses
+  SSE `data:` frames out of the response, writes the JSON-RPC results
+  back to stdout. Zero app state, just byte forwarding. Not sandboxed
+  (sandbox needs an .app container; bare CLI children of Claude Desktop
+  have none — AMFI rejects sandboxed standalone CLIs).
+- "Install to Claude Desktop" in the MCP Connector window now copies a
+  stdio-format config snippet to the clipboard AND opens the Claude
+  config file in your default editor (TextEdit by default). Paste,
+  save, restart Claude Desktop. The whole flow sidesteps the sandbox
+  write-block on `~/Library/Application Support/Claude/`.
+
+### Changed
+
+- Two-section UI in MCP Connector: a Claude Desktop section (stdio
+  proxy install) and a URL-aware client section (Claude Code, custom
+  integrations) that still uses the certificate-trust flow from v6.3.0.
+- README + CHANGELOG honest about which builds ship the proxy:
+  GitHub-only. App Store users use Claude Desktop Settings → Connectors
+  UI to add the URL directly, or use Claude Code.
+
+### Why the proxy isn't in the App Store build
+
+App Store distribution requires `app-sandbox=true` on every embedded
+executable. A sandboxed CLI needs an .app container anchor; the kernel
+(AMFI) rejects a bare sandboxed CLI launched as a child of an unrelated
+app like Claude Desktop. So the proxy is included only in the Developer
+ID / GitHub build via `SKIP_MCP_PROXY=0` (the App Store archive job
+sets `SKIP_MCP_PROXY=1` to omit it). App Store users who want
+AstroBlink↔Claude Desktop integration grab the notarized .zip from the
+GitHub release (same bundle id, overrides the App Store install).
+
 ## [6.3.0] — 2026-05-24
 
 **HTTPS for the in-app MCP server.** Claude Desktop refuses plain `http://`

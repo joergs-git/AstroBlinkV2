@@ -234,7 +234,7 @@ enum MCPToolRegistry {
         let count = vm?.images.count ?? 0
         let folder = vm?.sessionRootURL?.path ?? "(no session loaded)"
         let port = MCPHTTPServer.shared.boundPort.map(String.init) ?? "?"
-        let msg = "pong — AstroBlinkV2 MCP 6.3.0, port=\(port), session=\(count) images, folder=\(folder)"
+        let msg = "pong — AstroBlinkV2 MCP 6.4.0, port=\(port), session=\(count) images, folder=\(folder)"
         return .init(content: [.text(text: msg, annotations: nil, _meta: nil)], isError: false)
     }
 
@@ -375,18 +375,21 @@ enum MCPToolRegistry {
 
     // MARK: - JSON helpers
 
+    /// Wrap a query in the standard `{"ok": true, "data": <value>}` envelope.
+    /// Single level of nesting only — the caller's payload IS the value of
+    /// "data", never another envelope.
     private static func runJSON<T: Encodable>(_ work: () throws -> T) -> CallTool.Result {
         do {
             let value = try work()
-            return successJSON(["ok": AnyEncodable(true), "data": AnyEncodable(value)])
+            return jsonText(["ok": AnyEncodable(true), "data": AnyEncodable(value)])
         } catch {
             return errorJSON("Query failed: \(error.localizedDescription)")
         }
     }
 
+    /// Used by action-style tools (scan, mark-garbage) that build a custom
+    /// summary dictionary. Same envelope shape as runJSON.
     private static func successJSON(_ payload: [String: AnyEncodable]) -> CallTool.Result {
-        var full = payload
-        full["ok"] = AnyEncodable(true)
         return jsonText(["ok": AnyEncodable(true), "data": AnyEncodable(payload)])
     }
 

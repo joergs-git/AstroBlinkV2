@@ -211,7 +211,7 @@ private actor HTTPCoordinator {
         do {
             let server = Server(
                 name: "AstroBlinkV2",
-                version: "6.3.0",
+                version: "6.4.0",
                 capabilities: .init(tools: .init(listChanged: false))
             )
             await MCPToolRegistry.register(on: server)

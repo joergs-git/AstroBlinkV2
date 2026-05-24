@@ -84,13 +84,22 @@ targets:
         product: X509
       - target: AstroTriageQuickLookThumbnail
       - target: AstroTriageQuickLookPreview
+      # Tiny stdio↔HTTPS proxy bundled inside Contents/Helpers/ so Claude
+      # Desktop (which only accepts stdio MCP servers in its config) can talk
+      # to the in-app HTTPS MCP server. embed: false because we copy it via
+      # the postBuildScript below — XcodeGen's default embedding would put it
+      # in Contents/Resources/ which fails App Store validation as the
+      # un-sandboxed duplicate.
+      - target: AstroBlinkMCPProxy
+        embed: false
+        link: false
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.joergsflow.AstroBlinkV2
         GENERATE_INFOPLIST_FILE: NO
         INFOPLIST_FILE: AstroTriage/Info.plist
-        CURRENT_PROJECT_VERSION: 97
-        MARKETING_VERSION: "6.3.0"
+        CURRENT_PROJECT_VERSION: 98
+        MARKETING_VERSION: "6.4.0"
         SWIFT_EMIT_LOC_STRINGS: YES
         ENABLE_APP_SANDBOX: YES
         ENABLE_HARDENED_RUNTIME: YES
@@ -119,6 +128,40 @@ targets:
           find "${CODESIGNING_FOLDER_PATH}/Contents/Resources" -name "*.bundle" -print0 | while IFS= read -r -d '' bundle; do
             codesign --force --sign "${SIGN_IDENTITY}" --generate-entitlement-der "$bundle"
           done
+      - name: "Embed AstroBlinkMCPProxy (skipped for App Store builds)"
+        script: |
+          # Bundle the stdio↔HTTPS proxy at Contents/Helpers/AstroBlinkMCPProxy
+          # so Claude Desktop can launch it. Skipped under SKIP_MCP_PROXY=1
+          # for the App Store archive job — the proxy can't be sandboxed
+          # (it's a bare CLI child of Claude Desktop, no .app container) and
+          # App Store demands app-sandbox=true on every embedded exec. App
+          # Store users connect via Claude Desktop's Settings → Connectors UI
+          # or use Claude Code with the URL endpoint directly.
+          if [ "${SKIP_MCP_PROXY:-0}" = "1" ]; then
+            echo "SKIP_MCP_PROXY=1 — App Store build, not embedding MCP proxy"
+            exit 0
+          fi
+          PROXY_SRC="${CONFIGURATION_BUILD_DIR}/AstroBlinkMCPProxy"
+          DEST_DIR="${CODESIGNING_FOLDER_PATH}/Contents/Helpers"
+          if [ ! -f "$PROXY_SRC" ]; then
+            echo "warning: AstroBlinkMCPProxy binary not found at $PROXY_SRC — skipping embed"
+            exit 0
+          fi
+          mkdir -p "$DEST_DIR"
+          cp -f "$PROXY_SRC" "$DEST_DIR/AstroBlinkMCPProxy"
+          if [ "${CONFIGURATION}" = "Release" ]; then
+            # Developer ID Application is the right cert for outside-App-Store
+            # distribution. App Store builds skip this script entirely.
+            SIGN_IDENTITY="Developer ID Application: Joerg Klaas (FDSVBU33S8)"
+          else
+            SIGN_IDENTITY="${EXPANDED_CODE_SIGN_IDENTITY}"
+          fi
+          # Sign with the empty entitlements file (no sandbox). Hardened
+          # runtime stays on because Gatekeeper expects it for notarized DevID.
+          codesign --force --sign "${SIGN_IDENTITY}" \
+            --options runtime --timestamp=none \
+            --entitlements "${SRCROOT}/MCPProxy/AstroBlinkMCPProxy.entitlements" \
+            "$DEST_DIR/AstroBlinkMCPProxy"
 
   AstroTriageQuickLookThumbnail:
     type: app-extension
@@ -136,8 +179,8 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.joergsflow.AstroBlinkV2.QuickLookThumbnail
         GENERATE_INFOPLIST_FILE: NO
         INFOPLIST_FILE: QuickLookExtension/Info.plist
-        CURRENT_PROJECT_VERSION: 97
-        MARKETING_VERSION: "6.3.0"
+        CURRENT_PROJECT_VERSION: 98
+        MARKETING_VERSION: "6.4.0"
         MACOSX_DEPLOYMENT_TARGET: "14.0"
         SWIFT_VERSION: "5.9"
         CLANG_CXX_LANGUAGE_STANDARD: c++17
@@ -171,8 +214,8 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.joergsflow.AstroBlinkV2.QuickLookPreview
         GENERATE_INFOPLIST_FILE: NO
         INFOPLIST_FILE: QuickLookPreview/Info.plist
-        CURRENT_PROJECT_VERSION: 97
-        MARKETING_VERSION: "6.3.0"
+        CURRENT_PROJECT_VERSION: 98
+        MARKETING_VERSION: "6.4.0"
         MACOSX_DEPLOYMENT_TARGET: "14.0"
         SWIFT_VERSION: "5.9"
         CLANG_CXX_LANGUAGE_STANDARD: c++17
@@ -185,6 +228,29 @@ targets:
         SKIP_INSTALL: YES
         OTHER_LDFLAGS:
           - "-lz"
+
+  # CLI helper that bridges Claude Desktop's stdio MCP protocol to our in-app
+  # HTTPS endpoint. CANNOT be sandboxed (sandbox needs an .app container
+  # anchor; bare CLI children of foreign apps like Claude Desktop have none →
+  # AMFI rejects). Therefore this binary ships only in the Developer ID
+  # build (the Embed AstroBlinkMCPProxy postBuildScript skips it under
+  # SKIP_MCP_PROXY=1, which the App Store archive job sets).
+  AstroBlinkMCPProxy:
+    type: tool
+    platform: macOS
+    sources:
+      - path: MCPProxy
+        excludes:
+          - "**/.DS_Store"
+          - "AstroBlinkMCPProxy.entitlements"
+    settings:
+      base:
+        PRODUCT_NAME: AstroBlinkMCPProxy
+        DEVELOPMENT_TEAM: FDSVBU33S8
+        CODE_SIGN_STYLE: Automatic
+        CODE_SIGN_ENTITLEMENTS: MCPProxy/AstroBlinkMCPProxy.entitlements
+        ENABLE_HARDENED_RUNTIME: YES
+        SKIP_INSTALL: YES
 
   AstroTriageTests:
     type: bundle.unit-test

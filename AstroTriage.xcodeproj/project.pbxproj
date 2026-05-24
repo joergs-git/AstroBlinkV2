@@ -116,6 +116,7 @@
 		A25E05A896A91A675B10AB27 /* AIsaacUserProfile.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BC8D6B7579B8D8EE0A8190B /* AIsaacUserProfile.swift */; };
 		A3B2A88FE0D2DFC9F44E3342 /* CurationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C90F68D49B2362943B4E1EF /* CurationService.swift */; };
 		A404D91B8F156794B11A8ECC /* AIsaacService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76A68D583C36500C4A7BD068 /* AIsaacService.swift */; };
+		A4A5140CBFF17AE94E9FFE64 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BD79A825637B44E2966B4B2 /* main.swift */; };
 		A4F9C54A9D8BDA57CA1126FE /* AIsaacWeather.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6F15B76878AB89E64790D0D4 /* AIsaacWeather.swift */; };
 		A557AE1C0894A7ED185F5BDC /* FileHasher.swift in Sources */ = {isa = PBXBuildFile; fileRef = A6E06E1261BF9CF423889B91 /* FileHasher.swift */; };
 		A5EE486F27D98657DB57A781 /* ImageDecoderBridge in Frameworks */ = {isa = PBXBuildFile; productRef = 8A263D3D8B89B08DB446B5AB /* ImageDecoderBridge */; };
@@ -188,6 +189,13 @@
 			remoteGlobalIDString = 226543CD95AC41D75968CBAB;
 			remoteInfo = AstroTriageQuickLookPreview;
 		};
+		DE7CE85244E4DC09B793D6C5 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 8FA7FD3B876F5A0346C02F50 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 8201C65EEFD3BAC46EB53A2C;
+			remoteInfo = AstroBlinkMCPProxy;
+		};
 		FDA69F31517F5B1E6EF4B967 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 8FA7FD3B876F5A0346C02F50 /* Project object */;
@@ -239,6 +247,7 @@
 		1A5DA4A13F92A7266A8F0998 /* BenchmarkStatsWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BenchmarkStatsWindow.swift; sourceTree = "<group>"; };
 		1B4C4D1E3CA9608F6E41582A /* PrefetchCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrefetchCache.swift; sourceTree = "<group>"; };
 		1BC8D6B7579B8D8EE0A8190B /* AIsaacUserProfile.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIsaacUserProfile.swift; sourceTree = "<group>"; };
+		1BD79A825637B44E2966B4B2 /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
 		1C26D1D4C5DFA7795B28D750 /* AstroTriageTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = AstroTriageTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		1C731CAA9FB954423A4E9179 /* SunCalculator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SunCalculator.swift; sourceTree = "<group>"; };
 		1CF0D499B4E5B8FCF68CDB98 /* ExportOptions-DeveloperID.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = "ExportOptions-DeveloperID.plist"; sourceTree = "<group>"; };
@@ -283,6 +292,7 @@
 		5DAC3DD9E30EB2E746271068 /* WienerDeconvolution.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WienerDeconvolution.swift; sourceTree = "<group>"; };
 		5E23A9942CF602756CBAC42A /* AppMessageService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppMessageService.swift; sourceTree = "<group>"; };
 		6087ADC4D2B2398C1923BC7E /* SetupComparisonChart.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SetupComparisonChart.swift; sourceTree = "<group>"; };
+		6368C40BA8EB67F9E6C3BF3C /* AstroBlinkMCPProxy */ = {isa = PBXFileReference; includeInIndex = 0; path = AstroBlinkMCPProxy; sourceTree = BUILT_PRODUCTS_DIR; };
 		67A27ADBF9B6A4140814C5BC /* EfficiencyChart.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EfficiencyChart.swift; sourceTree = "<group>"; };
 		6A3C4F920C008F3B9EEA4CED /* BenchmarkSharing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BenchmarkSharing.swift; sourceTree = "<group>"; };
 		6B1DF8104819C65DE1BF3EE5 /* StackResultView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StackResultView.swift; sourceTree = "<group>"; };
@@ -488,6 +498,14 @@
 			path = QuickLookPreview;
 			sourceTree = "<group>";
 		};
+		40975BAA77501FDDE0D0D8B1 /* MCPProxy */ = {
+			isa = PBXGroup;
+			children = (
+				1BD79A825637B44E2966B4B2 /* main.swift */,
+			);
+			path = MCPProxy;
+			sourceTree = "<group>";
+		};
 		4AB3F99975F4F5A1206B259A /* Bridge */ = {
 			isa = PBXGroup;
 			children = (
@@ -511,6 +529,7 @@
 			isa = PBXGroup;
 			children = (
 				C5744DD07BA58953FC14B6A7 /* AstroTriage */,
+				40975BAA77501FDDE0D0D8B1 /* MCPProxy */,
 				F6B71EE5C0E01134AF27294B /* Packages */,
 				AB0EA48544CFEDFF2A961669 /* QuickLookExtension */,
 				3EABFBF58AADEBF0913BDDFE /* QuickLookPreview */,
@@ -698,6 +717,7 @@
 		F7AF623283DC11315A83F1B4 /* Products */ = {
 			isa = PBXGroup;
 			children = (
+				6368C40BA8EB67F9E6C3BF3C /* AstroBlinkMCPProxy */,
 				FE4AA1827176F2392E89D989 /* AstroTriage.app */,
 				C17E45E7EC559D0FCD362808 /* AstroTriageQuickLookPreview.appex */,
 				837394D162B707B718C708C9 /* AstroTriageQuickLookThumbnail.appex */,
@@ -756,12 +776,14 @@
 				BC786999CCE07E4A537B72CA /* Frameworks */,
 				A594E1D0E625ED953C41896C /* Embed Foundation Extensions */,
 				F45602B565BF814B6EE77C5F /* Sign SPM Resource Bundles */,
+				A1283962553097B97F4F5DA9 /* Embed AstroBlinkMCPProxy (skipped for App Store builds) */,
 			);
 			buildRules = (
 			);
 			dependencies = (
 				BF9E23646F35CC3022D01D03 /* PBXTargetDependency */,
 				5EEBC7FF460CDF83ECE3DADF /* PBXTargetDependency */,
+				276EA803138ECC49E99989C2 /* PBXTargetDependency */,
 			);
 			name = AstroTriage;
 			packageProductDependencies = (
@@ -778,6 +800,23 @@
 			productName = AstroTriage;
 			productReference = FE4AA1827176F2392E89D989 /* AstroTriage.app */;
 			productType = "com.apple.product-type.application";
+		};
+		8201C65EEFD3BAC46EB53A2C /* AstroBlinkMCPProxy */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 9F3260B19A6BC77B4728EAA9 /* Build configuration list for PBXNativeTarget "AstroBlinkMCPProxy" */;
+			buildPhases = (
+				F59E0F730FAF3060F2C28776 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = AstroBlinkMCPProxy;
+			packageProductDependencies = (
+			);
+			productName = AstroBlinkMCPProxy;
+			productReference = 6368C40BA8EB67F9E6C3BF3C /* AstroBlinkMCPProxy */;
+			productType = "com.apple.product-type.tool";
 		};
 		C9CA1CF89C117CC746881E70 /* AstroTriageTests */ = {
 			isa = PBXNativeTarget;
@@ -818,6 +857,10 @@
 						DevelopmentTeam = FDSVBU33S8;
 						ProvisioningStyle = Automatic;
 					};
+					8201C65EEFD3BAC46EB53A2C = {
+						DevelopmentTeam = FDSVBU33S8;
+						ProvisioningStyle = Automatic;
+					};
 					C9CA1CF89C117CC746881E70 = {
 						DevelopmentTeam = FDSVBU33S8;
 						ProvisioningStyle = Automatic;
@@ -847,6 +890,7 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
+				8201C65EEFD3BAC46EB53A2C /* AstroBlinkMCPProxy */,
 				48734A500EEA092339F9345D /* AstroTriage */,
 				226543CD95AC41D75968CBAB /* AstroTriageQuickLookPreview */,
 				13825CA60ACE1A81CDE8BCAF /* AstroTriageQuickLookThumbnail */,
@@ -870,6 +914,24 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
+		A1283962553097B97F4F5DA9 /* Embed AstroBlinkMCPProxy (skipped for App Store builds) */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Embed AstroBlinkMCPProxy (skipped for App Store builds)";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "# Bundle the stdio↔HTTPS proxy at Contents/Helpers/AstroBlinkMCPProxy\n# so Claude Desktop can launch it. Skipped under SKIP_MCP_PROXY=1\n# for the App Store archive job — the proxy can't be sandboxed\n# (it's a bare CLI child of Claude Desktop, no .app container) and\n# App Store demands app-sandbox=true on every embedded exec. App\n# Store users connect via Claude Desktop's Settings → Connectors UI\n# or use Claude Code with the URL endpoint directly.\nif [ \"${SKIP_MCP_PROXY:-0}\" = \"1\" ]; then\n  echo \"SKIP_MCP_PROXY=1 — App Store build, not embedding MCP proxy\"\n  exit 0\nfi\nPROXY_SRC=\"${CONFIGURATION_BUILD_DIR}/AstroBlinkMCPProxy\"\nDEST_DIR=\"${CODESIGNING_FOLDER_PATH}/Contents/Helpers\"\nif [ ! -f \"$PROXY_SRC\" ]; then\n  echo \"warning: AstroBlinkMCPProxy binary not found at $PROXY_SRC — skipping embed\"\n  exit 0\nfi\nmkdir -p \"$DEST_DIR\"\ncp -f \"$PROXY_SRC\" \"$DEST_DIR/AstroBlinkMCPProxy\"\nif [ \"${CONFIGURATION}\" = \"Release\" ]; then\n  # Developer ID Application is the right cert for outside-App-Store\n  # distribution. App Store builds skip this script entirely.\n  SIGN_IDENTITY=\"Developer ID Application: Joerg Klaas (FDSVBU33S8)\"\nelse\n  SIGN_IDENTITY=\"${EXPANDED_CODE_SIGN_IDENTITY}\"\nfi\n# Sign with the empty entitlements file (no sandbox). Hardened\n# runtime stays on because Gatekeeper expects it for notarized DevID.\ncodesign --force --sign \"${SIGN_IDENTITY}\" \\\n  --options runtime --timestamp=none \\\n  --entitlements \"${SRCROOT}/MCPProxy/AstroBlinkMCPProxy.entitlements\" \\\n  \"$DEST_DIR/AstroBlinkMCPProxy\"\n";
+		};
 		F45602B565BF814B6EE77C5F /* Sign SPM Resource Bundles */ = {
 			isa = PBXShellScriptBuildPhase;
 			buildActionMask = 2147483647;
@@ -1073,6 +1135,14 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		F59E0F730FAF3060F2C28776 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A4A5140CBFF17AE94E9FFE64 /* main.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -1080,6 +1150,11 @@
 			isa = PBXTargetDependency;
 			target = 48734A500EEA092339F9345D /* AstroTriage */;
 			targetProxy = FE2150CFB31D0B94E4483ACD /* PBXContainerItemProxy */;
+		};
+		276EA803138ECC49E99989C2 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 8201C65EEFD3BAC46EB53A2C /* AstroBlinkMCPProxy */;
+			targetProxy = DE7CE85244E4DC09B793D6C5 /* PBXContainerItemProxy */;
 		};
 		5EEBC7FF460CDF83ECE3DADF /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
@@ -1101,7 +1176,7 @@
 				CODE_SIGN_ENTITLEMENTS = QuickLookExtension/QuickLookExtension.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 97;
+				CURRENT_PROJECT_VERSION = 98;
 				DEVELOPMENT_TEAM = FDSVBU33S8;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -1113,7 +1188,7 @@
 					"@executable_path/../../../../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 6.3.0;
+				MARKETING_VERSION = 6.4.0;
 				OTHER_LDFLAGS = (
 					"-lz",
 				);
@@ -1132,7 +1207,7 @@
 				CODE_SIGN_ENTITLEMENTS = QuickLookPreview/QuickLookPreview.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 97;
+				CURRENT_PROJECT_VERSION = 98;
 				DEVELOPMENT_TEAM = FDSVBU33S8;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -1144,7 +1219,7 @@
 					"@executable_path/../../../../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 6.3.0;
+				MARKETING_VERSION = 6.4.0;
 				OTHER_LDFLAGS = (
 					"-lz",
 				);
@@ -1163,7 +1238,7 @@
 				CODE_SIGN_ENTITLEMENTS = QuickLookExtension/QuickLookExtension.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 97;
+				CURRENT_PROJECT_VERSION = 98;
 				DEVELOPMENT_TEAM = FDSVBU33S8;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -1175,7 +1250,7 @@
 					"@executable_path/../../../../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 6.3.0;
+				MARKETING_VERSION = 6.4.0;
 				OTHER_LDFLAGS = (
 					"-lz",
 				);
@@ -1194,7 +1269,7 @@
 				CODE_SIGN_ENTITLEMENTS = AstroTriage/AstroTriage.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 97;
+				CURRENT_PROJECT_VERSION = 98;
 				DEVELOPMENT_TEAM = FDSVBU33S8;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -1204,7 +1279,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 6.3.0;
+				MARKETING_VERSION = 6.4.0;
 				METAL_COMPILER_FLAGS = "";
 				OTHER_LDFLAGS = (
 					"-lz",
@@ -1327,7 +1402,7 @@
 				CODE_SIGN_ENTITLEMENTS = AstroTriage/AstroTriage.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 97;
+				CURRENT_PROJECT_VERSION = 98;
 				DEVELOPMENT_TEAM = FDSVBU33S8;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -1337,7 +1412,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 6.3.0;
+				MARKETING_VERSION = 6.4.0;
 				METAL_COMPILER_FLAGS = "";
 				OTHER_LDFLAGS = (
 					"-lz",
@@ -1350,6 +1425,25 @@
 				SWIFT_OBJC_INTEROP_MODE = objcxx;
 			};
 			name = Debug;
+		};
+		CE262EBB9CA6393E66F6787B /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = MCPProxy/AstroBlinkMCPProxy.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				DEVELOPMENT_TEAM = FDSVBU33S8;
+				ENABLE_HARDENED_RUNTIME = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.joergsflow.AstroBlinkMCPProxy;
+				PRODUCT_NAME = AstroBlinkMCPProxy;
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+			};
+			name = Release;
 		};
 		EEFC4036E724F4C5C0FAE09E /* Release */ = {
 			isa = XCBuildConfiguration;
@@ -1408,6 +1502,25 @@
 			};
 			name = Release;
 		};
+		F0BFEC8FC65530FAACEC6FFF /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = MCPProxy/AstroBlinkMCPProxy.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				DEVELOPMENT_TEAM = FDSVBU33S8;
+				ENABLE_HARDENED_RUNTIME = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.joergsflow.AstroBlinkMCPProxy;
+				PRODUCT_NAME = AstroBlinkMCPProxy;
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+			};
+			name = Debug;
+		};
 		FFD8A26D196D2BA013723EBE /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -1415,7 +1528,7 @@
 				CODE_SIGN_ENTITLEMENTS = QuickLookPreview/QuickLookPreview.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 97;
+				CURRENT_PROJECT_VERSION = 98;
 				DEVELOPMENT_TEAM = FDSVBU33S8;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -1427,7 +1540,7 @@
 					"@executable_path/../../../../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 6.3.0;
+				MARKETING_VERSION = 6.4.0;
 				OTHER_LDFLAGS = (
 					"-lz",
 				);
@@ -1474,6 +1587,15 @@
 			buildConfigurations = (
 				FFD8A26D196D2BA013723EBE /* Debug */,
 				2A5893E471A41175BD941A58 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		9F3260B19A6BC77B4728EAA9 /* Build configuration list for PBXNativeTarget "AstroBlinkMCPProxy" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F0BFEC8FC65530FAACEC6FFF /* Debug */,
+				CE262EBB9CA6393E66F6787B /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;

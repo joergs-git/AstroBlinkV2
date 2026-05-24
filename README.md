@@ -14,7 +14,27 @@ Nice side effect: Finally you have a native XISF and FITS Quicklook for macOS. (
 
 ---
 
-## What's New in v6.3.0 (Build 97)
+## What's New in v6.4.0 (Build 98)
+
+**Bundled stdio↔HTTPS proxy so Claude Desktop just works.** v6.3.0
+turned out to be a half-fix: Claude Desktop accepts only stdio MCP
+servers in its config file, not URL endpoints. v6.4.0 bundles a tiny
+proxy binary inside the .app that bridges Claude Desktop's stdio
+expectations to the in-app HTTPS server. Open **Window → MCP Connector**,
+click **Install to Claude Desktop**, paste the snippet (which goes
+straight to your clipboard) into the Claude config file that just
+opened, save, restart Claude Desktop. Done. No Node, no proxies you
+have to install, no Settings → Connectors UI clicks.
+
+Heads-up for App Store users: the proxy ships only in the GitHub
+notarized build (sandbox restrictions on App Store make a launchable
+CLI helper impossible). App Store install still has the in-app HTTPS
+server — you can use it from Claude Code, or grab the notarized .zip
+from GitHub to get the Claude Desktop integration.
+
+---
+
+## Previously in v6.3.0 (Build 97)
 
 **HTTPS for the in-app MCP server — Claude Desktop now works out of the box.**
 Claude Desktop refuses `http://` URLs (security policy), so v6.3.0 adds

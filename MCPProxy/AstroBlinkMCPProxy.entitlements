@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	  Standalone CLI helpers can't be sandboxed: sandbox needs an .app container,
+	  but Claude Desktop launches us as a bare child process with no container
+	  anchor → AMFI rejects (SIGTRAP). For App Store distribution we'd need
+	  app-sandbox=true on every embedded exec, which precludes that. Hence the
+	  proxy ships only in the Developer ID / GitHub build (see project.yml).
+	-->
+</dict>
+</plist>
