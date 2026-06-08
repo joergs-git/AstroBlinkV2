@@ -1326,6 +1326,22 @@ class TriageViewModel: ObservableObject {
             return true
         }
 
+        // v31: for a frame lacking plate-solve WCS (and PIERSIDE), decide the flip from the
+        // ROTATOR delta vs the reference — the only reliable orientation signal for unsolved
+        // ASIAIR frames (the star-match / fingerprint mirror tests below misfire on the partial
+        // cross-filter overlap of short test frames). ~180° delta = meridian flip. Ground truth
+        // on the 85er M101 set: ROTATOR=262 frames are physically 180° from ROTATOR=82 frames.
+        // Only a ~180° delta acts (meridian flip); arbitrary rotator deltas (cross-session
+        // recalibration, the documented unreliable case) are ignored. Mirrors the display path
+        // in updateMeridianRotation(). Pure no-WCS sessions (no solved frames) fall through to
+        // the existing centroid/fingerprint fallback.
+        if entry.wcsRotation == nil, images.contains(where: { $0.wcsRotation != nil }) {
+            if let refRot = ref.rotatorAngle, let entryRot = entry.rotatorAngle {
+                return Swift.abs(Self.signedAngleDiff(entryRot, refRot)) >= 135.0
+            }
+            return false
+        }
+
         // Signal 2: Star-centroid mirror test.
         //
         // Runs when the first three signals are silent or missing — typical case
@@ -1473,6 +1489,36 @@ class TriageViewModel: ObservableObject {
             return Self.headerRotationDeg(entry: entry, ref: ref)
         }()
 
+        // ── v31 rule: no-plate-solve frame → orient by ROTATOR delta vs the reference ──
+        // A frame WITHOUT a WCS solve and WITHOUT PIERSIDE has no plate-solved orientation.
+        // The remaining signals were both shown to be unreliable here: the star-triangle
+        // matcher is rotation-invariant and false-matches ~180°, and the pixel fingerprint is
+        // reference-dependent / not always computed at display time. The ROTATOR header,
+        // however, IS reliable for these ASIAIR frames: it is the plate-solved "Camera Angle"
+        // and is written even on unsolved frames. Ground truth on the 85er M101 set: every
+        // ROTATOR=262 frame is physically 180° flipped (galaxy at the mirrored position,
+        // CD-PA −82 on solved peers) vs every ROTATOR=82 frame (CD-PA 97.9). So a no-WCS frame
+        // whose ROTATOR differs ~180° from the WCS-anchored reference's ROTATOR needs a 180°
+        // flip; otherwise identity. We only act on a ~180° delta (meridian flip) — arbitrary
+        // rotator deltas (cross-session home-resets / recalibration, the documented unreliable
+        // case) are ignored, so this stays safe for multi-session libraries.
+        if autoMeridianEnabled, entry.wcsRotation == nil, entry.pierSide == nil,
+           images.contains(where: { $0.wcsRotation != nil }) {
+            let key = canonicalTargetKey(for: entry)
+            let refRot = targetOrientationRefs[key]?.rotatorAngle
+            var flip = false
+            if let refRot = refRot, let entryRot = entry.rotatorAngle {
+                flip = Swift.abs(Self.signedAngleDiff(entryRot, refRot)) >= 135.0
+            }
+            renderer.displayTransform = flip ? .rotate180Normalized : .identity
+            renderer.rotate180 = false
+            if DisplayAligner.debugLogging {
+                print("[Meridian] \(entry.filename): no-WCS frame, ROTATOR-delta → \(flip ? "180° flip" : "identity") (refRot=\(refRot.map { String(format: "%.0f", $0) } ?? "nil"), entryRot=\(entry.rotatorAngle.map { String(format: "%.0f", $0) } ?? "nil"))")
+            }
+            if let mtkView = findMTKView() { mtkView.needsDisplay = true }
+            return
+        }
+
         if autoMeridianEnabled, let transform = entry.alignmentTransform {
             // Use the precise per-frame transform — but cross-check it with
             // the pixel-level fingerprint before blindly trusting.
@@ -1557,6 +1603,20 @@ class TriageViewModel: ObservableObject {
         } else {
             renderer.displayTransform = .identity
             renderer.rotate180 = false
+        }
+
+        // v31 diagnostic (off by default — toggle DisplayAligner.debugLogging): trace the
+        // final orientation decision per displayed frame so a meridian/no-WCS issue can be
+        // confirmed by loading the folder once and reading the console, without guessing.
+        if DisplayAligner.debugLogging {
+            let appliedRot = Double(atan2f(renderer.displayTransform.c, renderer.displayTransform.a)) * 180.0 / .pi
+            let wcsStr = entry.wcsRotation.map { String(format: "%.1f°", $0) } ?? "none"
+            let rotStr = entry.rotatorAngle.map { String(format: "%.0f°", $0) } ?? "none"
+            print(String(format: "[Meridian/trace] %@ ROTATOR=%@ wcsPA=%@ hasAlignXform=%@ headerRot=%@ → appliedRot=%.1f° rotate180=%@",
+                         entry.filename, rotStr, wcsStr,
+                         entry.alignmentTransform != nil ? "yes" : "no",
+                         headerRotDeg.map { String(format: "%.1f°", $0) } ?? "nil",
+                         appliedRot, renderer.rotate180 ? "true" : "false"))
         }
 
         if let mtkView = findMTKView() { mtkView.needsDisplay = true }

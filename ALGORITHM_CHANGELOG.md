@@ -12,6 +12,99 @@ Records with `algorithmVersion < kAlgorithmVersion` are candidates for re-analys
 
 ---
 
+## Version 31 — Star-trail measurement de-collapse + no-WCS orientation rule (2026-06-06)
+
+**Badly star-trailed frames scored green (tier 2/3). Surfaced on a real
+85er/468mm OSC M101 set (ASIAIR/AM5, mixed 30/60/120 s): obviously
+tracking-failed frames the user pre-deleted were rated green, with Frame-History
+`trailingScore = 0` and `eccentricity ~0.10` despite 50–100px streaks.**
+
+### Root cause — shape measurement collapses long trails to "round"
+
+`StarMetricsCalculator.measure()` preferred the elliptical Gaussian PSF fit's
+eccentricity whenever `chi² < 1000`, used **unconditionally** over the robust
+image moment. The elliptical Gauss-Newton runs on a fixed small stamp; when a
+star is trailed longer than the stamp (tracking failure / wind), it converges to
+a round local minimum that still reports `chi² < 1000` ("accepted"), so its
+eccentricity reads ~0. On frames 0029–0033 the recorded values were
+`ecc 0.10 / axisRatio 0.99` (round), while an independent intensity-moment
+re-measurement of the same stars gave `ecc 0.83` (R=5px) to `0.91` (R=15px).
+The trailing analyzer then correctly returned 0 for genuinely-"round" inputs.
+
+### Fix — `StarMetricsCalculator.swift`
+
+- New `ellipticalFitUnderestimatesTrail(momentEcc:fitEcc:)`. The fit is used only
+  when it does **not** clearly disagree with the image moment. On a clear
+  disagreement (moment ecc > 0.55 AND fit ecc < 0.35 — the trail-collapse
+  signature) the robust image moment is used instead. A star is never *less*
+  round than its moment reports, so clean round stars (both agree) and genuine
+  optical elongation (the fit catches it too) are unaffected.
+
+Once measured correctly, true trails sit at `ecc ~0.95 / FWHM ~9` and clear the
+existing focal-length baseline (0.52 @ 468mm) by a wide margin, while good frames
+stay below it — so **`TrailingAnalyzer` is unchanged**. (An earlier draft also
+dropped the baseline to 0.20 under strong consensus, on the theory that high
+directional consensus proves systematic trailing. Validation on this set refuted
+it: good 468mm frames naturally sit at `ecc ~0.5–0.6` with consensus 0.55–0.89
+— mild systematic elongation from the fast f/5.5 optics + AM5 periodic error is
+present in EVERY frame — so the baseline drop flagged good frames as trailing
+(false positives 0083/0097). That change was reverted; the FL baseline is correctly
+calibrated to this scope's natural elongation.)
+
+### Measured separation (real M101 frames, FL 468mm)
+
+| frame | ecc | trailingScore | FWHM | truth |
+|---|---|---|---|---|
+| 0033 (real trail) | 0.95 | 1.00 | 9.3 | bad ✓ flagged |
+| 0083 / 0097 (good) | 0.58 / 0.59 | 0.16 / 0.22 | 4.6 | good ✓ not flagged |
+| 0002 / 0007 (good) | 0.48 / 0.58 | 0.00 / 0.16 | 3.6 | good ✓ not flagged |
+
+### Safety / no regression
+
+- The fit→moment override fires only in the moment-elongated + fit-round window;
+  clean/round stars and optical elongation are untouched.
+- Golden-set NGC3184 (468mm, bad = defocus not trailing) stays 0.00.
+- Covered by `Tests/TrailingConsensusTests.swift` (severe trail scores high;
+  natural short-FL elongation / radial aberration / round / long-FL clean stay
+  low; fit-override boundary cases) and the `ScoringRegressionTests` golden set
+  (±2% per setup) plus the `StarAnalyzerTests` 1633+139-frame marathon.
+
+### Also in v31 (orientation, display-only — no scoring impact)
+
+No-plate-solve frames (short ASIAIR test frames: ROTATOR present, CD matrix
+absent) were rendered mirrored relative to the solved bulk. **Root cause:** these
+frames were physically captured 180° flipped (the user shot a batch at
+ROTATOR=262°, 180° from the main ROTATOR=82° framing — a meridian-flip
+orientation), but the plate-solver left them unsolved (no CD matrix). With no WCS
+and no PIERSIDE, the app had only the star-triangle matcher (rotation-invariant →
+unreliable) and the pixel fingerprint (reference-dependent, not always present) —
+neither flips them, so they stayed in raw (flipped) orientation.
+
+Ground truth that pinned it down: M101 sits off-centre, so its frame position is
+unambiguous under 180°. Every ROTATOR=262 frame has the galaxy at the **mirrored
+position** (≈0.05, 0.72) with CD-PA **−82°** on solved peers; every ROTATOR=82
+frame has it at (≈0.95, 0.25) with CD-PA **97.9°**. So ROTATOR=262 ⟺ 180°
+flipped, ROTATOR=82 ⟺ normal — for these frames the ROTATOR keyword IS the
+reliable signal.
+
+`TriageViewModel` — for a frame with `wcsRotation == nil` and `pierSide == nil` in
+a session that contains plate-solved frames, decide the flip from the **ROTATOR
+delta vs the WCS-anchored reference**:
+- `updateMeridianRotation()`: `|signedAngleDiff(entry.rotator, ref.rotator)| ≥ 135°`
+  → `.rotate180Normalized`, else `.identity`.
+- `shouldRotateForMeridian()`: same rule for the survey/legacy path.
+- **Only a ~180° delta acts** (a meridian flip). Arbitrary rotator deltas
+  (cross-session home-resets / recalibration — the documented unreliable case that
+  caused rotator to be dropped from the general path) are ignored, so multi-session
+  libraries are unaffected. WCS-solved frames continue to use the CD matrix (ground
+  truth); pure no-WCS sessions (no solved frames) keep the fingerprint/star fallback.
+
+NOTE: this revises the v5.28.0 "rotator deliberately dropped" stance — rotator is
+re-admitted ONLY as the ~180° meridian-flip signal for unsolved frames, never for
+arbitrary rotation amounts.
+
+---
+
 ## Version 30 — Stage 1.5 P90 outlier clamp (2026-05-11)
 
 **Removes a false-positive trash demotion when one frame in a multi-night

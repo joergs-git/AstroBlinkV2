@@ -86,6 +86,25 @@ enum StarMetricsCalculator {
     // Fixed aperture for quick pre-filter shape check (before FWHM-adaptive aperture is known)
     private static let preFilterAperture: Float = 5.0
 
+    /// True when the elliptical Gaussian fit collapsed a long trail to a near-round PSF (v31).
+    ///
+    /// The elliptical Gauss-Newton fit runs on a fixed small stamp. When a star is trailed
+    /// longer than the stamp (tracking failure, wind), the fit converges to a round local
+    /// minimum that still reports χ² < 1000 ("accepted"), so its eccentricity reads ~0 even
+    /// though the star is a long streak. The robust intensity-weighted image moment captures
+    /// the true elongation. We override the fit with the moment ONLY on a clear disagreement
+    /// (moment clearly elongated, fit clearly round) — the exact trail-collapse signature.
+    ///
+    /// Safe for everything else: clean round stars give both-round (no override); genuine
+    /// optical elongation is captured by the fit too (no disagreement). Fixes the v30 miss
+    /// where 468mm OSC tracking-failure frames recorded ecc ~0.10 / axisRatio ~0.99 despite a
+    /// true eccentricity of ~0.85, and so scored green.
+    static func ellipticalFitUnderestimatesTrail(momentEcc: Double, fitEcc: Double) -> Bool {
+        let momentSaysElongated = momentEcc > 0.55   // axisRatio ≲ 0.84
+        let fitSaysRound        = fitEcc   < 0.35     // axisRatio ≳ 0.94
+        return momentSaysElongated && fitSaysRound
+    }
+
     /// Measure HFR, FWHM, and eccentricity from detected star positions.
     /// Two-pass approach:
     ///   Pass 1: Compute FWHM for all stars (used to determine adaptive eccentricity aperture)
@@ -397,11 +416,18 @@ enum StarMetricsCalculator {
                 let finalEcc: Double
                 let finalPA: Double?
                 let finalAR: Double?
-                if let eFit = matchedEllipFit {
+                if let eFit = matchedEllipFit,
+                   !ellipticalFitUnderestimatesTrail(momentEcc: shape.eccentricity, fitEcc: eFit.eccentricity) {
                     finalEcc = eFit.eccentricity
                     finalPA = eFit.positionAngleDeg
                     finalAR = eFit.axisRatio
                 } else {
+                    // Either no GPU fit, or the fit collapsed a long trail to a round PSF
+                    // (v31): the elliptical Gauss-Newton uses a fixed small stamp and
+                    // converges to a round local minimum (χ² < 1000, "accepted") when the
+                    // trail is longer than the stamp. The robust image moment captures the
+                    // true elongation — a star is never LESS round than its moment reports —
+                    // so prefer the moment when the fit clearly disagrees.
                     finalEcc = shape.eccentricity
                     finalPA = shape.positionAngle
                     finalAR = shape.axisRatio

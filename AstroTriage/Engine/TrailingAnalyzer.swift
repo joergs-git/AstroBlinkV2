@@ -116,6 +116,18 @@ enum TrailingAnalyzer {
         }
 
         // How much worse than baseline? Normalized to [0..1]
+        //
+        // NOTE (v31): an earlier draft dropped the baseline to 0.20 under strong consensus,
+        // on the theory that high consensus proves systematic trailing the lenient short-FL
+        // baseline should not excuse. Validation on the real 85er M101 set (FL 468mm) refuted
+        // this: GOOD frames there naturally sit at median ecc ~0.5–0.6 with consensus
+        // 0.55–0.89 (mild systematic elongation from the fast f/5.5 optics + AM5 periodic
+        // error is present in EVERY frame, good and bad). Dropping the baseline flagged those
+        // good frames as trailing. The real defect was the MEASUREMENT collapse (severe trails
+        // read as ecc ~0.10 — fixed in StarMetricsCalculator), not the baseline: once measured
+        // correctly, true trails sit at ecc ~0.95 / FWHM ~9 and clear the 0.52 baseline by a
+        // wide margin while good frames (ecc ~0.55) stay well below. So the FL baseline is
+        // kept as-is — it is correctly calibrated to this scope's natural elongation.
         let excessEcc = max(0, medianEcc - baselineEcc) / max(1.0 - baselineEcc, 0.01)
 
         // ── Trailing score: combines elongation excess with consensus evidence ──
