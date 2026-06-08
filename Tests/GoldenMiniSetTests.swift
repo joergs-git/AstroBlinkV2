@@ -172,6 +172,19 @@ final class GoldenMiniSetTests: XCTestCase {
                 XCTAssertGreaterThan(bF, fwhmRatioMin * gF,
                     "[\(c.id)] bad FWHM median \(fmt(bF)) not > \(fwhmRatioMin) × good \(fmt(gF)).")
             }
+        } else if id.contains("twilight") || id.contains("gradient") || id.contains("dawn") {
+            // Twilight/dawn/gradient: each bad frame must carry a Stage-1 garbage reason
+            // (abnormal background / no signal / low SNR), and the background level must be
+            // clearly elevated vs the night good frames.
+            for e in bad {
+                XCTAssertFalse(e.qualityBreakdown?.garbageReasons.isEmpty ?? true,
+                    "[\(c.id)] twilight/dawn frame \(e.filename) has no Stage-1 garbage reason.")
+            }
+            if let gB = median(good.compactMap { $0.noiseMedian.map(Double.init) }),
+               let bB = median(bad.compactMap { $0.noiseMedian.map(Double.init) }), gB > 0 {
+                XCTAssertGreaterThan(bB, 3.0 * gB,
+                    "[\(c.id)] bad background median \(fmt(bB)) not > 3× good \(fmt(gB)) — twilight gradient not separating.")
+            }
         } else if id.contains("dark") || id.contains("dome") {
             for e in bad {
                 XCTAssertFalse(e.qualityBreakdown?.garbageReasons.isEmpty ?? true,

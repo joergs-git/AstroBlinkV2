@@ -7,14 +7,20 @@ them. Pure filename parsing — no image decode — so it runs instantly and han
 NINA (.xisf) and ASIAIR (.fit) naming.
 
 Measurement-based cases (no pre-existing PRE-DELETE labels) are auto-picked by the REAL
-app pipeline instead, so the picked bad/good frames match what the gate re-measures:
-  - short_osc_asiair_galaxy_trails (M101 60s Extr, OSC/ASIAIR/468mm): a one-shot XCTest dumps
-    per-frame trailingScore/ecc via StarMetricsCalculator+TrailingAnalyzer; bad = aligned
-    star-trailing (trailingScore>=0.85 AND consensus>=0.7 → satellite-SAFE, since a single
-    satellite streak yields low consensus → trailingScore 0 and is excluded); good = lowest
-    trailingScore. This set is already curated in QUALITYCHECKMINI (gitignored, persists).
-Still-open dims (twilight, gradient, wind/FWHM, dark/dome): the harness XCTSkips absent cases,
-so they can be added incrementally with the same measurement-based picking.
+app pipeline (a one-shot XCTest dumps per-frame metrics), so picked frames match what the
+gate re-measures. These live in QUALITYCHECKMINI (gitignored, persist):
+  - short_osc_asiair_galaxy_trails (M101 60s Extr): bad = aligned star-trailing
+    (trailingScore>=0.85 AND consensus>=0.7 → satellite-SAFE: a lone streak gives low
+    consensus → score 0 → excluded); good = lowest trailingScore.
+  - short_osc_asiair_galaxy_twilight (M101 120s Extr): good = deep-night low-background;
+    bad = dawn-twilight frames (background ramp into daylight, Stage-1 garbage: abnormal
+    background / no signal / low SNR). Also covers the strong-GRADIENT dimension.
+Deferred dims with NO clean source in current data (harness XCTSkips them until populated):
+  - dark/dome/cap: no dark/dome/flat frames exist in the corpus.
+  - wind/FWHM-pure (round but bloated, dark sky): every high-FWHM frame on hand is either
+    trailing (M81 bad-star-form, already a case) or dawn-contaminated (the twilight case);
+    a clean isolated seeing/wind case needs the user to supply a windy-but-clear-night set.
+Add either later with the same measurement-pick approach.
 
 Usage:
     python3 scripts/build_mini_set.py            # auto-build labeled cases
