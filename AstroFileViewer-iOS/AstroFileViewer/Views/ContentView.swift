@@ -564,6 +564,25 @@ struct HelpAboutView: View {
                     }
                     .listRowBackground(Color.clear)
                 }
+
+                // More from joergsflow — sibling apps in the astro toolkit,
+                // each with an App Store and a GitHub link.
+                Section("More from joergsflow") {
+                    Link(destination: URL(string: "https://apps.apple.com/app/id6778564449")!) {
+                        Label("AstroSharper — Lucky imaging stacker (macOS)", systemImage: "wand.and.stars")
+                    }
+                    Link(destination: URL(string: "https://github.com/joergs-git/AstroSharper")!) {
+                        Label("AstroSharper on GitHub", systemImage: "chevron.left.forwardslash.chevron.right")
+                            .font(.caption)
+                    }
+                    Link(destination: URL(string: "https://apps.apple.com/app/id6760241266")!) {
+                        Label("AstroBlink — Blink, cull & stack (macOS)", systemImage: "rectangle.stack")
+                    }
+                    Link(destination: URL(string: "https://github.com/joergs-git/AstroBlinkV2")!) {
+                        Label("AstroBlink on GitHub", systemImage: "chevron.left.forwardslash.chevron.right")
+                            .font(.caption)
+                    }
+                }
             }
             .listStyle(.insetGrouped)
             .navigationTitle("Help & About")

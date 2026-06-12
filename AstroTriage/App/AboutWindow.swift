@@ -169,6 +169,24 @@ struct AboutView: View {
             Divider()
                 .padding(.horizontal, 20)
 
+            // More from joergsflow — cross-promotion to the sibling apps in
+            // the toolkit. This window serves as BOTH the launch splash and
+            // the About panel, so one placement covers both surfaces.
+            VStack(spacing: 4) {
+                Text("More from joergsflow")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(.secondary)
+                otherAppRow("AstroSharper", platform: "macOS",
+                            appStore: "https://apps.apple.com/app/id6778564449",
+                            github: "https://github.com/joergs-git/AstroSharper")
+                otherAppRow("AstroFileViewer", platform: "iPhone & iPad",
+                            appStore: "https://apps.apple.com/app/id6760240080",
+                            github: "https://github.com/joergs-git/AstroBlinkV2")
+            }
+
+            Divider()
+                .padding(.horizontal, 20)
+
             // Action buttons — stacked vertically for readability
             VStack(spacing: 8) {
                 Button(action: shareApp) {
@@ -229,6 +247,20 @@ struct AboutView: View {
             }
         }
         .buttonStyle(.link)
+    }
+
+    /// One sibling-app row for the "More from joergsflow" cross-promotion:
+    /// app name + platform, with App Store and GitHub links. Reuses the
+    /// existing `linkButton` style for visual consistency.
+    private func otherAppRow(_ name: String, platform: String, appStore: String, github: String) -> some View {
+        HStack(spacing: 8) {
+            Text(name).font(.system(size: 11, weight: .medium))
+            Text(platform).font(.system(size: 9)).foregroundColor(.secondary)
+            Spacer(minLength: 6)
+            linkButton("App Store", url: appStore)
+            linkButton("GitHub", url: github)
+        }
+        .font(.system(size: 11))
     }
 
     private func shareApp() {
