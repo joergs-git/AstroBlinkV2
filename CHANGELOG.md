@@ -4,6 +4,41 @@ All notable changes to AstroBlink & AIsaac will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [6.5.0] — 2026-06-25
+
+**Dedicated "Change Filter" command — relabel a group of frames safely.**
+A purpose-built way to change the filter of the highlighted files (e.g.
+`Lextr → L`) without the footgun of a free-text rename.
+
+### Added
+
+- **Edit → Change Filter… (⌘⇧F).** For the highlighted files, sets the
+  FITS/XISF `FILTER` header keyword to an exact new value **and** renames only
+  the filter token in the filename. Enter the new filter (and, optionally,
+  "only change files currently set to X" to safely touch a subset of a mixed
+  selection), preview the before/after for every file, then apply.
+- The filename edit is bounded to the filter token located by the NINA filename
+  parser, so the rest of the name (LIGHT, exposure, gain, …) can never be
+  corrupted by a too-broad search term. Files without a locatable token get a
+  header-only change and keep their name untouched.
+- Live preview, an Undo-last button, and full reuse of the proven batch-edit
+  safety machinery: mandatory per-file backup, read-back verification of every
+  header write, restore-from-backup on any failure, never aborts mid-batch, and
+  refuses to overwrite an existing rename target.
+
+### Changed
+
+- Renaming a frame now preserves its already-measured metrics (the pixels are
+  unchanged), so changing a filter label no longer drops a frame's quality
+  score; scores are recomputed because filter drives grouping.
+
+### Fixed
+
+- Batch undo now keeps the backup folder when any file fails to restore — it
+  never deletes the last copy of a file it couldn't put back.
+- Header-only changes in subfolders now undo to their correct original path.
+- The XISF temp file is cleaned up if an atomic rename fails.
+
 ## [6.4.1] — 2026-05-24
 
 **Astrofile Locations window UI fix + MCP work paused as WIP.** Patch

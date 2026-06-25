@@ -53,3 +53,4 @@
 | Cmd+O | Open folder |
 | Cmd+M | Move marked files to a chosen folder |
 | Cmd+Shift+R | Batch rename & header edit |
+| Cmd+Shift+F | Change Filter — set FILTER keyword + rename filter token (highlighted files) |

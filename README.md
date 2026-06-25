@@ -522,6 +522,8 @@ After a night of imaging you might have 200-600 sub-exposures. Some have clouds,
 | `Cmd+` `Cmd-` | Increase / decrease font size |
 | `Cmd+0` | Reset font size |
 | `Cmd+O` | Open folder or select files |
+| `Cmd+Shift+R` | Batch rename & header edit (highlighted files) |
+| `Cmd+Shift+F` | Change Filter — set `FILTER` + rename filter token (highlighted files) |
 | `ESC` | Stop blink playback |
 | `Double-click` | Reset zoom to fit-to-view |
 
