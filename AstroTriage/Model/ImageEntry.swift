@@ -34,7 +34,10 @@ enum QualityFeedback: Int, Codable, Hashable {
 // Core data model representing a single astro image in the session
 struct ImageEntry: Identifiable, Hashable {
     let id = UUID()
-    let url: URL
+    // Mutable so a file can be relocated in place after a rename (see `relocated(to:newFilter:)`)
+    // without recreating the entry and throwing away its already-measured metrics. The pixels are
+    // unchanged by a rename, so the computed star/noise/trailing metrics stay valid.
+    var url: URL
 
     // URL used for decoding: points to local cache for network files, same as url for local
     var decodingURL: URL
@@ -261,5 +264,32 @@ struct ImageEntry: Identifiable, Hashable {
         self.url = url
         self.decodingURL = url
         self.subfolder = subfolder
+    }
+
+    // Pin Hashable to the immutable `id` rather than the synthesized all-fields hash. `url` is
+    // mutable (see above), so an all-fields hash would change if an entry were relocated while
+    // held in a Set/Dictionary — a silent footgun. `id` is a stable UUID, so the hash is stable
+    // for the entry's whole lifetime regardless of any field mutation.
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+    }
+
+    /// Returns a copy of this entry relocated to a new on-disk URL after a filter rename.
+    /// A rename changes only the file path and the filter token in the name — the pixel data is
+    /// identical — so we preserve every measured/computed metric, alignment, fingerprint and user
+    /// state (`var copy = self` copies them all) and update only what the rename actually touched:
+    /// the URL, the local decode cache pointer (only if it pointed at the old file), and `filter`.
+    func relocated(to newURL: URL, newFilter: String) -> ImageEntry {
+        var copy = self
+        // If decodingURL still pointed at the original file (local case) follow it to the new name.
+        // For network sessions decodingURL points at a separate local cache of the same pixels —
+        // that cache is still valid, so leave it untouched.
+        if copy.decodingURL == self.url {
+            copy.decodingURL = newURL
+        }
+        copy.url = newURL
+        copy.filter = newFilter
+        copy.batchModified = true
+        return copy
     }
 }

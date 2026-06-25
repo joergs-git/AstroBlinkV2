@@ -179,6 +179,28 @@ struct NINAFilenameParser {
         return Int(match)
     }
 
+    // MARK: - Filter Token Locator (for in-place filter rename)
+
+    /// Locate the filter token inside a NINA-style name and return BOTH its value and its exact
+    /// character range, so a rename can replace only that substring and never touch the rest of
+    /// the name (LIGHT/exposure/gain/… stay byte-identical).
+    ///
+    /// Pass the filename WITHOUT extension (the caller splits it). Uses the same proven pattern as
+    /// `extractFilter`. Returns nil when the token can't be located with confidence — the caller
+    /// must then leave the filename untouched (header-only change) rather than guess.
+    static func filterTokenRange(in nameWithoutExtension: String)
+        -> (range: Range<String.Index>, value: String)? {
+        let pattern = #"_(?:LIGHT|FLAT|DARK|BIAS)_([A-Za-z][A-Za-z0-9]*)_\d"#
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
+        let nsRange = NSRange(nameWithoutExtension.startIndex..., in: nameWithoutExtension)
+        guard let match = regex.firstMatch(in: nameWithoutExtension, range: nsRange),
+              match.numberOfRanges >= 2,
+              let captureRange = Range(match.range(at: 1), in: nameWithoutExtension) else {
+            return nil
+        }
+        return (captureRange, String(nameWithoutExtension[captureRange]))
+    }
+
     // MARK: - Regex Helper
 
     // Returns the first capture group match
