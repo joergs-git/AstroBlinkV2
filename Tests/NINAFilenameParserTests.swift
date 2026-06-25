@@ -91,4 +91,40 @@ final class NINAFilenameParserTests: XCTestCase {
         XCTAssertEqual(tokens.fwhm, 4.15)
         XCTAssertEqual(tokens.focuserTemp, 4.46)
     }
+
+    // MARK: - filterTokenRange (Change Filter — token-precise rename)
+
+    /// Replacing ONLY the located token must change the filter and leave everything else
+    /// (LIGHT, exposure, gain, offset, …) byte-identical — the whole failure-proof guarantee.
+    func testFilterTokenRangeReplacesOnlyTheFilter() {
+        let name = "2026-03-05_IC1848_23-32-03_RASA_ZWO ASI6200MC Pro_LIGHT_Lextr_300.00s_#0243__bin1x1_gain100_O50_T-10.00c"
+        guard let info = NINAFilenameParser.filterTokenRange(in: name) else {
+            return XCTFail("filter token not located")
+        }
+        XCTAssertEqual(info.value, "Lextr")
+        let renamed = name.replacingCharacters(in: info.range, with: "L")
+        XCTAssertEqual(renamed,
+            "2026-03-05_IC1848_23-32-03_RASA_ZWO ASI6200MC Pro_LIGHT_L_300.00s_#0243__bin1x1_gain100_O50_T-10.00c")
+        // Nothing outside the token may have changed.
+        XCTAssertTrue(renamed.contains("_LIGHT_"))
+        XCTAssertTrue(renamed.contains("gain100_O50"))
+    }
+
+    /// A short, ambiguous filter value (e.g. "L") must NOT cause the locator to grab "LIGHT".
+    func testFilterTokenRangeDoesNotMatchFrameTypeWord() {
+        let name = "2026-01-24_Horseshoe_03-04-58_RC12_ZWO ASI6200MM Pro_LIGHT_L_5.00s_#0011__bin1x1_gain100_O50_T-9.60c"
+        guard let info = NINAFilenameParser.filterTokenRange(in: name) else {
+            return XCTFail("filter token not located")
+        }
+        XCTAssertEqual(info.value, "L")
+        // The located range must be the filter L, not the L inside LIGHT.
+        let renamed = name.replacingCharacters(in: info.range, with: "Ha")
+        XCTAssertTrue(renamed.contains("_LIGHT_Ha_5.00s_"))
+    }
+
+    /// Non-NINA / unlocatable names yield nil → caller leaves the filename untouched (header-only).
+    func testFilterTokenRangeReturnsNilWhenNotLocatable() {
+        XCTAssertNil(NINAFilenameParser.filterTokenRange(in: "Light_Orion_300.0s_Bin1_2600MC_gain100_20240227-203709_-20.0C_0005"))
+        XCTAssertNil(NINAFilenameParser.filterTokenRange(in: "random_capture_0001"))
+    }
 }

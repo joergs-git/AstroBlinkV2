@@ -149,6 +149,11 @@ struct AstroBlinkV2App: App {
                     NotificationCenter.default.post(name: .showBatchRename, object: nil)
                 }
                 .keyboardShortcut("r", modifiers: [.command, .shift])
+
+                Button("Change Filter...") {
+                    NotificationCenter.default.post(name: .changeFilterRequest, object: nil)
+                }
+                .keyboardShortcut("f", modifiers: [.command, .shift])
             }
 
             // Window menu: Benchmark Stats + Target Catalog
@@ -495,6 +500,7 @@ extension Notification.Name {
     static let resetSettingsRequest = Notification.Name("resetSettingsRequest")
     static let showBenchmarkStats = Notification.Name("showBenchmarkStats")
     static let showBatchRename = Notification.Name("showBatchRename")
+    static let changeFilterRequest = Notification.Name("changeFilterRequest")
     static let showAIsaac = Notification.Name("showAIsaac")
     static let askAIsaacAboutQuality = Notification.Name("askAIsaacAboutQuality")
     static let fontScaleIncrease = Notification.Name("fontScaleIncrease")

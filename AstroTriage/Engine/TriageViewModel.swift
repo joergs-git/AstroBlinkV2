@@ -4321,6 +4321,40 @@ class TriageViewModel: ObservableObject {
         needsTableRefresh = true
     }
 
+    /// Apply a Change Filter result. Unlike `applyBatchResult`, renamed entries are *relocated*
+    /// (metrics preserved) instead of recreated, and header-only entries get their filter set
+    /// directly — so no frame loses its measured scores just because its filter label changed.
+    func applyChangeFilterResult(_ result: BatchResult, newFilter: String) {
+        // Every affected file is in affectedURLs: renamed files map old→new URL, header-only files
+        // map URL→itself. relocated(to:newFilter:) handles both (same URL = filter-only update) while
+        // preserving all measured metrics — no frame loses its score because its label changed.
+        for i in images.indices {
+            if let newURL = result.affectedURLs[images[i].url] {
+                images[i] = images[i].relocated(to: newURL, newFilter: newFilter)
+            }
+        }
+
+        // Store undo entry (shares the batch undo stack → undoBatchRename() restores it).
+        batchUndoStack.append(BatchUndoEntry(
+            backupDirectory: result.backupDirectory,
+            result: result,
+            timestamp: Date()
+        ))
+
+        // Filter drives GroupKey, so regroup + rescore. Metrics are intact, so this is valid.
+        let batchScores = QualityEstimator.computeScores(
+            for: images,
+            calibrationDB: CalibrationDatabase.shared,
+            fingerprint: currentSetupFingerprint
+        )
+        for i in images.indices {
+            images[i].qualityBreakdown = batchScores[images[i].url]
+        }
+
+        statusMessage = "Filter changed: \(result.succeeded) file(s) → \(newFilter)"
+        needsTableRefresh = true
+    }
+
     func undoBatchRename() {
         guard let entry = batchUndoStack.popLast() else { return }
         let (restored, errors) = BatchOperations.undo(entry: entry)

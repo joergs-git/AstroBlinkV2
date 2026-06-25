@@ -107,6 +107,7 @@ struct ContentViewModifiers2: ViewModifier {
     func body(content: Content) -> some View {
         content
             .modifier(ContentViewMCPModifiers(viewModel: viewModel))
+            .modifier(ChangeFilterModifier(viewModel: viewModel))
             .onReceive(NotificationCenter.default.publisher(for: .resetFrameHistory)) { _ in
                 let alert = NSAlert()
                 alert.alertStyle = .critical

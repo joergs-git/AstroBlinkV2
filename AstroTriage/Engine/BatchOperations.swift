@@ -28,6 +28,16 @@ struct BatchPreviewItem: Identifiable {
     let willChange: Bool
 }
 
+// Specification for the dedicated, footgun-free Change Filter operation.
+// Unlike BatchRenameSpec (free-text search/replace), this targets ONLY the FILTER header
+// keyword (exact value) and ONLY the parsed filter token in the filename. The rest of the
+// filename can never be touched.
+struct ChangeFilterSpec {
+    let newFilter: String        // exact new FILTER value, e.g. "L"
+    let oldFilter: String?       // optional guard: only touch files whose current filter matches (case-insensitive)
+    static let keyword = "FILTER"
+}
+
 // Result of a batch operation
 struct BatchResult {
     let succeeded: Int
@@ -269,10 +279,166 @@ struct BatchOperations {
             }
         }
 
-        // Clean up backup directory
-        try? fm.removeItem(at: entry.backupDirectory)
+        // Clean up the backup directory ONLY when every file restored cleanly. If any restore
+        // failed (disk full, permissions), keep the backups so the originals stay recoverable —
+        // never delete the last copy of a file we couldn't put back.
+        if errors.isEmpty {
+            try? fm.removeItem(at: entry.backupDirectory)
+        }
 
         return (restored, errors)
+    }
+
+    // MARK: - Change Filter (dedicated, token-precise)
+
+    /// Preview a filter change without modifying anything. Reuses BatchPreviewItem so the same
+    /// preview UI can render it. For each file:
+    ///   - header: FILTER is written/created to the exact new value (shown unless already equal)
+    ///   - filename: ONLY the located filter token is replaced (shown only when a token is found)
+    /// The optional `oldFilter` guard skips files whose current filter doesn't match.
+    static func previewChangeFilter(spec: ChangeFilterSpec, entries: [ImageEntry]) -> [BatchPreviewItem] {
+        let keyword = ChangeFilterSpec.keyword
+        var items: [BatchPreviewItem] = []
+
+        for entry in entries {
+            let originalFilename = entry.filename
+            let nameNoExt = (originalFilename as NSString).deletingPathExtension
+            let ext = (originalFilename as NSString).pathExtension
+
+            // Current header FILTER (nil when the keyword is absent)
+            let currentHeader = readHeaderValue(url: entry.url, keyword: keyword)
+            // Filter token currently in the filename (nil when not locatable)
+            let tokenInfo = NINAFilenameParser.filterTokenRange(in: nameNoExt)
+            // For the guard, prefer the header value, fall back to the filename token
+            let currentFilter = currentHeader ?? tokenInfo?.value
+
+            // Guard: if an old filter is specified, skip files that don't currently match it.
+            if let old = spec.oldFilter, !old.isEmpty {
+                let cur = currentFilter ?? ""
+                if cur.compare(old, options: .caseInsensitive) != .orderedSame {
+                    items.append(BatchPreviewItem(id: entry.id, entry: entry,
+                        originalFilename: originalFilename, newFilename: nil,
+                        headerChanges: [], willChange: false))
+                    continue
+                }
+            }
+
+            var headerChanges: [(key: String, oldValue: String, newValue: String)] = []
+            // Write/create the FILTER keyword unless it already holds the exact target value.
+            // Comparison is case-SENSITIVE on purpose: if the header reads "ha" and the user wants
+            // "Ha", we DO rewrite it to the canonical casing. (The optional oldFilter guard above is
+            // case-insensitive — that only decides which files to touch, not the written value.)
+            if currentHeader != spec.newFilter {
+                headerChanges.append((key: keyword,
+                                      oldValue: currentHeader ?? "(absent)",
+                                      newValue: spec.newFilter))
+            }
+
+            // Rename ONLY the located filter token, and only if it differs from the target.
+            var newFilename: String? = nil
+            if let info = tokenInfo, info.value != spec.newFilter {
+                let replaced = nameNoExt.replacingCharacters(in: info.range, with: spec.newFilter)
+                newFilename = ext.isEmpty ? replaced : replaced + "." + ext
+            }
+
+            let willChange = newFilename != nil || !headerChanges.isEmpty
+            items.append(BatchPreviewItem(id: entry.id, entry: entry,
+                originalFilename: originalFilename, newFilename: newFilename,
+                headerChanges: headerChanges, willChange: willChange))
+        }
+
+        return items
+    }
+
+    /// Execute a filter change with mandatory backup + read-back verification. Mirrors `execute()`'s
+    /// safety contract: every file is copied to a backup dir first; any failure (backup, header
+    /// write, verify, rename) restores that file from backup and continues with the next one — the
+    /// batch never aborts mid-way and a file is never left partially modified.
+    static func executeChangeFilter(spec: ChangeFilterSpec, entries: [ImageEntry], sessionRoot: URL) -> BatchResult {
+        let fm = FileManager.default
+        let timestamp = ISO8601DateFormatter().string(from: Date())
+            .replacingOccurrences(of: ":", with: "-")
+            .replacingOccurrences(of: "T", with: "_")
+        let backupDir = sessionRoot.appendingPathComponent("_filter_backup_\(timestamp)")
+        try? fm.createDirectory(at: backupDir, withIntermediateDirectories: true)
+
+        var succeeded = 0
+        var failed: [(url: URL, error: String)] = []
+        var affectedURLs: [URL: URL] = [:]
+
+        let preview = previewChangeFilter(spec: spec, entries: entries)
+
+        for item in preview where item.willChange {
+            let originalURL = item.entry.url
+
+            // Step 1: mandatory backup
+            let backupURL = backupDir.appendingPathComponent(item.entry.filename)
+            do {
+                try fm.copyItem(at: originalURL, to: backupURL)
+            } catch {
+                failed.append((url: originalURL, error: "Backup failed: \(error.localizedDescription)"))
+                continue
+            }
+
+            // Restores the original file from its backup (used on any failure below).
+            func restoreFromBackup(_ current: URL) {
+                try? fm.removeItem(at: current)
+                try? fm.copyItem(at: backupURL, to: originalURL)
+            }
+
+            let currentURL = originalURL
+            var fileFailed = false
+
+            // Step 2: header write (single FILTER change) with read-back verification
+            for change in item.headerChanges {
+                if let writeError = writeHeader(url: currentURL, keyword: change.key, value: change.newValue) {
+                    restoreFromBackup(currentURL)
+                    failed.append((url: originalURL, error: "Header write failed: \(writeError)"))
+                    fileFailed = true
+                    break
+                }
+                if let readBack = readHeaderValue(url: currentURL, keyword: change.key), readBack != change.newValue {
+                    restoreFromBackup(currentURL)
+                    failed.append((url: originalURL, error: "Verification failed: wrote '\(change.newValue)' but read back '\(readBack)'"))
+                    fileFailed = true
+                    break
+                }
+            }
+            if fileFailed { continue }
+
+            // Step 3: filename rename (token-precise) after a verified header write
+            if let newFilename = item.newFilename {
+                let newURL = originalURL.deletingLastPathComponent().appendingPathComponent(newFilename)
+                // Refuse to overwrite an existing different file — no silent data loss.
+                if fm.fileExists(atPath: newURL.path) {
+                    restoreFromBackup(currentURL)
+                    failed.append((url: originalURL, error: "Rename target already exists: \(newFilename)"))
+                    continue
+                }
+                do {
+                    try fm.moveItem(at: currentURL, to: newURL)
+                    affectedURLs[originalURL] = newURL
+                } catch {
+                    restoreFromBackup(currentURL)
+                    failed.append((url: originalURL, error: "Rename failed: \(error.localizedDescription)"))
+                    continue
+                }
+            } else {
+                // Header-only change (no rename). Record an identity mapping so undo restores via the
+                // full original path — subfolder-safe, unlike the flat session-root assumption in the
+                // header-only branch of BatchOperations.undo.
+                affectedURLs[originalURL] = originalURL
+            }
+
+            succeeded += 1
+        }
+
+        return BatchResult(
+            succeeded: succeeded,
+            failed: failed,
+            backupDirectory: backupDir,
+            affectedURLs: affectedURLs
+        )
     }
 
     // MARK: - Private helpers
@@ -368,6 +534,9 @@ struct BatchOperations {
                 try FileManager.default.removeItem(atPath: path)
                 try FileManager.default.moveItem(atPath: tempPath, toPath: path)
             } catch {
+                // Leave no stray .tmp behind. The caller holds a backup copy and restores the
+                // original from it on this error, so discarding the temp's new content is correct.
+                try? FileManager.default.removeItem(atPath: tempPath)
                 return "Atomic rename failed: \(error.localizedDescription)"
             }
             return nil
@@ -403,6 +572,8 @@ struct BatchOperations {
                 try FileManager.default.removeItem(atPath: path)
                 try FileManager.default.moveItem(atPath: tempPath, toPath: path)
             } catch {
+                // Leave no stray .tmp behind; the caller restores the original from its backup.
+                try? FileManager.default.removeItem(atPath: tempPath)
                 return "Atomic rename failed: \(error.localizedDescription)"
             }
             return nil
