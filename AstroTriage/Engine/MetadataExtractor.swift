@@ -166,17 +166,6 @@ struct MetadataExtractor {
             entry.focusPosition = val
         }
 
-        // Cloud cover (% — usually a NINA weather-service forecast, not an OTA measurement).
-        // Display-only hint surfaced next to the transparency proxy.
-        if let cloud = headers["CLOUDCVR"], let val = Double(cloud) {
-            entry.cloudCoverage = val
-        }
-
-        // Sky temperature from an IR cloud sensor (°C). Near ambient = overcast, very cold = clear.
-        if let sky = headers["SKYTEMP"], let val = Double(sky) {
-            entry.skyTemp = val
-        }
-
         // Mount (NINA writes various keywords)
         if let mount = headers["MOUNT"] ?? headers["MOUNTNAME"] ?? headers["MNTSNAME"], !mount.isEmpty {
             entry.mount = mount

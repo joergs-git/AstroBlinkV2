@@ -211,21 +211,10 @@ class HeaderInspectorModel: ObservableObject {
         if let contrib = bd.snrContribution {
             metrics.append(("SNR Contrib", String(format: "%.0f%%", contrib)))
         }
-        // Sky transparency block — exposes when a high SNR is just a washed-out (cloudy /
-        // moonlit / light-polluted) background rather than genuine signal quality. A
-        // homogeneous cloud deck shows HIGH Sky Bg + LOW Transparency. Display-only: these
-        // are NOT part of scoring. See ImageEntry.skyTransparency / .skyBackgroundADU.
+        // Sky background readout — high = washed-out (clouds/moon/LP), low = dark/dead frame.
+        // Display-only: NOT part of scoring. See ImageEntry.skyBackgroundADU.
         if let bg = entry?.skyBackgroundADU {
             metrics.append(("Sky Bg", String(format: "%.0f ADU", bg)))
-        }
-        if let t = entry?.skyTransparency {
-            metrics.append(("Transparency", String(format: "%.0f (star flux / bg)", t)))
-        }
-        if let cc = entry?.cloudCoverage {
-            metrics.append(("Cloud Cvr", String(format: "%.0f%% (header)", cc)))
-        }
-        if let st = entry?.skyTemp {
-            metrics.append(("Sky Temp", String(format: "%.1f°C (sensor)", st)))
         }
         if bd.isLockedKeep {
             metrics.append(("Calibration", "Locked KEEP"))
