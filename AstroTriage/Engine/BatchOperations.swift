@@ -131,6 +131,11 @@ struct BatchOperations {
     /// Returns a result that can be used for undo.
     static func execute(spec: BatchRenameSpec, entries: [ImageEntry], sessionRoot: URL) -> BatchResult {
         let fm = FileManager.default
+        // See executeChangeFilter: sandboxed writes into a user-granted NAS / external
+        // volume need the security scope active. Re-acquire it for the whole batch.
+        let scoped = sessionRoot.startAccessingSecurityScopedResource()
+        defer { if scoped { sessionRoot.stopAccessingSecurityScopedResource() } }
+
         let timestamp = ISO8601DateFormatter().string(from: Date())
             .replacingOccurrences(of: ":", with: "-")
             .replacingOccurrences(of: "T", with: "_")
@@ -356,17 +361,40 @@ struct BatchOperations {
     /// batch never aborts mid-way and a file is never left partially modified.
     static func executeChangeFilter(spec: ChangeFilterSpec, entries: [ImageEntry], sessionRoot: URL) -> BatchResult {
         let fm = FileManager.default
+        // Sandboxed builds must hold the security scope to create the backup folder and
+        // write into a user-granted NAS / external volume. The scope acquired at session
+        // load is not reliably retained for later write batches (the PRE-DELETE move
+        // re-acquires it too — TriageViewModel), so re-acquire it here. start/stop are
+        // balanced and nestable, so this is harmless if the scope is already active.
+        let scoped = sessionRoot.startAccessingSecurityScopedResource()
+        defer { if scoped { sessionRoot.stopAccessingSecurityScopedResource() } }
+
         let timestamp = ISO8601DateFormatter().string(from: Date())
             .replacingOccurrences(of: ":", with: "-")
             .replacingOccurrences(of: "T", with: "_")
         let backupDir = sessionRoot.appendingPathComponent("_filter_backup_\(timestamp)")
-        try? fm.createDirectory(at: backupDir, withIntermediateDirectories: true)
 
         var succeeded = 0
         var failed: [(url: URL, error: String)] = []
         var affectedURLs: [URL: URL] = [:]
 
         let preview = previewChangeFilter(spec: spec, entries: entries)
+
+        // Create the backup folder up front. If this fails (e.g. no write access to the
+        // volume), surface the real reason instead of letting every per-file copyItem fail
+        // with a cryptic "doesn't exist" because its destination directory is missing.
+        do {
+            try fm.createDirectory(at: backupDir, withIntermediateDirectories: true)
+        } catch {
+            return BatchResult(
+                succeeded: 0,
+                failed: preview.filter { $0.willChange }.map {
+                    (url: $0.entry.url, error: "Could not create backup folder: \(error.localizedDescription)")
+                },
+                backupDirectory: backupDir,
+                affectedURLs: [:]
+            )
+        }
 
         for item in preview where item.willChange {
             let originalURL = item.entry.url
