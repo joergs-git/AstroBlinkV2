@@ -14,7 +14,31 @@ Nice side effect: Finally you have a native XISF and FITS Quicklook for macOS. (
 
 ---
 
-## What's New in v6.4.1 (Build 99)
+## What's New in v6.5.1 (Build 102)
+
+**Change Filter now works on NAS / external volumes, plus new sky-quality
+columns.** Two fixes:
+
+- **Change Filter backup fix.** On a sandboxed build, running **Change
+  Filter** (⌘⇧F) against files on a network or external drive failed with
+  `Backup failed: … doesn't exist`. The security-scoped access needed to
+  create the backup folder wasn't being held for the write batch — now it
+  is (the same fix also hardens the free-text Batch Rename on those
+  volumes). Backup-folder failures now report the real reason instead of a
+  cryptic per-file error.
+- **Sky-quality readout (transparency / clouds).** A homogeneous cloud
+  deck raises the sky background and smooths it, which *inflates* the SNR
+  column even though the frame is washed out. Two new (hidden-by-default,
+  opt-in via the column picker) columns expose this: **Sky Bg** (background
+  level in ADU — high = washed-out) and **Transp** (star flux ÷ background —
+  high = bright stars on a dark sky). Together they tell clouds (high Bg +
+  low Transp) apart from a clear moonlit night (high Bg, still-bright
+  stars). The header inspector also surfaces `CLOUDCVR` and `SKYTEMP` when
+  present. Display-only — quality scoring is unchanged.
+
+---
+
+## Previously in v6.4.1 (Build 99)
 
 **Patch closing the v6.4.x MCP cycle.** Fixes the Astrofile Locations
 window that was rendering as a narrow, off-screen strip with no
