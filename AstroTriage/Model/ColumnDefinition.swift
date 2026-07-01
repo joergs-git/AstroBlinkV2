@@ -32,6 +32,10 @@ struct ColumnDefinition {
         ColumnDefinition(identifier: "hfr",         title: "HFR",       defaultWidth: 50,  minWidth: 40,  isDefaultVisible: true,  isHideable: true),
         ColumnDefinition(identifier: "snr",         title: "SNR",       defaultWidth: 50,  minWidth: 40,  isDefaultVisible: true,  isHideable: true),
         ColumnDefinition(identifier: "eccentricity", title: "Ecc",     defaultWidth: 45,  minWidth: 35,  isDefaultVisible: true,  isHideable: true),
+        // Sky-quality columns (hidden by default — opt-in via the column picker). Expose
+        // when a high SNR is really just a washed-out cloudy/light-polluted background.
+        ColumnDefinition(identifier: "skyBg",       title: "Sky Bg",    defaultWidth: 60,  minWidth: 45,  isDefaultVisible: false, isHideable: true),
+        ColumnDefinition(identifier: "transparency", title: "Transp",   defaultWidth: 60,  minWidth: 45,  isDefaultVisible: false, isHideable: true),
         ColumnDefinition(identifier: "exposure",    title: "Exp",       defaultWidth: 50,  minWidth: 40,  isDefaultVisible: true,  isHideable: true),
         ColumnDefinition(identifier: "nightDate",   title: "Night",     defaultWidth: 85,  minWidth: 70,  isDefaultVisible: true,  isHideable: true),
         ColumnDefinition(identifier: "time",        title: "Time",      defaultWidth: 75,  minWidth: 60,  isDefaultVisible: true,  isHideable: true),
@@ -159,6 +163,12 @@ struct ColumnDefinition {
             return String(format: "%.1f", snr)
         case "snrContrib":
             return entry.qualityBreakdown?.snrContribution.map { String(format: "%.0f%%", $0) } ?? ""
+        case "skyBg":
+            // Sky background as approximate 16-bit ADU. High = washed-out sky.
+            return entry.skyBackgroundADU.map { String(format: "%.0f", $0) } ?? ""
+        case "transparency":
+            // Star-flux-to-background proxy. High = bright stars on a dark sky (clear).
+            return entry.skyTransparency.map { String(format: "%.0f", $0) } ?? ""
         case "eccentricity":
             return entry.computedEccentricity.map { String(format: "%.2f", $0) } ?? ""
         case "moonPhase":
@@ -193,6 +203,8 @@ struct ColumnDefinition {
             guard let med = entry.noiseMedian, let mad = entry.noiseMAD, mad > 0 else { return nil }
             return Double(med / mad)
         case "snrContrib":  return entry.qualityBreakdown?.snrContribution
+        case "skyBg":        return entry.skyBackgroundADU
+        case "transparency": return entry.skyTransparency
         case "eccentricity": return entry.computedEccentricity
         case "focalLength":  return entry.focalLength
         case "moonPhase":    return entry.moonIllumination
@@ -209,7 +221,8 @@ struct ColumnDefinition {
         switch columnId {
         case "frameNumber", "exposure", "starCount", "sensorTemp",
              "gain", "offset", "focuserTemp", "ambientTemp", "fileSize", "snr",
-             "quality", "snrContrib", "userConfidence", "date", "nightDate":
+             "quality", "snrContrib", "userConfidence", "date", "nightDate",
+             "skyBg", "transparency":
             return true
         // time: ascending by default (oldest first = chronological within a session)
         case "time":
@@ -227,7 +240,7 @@ struct ColumnDefinition {
         switch columnId {
         case "frameNumber", "exposure", "hfr", "starCount", "psfFlux", "sensorTemp",
              "fwhm", "gain", "offset", "focuserTemp", "ambientTemp", "fileSize", "snr", "quality", "qualityFeedback", "snrContrib", "eccentricity",
-             "moonPhase", "moonDist", "userConfidence":
+             "moonPhase", "moonDist", "userConfidence", "skyBg", "transparency":
             return true
         default:
             return false
@@ -248,7 +261,11 @@ struct ColumnDefinition {
         case "eccentricity":
             return "Star eccentricity from 2D image moments (same method as SExtractor).\n0.0 = perfect circle, >0.5 = clearly elongated, >0.6 = trash.\nDetects tracking errors, wind shake, and mount issues.\nWeight in quality score: filter-dependent (0.3× narrowband, 0.6× RGB, 1.0× luminance).\nNarrowband is lenient — slight trailing barely affects diffuse emission."
         case "snr":
-            return "Signal-to-Noise Ratio.\nComputed from median pixel value / noise MAD during auto-stretch.\nHigher = cleaner signal. Affected by exposure, light pollution, clouds."
+            return "Signal-to-Noise Ratio.\nComputed from median pixel value / noise MAD during auto-stretch.\nHigher = cleaner signal. Affected by exposure, light pollution, clouds.\n\nCAUTION: a homogeneous cloud deck raises the background and smooths it,\nwhich INFLATES this number even though the frame is washed out.\nCross-check with the Sky Bg and Transp columns."
+        case "skyBg":
+            return "Sky background level (approx. 16-bit ADU).\nFrom the median of the normalized pixel values measured during auto-stretch.\nHigh = washed-out sky: clouds, moonlight, or light pollution.\nThis is the physical signature that inflates the SNR column on cloudy frames.\nDisplay-only — NOT part of quality scoring (yet)."
+        case "transparency":
+            return "Sky transparency proxy: mean star flux ÷ sky background.\nHigh = bright stars on a dark sky (good transparency).\nLow = dim stars on a bright, washed-out sky (clouds / heavy light pollution).\nDistinguishes clouds (high background AND dim stars) from a clear moonlit\nnight (high background but still-bright stars).\nRelative within a session. Display-only — NOT part of quality scoring (yet)."
         case "fwhm":
             return "Full Width at Half Maximum of stars (pixels).\nMeasured by GPU star detection + Gaussian fitting.\nLower = sharper stars = better seeing/focus.\n\n\"!\" = measurement not possible (all bright stars saturated).\nCommon on broadband + high gain + bright targets + moonlight.\nQuality scoring uses other metrics instead. Ask AIsaac for details."
         case "hfr":

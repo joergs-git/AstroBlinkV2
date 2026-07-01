@@ -163,6 +163,12 @@ struct ImageEntry: Identifiable, Hashable {
     // Light pollution (computed from site coordinates via BortleGrid)
     var bortleClass: Double?            // Bortle 1.0 (pristine) to 9.0 (inner city), fractional
 
+    // Sky / cloud conditions from header (NINA weather data — frequently a regional
+    // weather-service forecast rather than a measurement at the OTA, so treat these as a
+    // hint, not ground truth). Display-only: NOT used in quality scoring.
+    var cloudCoverage: Double?          // CLOUDCVR header — % cloud cover [0..100]
+    var skyTemp: Double?                // SKYTEMP header — IR cloud-sensor sky temperature (°C); near-ambient = overcast, very cold = clear
+
     // Canonical target name (normalized for grouping: "NGC 7000" = "NGC7000", "Orion Nebula" = "M42")
     var canonicalTarget: String?
 
@@ -174,6 +180,26 @@ struct ImageEntry: Identifiable, Hashable {
     var arcsecPerPixel: Double? {
         guard let fl = focalLength, fl > 0, let px = pixelSizeMicrons, px > 0 else { return nil }
         return 206.265 * px / fl
+    }
+
+    /// Display-only sky-transparency proxy: mean star flux relative to the sky background.
+    /// High = bright stars on a dark sky (good transparency); low = dim stars on a bright,
+    /// washed-out sky (clouds / heavy light pollution). This is the counter-signal to the
+    /// deceptive SNR column: a homogeneous cloud deck raises the background and lowers its
+    /// spatial variance, inflating SNR (= noiseMedian / noiseMAD) while the actual stars are
+    /// faint — which this ratio reveals. Purely informational — NOT fed into quality scoring.
+    /// nil when star flux or background weren't measured.
+    var skyTransparency: Double? {
+        guard let flux = psfMeanFlux, flux > 0, let bg = noiseMedian, bg > 0 else { return nil }
+        return flux / Double(bg)
+    }
+
+    /// Display-only sky background level as approximate 16-bit ADU (noiseMedian is the
+    /// normalized [0,1] background median). High = washed-out sky (clouds / moon / light
+    /// pollution) — the physical signature that inflates the SNR column on cloudy frames.
+    var skyBackgroundADU: Double? {
+        guard let bg = noiseMedian else { return nil }
+        return Double(bg) * 65535.0
     }
 
     // Per-star quality data: positions + eccentricity for problem star visualization
