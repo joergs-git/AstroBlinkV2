@@ -155,6 +155,20 @@ class PrefetchCache {
         return cache[url] != nil
     }
 
+    /// Re-key a cached preview after a rename that did NOT change pixel data (Change Filter /
+    /// Batch Rename only rewrite a header keyword + the filename). The pre-stretched preview
+    /// stays valid, so moving it to the new URL keeps the file instantly displayable instead
+    /// of forcing a slow re-decode when the user next navigates to it. No-op if the old URL
+    /// wasn't cached or the URL is unchanged (header-only edit).
+    func migrateCacheEntry(from oldURL: URL, to newURL: URL) {
+        guard oldURL != newURL, let preview = cache.removeValue(forKey: oldURL) else { return }
+        cache[newURL] = preview
+        cachedURLsLock.lock()
+        cachedURLsSet.remove(oldURL)
+        cachedURLsSet.insert(newURL)
+        cachedURLsLock.unlock()
+    }
+
     var cachedCount: Int { cache.count }
 
     // Total memory used by cached BGRA8 textures (bytes)

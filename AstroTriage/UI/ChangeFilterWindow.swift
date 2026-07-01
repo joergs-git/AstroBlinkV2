@@ -227,8 +227,10 @@ struct ChangeFilterView: View {
             showResult = true
             return
         }
-        guard let sessionRoot = viewModel.sessionRootURL else {
-            resultMessage = "Error: No session folder open"
+        // Resolve a WRITABLE, security-scoped root (may prompt for folder access on NAS /
+        // external volumes where the reconstructed session root carries no write scope).
+        guard let sessionRoot = viewModel.ensureWritableSessionRoot() else {
+            resultMessage = "Error: no writable session folder — folder access not granted"
             showResult = true
             return
         }

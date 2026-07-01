@@ -3249,6 +3249,57 @@ class TriageViewModel: ObservableObject {
 
     var canUndoPreDelete: Bool { !preDeleteUndoStack.isEmpty }
 
+    /// Returns a security-scoped, actually-WRITABLE session-root URL, prompting the user
+    /// for explicit folder access if the current scope can't create files there.
+    ///
+    /// Why this is needed: for any session opened as multiple folders / individual files /
+    /// a mixed selection, `sessionRootURL` is a RECONSTRUCTED common-ancestor URL built with
+    /// `URL(fileURLWithPath:)` — it carries no security scope, so writing a backup or a new
+    /// subfolder into it on a sandboxed NAS / external volume fails with "You don't have
+    /// permission to save…". Even a single-folder open can lose write access. This mirrors
+    /// the proven PRE-DELETE rescue: probe writability, and on failure re-request access via
+    /// NSOpenPanel (which grants a fresh, full read-write scope) and adopt that URL.
+    ///
+    /// MUST be called on the main thread — it may present an NSOpenPanel. Returns nil if no
+    /// session is open or the user declines the access prompt.
+    @MainActor
+    func ensureWritableSessionRoot() -> URL? {
+        guard let root = sessionRootURL else { return nil }
+        let fm = FileManager.default
+
+        // Probe: can we create (and remove) a throwaway item inside `dir`?
+        func canWrite(_ dir: URL) -> Bool {
+            let probe = dir.appendingPathComponent(".astroblink_write_probe_\(UUID().uuidString)")
+            guard (try? fm.createDirectory(at: probe, withIntermediateDirectories: true)) != nil else { return false }
+            try? fm.removeItem(at: probe)
+            return true
+        }
+
+        // 1. Scope from session load may already be active and writable.
+        if canWrite(root) { return root }
+
+        // 2. Try (re)acquiring the scope on the stored root URL (harmless if already held).
+        if root.startAccessingSecurityScopedResource() {
+            if canWrite(root) { accessedURLs.append(root); return root }
+            root.stopAccessingSecurityScopedResource()
+        }
+
+        // 3. Fallback: re-request explicit folder access (same rescue as PRE-DELETE). The
+        //    fresh NSOpenPanel grant carries full read-write scope over the whole subtree.
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.directoryURL = root
+        panel.message = "Grant write access to the session folder so the edit can back up and modify these files"
+        panel.prompt = "Grant Access"
+        guard panel.runModal() == .OK, let granted = panel.url else { return nil }
+        guard granted.startAccessingSecurityScopedResource() else { return nil }
+        accessedURLs.append(granted)      // keep the scope alive for the rest of the session
+        sessionRootURL = granted
+        return canWrite(granted) ? granted : nil
+    }
+
     func moveMarkedToPreDelete() {
         guard let rootURL = sessionRootURL else {
             statusMessage = "No session loaded"
@@ -4329,8 +4380,15 @@ class TriageViewModel: ObservableObject {
         // map URL→itself. relocated(to:newFilter:) handles both (same URL = filter-only update) while
         // preserving all measured metrics — no frame loses its score because its label changed.
         for i in images.indices {
-            if let newURL = result.affectedURLs[images[i].url] {
+            let oldURL = images[i].url
+            if let newURL = result.affectedURLs[oldURL] {
                 images[i] = images[i].relocated(to: newURL, newFilter: newFilter)
+                // The rename left the pixels untouched (only a header keyword + the filename
+                // changed), so the pre-stretched preview is still valid — follow it to the new
+                // URL instead of forcing a slow re-decode when navigating to the renamed file.
+                if newURL != oldURL {
+                    prefetchCache?.migrateCacheEntry(from: oldURL, to: newURL)
+                }
             }
         }
 
