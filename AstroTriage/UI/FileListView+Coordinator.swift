@@ -99,6 +99,9 @@ extension FileListView {
             }
 
             // Quality feedback column: agree/disagree/partly icons
+            if colId == "goldenLabel" {
+                return makeGoldenCell(for: entry, in: tableView)
+            }
             if colId == "qualityFeedback" {
                 return makeFeedbackCell(for: entry, in: tableView)
             }
@@ -882,6 +885,34 @@ extension FileListView {
                 menu.addItem(feedbackMenuItem)
             }
 
+            // Golden Set curation submenu — the human's ground-truth verdict for building a
+            // calibration set. Available for ALL frames (even unscored dark/dome frames).
+            let goldenMenu = NSMenu(title: "Golden Set")
+            let goodItem = NSMenuItem(title: GoldenLabel.good.displayName,
+                                      action: #selector(setGoldenLabelFromMenu(_:)), keyEquivalent: "")
+            goodItem.target = self; goodItem.tag = clickedRow; goodItem.representedObject = GoldenLabel.good.rawValue
+            goodItem.image = Self.goldenIcon(for: .good)
+            if entry.goldenLabel == .good { goodItem.state = .on }
+            goldenMenu.addItem(goodItem)
+            goldenMenu.addItem(NSMenuItem.separator())
+            for label: GoldenLabel in [.trailing, .cloud, .gradient, .defocus, .lowSNR, .darkFrame, .badStar] {
+                let it = NSMenuItem(title: label.displayName,
+                                    action: #selector(setGoldenLabelFromMenu(_:)), keyEquivalent: "")
+                it.target = self; it.tag = clickedRow; it.representedObject = label.rawValue
+                it.image = Self.goldenIcon(for: label)
+                if entry.goldenLabel == label { it.state = .on }
+                goldenMenu.addItem(it)
+            }
+            goldenMenu.addItem(NSMenuItem.separator())
+            let clearGolden = NSMenuItem(title: "Clear Golden Label",
+                                         action: #selector(setGoldenLabelFromMenu(_:)), keyEquivalent: "")
+            clearGolden.target = self; clearGolden.tag = clickedRow; clearGolden.representedObject = GoldenLabel.none.rawValue
+            clearGolden.isEnabled = entry.goldenLabel != .none
+            goldenMenu.addItem(clearGolden)
+            let goldenMenuItem = NSMenuItem(title: "Golden Set", action: nil, keyEquivalent: "")
+            goldenMenuItem.submenu = goldenMenu
+            menu.addItem(goldenMenuItem)
+
             menu.addItem(NSMenuItem.separator())
 
             // Mark/Unmark option
@@ -1003,6 +1034,91 @@ extension FileListView {
         }
         @objc private func clearFeedback(_ sender: NSMenuItem) {
             applyFeedback(.none, row: sender.tag)
+        }
+
+        // MARK: - Golden Set Context Menu Action
+
+        @objc private func setGoldenLabelFromMenu(_ sender: NSMenuItem) {
+            let label = GoldenLabel(rawValue: (sender.representedObject as? Int) ?? 0) ?? .none
+            applyGolden(label, row: sender.tag)
+        }
+
+        /// Apply a golden label to the clicked row (or the whole selection if the clicked row is
+        /// part of it), mapping visible→real indices when the list is filtered. Mirrors applyFeedback
+        /// but routes through the session-transient setGoldenLabel (no DB side effects).
+        private func applyGolden(_ label: GoldenLabel, row: Int) {
+            guard let tableView = tableView else { return }
+            let selectedRows = tableView.selectedRowIndexes
+            let targetRows = selectedRows.contains(row) ? selectedRows : IndexSet(integer: row)
+            Task { @MainActor in
+                let isFiltered = viewModel.hideMarked || viewModel.showOnlyMarked || !viewModel.filterText.isEmpty
+                let realIndices: IndexSet
+                if isFiltered {
+                    let visible = viewModel.visibleImages
+                    var ri = IndexSet()
+                    for r in targetRows where r < visible.count {
+                        if let idx = viewModel.images.firstIndex(where: { $0.url == visible[r].url }) { ri.insert(idx) }
+                    }
+                    realIndices = ri
+                } else {
+                    realIndices = targetRows
+                }
+                viewModel.setGoldenLabel(label, forRows: realIndices)
+            }
+        }
+
+        /// SF Symbol for a golden label (menu + badge cell). Shared so both stay in sync.
+        static func goldenIcon(for label: GoldenLabel) -> NSImage? {
+            let name: String
+            switch label {
+            case .none:      return nil
+            case .good:      name = "star.fill"
+            case .trailing:  name = "line.diagonal"
+            case .cloud:     name = "cloud.fill"
+            case .gradient:  name = "sun.horizon.fill"
+            case .defocus:   name = "circle.dashed"
+            case .lowSNR:    name = "chart.line.downtrend.xyaxis"
+            case .darkFrame: name = "moon.fill"
+            case .badStar:   name = "sparkle"
+            }
+            guard let image = NSImage(systemSymbolName: name, accessibilityDescription: label.displayName) else { return nil }
+            return image.withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 11, weight: .medium))
+        }
+
+        static func goldenTint(for label: GoldenLabel) -> NSColor? {
+            switch label {
+            case .none:      return nil
+            case .good:      return .systemYellow   // gold star = keeper
+            default:         return .systemRed      // any defect = bad
+            }
+        }
+
+        /// Badge cell for the hideable "GS" (golden-label) column. Clones makeFeedbackCell.
+        private func makeGoldenCell(for entry: ImageEntry, in tableView: NSTableView) -> NSView {
+            let identifier = NSUserInterfaceItemIdentifier("Cell_goldenLabel")
+            let cellView: NSTableCellView
+            if let reused = tableView.makeView(withIdentifier: identifier, owner: self) as? NSTableCellView {
+                cellView = reused
+            } else {
+                let cell = NSTableCellView()
+                cell.identifier = identifier
+                let imageView = NSImageView()
+                imageView.translatesAutoresizingMaskIntoConstraints = false
+                imageView.imageScaling = .scaleProportionallyDown
+                cell.addSubview(imageView)
+                cell.imageView = imageView
+                NSLayoutConstraint.activate([
+                    imageView.widthAnchor.constraint(equalToConstant: 14),
+                    imageView.heightAnchor.constraint(equalToConstant: 14),
+                    imageView.centerXAnchor.constraint(equalTo: cell.centerXAnchor),
+                    imageView.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
+                ])
+                cellView = cell
+            }
+            cellView.toolTip = entry.goldenLabel == .none ? "No golden label (right-click → Golden Set)" : "Golden: \(entry.goldenLabel.displayName)"
+            cellView.imageView?.image = Self.goldenIcon(for: entry.goldenLabel)
+            cellView.imageView?.contentTintColor = Self.goldenTint(for: entry.goldenLabel)
+            return cellView
         }
 
         private func applyFeedback(_ feedback: QualityFeedback, row: Int) {

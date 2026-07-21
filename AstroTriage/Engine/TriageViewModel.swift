@@ -3134,6 +3134,19 @@ class TriageViewModel: ObservableObject {
         needsTableRefresh = true
     }
 
+    /// Set the golden-set curation label on the given rows (real `images` indices — callers map
+    /// visible→real first). Toggle semantics: applying the same value again clears it. Unlike
+    /// qualityFeedback this is session-transient (no DB/calibration side effects) and does NOT
+    /// require a quality tier — a dark/dome frame with no tier is still a valid golden label.
+    func setGoldenLabel(_ label: GoldenLabel, forRows rows: IndexSet) {
+        guard !rows.isEmpty else { return }
+        for idx in rows where idx >= 0 && idx < images.count {
+            let current = images[idx].goldenLabel
+            images[idx].goldenLabel = (current == label) ? .none : label
+        }
+        needsTableRefresh = true
+    }
+
     // MARK: - Skip/Hide Marked
 
     func toggleSkipMarked() {

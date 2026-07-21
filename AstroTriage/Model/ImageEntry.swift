@@ -31,6 +31,57 @@ enum QualityFeedback: Int, Codable, Hashable {
     }
 }
 
+// Golden-set curation label — the user's ground-truth verdict on a frame, used to build a
+// curated good/bad calibration set for tuning the auto-mark pipeline (see GoldenSetExporter).
+// Independent of the algorithm's own tier and of qualityFeedback: this is what the HUMAN says the
+// frame is. `.good` frames become the good/ side of a case; each defect value maps to a golden-set
+// token (folder name suffix + the token the CLI gate asserts on). Session-transient in v1 — the
+// exported folder tree (file copies) is the durable artifact.
+enum GoldenLabel: Int, Codable, Hashable {
+    case none      = 0   // unlabeled
+    case good      = 1   // KEEP — a clean reference frame
+    case trailing  = 2   // star trailing / tracking error
+    case cloud     = 3   // cloud / low transparency
+    case gradient  = 4   // sky gradient / twilight / dawn (bright washed background)
+    case defocus   = 5   // out-of-focus / bloated PSF / wind-shake (high FWHM)
+    case lowSNR    = 6   // thin cloud / low signal
+    case darkFrame = 7   // dark / dome flat / cap-on (no real signal)
+    case badStar   = 8   // bad star shape (astigmatism / coma burst)
+
+    /// Golden-set folder/gate token. Good frames have no defect token (they go to good/).
+    /// Tokens are chosen to match GoldenMiniSetTests.assertMetricSeparation substrings.
+    var token: String {
+        switch self {
+        case .none, .good: return ""
+        case .trailing:    return "trail"
+        case .cloud:       return "cloud"
+        case .gradient:    return "gradient"
+        case .defocus:     return "defocus"
+        case .lowSNR:      return "lowsnr"
+        case .darkFrame:   return "dark"
+        case .badStar:     return "badstar"
+        }
+    }
+
+    /// True for every value that belongs in the PRE-DELETE (bad) side of a case.
+    var isBad: Bool { self != .none && self != .good }
+
+    /// Short human label for menus / badges.
+    var displayName: String {
+        switch self {
+        case .none:      return "Clear"
+        case .good:      return "Good"
+        case .trailing:  return "Trailing"
+        case .cloud:     return "Cloud"
+        case .gradient:  return "Gradient / Twilight"
+        case .defocus:   return "Defocus / Wind"
+        case .lowSNR:    return "Low SNR"
+        case .darkFrame: return "Dark / Dome"
+        case .badStar:   return "Bad Star Shape"
+        }
+    }
+}
+
 // Core data model representing a single astro image in the session
 struct ImageEntry: Identifiable, Hashable {
     let id = UUID()
@@ -120,6 +171,10 @@ struct ImageEntry: Identifiable, Hashable {
 
     // Quality feedback: user agreement with algorithm's quality tier assessment
     var qualityFeedback: QualityFeedback = .none
+
+    // Golden-set curation label: the human's ground-truth verdict (good / defect token) used to
+    // build a calibration set via GoldenSetExporter. Session-transient (not persisted in v1).
+    var goldenLabel: GoldenLabel = .none
 
     // Star-based visual alignment transform (frame pixels → reference pixels).
     // Computed in the prefetch pipeline against the per-target reference frame.

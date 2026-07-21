@@ -187,6 +187,13 @@ struct AstroBlinkV2App: App {
                         NotificationCenter.default.post(name: .exportCuratedDataset, object: nil)
                     }
                     Divider()
+                    Button("Export Golden Set...") {
+                        NotificationCenter.default.post(name: .exportGoldenSet, object: nil)
+                    }
+                    Button("Golden Set Coverage...") {
+                        NotificationCenter.default.post(name: .showGoldenSetCoverage, object: nil)
+                    }
+                    Divider()
                     Button("Reset Frame History Database...") {
                         NotificationCenter.default.post(name: .resetFrameHistory, object: nil)
                     }
@@ -570,6 +577,8 @@ extension Notification.Name {
     static let toggleViewerOverlay = Notification.Name("toggleViewerOverlay")
     static let exportCuratedDataset = Notification.Name("exportCuratedDataset")
     static let syncCuratedToSupabase = Notification.Name("syncCuratedToSupabase")
+    static let exportGoldenSet = Notification.Name("exportGoldenSet")
+    static let showGoldenSetCoverage = Notification.Name("showGoldenSetCoverage")
     static let checkAppMessages = Notification.Name("checkAppMessages")
     static let frameHistoryDidImport = Notification.Name("frameHistoryDidImport")
     static let zoomInStep = Notification.Name("zoomInStep")

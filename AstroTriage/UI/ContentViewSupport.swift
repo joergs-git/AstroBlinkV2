@@ -98,6 +98,22 @@ struct ContentViewModifiers: ViewModifier {
     }
 }
 
+// Standalone modifier for the golden-set curation menu actions. Kept separate (not folded into
+// ContentViewModifiers2) so the two extra `.onReceive` don't push that already-large modifier
+// chain over the SwiftUI type-checker budget — the same reason ChangeFilterModifier exists.
+struct GoldenSetModifier: ViewModifier {
+    @ObservedObject var viewModel: TriageViewModel
+    func body(content: Content) -> some View {
+        content
+            .onReceive(NotificationCenter.default.publisher(for: .exportGoldenSet)) { _ in
+                GoldenSetExporter.runInteractive(viewModel: viewModel)
+            }
+            .onReceive(NotificationCenter.default.publisher(for: .showGoldenSetCoverage)) { _ in
+                GoldenSetCoverageWindowController.shared.show()
+            }
+    }
+}
+
 struct ContentViewModifiers2: ViewModifier {
     @ObservedObject var viewModel: TriageViewModel
     @Binding var sliderValue: Double
@@ -108,6 +124,7 @@ struct ContentViewModifiers2: ViewModifier {
         content
             .modifier(ContentViewMCPModifiers(viewModel: viewModel))
             .modifier(ChangeFilterModifier(viewModel: viewModel))
+            .modifier(GoldenSetModifier(viewModel: viewModel))
             .onReceive(NotificationCenter.default.publisher(for: .resetFrameHistory)) { _ in
                 let alert = NSAlert()
                 alert.alertStyle = .critical

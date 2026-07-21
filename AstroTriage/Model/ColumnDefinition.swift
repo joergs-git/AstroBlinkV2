@@ -24,6 +24,7 @@ struct ColumnDefinition {
         ColumnDefinition(identifier: "filter",      title: "Filter",    defaultWidth: 50,  minWidth: 40,  isDefaultVisible: true,  isHideable: true),
         ColumnDefinition(identifier: "quality",     title: "Q",         defaultWidth: 28,  minWidth: 28,  isDefaultVisible: true,  isHideable: true),
         ColumnDefinition(identifier: "qualityFeedback", title: "FB",    defaultWidth: 28,  minWidth: 28,  isDefaultVisible: true,  isHideable: true),
+        ColumnDefinition(identifier: "goldenLabel",     title: "GS",    defaultWidth: 28,  minWidth: 28,  isDefaultVisible: false, isHideable: true),
         ColumnDefinition(identifier: "userConfidence", title: "\u{2605}",      defaultWidth: 40,  minWidth: 28,  isDefaultVisible: true,  isHideable: true),
         ColumnDefinition(identifier: "snrContrib",  title: "Contrib",  defaultWidth: 55,  minWidth: 40,  isDefaultVisible: true,  isHideable: true),
         ColumnDefinition(identifier: "starCount",   title: "Stars",     defaultWidth: 55,  minWidth: 40,  isDefaultVisible: true,  isHideable: true),
@@ -66,6 +67,7 @@ struct ColumnDefinition {
 
     // Column tail: shared columns that appear after the primary metrics
     private static let columnTail: [String] = [
+        "goldenLabel",
         "filename", "frameType", "camera",
         "ambientTemp", "focuserTemp", "sensorTemp", "gain",
         "moonPhase", "moonDist", "bortle",
@@ -117,6 +119,7 @@ struct ColumnDefinition {
         case "filter":      return entry.filter ?? ""
         case "quality":     return ""  // Icon cell; handled separately in FileListView
         case "qualityFeedback": return ""  // Icon cell; handled separately in FileListView
+        case "goldenLabel": return ""  // Icon cell; handled separately in FileListView
         case "userConfidence": return ""  // Star icon cell; handled separately in FileListView
         case "time":        return entry.time ?? ""
         case "date":        return entry.date ?? ""
@@ -194,6 +197,7 @@ struct ColumnDefinition {
         case "fileSize":    return entry.fileSize.map { Double($0) }
         case "quality":     return entry.qualityZScore ?? entry.qualityTier.map { Double($0.rawValue) }
         case "qualityFeedback": return Double(entry.qualityFeedback.rawValue)
+        case "goldenLabel": return Double(entry.goldenLabel.rawValue)
         case "userConfidence": return Double(entry.userConfidence)
         case "snr":
             guard let med = entry.noiseMedian, let mad = entry.noiseMAD, mad > 0 else { return nil }
@@ -234,7 +238,7 @@ struct ColumnDefinition {
     static func isNumericColumn(_ columnId: String) -> Bool {
         switch columnId {
         case "frameNumber", "exposure", "hfr", "starCount", "psfFlux", "sensorTemp",
-             "fwhm", "gain", "offset", "focuserTemp", "ambientTemp", "fileSize", "snr", "quality", "qualityFeedback", "snrContrib", "eccentricity",
+             "fwhm", "gain", "offset", "focuserTemp", "ambientTemp", "fileSize", "snr", "quality", "qualityFeedback", "goldenLabel", "snrContrib", "eccentricity",
              "moonPhase", "moonDist", "userConfidence", "skyBg":
             return true
         default:
@@ -249,6 +253,8 @@ struct ColumnDefinition {
             return "Your personal confidence rating (1-3 stars).\nPress 1/2/3 to rate selected frames. Press same key again to clear.\nOrthogonal to auto-quality — tracks your own judgment."
         case "qualityFeedback":
             return "Your feedback on the algorithm's quality assessment.\nPress A to cycle: Agree / Disagree / Partly / Clear.\nGreen checkmark = agree, Red X = disagree, Orange half = partly.\nFeedback helps the calibration system learn your preferences."
+        case "goldenLabel":
+            return "Golden-set curation label (right-click → Golden Set).\nGold star = good reference frame; red icon = a defect (trailing/cloud/gradient/defocus/low-SNR/dark/bad-star).\nUsed by 'Export Golden Set' to build a calibration set of file copies."
         case "quality":
             return "Quality score within group (same filter + target + exposure).\nStage 1: Red if any metric catastrophically bad (< 25% of group median).\nStage 2: Robust weighted z-scores (median/MAD) of stars, FWHM, HFR, noise.\nFull green = excellent, half-green = good.\nOrange gradient (4 levels) = borderline. Red = garbage.\nHover each cell for per-metric breakdown + SNR contribution."
         case "snrContrib":
