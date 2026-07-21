@@ -304,6 +304,19 @@ class AstroBlinkV2AppDelegate: NSObject, NSApplicationDelegate {
         SessionCache.cleanupAllCaches()
     }
 
+    // Runs BEFORE AppKit restores any saved window frames. macOS 26 (Tahoe)
+    // appends a `{"tilingState":…}` JSON blob to the NSWindow frame-autosave
+    // string when a window has been tiled. Restoring that blob can drop the
+    // SwiftUI WindowGroup main window into an invisible tile at launch, so the
+    // user sees AIsaac + splash (which recompute their own position every launch)
+    // but no main window. Stripping the suffix here makes macOS restore the plain
+    // 8-number frame instead — the window's saved size/position are preserved,
+    // only the broken tiling state is discarded. (macOS ≤ 15 never wrote the blob,
+    // so this is a harmless no-op there.)
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        sanitizeMainWindowFramePrefs()
+    }
+
     // Show splash screen on launch (unless user opted out)
     func applicationDidFinishLaunching(_ notification: Notification) {
         // PI handoff: check clipboard every 2s for ASTROBLINK_PI_OPEN: marker
@@ -357,6 +370,15 @@ class AstroBlinkV2AppDelegate: NSObject, NSApplicationDelegate {
             AppMessageService.recordAppStart()
         }
 
+        // Belt-and-suspenders: after windows have restored, re-center any main
+        // window whose frame landed entirely off the currently connected displays
+        // (e.g. an external monitor was attached last session and is now gone).
+        if !isTestHost {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                self.recenterOffscreenWindows()
+            }
+        }
+
         // Show AIsaac floating window collapsed (preset chips visible on startup)
         if !isTestHost {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
@@ -369,6 +391,42 @@ class AstroBlinkV2AppDelegate: NSObject, NSApplicationDelegate {
             FrameHistoryDatabase.shared.onICloudResolved { [weak self] _ in
                 self?.checkFrameHistoryICloudSync()
             }
+        }
+    }
+
+    /// Strip the macOS 26 (Tahoe) `{"tilingState":…}` suffix from any saved
+    /// main-window frame-autosave preference. The standard autosave value is
+    /// eight space-separated numbers ("x y w h screenX screenY screenW screenH");
+    /// Tahoe appends a trailing ` {json}` blob when the window was tiled. We keep
+    /// everything up to the first "{" so the plain frame restores without tiling.
+    /// Called from applicationWillFinishLaunching, before window restoration.
+    private func sanitizeMainWindowFramePrefs() {
+        let defaults = UserDefaults.standard
+        for key in defaults.dictionaryRepresentation().keys
+        where key.hasPrefix("NSWindow Frame ") && key.contains("ContentView") {
+            guard let value = defaults.string(forKey: key),
+                  let brace = value.firstIndex(of: "{") else { continue }
+            let cleaned = String(value[..<brace]).trimmingCharacters(in: .whitespaces)
+            defaults.set(cleaned, forKey: key)
+        }
+    }
+
+    /// Re-center any normal titled window whose restored frame no longer meaningfully
+    /// overlaps a connected display. Safe complement to the tiling-strip above: it
+    /// covers the "monitor detached since last launch" failure mode without ever
+    /// moving a window that IS on-screen. The floating AIsaac window (.floating
+    /// level) recomputes its own position and is skipped by the level check.
+    private func recenterOffscreenWindows() {
+        for win in NSApp.windows {
+            guard win.isVisible,
+                  win.level == .normal,
+                  win.styleMask.contains(.titled),
+                  win !== AIsaacWindowController.shared.window else { continue }
+            let onScreen = NSScreen.screens.contains { screen in
+                let overlap = screen.visibleFrame.intersection(win.frame)
+                return overlap.width > 80 && overlap.height > 80
+            }
+            if !onScreen { win.center() }
         }
     }
 
