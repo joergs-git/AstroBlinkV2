@@ -299,7 +299,8 @@ struct QualityEstimator {
         fingerprint: SetupFingerprint? = nil,
         communityBaseline: CommunityBaseline? = nil,
         historicalBaselines: HistoricalBaselines? = nil,
-        learnedThresholds: LearnedThresholds? = nil
+        learnedThresholds: LearnedThresholds? = nil,
+        config: ScoringConfig = .default
     ) -> [URL: QualityBreakdown] {
         // Solar system target exclusion — these cannot be quality-scored with deep-sky rules.
         // A homogeneous group of planetary frames would normalize to .good (z-scores = 0),
@@ -314,16 +315,16 @@ struct QualityEstimator {
         let effectiveBorderline: Double = {
             guard let lt = learnedThresholds,
                   lt.sampleCount >= LearnedThresholds.learningThreshold else {
-                return thresholdBorderline
+                return config.thresholdBorderline
             }
-            return thresholdBorderline + lt.borderlineOffset
+            return config.thresholdBorderline + lt.borderlineOffset
         }()
         let effectiveTrailingCeiling: Double = {
             guard let lt = learnedThresholds,
                   lt.sampleCount >= LearnedThresholds.learningThreshold else {
-                return absoluteTrailingCeilingScore
+                return config.absoluteTrailingCeilingScore
             }
-            return absoluteTrailingCeilingScore + lt.trailingCeilingOffset
+            return config.absoluteTrailingCeilingScore + lt.trailingCeilingOffset
         }()
 
         // Two-pass night-aware scoring for multi-night sessions:
@@ -664,7 +665,7 @@ struct QualityEstimator {
                     } else {
                         // (b) Relative to median — only when star counts are stable
                         if starWeight > 0, let median = starsMedian {
-                            let dropThreshold = isNarrowband ? garbageDropFactor * 0.3 : garbageDropFactor * 0.5
+                            let dropThreshold = isNarrowband ? config.garbageDropFactor * 0.3 : config.garbageDropFactor * 0.5
                             if median > 10 && stars < median * dropThreshold {
                                 garbageReasons.append(.noStars)
                             }
@@ -706,21 +707,21 @@ struct QualityEstimator {
 
                 // Rule 2: SNR catastrophically low compared to group
                 if let snrVal = snrValues[localIdx], let median = snrMedian {
-                    if median > 5 && snrVal < median * garbageDropFactor {
+                    if median > 5 && snrVal < median * config.garbageDropFactor {
                         garbageReasons.append(.lowSNR)
                     }
                 }
 
                 // Rule 3: FWHM catastrophically high (severe tracking error, defocus)
                 if let fwhm = fwhmValues[localIdx], let median = fwhmMedian {
-                    if median > 0 && fwhm > median * (1.0 / garbageDropFactor) {
+                    if median > 0 && fwhm > median * (1.0 / config.garbageDropFactor) {
                         garbageReasons.append(.highFWHM)
                     }
                 }
 
                 // Rule 4: HFR catastrophically high
                 if let hfr = hfrValues[localIdx], let median = hfrMedian {
-                    if median > 0 && hfr > median * (1.0 / garbageDropFactor) {
+                    if median > 0 && hfr > median * (1.0 / config.garbageDropFactor) {
                         garbageReasons.append(.highHFR)
                     }
                 }
@@ -751,7 +752,7 @@ struct QualityEstimator {
                 // aberrations (which produce random PA, not consensus).
                 if isTrailingOutlier, !garbageReasons.contains(.elongated),
                    let ts = entry.trailingScore, ts > effectiveTrailingCeiling,
-                   let consensus = entry.trailingConsensus, consensus > absoluteTrailingCeilingConsensus {
+                   let consensus = entry.trailingConsensus, consensus > config.absoluteTrailingCeilingConsensus {
                     garbageReasons.append(.elongated)
                 }
 
@@ -914,7 +915,7 @@ struct QualityEstimator {
                 // when group MAD is near-zero). Cap stored values for tooltip sanity.
                 func cappedZ(_ z: Double?) -> Double? {
                     guard let z = z else { return nil }
-                    return min(zscoreCap, max(-zscoreCap, z))
+                    return min(config.zscoreCap, max(-config.zscoreCap, z))
                 }
 
                 if !garbageReasons.isEmpty {
@@ -955,7 +956,7 @@ struct QualityEstimator {
                 // in homogeneous groups where MAD is tiny.
                 var zSum: Double = 0
                 var wSum: Double = 0
-                let cap = zscoreCap
+                let cap = config.zscoreCap
 
                 // FWHM and HFR are ~95% correlated (both measure star sharpness).
                 // Using both double-penalizes slightly-softer frames.
@@ -1019,14 +1020,14 @@ struct QualityEstimator {
                 var tier: QualityTier
                 if lockedKeep {
                     // Absolute floor: z-scores cannot downgrade below .good
-                    if combinedZ > thresholdExcellent {
+                    if combinedZ > config.thresholdExcellent {
                         tier = .excellent
                     } else {
                         tier = .good
                     }
-                } else if combinedZ > thresholdExcellent {
+                } else if combinedZ > config.thresholdExcellent {
                     tier = .excellent
-                } else if combinedZ > thresholdGood {
+                } else if combinedZ > config.thresholdGood {
                     tier = .good
                 } else if combinedZ > effectiveBorderline {
                     tier = .borderline
@@ -1110,7 +1111,7 @@ struct QualityEstimator {
                 if !lockedKeep && !communityLocked && garbageReasons.isEmpty
                     && indices.count < 8
                     && (tier == .good || tier == .borderline)
-                    && combinedZ > -1.0 && combinedZ < thresholdExcellent {
+                    && combinedZ > -1.0 && combinedZ < config.thresholdExcellent {
                     tier = .uncertain
                 }
 

@@ -36,11 +36,16 @@ final class PreviewGenerator: @unchecked Sendable {
         "RGGB": 0, "GRBG": 1, "GBRG": 2, "BGGR": 3
     ]
 
-    init?(device: MTLDevice) {
+    /// - Parameter library: optional pre-loaded Metal library. When nil (the app/default),
+    ///   `device.makeDefaultLibrary()` loads `default.metallib` from the main bundle. A
+    ///   bundle-less command-line tool (AstroScoreCLI) has no app bundle, so it loads its
+    ///   metallib explicitly and injects it here. Backward-compatible: existing callers pass
+    ///   only `device`.
+    init?(device: MTLDevice, library injectedLibrary: MTLLibrary? = nil) {
         self.device = device
 
         guard let queue = device.makeCommandQueue(),
-              let library = device.makeDefaultLibrary(),
+              let library = injectedLibrary ?? device.makeDefaultLibrary(),
               let computeFunc = library.makeFunction(name: "normalize_uint16"),
               let pipeline = try? device.makeComputePipelineState(function: computeFunc) else {
             return nil

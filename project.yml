@@ -252,6 +252,58 @@ targets:
         ENABLE_HARDENED_RUNTIME: YES
         SKIP_INSTALL: YES
 
+  # Headless, non-sandboxed scoring driver (Phase 0 tuning rig). Compiles the same
+  # scoring engine sources as the app (no GUI files → no SwiftUI/AppKit) plus the
+  # shared ScoringRunner and a CLI main. Being a `tool` target it is NOT app-sandboxed,
+  # so it can read arbitrary NAS/Desktop golden-set folders. Metal shaders compile into
+  # a default.metallib next to the binary (loaded explicitly in main.swift).
+  AstroScoreCLI:
+    type: tool
+    platform: macOS
+    sources:
+      - path: Sources/AstroScoreCLI
+      - path: AstroTriage/Bridge/ImageDecoder.swift
+      - path: AstroTriage/Model/ImageEntry.swift
+      - path: AstroTriage/Model/DecodedImage.swift
+      - path: AstroTriage/Model/FrameRecord.swift
+      - path: AstroTriage/Metal/STFCalculator.swift
+      - path: AstroTriage/Metal/PreviewGenerator.swift
+      - path: AstroTriage/Metal/TexturePool.swift
+      - path: AstroTriage/Metal/Shaders.metal
+      - path: AstroTriage/Engine/ScoringConfig.swift
+      - path: AstroTriage/Engine/QualityEstimator.swift
+      - path: AstroTriage/Engine/QualityEstimator+SessionSanity.swift
+      - path: AstroTriage/Engine/QualityEstimator+Historical.swift
+      - path: AstroTriage/Engine/QualityEstimator+Helpers.swift
+      - path: AstroTriage/Engine/StarMetricsCalculator.swift
+      - path: AstroTriage/Engine/TrailingAnalyzer.swift
+      - path: AstroTriage/Engine/CalibrationDatabase.swift
+      - path: AstroTriage/Engine/CommunityBaseline.swift
+      - path: AstroTriage/Engine/ConvergenceDetector.swift
+      - path: AstroTriage/Engine/ThresholdLearner.swift
+      - path: AstroTriage/Engine/NINAFilenameParser.swift
+      - path: AstroTriage/Engine/MetadataExtractor.swift
+      - path: AstroTriage/Engine/DeepSkyTargetDatabase.swift
+      - path: AstroTriage/Engine/TargetCatalog.swift
+      - path: AstroTriage/Engine/MoonCalculator.swift
+      - path: AstroTriage/Engine/SunCalculator.swift
+      - path: AstroTriage/Engine/DisplayAligner.swift
+      - path: AstroTriage/Engine/GradientRemoval.swift
+      - path: AstroTriage/Engine/StarDetector.swift
+      - path: AstroTriage/Engine/ScoringRunner.swift
+    dependencies:
+      - package: ImageDecoder
+        product: ImageDecoderBridge
+      - package: GRDB
+        product: GRDB
+    settings:
+      base:
+        PRODUCT_NAME: AstroScoreCLI
+        DEVELOPMENT_TEAM: FDSVBU33S8
+        CODE_SIGN_STYLE: Automatic
+        ENABLE_HARDENED_RUNTIME: YES
+        SKIP_INSTALL: YES
+
   AstroTriageTests:
     type: bundle.unit-test
     platform: macOS
