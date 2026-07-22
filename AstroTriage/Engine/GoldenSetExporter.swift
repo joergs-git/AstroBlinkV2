@@ -75,35 +75,29 @@ enum GoldenSetExporter {
         var result = ExportResult()
         var manifestFrames: [ManifestFrame] = []
 
+        // ONE case per scoring GroupKey. Good frames are a property of the GROUP, not of any
+        // single defect — a group has one set of good reference frames shared across every defect
+        // in it — so they are written ONCE into good/. All bad frames of the group (any defect) go
+        // into PRE-DELETE/; each frame's specific defect token is recorded in the manifest, not the
+        // folder name. (A group with only good labels is a good-only baseline: no PRE-DELETE/.)
         for (key, groupEntries) in groups {
             let good = groupEntries.filter { $0.goldenLabel == .good }
-            let badByToken = Dictionary(grouping: groupEntries.filter { $0.goldenLabel.isBad }) {
-                $0.goldenLabel.token
-            }
-            let base = caseName(for: key, sample: groupEntries.first!)
+            let bad = groupEntries.filter { $0.goldenLabel.isBad }
+            guard !good.isEmpty || !bad.isEmpty else { continue }
 
-            // Cases to write: one per defect token present; if none, a good-only baseline.
-            var cases: [(name: String, good: [ImageEntry], bad: [ImageEntry])] = []
-            if badByToken.isEmpty {
-                if !good.isEmpty { cases.append(("\(base)__baseline", good, [])) }
-            } else {
-                for (token, bad) in badByToken { cases.append(("\(base)__\(token)", good, bad)) }
-            }
+            let name = caseName(for: key, sample: groupEntries.first!)
+            let caseDir = root.appendingPathComponent(name, isDirectory: true)
+            let goodDir = caseDir.appendingPathComponent("good", isDirectory: true)
+            let badDir = caseDir.appendingPathComponent("PRE-DELETE", isDirectory: true)
+            if !good.isEmpty { try fm.createDirectory(at: goodDir, withIntermediateDirectories: true) }
+            if !bad.isEmpty { try fm.createDirectory(at: badDir, withIntermediateDirectories: true) }
 
-            for c in cases {
-                let caseDir = root.appendingPathComponent(c.name, isDirectory: true)
-                let goodDir = caseDir.appendingPathComponent("good", isDirectory: true)
-                let badDir = caseDir.appendingPathComponent("PRE-DELETE", isDirectory: true)
-                try fm.createDirectory(at: goodDir, withIntermediateDirectories: true)
-                if !c.bad.isEmpty { try fm.createDirectory(at: badDir, withIntermediateDirectories: true) }
+            for e in good { copy(e, into: goodDir, result: &result) }
+            for e in bad  { copy(e, into: badDir, result: &result) }
+            result.casesWritten += 1
 
-                for e in c.good { copy(e, into: goodDir, result: &result) }
-                for e in c.bad  { copy(e, into: badDir, result: &result) }
-                result.casesWritten += 1
-
-                for e in c.good { manifestFrames.append(ManifestFrame(entry: e, caseName: c.name, side: "good")) }
-                for e in c.bad  { manifestFrames.append(ManifestFrame(entry: e, caseName: c.name, side: "PRE-DELETE")) }
-            }
+            for e in good { manifestFrames.append(ManifestFrame(entry: e, caseName: name, side: "good")) }
+            for e in bad  { manifestFrames.append(ManifestFrame(entry: e, caseName: name, side: "PRE-DELETE")) }
         }
 
         try writeManifest(frames: manifestFrames, into: root)
@@ -121,8 +115,8 @@ enum GoldenSetExporter {
 
     // MARK: - Case naming (filesystem-safe, disambiguated so one folder ⊆ one GroupKey)
 
-    /// `<scope>_<fl>mm_<filter>_<target>_<expo>s`. Encodes filter+FL+target+exposure so two distinct
-    /// GroupKeys never collide into one folder name; the token is appended by the caller as `__<token>`.
+    /// `<scope>_<fl>mm_<filter>_<target>_<expo>s` — one name per scoring GroupKey. Encodes
+    /// filter+FL+target+exposure so two distinct GroupKeys never collide into one folder.
     static func caseName(for key: GroupKey, sample: ImageEntry) -> String {
         let scope = sanitize(sample.telescope ?? "scope")
         let filter = sanitize(key.filter.isEmpty ? "nofilter" : key.filter)

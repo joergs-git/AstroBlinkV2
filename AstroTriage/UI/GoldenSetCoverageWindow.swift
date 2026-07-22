@@ -86,7 +86,8 @@ private struct GoldenSetCoverageView: View {
                                     .foregroundStyle(c.ok ? Color.green : Color.orange)
                                 VStack(alignment: .leading, spacing: 1) {
                                     Text(c.name).font(.system(.body, design: .monospaced)).lineLimit(1)
-                                    Text("scope \(c.scope) · \(c.token)")
+                                    Text(c.isBaseline ? "scope \(c.scope) · baseline (good only)"
+                                                      : "scope \(c.scope) · \(c.defectSummary)")
                                         .font(.caption2).foregroundStyle(.secondary)
                                 }
                                 Spacer()
