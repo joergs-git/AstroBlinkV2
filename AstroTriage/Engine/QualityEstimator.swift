@@ -1105,12 +1105,19 @@ struct QualityEstimator {
                 }
 
                 // ── Uncertain tier for small groups ──
-                // When group has < 8 frames and z-score is ambiguous (not clearly good or bad),
-                // mark as uncertain instead of potentially misleading good/borderline.
-                // Does not apply to locked, garbage, trash, or excellent frames.
+                // When a group has < 8 frames and a below-average z-score, we can't tell a mildly
+                // sub-par frame from a genuinely fine one, so mark it uncertain (blue ?) for visual
+                // review instead of a misleading borderline.
+                // v32: applies ONLY to .borderline, never to .good. A frame in the GOOD z-band is
+                // good regardless of group size — demoting a physically-fine frame to uncertain
+                // just because its night happened to hold few frames was a real over-flagging bug
+                // (a clean RC12 group whose 11 good frames the two-pass night grouping split into
+                // 5+6 had all 6 of the small-night frames wrongly marked uncertain). Uncertainty is
+                // about low quality-confidence, not small sample size.
+                // Does not apply to locked, garbage, trash, good, or excellent frames.
                 if !lockedKeep && !communityLocked && garbageReasons.isEmpty
                     && indices.count < 8
-                    && (tier == .good || tier == .borderline)
+                    && tier == .borderline
                     && combinedZ > -1.0 && combinedZ < config.thresholdExcellent {
                     tier = .uncertain
                 }

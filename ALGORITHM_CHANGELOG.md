@@ -12,6 +12,37 @@ Records with `algorithmVersion < kAlgorithmVersion` are candidates for re-analys
 
 ---
 
+## Version 32 — Uncertain tier no longer demotes GOOD frames in small groups (2026-07-28)
+
+**Over-flagging of good frames (Phase 2, the user's original complaint). Measured
+on the curated GOLDENSET1 via AstroScoreCLI: on the clean pure-good group
+`RC12red08_1950mm_H_NGC2237_300s` (11 good frames, 0 bad), 6 of the 11 good frames
+were assigned the `uncertain` tier despite being physically fine (in fact BETTER
+FWHM, 6.7–7.6 px, than the 5 that stayed good at 7.8–8.3 px).**
+
+**Root cause:** the two-pass night grouping split the 11 same-GroupKey good frames
+into a 5-frame and a 6-frame per-night group. The 6-frame group is `< 8`, which
+tripped the small-group "uncertain" override. That override applied to `.good`
+AND `.borderline` frames whose `combinedZ` fell in `(-1.0, thresholdExcellent)` —
+a band that INCLUDES the entire good z-band. So a frame sitting squarely in the
+good band (combinedZ near 0) was demoted to `uncertain` purely because its night
+happened to contain few frames. Uncertain frames are auto-markable under the
+Aggressive autopilot, so this actively mis-flagged good frames.
+
+**Fix (`QualityEstimator.swift`, uncertain override):** the override now applies
+ONLY to `.borderline`, never to `.good`. A frame in the good z-band is good
+regardless of group size — uncertainty is about low quality-confidence, not small
+sample size. Small-group borderline frames still become `uncertain` (genuine
+ambiguity), unchanged.
+
+**Impact:** eliminates the good→uncertain demotions (6/6 on the RC12 group);
+does not touch borderline/trash/excellent, catch rate unchanged. Synthetic
+ScoringRegression/ScoringValidation unaffected (no test covered the uncertain
+override). Part of the Phase-2 auto-mark over-flagging fixes; the knife-edge
+borderline band (`thresholdGood`) is addressed separately.
+
+---
+
 ## Version 31 — Star-trail measurement de-collapse + no-WCS orientation rule (2026-06-06)
 
 **Badly star-trailed frames scored green (tier 2/3). Surfaced on a real
