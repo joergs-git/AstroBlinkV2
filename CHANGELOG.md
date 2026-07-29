@@ -4,6 +4,41 @@ All notable changes to AstroBlink & AIsaac will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [6.6.0] — 2026-07-29
+
+**Fewer good frames wrongly flagged, plus a tool to build your own quality
+calibration set.**
+
+### Fixed
+
+- **Auto-mark over-flagging of good frames (Algorithm v32).** Clean, good frames
+  in a small per-night group were being demoted to the blue "uncertain" tier
+  purely because the group happened to contain few frames — the two-pass
+  night-grouping can split one filter's frames across nights, and a small night
+  group tripped the "uncertain" rule even for frames sitting squarely in the good
+  z-band. Measured on a curated multi-scope calibration set, this cut the
+  good-frame false-alarm rate on clean nights from ~20% to ~5% (on one clean
+  RC12 group, 6 wrongly-flagged frames → 0). Uncertainty is now about low quality
+  confidence, not small sample size: the tier applies only to genuinely
+  borderline frames, never to good ones. Catch rate for bad frames is unchanged.
+
+### Added
+
+- **Golden-Set curation tool.** Build a good/bad calibration set from inside the
+  app instead of sorting folders by hand. Right-click frames → **Golden Set ▸**
+  to tag them **Good** or a defect (Trailing / Cloud / Gradient / Defocus /
+  Low SNR / Dark-Dome / Bad Star); an optional **GS** column shows the labels.
+  Then **Export Golden Set…** (in the Advanced menu) copies the labeled frames —
+  grouped by scoring group, good frames shared across the group — into a clean
+  `<case>/good` + `<case>/PRE-DELETE` folder tree with a metrics manifest.
+  Originals are only ever copied, never moved or deleted. **Golden Set Coverage…**
+  shows how much material you have per group vs the recommended targets.
+- **Headless scoring CLI + JSON-tunable thresholds (developer tooling, GitHub
+  build).** The quality-scoring engine can now be driven from a command line to
+  score any folder and report agreement against your golden set, with the
+  decision thresholds externalized to a JSON config — the machinery behind the
+  measured tuning above.
+
 ## [6.5.0] — 2026-06-25
 
 **Dedicated "Change Filter" command — relabel a group of frames safely.**
