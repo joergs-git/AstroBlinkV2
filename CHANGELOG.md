@@ -4,6 +4,70 @@ All notable changes to AstroBlink & AIsaac will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [6.7.0] — 2026-09-05
+
+**Unusable frames — dome closed, lens cap on, opaque cloud — are now reliably
+detected, and far fewer good frames are wrongly flagged.**
+
+Starting point was a real failure: an entire night of dome-closed frames was rated
+"good". Investigating it surfaced four separate defects that all share one shape —
+a threshold sitting on a quantity with no physical meaning, which made it select
+the wrong frames while looking perfectly calibrated.
+
+Measured on a curated 464-frame calibration set spanning three telescopes
+(620mm RASA, 1964mm RC12, 468mm refractor), scored against hand-labelled frames:
+
+| | before | after |
+|---|---|---|
+| Dark / dome-closed frames caught | 36% | **100%** |
+| Cloud frames caught | 36% | **90%** |
+| Unusable frames caught overall | 46% | **78%** |
+| Good frames wrongly flagged (Conservative) | 32 of 206 | **4 of 206** |
+| Good frames wrongly flagged (all modes) | 42% | **7.4%** |
+
+### Fixed
+
+- **Dome-closed and cloud frames scored as good (Algorithm v33).** Three causes,
+  each one a check that trusted something other than the frame's own pixels. The
+  "does this frame have signal" guard used SNR — background level over background
+  scatter — which is *highest* on a flat frame containing no sky at all (dark
+  frames measured 113 against 20 for good frames), so the dark-frame detector
+  could never fire. A failed star fit returns a width of exactly 0, which was
+  treated as a valid measurement, letting featureless frames slip past every
+  star-based rule simultaneously. And garbage detection read the FWHM value the
+  capture software writes into the filename — a dome-closed frame still carries a
+  plausible-looking one.
+- **All good frames in a group flagged "severe defocus" (Algorithm v34).** Failed
+  star measurements were counted as zero when computing a group's typical star
+  size, dragging it down until every intact frame looked twice as wide as normal.
+  The more unusable frames a group contained, the more certainly its good frames
+  were flagged. In one real case 18 cloud frames pulled the group median from 3.7
+  to 1.4 and all 11 good frames were marked.
+- **Calibration tooling measured differently than the app.** The headless scoring
+  tool skipped GPU PSF fitting and plate-scale-aware apertures, so tuning was done
+  against numbers the app never produced. Both now run the identical pipeline.
+
+### Added
+
+- **Physical plausibility limits for star measurements (Algorithm v35).** A star
+  cannot be sharper than the atmosphere and your sampling allow. The app derives
+  that limit for your setup from focal length and pixel size — a formula, not a
+  lookup table, so it scales continuously from a small smart telescope to a long
+  focal-length SCT — and discards anything below it as a measurement failure
+  instead of treating it as an exceptionally sharp star. Calibrated so that no
+  good frame across three very different telescopes is affected. Both limits are
+  configurable rather than compiled in.
+
+### Known limitations
+
+- Detection of star trailing on fast optics remains the weakest area. Trailed
+  frames on some setups measure nearly the same elongation as good ones, so a
+  portion still passes. This is a measurement limitation, not a threshold that can
+  be tuned, and is the next area of work.
+- Sky gradients are not measured at all: the noise statistics are distribution
+  measures without any spatial component, so a gradient does not show up in them.
+  Gradients are usually correctable in processing, so this is low priority.
+
 ## [6.6.0] — 2026-07-29
 
 **Fewer good frames wrongly flagged, plus a tool to build your own quality
