@@ -44,6 +44,8 @@ struct StarMetrics {
     let fitAcceptedFraction: Double       // fraction of measured stars whose elliptical fit was accepted (chi2<1000)
     let medianEllipticalChi2: Double?     // median chi2 reported by the elliptical fit (diagnostic)
     let medianCircularChi2: Double?       // median chi2 reported by the circular fit (diagnostic)
+    let medianRelResidualEllip: Double?   // median scale-free residual of the elliptical fit
+    let medianRelResidualCirc: Double?    // median scale-free residual of the circular fit
 }
 
 // Result of 2D moment analysis on a single star: eccentricity + position angle + axis ratio
@@ -96,6 +98,22 @@ enum StarMetricsCalculator {
     private static let streakAxisRatioThreshold: Double = 0.12
     // Fixed aperture for quick pre-filter shape check (before FWHM-adaptive aperture is known)
     private static let preFilterAperture: Float = 5.0
+    // Acceptance gate for a GPU PSF fit: RMS residual as a fraction of the fitted amplitude.
+    //
+    // Replaces the former `chi2 < 1000`. The kernel's chi2 is reduced by degrees of freedom
+    // but NOT by the noise variance, and its residuals are raw ADU — so it scales with star
+    // brightness. Measured on GOLDENSET1 its median was 8.8e5 against that gate of 1000, i.e.
+    // real stars were rejected wholesale while faint noise peaks on dark/cloud frames passed;
+    // 438 of 464 frames ended up with ZERO accepted fits, making both GPU PSF features inert.
+    //
+    // relativeResidual is dimensionless and, measured across three very different setups,
+    // agrees closely (RASA 0.061 / RC12 0.052 / ZWO-AM5 0.062 median) — it is genuinely
+    // scale-free. Real frames sit at 0.06 with p90 0.082; defocused stars, which a Gaussian
+    // genuinely cannot represent, sit higher (0.092, p90 0.188). 0.25 leaves generous headroom
+    // above the per-frame p90 for per-star scatter while still rejecting gross misfits.
+    // NOTE: this gate must stay LOOSE. A tight one re-creates the original inversion, because
+    // faint noise peaks are the easiest thing in the frame to fit well (dark 0.002/cloud 0.005).
+    private static let maxFitRelativeResidual: Double = 0.25
 
     /// True when the elliptical Gaussian fit collapsed a long trail to a near-round PSF (v31).
     ///
@@ -300,7 +318,8 @@ enum StarMetricsCalculator {
                 trailRejectCount: streakRejectCount,
                 psfFluxSum: 0, psfMeanFlux: 0,
                 medianMomentEcc: nil, medianFitEcc: nil, momentPreferredFraction: 0,
-                fitAcceptedFraction: 0, medianEllipticalChi2: nil, medianCircularChi2: nil
+                fitAcceptedFraction: 0, medianEllipticalChi2: nil, medianCircularChi2: nil,
+                medianRelResidualEllip: nil, medianRelResidualCirc: nil
             )
         }
 
@@ -546,7 +565,11 @@ enum StarMetricsCalculator {
             fitAcceptedFraction: momentEccValues.isEmpty ? 0
                 : Double(fitEccValues.count) / Double(momentEccValues.count),
             medianEllipticalChi2: (gpuEllipticalResults?.map { Double($0.chi2) }).map(sortedMedianOf),
-            medianCircularChi2: (gpuFitResults?.map { Double($0.chi2) }).map(sortedMedianOf)
+            medianCircularChi2: (gpuFitResults?.map { Double($0.chi2) }).map(sortedMedianOf),
+            medianRelResidualEllip: (gpuEllipticalResults?.map { $0.relativeResidual }
+                .filter { $0.isFinite }).flatMap { $0.isEmpty ? nil : sortedMedianOf($0) },
+            medianRelResidualCirc: (gpuFitResults?.map { $0.relativeResidual }
+                .filter { $0.isFinite }).flatMap { $0.isEmpty ? nil : sortedMedianOf($0) }
         )
     }
 

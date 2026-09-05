@@ -223,6 +223,30 @@ struct QualityEstimator {
     // Stage 1: absolute garbage detection threshold (relative to group median).
     static let garbageDropFactor: Double = 0.50  // Value < 50% of group median → definite garbage
 
+    // ── Physical plausibility corridor for star-shape measurements ──
+    // A star cannot be narrower than the atmosphere and the sampling allow, so a measurement
+    // below this floor is not a star: it is noise the fitter happened to converge on. Both
+    // limits are needed — they catch different failures (measured on GOLDENSET1):
+    //   • seeing floor — the RC12 at 0.395"/px reported cloud frames at 0.43", which undercuts
+    //     the best professional sites; no amateur setup resolves that.
+    //   • sampling floor — the RASA at 1.251"/px reported dark frames at 1.18 px, which passes
+    //     any arcsec test but cannot be measured from that few pixels.
+    // Calibrated against the curated set: the lowest GOOD frame per setup sits at 3.55"/2.14px
+    // (468mm), 3.23"/2.58px (620mm) and 1.95"/4.95px (1964mm), so this floor discards nothing
+    // real. A sweep over seeing 1.0–1.5" and sampling 1.0–1.2px lost 0 good frames in every
+    // combination while invalidating 13 garbage measurements.
+    static let minPlausibleSeeingArcsec: Double = 1.0
+    static let minPlausibleFWHMPixels: Double = 1.2
+
+    /// Smallest FWHM (in PIXELS) this setup could physically produce.
+    /// Both limits are ScoringConfig knobs so a site with exceptional seeing — or a plate
+    /// scale outside anything in the calibration set — can be accommodated without a rebuild.
+    static func physicalFWHMFloorPixels(for entry: ImageEntry,
+                                        config: ScoringConfig = .default) -> Double {
+        guard let app = entry.arcsecPerPixel, app > 0 else { return config.minPlausibleFWHMPixels }
+        return max(config.minPlausibleSeeingArcsec / app, config.minPlausibleFWHMPixels)
+    }
+
     // Dark/dome/cap-on detection: ceiling on background scatter (normalized MAD, [0,1]).
     // A frame that carries real sky has spatial structure — stars, gradients, nebulosity —
     // so its background MAD sits well above the sensor's read-noise floor. A dark frame is a
@@ -438,12 +462,20 @@ struct QualityEstimator {
             // the group ("severe defocus" on 11 of 11 good frames in a 11-good/18-cloud
             // group, whose median collapsed from ~3.66 to 1.44). Map them to nil so they are
             // simply absent, exactly like an unmeasured frame.
-            func measuredOrNil(_ v: Double?) -> Double? { (v ?? 0) > 0 ? v : nil }
+            // `floor` is the physical corridor's lower edge (see physicalFWHMFloorPixels):
+            // below it the number cannot describe a star, so it is discarded exactly like the
+            // zero of a failed fit. HFR is roughly FWHM/2, so its floor is scaled accordingly.
+            func measuredOrNil(_ v: Double?, floor: Double) -> Double? {
+                guard let v, v > 0, v >= floor else { return nil }
+                return v
+            }
             let fwhmValues: [Double?] = groupEntries.map { entry in
-                measuredOrNil(allHaveHeaderFWHM ? entry.fwhm : entry.computedFWHM)
+                measuredOrNil(allHaveHeaderFWHM ? entry.fwhm : entry.computedFWHM,
+                              floor: physicalFWHMFloorPixels(for: entry, config: config))
             }
             let hfrValues: [Double?] = groupEntries.map { entry in
-                measuredOrNil(allHaveHeaderHFR ? entry.hfr : entry.computedHFR)
+                measuredOrNil(allHaveHeaderHFR ? entry.hfr : entry.computedHFR,
+                              floor: physicalFWHMFloorPixels(for: entry, config: config) * 0.5)
             }
             let starsValues: [Double?] = groupEntries.map { entry in
                 let count = allHaveHeaderStars ? entry.starCount : entry.computedStarCount

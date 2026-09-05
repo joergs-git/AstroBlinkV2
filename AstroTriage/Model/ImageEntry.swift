@@ -145,7 +145,9 @@ struct ImageEntry: Identifiable, Hashable {
     var momentPreferredFraction: Double? // fraction of fitted stars where the moment won
     var fitAcceptedFraction: Double?     // fraction of stars whose elliptical fit was accepted
     var ellipticalChi2: Double?          // median chi2 of the elliptical PSF fit
-    var circularChi2: Double?            // median chi2 of the circular PSF fit  // Median star eccentricity [0..1] from 2D image moments
+    var circularChi2: Double?            // median chi2 of the circular PSF fit
+    var relResidualEllip: Double?        // median scale-free residual, elliptical fit
+    var relResidualCirc: Double?         // median scale-free residual, circular fit  // Median star eccentricity [0..1] from 2D image moments
     var psfFluxSum: Double?            // Total estimated PSF flux (for PSFSignalWeight)
     var psfMeanFlux: Double?           // Mean PSF flux per star (resolution/seeing proxy)
     var focalLength: Double?           // From FOCALLEN header (mm) — for adaptive trailing thresholds

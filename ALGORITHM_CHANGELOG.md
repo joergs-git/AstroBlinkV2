@@ -12,6 +12,69 @@ Records with `algorithmVersion < kAlgorithmVersion` are candidates for re-analys
 
 ---
 
+## Version 35 — Physical plausibility corridor for star-shape measurements (2026-09-05)
+
+**A measured FWHM below what the atmosphere and the sampling allow is not a sharp
+star — it is noise the measurement converged on. Such values were entering group
+medians, z-scores and rules as if they were real.**
+
+Same principle as v34 (a failed fit is not a measurement), now grounded in physics
+instead of only rejecting exact zeros. The floor is per-setup and derived, not a
+table:
+
+```
+floor_px = max( minPlausibleSeeingArcsec / arcsecPerPixel , minPlausibleFWHMPixels )
+         = max( 1.0" / (arcsec per pixel) , 1.2 px )
+```
+
+Both limits are required — they catch different failures (measured on GOLDENSET1):
+- **seeing floor** — the RC12 at 0.395"/px reported cloud frames at 0.43" FWHM,
+  which undercuts the best professional sites; no amateur setup resolves that.
+- **sampling floor** — the RASA at 1.251"/px reported dark frames at 1.18 px, which
+  passes any arcsec test but cannot be measured from that few pixels.
+
+Because the floor is expressed in arcsec and converted through the plate scale, it
+scales continuously from a short-focal-length smart telescope to an EdgeHD without
+any per-setup table or interpolation.
+
+**Calibration.** Lowest GOOD frame per setup in the curated set: 3.55"/2.14px
+(468mm), 3.23"/2.58px (620mm), 1.95"/4.95px (1964mm). A sweep over seeing
+1.0–1.5" x sampling 1.0–1.2px lost **0 good frames in every combination** while
+invalidating 13 garbage measurements.
+
+**Impact:** exactly neutral on GOLDENSET1 — false alarms 15, catch 154, identical
+to v34 frame for frame. This is a guard against a class of failure, not a tuning
+change; it earns its place by making the poisoning impossible rather than by
+moving today's numbers.
+
+**Tunable at runtime.** `minPlausibleSeeingArcsec` and `minPlausibleFWHMPixels` are
+ScoringConfig knobs, so an exceptional site or an unusual plate scale needs no new
+build. First step toward user-adjustable limits in the UI.
+
+**Test fixtures corrected.** `ScoringValidationTests` modelled the RC12 (2423mm,
+0.320"/px) at fwhmGoodMean 3.0px and the EdgeHD (2032mm, 0.382"/px) at 2.5px —
+both 0.96", i.e. sub-arcsecond seeing at long focal length, which no ground-based
+amateur setup achieves. The measured RC12 in GOLDENSET1 sits at 4.95–8.3px
+(1.95–3.3"). Corrected to 8.0px and 7.0px. The corridor did not break these tests;
+it exposed that their premise was unphysical.
+
+ScoringRegression (9) + ScoringValidation (53) + TrailingConsensus (7) green.
+
+### Held back deliberately
+
+The PSF-fit acceptance gate (`chi2 < 1000` → `relativeResidual < 0.25`) is
+implemented and documented but NOT enabled. Repairing it works technically —
+fit acceptance goes from 0.7% to 57% of stars, and Prio-A trail catch from 45% to
+64% — but it doubles false alarms (8% → 16%) and takes Conservative from 4 to 9,
+because the Gaussian fits noise blobs on cloud frames and reports them as sharp
+(cloud FWHM 7.02px → 2.31px, sharper than good frames at 4.20px), which poisons the
+group median. The universal corridor is too weak to stop it: 2.39" is physically
+possible, just impossible for a setup that never delivers better than 3.2".
+That needs the per-setup learned corridor (CalibrationDatabase, which today only
+promotes and never rejects). Tracked as the next step.
+
+---
+
 ## Version 34 — Failed star-shape fits (value 0) no longer enter group statistics (2026-09-05)
 
 **Whole good sides of a group were flagged "severe defocus". On the curated

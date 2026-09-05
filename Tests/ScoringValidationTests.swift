@@ -35,12 +35,19 @@ final class ScoringValidationTests: XCTestCase {
         sensorWidth: 9576, sensorHeight: 6388, fwhmGoodMean: 3.5, fwhmGoodStddev: 0.3,
         starCountL: 1400, starCountHa: 200, noiseMADMean: 0.005, eccBaseline: 0.376)
 
+    // fwhmGoodMean is in PIXELS. At 2423mm / 3.76um the plate scale is 0.320"/px, so the
+    // former 3.0px meant 0.96" seeing — below anything ground-based amateur gear achieves.
+    // The real RC12 in GOLDENSET1 (1964mm, 0.395"/px) measures good frames at 4.95-8.3px
+    // (1.95-3.3"), so 8.0px ~ 2.6" is the realistic figure. Values below the physical
+    // corridor are now discarded as measurement failures, which is what this fixture tripped.
     static let rc12 = SetupProfile(name: "RC12", focalLength: 2423, pixelSize: 3.76,
-        sensorWidth: 9576, sensorHeight: 6388, fwhmGoodMean: 3.0, fwhmGoodStddev: 0.3,
+        sensorWidth: 9576, sensorHeight: 6388, fwhmGoodMean: 8.0, fwhmGoodStddev: 0.3,
         starCountL: 2500, starCountHa: 150, noiseMADMean: 0.006, eccBaseline: 0.230)
 
+    // 2032mm / 3.76um = 0.382"/px; the former 2.5px meant 0.96" — see the RC12 note above.
+    // 7.0px ~ 2.7", consistent with the measured long-FL setup.
     static let edgeHD = SetupProfile(name: "EdgeHD", focalLength: 2032, pixelSize: 3.76,
-        sensorWidth: 9576, sensorHeight: 6388, fwhmGoodMean: 2.5, fwhmGoodStddev: 0.25,
+        sensorWidth: 9576, sensorHeight: 6388, fwhmGoodMean: 7.0, fwhmGoodStddev: 0.25,
         starCountL: 2000, starCountHa: 100, noiseMADMean: 0.007, eccBaseline: 0.251)
 
     static let allSetups = [rasa, ref85, ref140, rc12, edgeHD]

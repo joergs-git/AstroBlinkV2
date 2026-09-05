@@ -74,7 +74,7 @@ func loadMetalLibrary(_ device: MTLDevice) -> MTLLibrary? {
 // MARK: - CSV
 
 func csvHeader() -> String {
-    "case,label,filename,tier,combinedZ,fwhm,hfr,stars,ecc,trailingScore,trailingConsensus,momentEcc,fitEcc,momentPreferredFrac,fitAcceptedFrac,ellipChi2,circChi2,noiseMedian,noiseMAD,snr,starsZ,fwhmZ,noiseZ,trailingZ,garbageReasons,recommendation"
+    "case,label,filename,tier,combinedZ,fwhm,hfr,stars,ecc,trailingScore,trailingConsensus,momentEcc,fitEcc,momentPreferredFrac,fitAcceptedFrac,ellipChi2,circChi2,relResEllip,relResCirc,noiseMedian,noiseMAD,snr,starsZ,fwhmZ,noiseZ,trailingZ,garbageReasons,recommendation"
 }
 
 func csvRow(_ o: ScoringRunner.FrameOutcome) -> String {
@@ -97,7 +97,7 @@ func csvRow(_ o: ScoringRunner.FrameOutcome) -> String {
         tier, f(b?.combinedZScore),
         f(e.computedFWHM), f(e.computedHFR), i(e.computedStarCount), f(e.computedEccentricity),
         f(e.trailingScore), f(e.trailingConsensus),
-        f(e.momentEccentricity), f(e.fitEccentricity), f(e.momentPreferredFraction), f(e.fitAcceptedFraction), f(e.ellipticalChi2), f(e.circularChi2),
+        f(e.momentEccentricity), f(e.fitEccentricity), f(e.momentPreferredFraction), f(e.fitAcceptedFraction), f(e.ellipticalChi2), f(e.circularChi2), f(e.relResidualEllip), f(e.relResidualCirc),
         fF(e.noiseMedian), fF(e.noiseMAD), snr,
         f(b?.starsZ), f(b?.fwhmZ), f(b?.noiseZ), f(b?.trailingZ),
         esc(reasons), esc(rec)

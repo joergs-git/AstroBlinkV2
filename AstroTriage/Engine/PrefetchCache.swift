@@ -332,7 +332,8 @@ class PrefetchCache {
                             psfFluxSum: 0, psfMeanFlux: 0,
                             medianMomentEcc: nil, medianFitEcc: nil,
                             momentPreferredFraction: 0, fitAcceptedFraction: 0,
-                            medianEllipticalChi2: nil, medianCircularChi2: nil
+                            medianEllipticalChi2: nil, medianCircularChi2: nil,
+                            medianRelResidualEllip: nil, medianRelResidualCirc: nil
                         )
 
                         // Compute star-based alignment transform for display
@@ -634,7 +635,8 @@ class PrefetchCache {
                                 psfFluxSum: 0, psfMeanFlux: 0,
                                 medianMomentEcc: nil, medianFitEcc: nil,
                                 momentPreferredFraction: 0, fitAcceptedFraction: 0,
-                                medianEllipticalChi2: nil, medianCircularChi2: nil
+                                medianEllipticalChi2: nil, medianCircularChi2: nil,
+                                medianRelResidualEllip: nil, medianRelResidualCirc: nil
                             )
                         }
                     }
