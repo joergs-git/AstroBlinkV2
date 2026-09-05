@@ -42,6 +42,8 @@ struct StarMetrics {
     let medianFitEcc: Double?             // median elliptical-fit eccentricity (nil if no GPU fit)
     let momentPreferredFraction: Double   // fraction of fitted stars where the moment overrode the fit
     let fitAcceptedFraction: Double       // fraction of measured stars whose elliptical fit was accepted (chi2<1000)
+    let medianEllipticalChi2: Double?     // median chi2 reported by the elliptical fit (diagnostic)
+    let medianCircularChi2: Double?       // median chi2 reported by the circular fit (diagnostic)
 }
 
 // Result of 2D moment analysis on a single star: eccentricity + position angle + axis ratio
@@ -298,7 +300,7 @@ enum StarMetricsCalculator {
                 trailRejectCount: streakRejectCount,
                 psfFluxSum: 0, psfMeanFlux: 0,
                 medianMomentEcc: nil, medianFitEcc: nil, momentPreferredFraction: 0,
-                fitAcceptedFraction: 0
+                fitAcceptedFraction: 0, medianEllipticalChi2: nil, medianCircularChi2: nil
             )
         }
 
@@ -542,7 +544,9 @@ enum StarMetricsCalculator {
             momentPreferredFraction: fitEccValues.isEmpty ? 0
                 : Double(momentPreferredCount) / Double(fitEccValues.count),
             fitAcceptedFraction: momentEccValues.isEmpty ? 0
-                : Double(fitEccValues.count) / Double(momentEccValues.count)
+                : Double(fitEccValues.count) / Double(momentEccValues.count),
+            medianEllipticalChi2: (gpuEllipticalResults?.map { Double($0.chi2) }).map(sortedMedianOf),
+            medianCircularChi2: (gpuFitResults?.map { Double($0.chi2) }).map(sortedMedianOf)
         )
     }
 

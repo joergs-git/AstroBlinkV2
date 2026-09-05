@@ -60,6 +60,8 @@ enum ScoringRunner {
             entry.fitEccentricity = m.medianFitEcc
             entry.momentPreferredFraction = m.momentPreferredFraction
             entry.fitAcceptedFraction = m.fitAcceptedFraction
+            entry.ellipticalChi2 = m.medianEllipticalChi2
+            entry.circularChi2 = m.medianCircularChi2
             if let t = TrailingAnalyzer.analyze(starDetails: m.starDetails,
                                                 focalLength: entry.focalLength,
                                                 pixelSizeMicrons: entry.pixelSizeMicrons) {
