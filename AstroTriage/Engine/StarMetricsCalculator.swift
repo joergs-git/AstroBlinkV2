@@ -33,6 +33,19 @@ struct StarMetrics {
     // psfMeanFlux: mean PSF flux per star (proxy for resolution/seeing quality)
     let psfFluxSum: Double
     let psfMeanFlux: Double
+    // ── Diagnostics for the moment-vs-fit eccentricity override (never used in a decision) ──
+    // The elliptical Gauss-Newton fit collapses trails longer than its stamp to a round local
+    // minimum; `ellipticalFitUnderestimatesTrail` overrides it with the robust image moment.
+    // These record what each source actually reported so that override window can be judged
+    // on measured data rather than guessed thresholds.
+    let medianMomentEcc: Double?          // median image-moment eccentricity over measured stars
+    let medianFitEcc: Double?             // median elliptical-fit eccentricity (nil if no GPU fit)
+    let momentPreferredFraction: Double   // fraction of fitted stars where the moment overrode the fit
+    let fitAcceptedFraction: Double       // fraction of measured stars whose elliptical fit was accepted (chi2<1000)
+    let medianEllipticalChi2: Double?     // median chi2 reported by the elliptical fit (diagnostic)
+    let medianCircularChi2: Double?       // median chi2 reported by the circular fit (diagnostic)
+    let medianRelResidualEllip: Double?   // median scale-free residual of the elliptical fit
+    let medianRelResidualCirc: Double?    // median scale-free residual of the circular fit
 }
 
 // Result of 2D moment analysis on a single star: eccentricity + position angle + axis ratio
@@ -85,6 +98,22 @@ enum StarMetricsCalculator {
     private static let streakAxisRatioThreshold: Double = 0.12
     // Fixed aperture for quick pre-filter shape check (before FWHM-adaptive aperture is known)
     private static let preFilterAperture: Float = 5.0
+    // Acceptance gate for a GPU PSF fit: RMS residual as a fraction of the fitted amplitude.
+    //
+    // Replaces the former `chi2 < 1000`. The kernel's chi2 is reduced by degrees of freedom
+    // but NOT by the noise variance, and its residuals are raw ADU — so it scales with star
+    // brightness. Measured on GOLDENSET1 its median was 8.8e5 against that gate of 1000, i.e.
+    // real stars were rejected wholesale while faint noise peaks on dark/cloud frames passed;
+    // 438 of 464 frames ended up with ZERO accepted fits, making both GPU PSF features inert.
+    //
+    // relativeResidual is dimensionless and, measured across three very different setups,
+    // agrees closely (RASA 0.061 / RC12 0.052 / ZWO-AM5 0.062 median) — it is genuinely
+    // scale-free. Real frames sit at 0.06 with p90 0.082; defocused stars, which a Gaussian
+    // genuinely cannot represent, sit higher (0.092, p90 0.188). 0.25 leaves generous headroom
+    // above the per-frame p90 for per-star scatter while still rejecting gross misfits.
+    // NOTE: this gate must stay LOOSE. A tight one re-creates the original inversion, because
+    // faint noise peaks are the easiest thing in the frame to fit well (dark 0.002/cloud 0.005).
+    private static let maxFitRelativeResidual: Double = 0.25
 
     /// True when the elliptical Gaussian fit collapsed a long trail to a near-round PSF (v31).
     ///
@@ -287,7 +316,10 @@ enum StarMetricsCalculator {
                 starChainFraction: 0,
                 trailCandidateCount: trailIndices.count,
                 trailRejectCount: streakRejectCount,
-                psfFluxSum: 0, psfMeanFlux: 0
+                psfFluxSum: 0, psfMeanFlux: 0,
+                medianMomentEcc: nil, medianFitEcc: nil, momentPreferredFraction: 0,
+                fitAcceptedFraction: 0, medianEllipticalChi2: nil, medianCircularChi2: nil,
+                medianRelResidualEllip: nil, medianRelResidualCirc: nil
             )
         }
 
@@ -371,6 +403,10 @@ enum StarMetricsCalculator {
 
         var eccValues: [Double] = []
         var details: [StarDetail] = []
+        // Diagnostics for the moment-vs-fit override (see below) — not used in any decision.
+        var momentEccValues: [Double] = []
+        var fitEccValues: [Double] = []
+        var momentPreferredCount = 0
 
         // Use wider crop for shape/eccentricity, but pre-filter streaks here too
         let shapeStars = filterStarsForShape(refinedStars, width: w, height: h, ptr: ptr, channelOffset: channelOffset)
@@ -434,6 +470,17 @@ enum StarMetricsCalculator {
                 }
 
                 eccValues.append(finalEcc)
+
+                // Diagnostics only — never feeds a decision. Records what the two
+                // eccentricity sources said per star so the moment-vs-fit override
+                // window can be judged on real data instead of guessed thresholds.
+                momentEccValues.append(shape.eccentricity)
+                if let eFit = matchedEllipFit {
+                    fitEccValues.append(eFit.eccentricity)
+                    if ellipticalFitUnderestimatesTrail(momentEcc: shape.eccentricity, fitEcc: eFit.eccentricity) {
+                        momentPreferredCount += 1
+                    }
+                }
 
                 details.append(StarDetail(
                     x: star.x, y: star.y,
@@ -510,8 +557,26 @@ enum StarMetricsCalculator {
             trailCandidateCount: trailIndices.count,
             trailRejectCount: streakRejectCount,
             psfFluxSum: totalPsfFlux,
-            psfMeanFlux: meanPsfFlux
+            psfMeanFlux: meanPsfFlux,
+            medianMomentEcc: momentEccValues.isEmpty ? nil : sortedMedianOf(momentEccValues),
+            medianFitEcc: fitEccValues.isEmpty ? nil : sortedMedianOf(fitEccValues),
+            momentPreferredFraction: fitEccValues.isEmpty ? 0
+                : Double(momentPreferredCount) / Double(fitEccValues.count),
+            fitAcceptedFraction: momentEccValues.isEmpty ? 0
+                : Double(fitEccValues.count) / Double(momentEccValues.count),
+            medianEllipticalChi2: (gpuEllipticalResults?.map { Double($0.chi2) }).map(sortedMedianOf),
+            medianCircularChi2: (gpuFitResults?.map { Double($0.chi2) }).map(sortedMedianOf),
+            medianRelResidualEllip: (gpuEllipticalResults?.map { $0.relativeResidual }
+                .filter { $0.isFinite }).flatMap { $0.isEmpty ? nil : sortedMedianOf($0) },
+            medianRelResidualCirc: (gpuFitResults?.map { $0.relativeResidual }
+                .filter { $0.isFinite }).flatMap { $0.isEmpty ? nil : sortedMedianOf($0) }
         )
+    }
+
+    /// Plain median helper for the diagnostic fields above.
+    private static func sortedMedianOf(_ v: [Double]) -> Double {
+        let s = v.sorted()
+        return s[s.count / 2]
     }
 
     // MARK: - Star Chain Detection (tracking hop pattern)

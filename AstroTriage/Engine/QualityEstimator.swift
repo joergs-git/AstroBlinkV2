@@ -223,6 +223,43 @@ struct QualityEstimator {
     // Stage 1: absolute garbage detection threshold (relative to group median).
     static let garbageDropFactor: Double = 0.50  // Value < 50% of group median → definite garbage
 
+    // ── Physical plausibility corridor for star-shape measurements ──
+    // A star cannot be narrower than the atmosphere and the sampling allow, so a measurement
+    // below this floor is not a star: it is noise the fitter happened to converge on. Both
+    // limits are needed — they catch different failures (measured on GOLDENSET1):
+    //   • seeing floor — the RC12 at 0.395"/px reported cloud frames at 0.43", which undercuts
+    //     the best professional sites; no amateur setup resolves that.
+    //   • sampling floor — the RASA at 1.251"/px reported dark frames at 1.18 px, which passes
+    //     any arcsec test but cannot be measured from that few pixels.
+    // Calibrated against the curated set: the lowest GOOD frame per setup sits at 3.55"/2.14px
+    // (468mm), 3.23"/2.58px (620mm) and 1.95"/4.95px (1964mm), so this floor discards nothing
+    // real. A sweep over seeing 1.0–1.5" and sampling 1.0–1.2px lost 0 good frames in every
+    // combination while invalidating 13 garbage measurements.
+    static let minPlausibleSeeingArcsec: Double = 1.0
+    static let minPlausibleFWHMPixels: Double = 1.2
+
+    /// Smallest FWHM (in PIXELS) this setup could physically produce.
+    /// Both limits are ScoringConfig knobs so a site with exceptional seeing — or a plate
+    /// scale outside anything in the calibration set — can be accommodated without a rebuild.
+    static func physicalFWHMFloorPixels(for entry: ImageEntry,
+                                        config: ScoringConfig = .default) -> Double {
+        guard let app = entry.arcsecPerPixel, app > 0 else { return config.minPlausibleFWHMPixels }
+        return max(config.minPlausibleSeeingArcsec / app, config.minPlausibleFWHMPixels)
+    }
+
+    // Dark/dome/cap-on detection: ceiling on background scatter (normalized MAD, [0,1]).
+    // A frame that carries real sky has spatial structure — stars, gradients, nebulosity —
+    // so its background MAD sits well above the sensor's read-noise floor. A dark frame is a
+    // flat pedestal: the whole background varies by only a few ADU. 0.0002 ≈ 13 ADU of 65535.
+    //
+    // This replaces the former SNR-based guard (`snr > 5` = "has signal"), which was INVERTED
+    // for this failure mode: the app's SNR is noiseMedian/noiseMAD, so a flat frame — maximal
+    // median over near-zero scatter — produces the HIGHEST SNR in a session. Dome-closed
+    // sequences therefore read as "lots of signal" and escaped detection entirely.
+    // Validated on GOLDENSET1 (464 frames): `stars >= 10000 && noiseMAD < this` selects all
+    // 63 dark frames and nothing else — no good/trail/cloud frame is touched.
+    static let darkFrameMADCeiling: Double = 0.0002
+
     // Broadband filters where star count is a reliable quality indicator.
     // Everything else — narrowband (Ha, OIII, SII...), dual-band (L-eXtreme, L-Ultimate),
     // tri-band (L-Quadband, NBZ), or unknown — gets reduced star weight (0.5).
@@ -418,11 +455,27 @@ struct QualityEstimator {
             let allHaveHeaderHFR = groupEntries.allSatisfy { $0.hfr != nil }
             let allHaveHeaderStars = groupEntries.allSatisfy { $0.starCount != nil }
 
+            // A star-shape metric of 0 is a FAILED fit, not a measurement — no real star has
+            // zero width. Such values MUST NOT enter the group statistics: a featureless
+            // frame (dome closed, opaque cloud) reports 0, and enough of them drag the group
+            // median into the zero block. Rules 3/4 then fire on the only intact frames in
+            // the group ("severe defocus" on 11 of 11 good frames in a 11-good/18-cloud
+            // group, whose median collapsed from ~3.66 to 1.44). Map them to nil so they are
+            // simply absent, exactly like an unmeasured frame.
+            // `floor` is the physical corridor's lower edge (see physicalFWHMFloorPixels):
+            // below it the number cannot describe a star, so it is discarded exactly like the
+            // zero of a failed fit. HFR is roughly FWHM/2, so its floor is scaled accordingly.
+            func measuredOrNil(_ v: Double?, floor: Double) -> Double? {
+                guard let v, v > 0, v >= floor else { return nil }
+                return v
+            }
             let fwhmValues: [Double?] = groupEntries.map { entry in
-                allHaveHeaderFWHM ? entry.fwhm : entry.computedFWHM
+                measuredOrNil(allHaveHeaderFWHM ? entry.fwhm : entry.computedFWHM,
+                              floor: physicalFWHMFloorPixels(for: entry, config: config))
             }
             let hfrValues: [Double?] = groupEntries.map { entry in
-                allHaveHeaderHFR ? entry.hfr : entry.computedHFR
+                measuredOrNil(allHaveHeaderHFR ? entry.hfr : entry.computedHFR,
+                              floor: physicalFWHMFloorPixels(for: entry, config: config) * 0.5)
             }
             let starsValues: [Double?] = groupEntries.map { entry in
                 let count = allHaveHeaderStars ? entry.starCount : entry.computedStarCount
@@ -453,38 +506,38 @@ struct QualityEstimator {
             }()
 
             for (i, entry) in groupEntries.enumerated() {
+                // A frame with no sky has one of TWO signatures, and neither subsumes the other:
+                //  (1) flat pedestal — an offset background with essentially no scatter
+                //      (noiseMedian 0.0077 / MAD 0.000068). Its SNR (= median/MAD) is the
+                //      HIGHEST in the session, so the SNR test alone reads it as "full of
+                //      signal" and lets it through.
+                //  (2) near-zero level with ordinary read noise (median ≈ MAD ≈ 0.001).
+                //      Its MAD is perfectly normal, so the structure test alone misses it.
+                // Accept either.
+                let noStructure = (entry.noiseMAD.map(Double.init) ?? .infinity) < darkFrameMADCeiling
+                let noMeasurableSignal = !(snrValues[i].map { $0 > 5.0 } ?? false)
+                let noSkySignal = noStructure || noMeasurableSignal
+                // A frame the star detector could not measure AT ALL (stars nil) on a
+                // structureless background is a dark/dome frame whose hot pixels didn't even
+                // survive detection. Without this branch it keeps its metrics in the group
+                // statistics — every star-keyed path below is gated on `if let stars`.
+                if starsValues[i] == nil && noStructure {
+                    darkFrameIndices.insert(i)
+                    continue
+                }
                 if let stars = starsValues[i] {
-                    // Cross-check: real stars have measurable FWHM and background.
-                    // Hot pixel noise peaks from dark/dome frames have tiny FWHM (~0.5px)
-                    // and near-zero background. Bright nebulae and dense star fields can
-                    // legitimately produce 10000+ star detections with normal FWHM and sky.
-                    // FWHM threshold is plate-scale-aware: at 1.54"/px (e.g. 504mm FL,
-                    // 3.76μm pixels), real stars have FWHM ~1.3px under typical 2" seeing.
-                    // Hardcoded 3.0px would reject all stars at that plate scale.
-                    let fwhmThreshold: Double = {
-                        if let app = entry.arcsecPerPixel, app > 0 {
-                            // Minimum expected FWHM under good seeing (1.5") at this plate scale.
-                            // At 1.54"/px: max(0.8, min(3.0, 1.5/1.54)) = max(0.8, 0.97) = 0.97
-                            // At 0.5"/px:  max(0.8, min(3.0, 1.5/0.5))  = max(0.8, 3.0)  = 3.0
-                            return max(0.8, min(3.0, 1.5 / app))
-                        }
-                        return 3.0  // fallback for unknown plate scale
-                    }()
-                    let hasRealPSF = fwhmValues[i] != nil && fwhmValues[i]! > fwhmThreshold
-                    let hasSignificantBackground = entry.noiseMedian != nil && entry.noiseMedian! >= 0.002
-                    // SNR cross-check: dark/dome frames have near-zero SNR (noise only).
-                    // Real light frames with sky signal have SNR >> 1. This catches cases
-                    // where FWHM measurement fails on undersampled stars (e.g. full-frame
-                    // ASI6200MM at 504mm FL with 52000+ real stars but FWHM ~1.3px).
-                    let hasMeasurableSignal = snrValues[i] != nil && snrValues[i]! > 5.0
-
-                    if stars >= 10000 && !(hasRealPSF && hasSignificantBackground) && !hasMeasurableSignal {
-                        // Path A: Extreme star count, but only if stars don't look real
-                        // AND no measurable sky signal (SNR). All three must fail.
+                    // Structure cross-check: a frame carrying real sky varies spatially —
+                    // stars, nebulosity, gradients — so its background MAD sits well above the
+                    // sensor's read-noise floor. Dark/dome/cap-on frames are a flat pedestal:
+                    // thousands of hot-pixel "stars" on a background that barely moves.
+                    // Bright nebulae and dense star fields legitimately produce 10000+ real
+                    // detections, but always with normal background scatter — so they pass.
+                    if stars >= 10000 && noSkySignal {
+                        // Path A: extreme star count on a background carrying no sky.
                         darkFrameIndices.insert(i)
                     } else if stars >= darkStarThreshold, let bgLevel = entry.noiseMedian, bgLevel < 0.002,
-                              !hasMeasurableSignal {
-                        // Path B: FL-scaled star threshold + very low background + no signal.
+                              noSkySignal {
+                        // Path B: FL-scaled star threshold + very low background level.
                         // Wide-field (620mm): threshold ~9200 (wide FOV = many real stars)
                         // Long FL (2423mm): threshold ~5000 (narrow FOV = few real stars)
                         darkFrameIndices.insert(i)
@@ -615,39 +668,52 @@ struct QualityEstimator {
                 // Exception: if SNR is measurable (> 5) and star count is meaningful (> 100),
                 // the frame clearly has signal — FWHM nil means measurement failure on
                 // undersampled stars, not absence of signal.
-                let hasNoFWHM = fwhmValues[localIdx] == nil
+                //
+                // Garbage detection must judge THIS frame's PIXELS, so it reads the measured
+                // values and only falls back to the ranking arrays when nothing was measured.
+                // Those arrays prefer the HEADER value whenever every frame in the group has
+                // one, and NINA writes a per-frame autofocus FWHM into the filename — a
+                // dome-closed frame still carries a plausible-looking `FWHM_4.49` while
+                // nothing in the image is measurable at all. Trusting it asks the capture
+                // software whether a star was visible instead of looking.
+                //
+                // A measured FWHM of exactly 0 is a FAILED fit, not a measurement. It must
+                // count as "no PSF" like nil does, otherwise a featureless frame slips past
+                // every star-keyed rule at once: Rule 0 sees a plausible FWHM, while Rule 0b
+                // and Rule 1 are gated on `if let stars`, which is nil for exactly these.
+                let measuredFWHM = entry.computedFWHM ?? fwhmValues[localIdx]
+                let measuredStars = entry.computedStarCount.map { Double($0) } ?? starsValues[localIdx]
+                let hasNoFWHM = (measuredFWHM ?? 0) <= 0
                 if hasNoFWHM {
-                    let hasSignal = snr != nil && snr! > 5.0 && (starsValues[localIdx] ?? 0) > 100
+                    let hasSignal = snr != nil && snr! > 5.0 && (measuredStars ?? 0) > 100
                     if !hasSignal {
                         garbageReasons.append(.noData)
                     }
                 }
 
                 // Rule 0b: Dark frame / dome closed / lens cap detection.
-                // Dark frames have near-zero sky background but hot pixels create thousands
-                // of false star detections that survive even 16σ auto-escalation.
-                // Detection paths:
-                // (a) Stars ≥ 10000 AND no real PSF AND no sky signal (SNR ≤ 5).
+                // Dark frames have no sky signal but hot pixels create thousands of false
+                // star detections that survive even 16σ auto-escalation.
+                // Detection paths (both gated on background scatter — see darkFrameMADCeiling):
+                // (a) Stars ≥ 10000 on a structureless background.
                 //     Bright nebulae (M42 H-alpha) and dense star fields (NGC 2251 at
-                //     504mm FL) can have 14000-52000+ real star detections with measurable
-                //     FWHM, significant background, and/or high SNR — these pass through.
-                // (b) Stars ≥ FL-dependent threshold AND very low background AND no signal.
-                // FWHM threshold is plate-scale-aware (see pre-pass for details).
-                if let stars = starsValues[localIdx] {
-                    let r0bFwhmThreshold: Double = {
-                        if let app = entry.arcsecPerPixel, app > 0 {
-                            return max(0.8, min(3.0, 1.5 / app))
-                        }
-                        return 3.0
-                    }()
-                    let hasRealPSF = fwhmValues[localIdx] != nil && fwhmValues[localIdx]! > r0bFwhmThreshold
-                    let hasSignificantBackground = entry.noiseMedian != nil && entry.noiseMedian! >= 0.002
-                    let hasMeasurableSignal = snr != nil && snr! > 5.0
+                //     504mm FL) can have 14000-52000+ real star detections, but always on a
+                //     background with real spatial scatter — these pass through.
+                // (b) Stars ≥ FL-dependent threshold AND very low background level.
+                // Uses the MEASURED star count (see Rule 0): both thresholds are absolute
+                // physical bounds, so they must be applied to what we counted in the image,
+                // never to a header value the capture software supplied.
+                if let stars = measuredStars {
+                    // Same two signatures as the pre-pass (see there): a flat pedestal has no
+                    // spatial structure but a huge SNR, a near-zero frame has ordinary scatter
+                    // but no SNR. Either one means "no sky".
+                    let noStructure = (entry.noiseMAD.map(Double.init) ?? .infinity) < darkFrameMADCeiling
+                    let noSkySignal = noStructure || !(snr.map { $0 > 5.0 } ?? false)
 
-                    if stars >= 10000 && !(hasRealPSF && hasSignificantBackground) && !hasMeasurableSignal {
+                    if stars >= 10000 && noSkySignal {
                         garbageReasons.append(.noisePeaks)
                     } else if stars >= darkStarThreshold, let bgLevel = entry.noiseMedian, bgLevel < 0.002,
-                              !hasMeasurableSignal {
+                              noSkySignal {
                         garbageReasons.append(.noisePeaks)
                     }
                 }
@@ -659,10 +725,15 @@ struct QualityEstimator {
                 // (b) relative drop — far below group median (when starWeight > 0)
                 // (c) P90 floor — far below group best (catches clouded frames even when
                 //     many bad frames drag the median down and CV disables starWeight)
-                if let stars = starsValues[localIdx] {
-                    if stars < 10 {
-                        garbageReasons.append(.noStars)
-                    } else {
+                //
+                // Source split: (a) is an ABSOLUTE physical floor, so it reads the measured
+                // star count. (b) and (c) compare against the group median / P90, which are
+                // built from `starsValues` — comparing a measured count against a header-based
+                // median would mix two different scales, so those stay on the same array.
+                if let stars = measuredStars, stars < 10 {
+                    garbageReasons.append(.noStars)
+                } else if let stars = starsValues[localIdx] {
+                    if stars >= 10 {
                         // (b) Relative to median — only when star counts are stable
                         if starWeight > 0, let median = starsMedian {
                             let dropThreshold = isNarrowband ? config.garbageDropFactor * 0.3 : config.garbageDropFactor * 0.5

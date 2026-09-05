@@ -791,6 +791,20 @@ final class PreviewGenerator: @unchecked Sendable {
         let sigma: Float        // Gaussian sigma (FWHM = 2.355 * sigma)
         let background: Float   // Fitted local background
         let chi2: Float         // Reduced chi² (goodness of fit)
+
+        /// Scale-free fit quality: RMS residual as a fraction of the fitted amplitude.
+        ///
+        /// `chi2` from the kernel is divided by the degrees of freedom but NOT by the noise
+        /// variance, and the residuals are raw ADU — so it carries units of ADU² and grows
+        /// with star brightness. An absolute threshold on it therefore selects FAINT stars,
+        /// not well-fitted ones (measured on GOLDENSET1: median 8.8e5 against a gate of 1000,
+        /// so real stars were rejected and only noise peaks on dark/cloud frames passed).
+        /// Dividing the RMS residual by the amplitude removes the brightness scaling and
+        /// yields an interpretable number: 0.10 means "residuals are 10% of peak height".
+        var relativeResidual: Double {
+            guard amplitude > 0, chi2 >= 0 else { return .infinity }
+            return (Double(chi2).squareRoot()) / Double(amplitude)
+        }
     }
 
     /// GPU-accelerated circular Gaussian PSF fitting for filtered stars.
@@ -869,6 +883,12 @@ final class PreviewGenerator: @unchecked Sendable {
         let sigmaY: Float       // Minor axis sigma
         let theta: Float        // Rotation angle in radians [0, π)
         let chi2: Float         // Reduced chi²
+
+        /// Scale-free fit quality — see PSFFitResult.relativeResidual for the rationale.
+        var relativeResidual: Double {
+            guard amplitude > 0, chi2 >= 0 else { return .infinity }
+            return (Double(chi2).squareRoot()) / Double(amplitude)
+        }
 
         /// Eccentricity derived from axis ratio: √(1 - σy²/σx²)
         var eccentricity: Double {

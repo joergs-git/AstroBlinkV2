@@ -37,6 +37,13 @@ struct ScoringConfig: Codable, Equatable {
     var absoluteTrailingCeilingScore: Double
     var absoluteTrailingCeilingConsensus: Double
 
+    // Physical plausibility corridor for star-shape measurements. A measured FWHM below
+    // max(seeing / arcsecPerPixel, sampling) cannot describe a star and is discarded before
+    // it can enter any median, z-score or rule. Exposed here so a site with exceptional
+    // seeing, or a very different plate scale, can be accommodated without a new build.
+    var minPlausibleSeeingArcsec: Double
+    var minPlausibleFWHMPixels: Double
+
     /// The canonical defaults — MUST equal the `static let` values in QualityEstimator.swift.
     /// Using this config yields byte-identical scoring to the pre-externalization build.
     static let `default` = ScoringConfig(
@@ -46,7 +53,9 @@ struct ScoringConfig: Codable, Equatable {
         zscoreCap: 3.0,
         garbageDropFactor: 0.50,
         absoluteTrailingCeilingScore: 0.60,
-        absoluteTrailingCeilingConsensus: 0.5
+        absoluteTrailingCeilingConsensus: 0.5,
+        minPlausibleSeeingArcsec: 1.0,
+        minPlausibleFWHMPixels: 1.2
     )
 
     // MARK: - Partial-override JSON decoding
@@ -61,7 +70,9 @@ struct ScoringConfig: Codable, Equatable {
          zscoreCap: Double,
          garbageDropFactor: Double,
          absoluteTrailingCeilingScore: Double,
-         absoluteTrailingCeilingConsensus: Double) {
+         absoluteTrailingCeilingConsensus: Double,
+         minPlausibleSeeingArcsec: Double,
+         minPlausibleFWHMPixels: Double) {
         self.thresholdExcellent = thresholdExcellent
         self.thresholdGood = thresholdGood
         self.thresholdBorderline = thresholdBorderline
@@ -69,6 +80,8 @@ struct ScoringConfig: Codable, Equatable {
         self.garbageDropFactor = garbageDropFactor
         self.absoluteTrailingCeilingScore = absoluteTrailingCeilingScore
         self.absoluteTrailingCeilingConsensus = absoluteTrailingCeilingConsensus
+        self.minPlausibleSeeingArcsec = minPlausibleSeeingArcsec
+        self.minPlausibleFWHMPixels = minPlausibleFWHMPixels
     }
 
     init(from decoder: Decoder) throws {
@@ -81,6 +94,8 @@ struct ScoringConfig: Codable, Equatable {
         garbageDropFactor = try c.decodeIfPresent(Double.self, forKey: .garbageDropFactor) ?? d.garbageDropFactor
         absoluteTrailingCeilingScore = try c.decodeIfPresent(Double.self, forKey: .absoluteTrailingCeilingScore) ?? d.absoluteTrailingCeilingScore
         absoluteTrailingCeilingConsensus = try c.decodeIfPresent(Double.self, forKey: .absoluteTrailingCeilingConsensus) ?? d.absoluteTrailingCeilingConsensus
+        minPlausibleSeeingArcsec = try c.decodeIfPresent(Double.self, forKey: .minPlausibleSeeingArcsec) ?? d.minPlausibleSeeingArcsec
+        minPlausibleFWHMPixels = try c.decodeIfPresent(Double.self, forKey: .minPlausibleFWHMPixels) ?? d.minPlausibleFWHMPixels
     }
 
     // MARK: - Load / dump

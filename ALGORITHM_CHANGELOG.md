@@ -12,6 +12,230 @@ Records with `algorithmVersion < kAlgorithmVersion` are candidates for re-analys
 
 ---
 
+## Version 35 — Physical plausibility corridor for star-shape measurements (2026-09-05)
+
+**A measured FWHM below what the atmosphere and the sampling allow is not a sharp
+star — it is noise the measurement converged on. Such values were entering group
+medians, z-scores and rules as if they were real.**
+
+Same principle as v34 (a failed fit is not a measurement), now grounded in physics
+instead of only rejecting exact zeros. The floor is per-setup and derived, not a
+table:
+
+```
+floor_px = max( minPlausibleSeeingArcsec / arcsecPerPixel , minPlausibleFWHMPixels )
+         = max( 1.0" / (arcsec per pixel) , 1.2 px )
+```
+
+Both limits are required — they catch different failures (measured on GOLDENSET1):
+- **seeing floor** — the RC12 at 0.395"/px reported cloud frames at 0.43" FWHM,
+  which undercuts the best professional sites; no amateur setup resolves that.
+- **sampling floor** — the RASA at 1.251"/px reported dark frames at 1.18 px, which
+  passes any arcsec test but cannot be measured from that few pixels.
+
+Because the floor is expressed in arcsec and converted through the plate scale, it
+scales continuously from a short-focal-length smart telescope to an EdgeHD without
+any per-setup table or interpolation.
+
+**Calibration.** Lowest GOOD frame per setup in the curated set: 3.55"/2.14px
+(468mm), 3.23"/2.58px (620mm), 1.95"/4.95px (1964mm). A sweep over seeing
+1.0–1.5" x sampling 1.0–1.2px lost **0 good frames in every combination** while
+invalidating 13 garbage measurements.
+
+**Impact:** exactly neutral on GOLDENSET1 — false alarms 15, catch 154, identical
+to v34 frame for frame. This is a guard against a class of failure, not a tuning
+change; it earns its place by making the poisoning impossible rather than by
+moving today's numbers.
+
+**Tunable at runtime.** `minPlausibleSeeingArcsec` and `minPlausibleFWHMPixels` are
+ScoringConfig knobs, so an exceptional site or an unusual plate scale needs no new
+build. First step toward user-adjustable limits in the UI.
+
+**Test fixtures corrected.** `ScoringValidationTests` modelled the RC12 (2423mm,
+0.320"/px) at fwhmGoodMean 3.0px and the EdgeHD (2032mm, 0.382"/px) at 2.5px —
+both 0.96", i.e. sub-arcsecond seeing at long focal length, which no ground-based
+amateur setup achieves. The measured RC12 in GOLDENSET1 sits at 4.95–8.3px
+(1.95–3.3"). Corrected to 8.0px and 7.0px. The corridor did not break these tests;
+it exposed that their premise was unphysical.
+
+ScoringRegression (9) + ScoringValidation (53) + TrailingConsensus (7) green.
+
+### Held back deliberately
+
+The PSF-fit acceptance gate (`chi2 < 1000` → `relativeResidual < 0.25`) is
+implemented and documented but NOT enabled. Repairing it works technically —
+fit acceptance goes from 0.7% to 57% of stars, and Prio-A trail catch from 45% to
+64% — but it doubles false alarms (8% → 16%) and takes Conservative from 4 to 9,
+because the Gaussian fits noise blobs on cloud frames and reports them as sharp
+(cloud FWHM 7.02px → 2.31px, sharper than good frames at 4.20px), which poisons the
+group median. The universal corridor is too weak to stop it: 2.39" is physically
+possible, just impossible for a setup that never delivers better than 3.2".
+That needs the per-setup learned corridor (CalibrationDatabase, which today only
+promotes and never rejects). Tracked as the next step.
+
+---
+
+## Version 34 — Failed star-shape fits (value 0) no longer enter group statistics (2026-09-05)
+
+**Whole good sides of a group were flagged "severe defocus". On the curated
+GOLDENSET1 case `RC12red08_1950mm_S_NGC6960_180s`, ALL 11 good frames were marked
+by the Conservative autopilot — the mode that is supposed to produce essentially
+no false positives.**
+
+**Root cause — the v33 principle, one layer higher.** v33 established that a
+star-shape metric of 0 is a FAILED FIT, not a measurement, and fixed the RULES
+that read it. The STATISTICS still ingested it: `fwhmValues` / `hfrValues` passed
+0.0 straight through, and `sortedMedian` only skips `nil`, never 0. A featureless
+frame (dome closed, opaque cloud) reports 0, so enough of them drag the group
+median into the zero block:
+
+```
+S_NGC6960:  18 cloud frames @ HFR 0.00  +  11 good frames @ HFR ~3.66
+            group median collapses 3.66 → 1.44   (inside the block of zeros)
+            Rule 4 threshold = 2 × 1.44 = 2.87
+            → every intact frame in the group exceeds it → "severe defocus"
+```
+
+The rule then declares the only usable frames in the group to be garbage. Note
+the inversion: the MORE garbage a group contains, the more certainly its good
+frames get flagged.
+
+**Fix (`QualityEstimator.swift`):** `measuredOrNil()` maps a non-positive FWHM/HFR
+to `nil` when the metric arrays are built, so failed fits are simply absent —
+identical to a frame that was never measured. No real star has zero width, so
+there is no legitimate 0 to lose. Rules 3 and 4 (and every median, MAD and z-score
+derived from these arrays) now see only actual measurements.
+
+**Impact — GOLDENSET1 (464 frames, 21 cases, 3 setups), by priority:**
+
+| | v32 | v33 | v34 |
+|---|---|---|---|
+| **Conservative false positives** | 32 (15.5%) | 30 (14.6%) | **4 (1.9%)** |
+| false positives, all tiers | 88 (42%) | 41 (19%) | **18 (8%)** |
+| A dark | 23 (36%) | 63 (100%) | 63 (100%) |
+| A cloud | 22 (36%) | 56 (91%) | 55 (90%) |
+| A trail | 37 (72%) | 23 (45%) | 23 (45%) |
+| A defocus | 4 (40%) | 4 (40%) | 4 (40%) |
+| C gradient | 30 (41%) | 17 (23%) | 17 (23%) |
+
+Prio-A catch is unchanged (one cloud frame moves, within run-to-run GPU variance);
+false alarms drop 87% from the v32 baseline. Aggregate false-alarm rate
+41.9% → 7.4%, catch 43.2% → 61.6%.
+
+All 4 remaining Conservative false positives carry the reason "star
+trailing/elongation" — the same trailing-measurement blind spot that also explains
+the 45% trail catch. One defect, two symptoms; tracked as the top open item.
+
+ScoringRegression (9) + ScoringValidation (53) green.
+
+---
+
+## Version 33 — Garbage detection reads measured pixels, not derived or header values (2026-09-05)
+
+**Dome-closed frames scored GOOD. Surfaced on a real RASA/600mm ASI6200MM Ha set
+(Heart Nebula, 241 frames): an entire night of 62 cap-on/dome-closed frames was
+rated `good` by the app. 56 of the 62 carried NO Stage-1 garbage reason at all.
+The same signature was present in the golden set's single 2026-07 `dark` frame,
+so this was not specific to one session.**
+
+### Three independent defects, one pattern
+
+Each of the three garbage rules that should have fired was consulting something
+OTHER than the frame's own pixels.
+
+**1. SNR was used as a signal-presence test, and it inverts on flat frames.**
+Both dark-detection paths (pre-pass + Rule 0b) required `!hasMeasurableSignal`,
+defined as `snr > 5`. The app's SNR is `noiseMedian / noiseMAD` — background LEVEL
+over background SCATTER. A dark frame is a flat pedestal: median sits on the bias
+offset (0.0077) while scatter collapses to the read-noise floor (MAD 0.000068).
+That ratio is therefore MAXIMAL on exactly the frames the guard must reject — the
+62 darks measured SNR 113.1, against 19.9 for the good frames of the same group.
+The twelve highest-SNR frames in the whole folder were all darks. The guard read
+"lots of signal" where the physics says "no structure whatsoever".
+
+**2. A FWHM of exactly 0 was treated as a valid measurement.** Rule 0 tested
+`fwhmValues == nil`. A featureless frame yields a *failed fit* — computed FWHM 0.0,
+not nil — so Rule 0 skipped it, while Rule 0b and Rule 1 are both gated on
+`if let stars`, which is nil for the same frames. A frame with nothing measurable
+in it thus slipped past every star-keyed rule simultaneously. Set-wide this
+affected 69 frames (33 dark, 36 cloud) — and zero good frames.
+
+**3. Garbage detection trusted the header/filename value.** `fwhmValues` /
+`starsValues` prefer the HEADER value whenever every frame in the group has one —
+correct for ranking (consistent within a session), wrong for physical checks. NINA
+writes a per-frame autofocus FWHM into the filename, and the dome-closed frames
+carry plausible-looking `FWHM_4.49` / `FWHM_2.74` tokens. Rule 0 was asking the
+capture software whether a star had been visible instead of looking at the image.
+
+### Fixes (`QualityEstimator.swift`)
+
+- **`darkFrameMADCeiling = 0.0002`** (new constant, ≈13 ADU of 65535). A frame
+  carrying real sky varies spatially — stars, nebulosity, gradients — so its
+  background MAD sits well above the read-noise floor.
+- **Both dark signatures accepted, neither subsumes the other.** A frame with no
+  sky is either (1) a flat pedestal — no structure, but maximal SNR, or (2) near
+  zero level with ordinary read noise — normal MAD, but no SNR. Detection now
+  requires `noStructure || noMeasurableSignal`. The original SNR test was not
+  wrong, it was incomplete: it is the correct test for signature (2), and the
+  synthetic `testR0b_DarkFrame_Path*` fixtures model exactly that case.
+- **Rule 0** treats a measured FWHM `<= 0` as "no PSF", equivalent to nil.
+- **Absolute physical checks read measured values** (`computedFWHM` /
+  `computedStarCount`, falling back to the arrays only when nothing was measured):
+  Rule 0, Rule 0b (both paths), Rule 1(a) `stars < 10`. Rule 1(b)/(c) deliberately
+  stay on `starsValues` — they compare against a group median / P90 built from the
+  same array, and mixing a measured numerator with a header-based median would
+  compare two different scales.
+- Rule 0b's plate-scale-aware FWHM cross-check and background condition are gone:
+  the structure test covers the same protection (bright nebulae and dense star
+  fields have normal background scatter) with fewer moving parts.
+
+### Impact — measured on GOLDENSET1 (464 frames, 21 cases, 3 setups)
+
+Broken down by the user's priority order (garbage removal is Prio 1; weak SNR is
+object-dependent; gradients are usually fixable in software):
+
+| Prio | Token | n | catch v32 | catch v33 |
+|------|-------|---|-----------|-----------|
+| A | dark | 63 | 23 (36%) | **63 (100%)** |
+| A | cloud | 61 | 22 (36%) | **56 (91%)** |
+| A | trail | 51 | 37 (72%) | 23 (45%) |
+| A | defocus | 10 | 4 (40%) | 4 (40%) |
+| A | **total** | **185** | 86 (46%) | **146 (78%)** |
+| C | gradient | 72 | 30 (41%) | 17 (23%) |
+| — | good frames wrongly flagged | 206 | 88 (42%) | **41 (19%)** |
+
+Aggregate: false-alarm rate 41.9% → 18.7%, catch rate 43.2% → 62.0%, total errors
+227 → 133. **Zero good frames gained a garbage reason.** No case regressed.
+
+**The trail regression is a pre-existing measurement blind spot, not a new defect.**
+Those 14 frames sit at trailingScore 0.28–0.59 / ecc 0.56–0.67, while the good
+frames of the SAME group sit at 0.36 / 0.60 — they are indistinguishable in every
+measured metric. They were previously flagged only because 62 undetected darks
+skewed the group median; that is a lucky hit from a broken reference frame, not a
+detection. Tracked as follow-up (see below).
+
+Synthetic gates: ScoringRegression (9) + ScoringValidation (53) all green,
+including the three `testR0b_DarkFrame_*` tests, which correctly caught an earlier
+revision of this change that replaced the SNR test instead of complementing it.
+
+### Known remaining gaps (deliberately NOT changed here)
+
+- **Trailing measurement on fast optics.** RASA 600mm good frames measure ecc ~0.60
+  against trail-labelled frames at ~0.63, though the user reports the latter range
+  from "slightly egg-shaped" to "severe mount jumps". Prio A, related to the v31
+  elliptical-fit collapse. Highest-value open item.
+- **No metric measures a spatial gradient.** `STFCalculator.measureNoise` samples the
+  centre 70% and returns a global median + MAD — both distribution measures without
+  any spatial component. Gradient-labelled frames therefore separate from good frames
+  on NEITHER (0.0126 vs 0.0336 background, 0.0013 vs 0.0014 MAD, also night-matched).
+  `GoldenMiniSetTests`' "bad background > 3× good" assertion cannot be satisfied by
+  any existing metric. Prio C, so low urgency.
+- **Rule 1(b)/(c) still prefer header star counts**, as does all z-score ranking via
+  `allHaveHeaderFWHM` / `allHaveHeaderStars`. Consistent within itself; revisiting it
+  means moving medians, P90 and z-scores together.
+
+---
+
 ## Version 32 — Uncertain tier no longer demotes GOOD frames in small groups (2026-07-28)
 
 **Over-flagging of good frames (Phase 2, the user's original complaint). Measured
