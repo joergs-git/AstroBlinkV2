@@ -136,7 +136,14 @@ struct ImageEntry: Identifiable, Hashable {
     var computedHFR: Double?        // HFR measured from image data (pixels)
     var computedFWHM: Double?       // FWHM measured from image data (pixels)
     var computedStarCount: Int?     // Number of stars measured
-    var computedEccentricity: Double?  // Median star eccentricity [0..1] from 2D image moments
+    var computedEccentricity: Double?
+    // Diagnostics for the moment-vs-fit eccentricity override (StarMetricsCalculator).
+    // Populated by the measurement pipeline, never read by scoring — they exist so the
+    // override window can be evaluated against real frames via AstroScoreCLI.
+    var momentEccentricity: Double?     // median image-moment eccentricity
+    var fitEccentricity: Double?        // median elliptical-fit eccentricity
+    var momentPreferredFraction: Double? // fraction of fitted stars where the moment won
+    var fitAcceptedFraction: Double?     // fraction of stars whose elliptical fit was accepted  // Median star eccentricity [0..1] from 2D image moments
     var psfFluxSum: Double?            // Total estimated PSF flux (for PSFSignalWeight)
     var psfMeanFlux: Double?           // Mean PSF flux per star (resolution/seeing proxy)
     var focalLength: Double?           // From FOCALLEN header (mm) — for adaptive trailing thresholds

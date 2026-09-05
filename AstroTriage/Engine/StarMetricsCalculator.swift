@@ -33,6 +33,15 @@ struct StarMetrics {
     // psfMeanFlux: mean PSF flux per star (proxy for resolution/seeing quality)
     let psfFluxSum: Double
     let psfMeanFlux: Double
+    // ── Diagnostics for the moment-vs-fit eccentricity override (never used in a decision) ──
+    // The elliptical Gauss-Newton fit collapses trails longer than its stamp to a round local
+    // minimum; `ellipticalFitUnderestimatesTrail` overrides it with the robust image moment.
+    // These record what each source actually reported so that override window can be judged
+    // on measured data rather than guessed thresholds.
+    let medianMomentEcc: Double?          // median image-moment eccentricity over measured stars
+    let medianFitEcc: Double?             // median elliptical-fit eccentricity (nil if no GPU fit)
+    let momentPreferredFraction: Double   // fraction of fitted stars where the moment overrode the fit
+    let fitAcceptedFraction: Double       // fraction of measured stars whose elliptical fit was accepted (chi2<1000)
 }
 
 // Result of 2D moment analysis on a single star: eccentricity + position angle + axis ratio
@@ -287,7 +296,9 @@ enum StarMetricsCalculator {
                 starChainFraction: 0,
                 trailCandidateCount: trailIndices.count,
                 trailRejectCount: streakRejectCount,
-                psfFluxSum: 0, psfMeanFlux: 0
+                psfFluxSum: 0, psfMeanFlux: 0,
+                medianMomentEcc: nil, medianFitEcc: nil, momentPreferredFraction: 0,
+                fitAcceptedFraction: 0
             )
         }
 
@@ -371,6 +382,10 @@ enum StarMetricsCalculator {
 
         var eccValues: [Double] = []
         var details: [StarDetail] = []
+        // Diagnostics for the moment-vs-fit override (see below) — not used in any decision.
+        var momentEccValues: [Double] = []
+        var fitEccValues: [Double] = []
+        var momentPreferredCount = 0
 
         // Use wider crop for shape/eccentricity, but pre-filter streaks here too
         let shapeStars = filterStarsForShape(refinedStars, width: w, height: h, ptr: ptr, channelOffset: channelOffset)
@@ -434,6 +449,17 @@ enum StarMetricsCalculator {
                 }
 
                 eccValues.append(finalEcc)
+
+                // Diagnostics only — never feeds a decision. Records what the two
+                // eccentricity sources said per star so the moment-vs-fit override
+                // window can be judged on real data instead of guessed thresholds.
+                momentEccValues.append(shape.eccentricity)
+                if let eFit = matchedEllipFit {
+                    fitEccValues.append(eFit.eccentricity)
+                    if ellipticalFitUnderestimatesTrail(momentEcc: shape.eccentricity, fitEcc: eFit.eccentricity) {
+                        momentPreferredCount += 1
+                    }
+                }
 
                 details.append(StarDetail(
                     x: star.x, y: star.y,
@@ -510,8 +536,20 @@ enum StarMetricsCalculator {
             trailCandidateCount: trailIndices.count,
             trailRejectCount: streakRejectCount,
             psfFluxSum: totalPsfFlux,
-            psfMeanFlux: meanPsfFlux
+            psfMeanFlux: meanPsfFlux,
+            medianMomentEcc: momentEccValues.isEmpty ? nil : sortedMedianOf(momentEccValues),
+            medianFitEcc: fitEccValues.isEmpty ? nil : sortedMedianOf(fitEccValues),
+            momentPreferredFraction: fitEccValues.isEmpty ? 0
+                : Double(momentPreferredCount) / Double(fitEccValues.count),
+            fitAcceptedFraction: momentEccValues.isEmpty ? 0
+                : Double(fitEccValues.count) / Double(momentEccValues.count)
         )
+    }
+
+    /// Plain median helper for the diagnostic fields above.
+    private static func sortedMedianOf(_ v: [Double]) -> Double {
+        let s = v.sorted()
+        return s[s.count / 2]
     }
 
     // MARK: - Star Chain Detection (tracking hop pattern)

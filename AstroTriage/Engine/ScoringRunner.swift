@@ -41,14 +41,25 @@ enum ScoringRunner {
         let stars = previewGenerator.detectStarsFromImage(decoded, channel: channel)
         let totalStarCount = previewGenerator.lastTotalStarCount
         if !stars.isEmpty,
+           // MUST mirror the app's call in PrefetchCache: passing `generator` enables GPU
+           // PSF fitting (Gauss-Newton FWHM + elliptical eccentricity), and `arcsecPerPixel`
+           // enables the plate-scale-aware apertures. Without them this rig measured with a
+           // DIFFERENT pipeline than the app — CPU linearized FWHM and pure image moments —
+           // so anything tuned against it was tuned against the wrong measurements.
            let m = StarMetricsCalculator.measure(stars: stars, fullResImage: decoded,
-                                                 channel: channel, totalStarCount: totalStarCount) {
+                                                 channel: channel, totalStarCount: totalStarCount,
+                                                 generator: previewGenerator,
+                                                 arcsecPerPixel: entry.arcsecPerPixel) {
             entry.computedFWHM = m.medianFWHM
             entry.computedHFR = m.medianHFR
             entry.computedStarCount = m.measuredStarCount > 0 ? m.totalStarCount : nil
             entry.computedEccentricity = m.medianEccentricity
             entry.starDetails = m.starDetails
             entry.starChainFraction = m.starChainFraction
+            entry.momentEccentricity = m.medianMomentEcc
+            entry.fitEccentricity = m.medianFitEcc
+            entry.momentPreferredFraction = m.momentPreferredFraction
+            entry.fitAcceptedFraction = m.fitAcceptedFraction
             if let t = TrailingAnalyzer.analyze(starDetails: m.starDetails,
                                                 focalLength: entry.focalLength,
                                                 pixelSizeMicrons: entry.pixelSizeMicrons) {
