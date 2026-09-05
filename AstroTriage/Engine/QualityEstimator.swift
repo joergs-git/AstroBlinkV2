@@ -431,11 +431,19 @@ struct QualityEstimator {
             let allHaveHeaderHFR = groupEntries.allSatisfy { $0.hfr != nil }
             let allHaveHeaderStars = groupEntries.allSatisfy { $0.starCount != nil }
 
+            // A star-shape metric of 0 is a FAILED fit, not a measurement — no real star has
+            // zero width. Such values MUST NOT enter the group statistics: a featureless
+            // frame (dome closed, opaque cloud) reports 0, and enough of them drag the group
+            // median into the zero block. Rules 3/4 then fire on the only intact frames in
+            // the group ("severe defocus" on 11 of 11 good frames in a 11-good/18-cloud
+            // group, whose median collapsed from ~3.66 to 1.44). Map them to nil so they are
+            // simply absent, exactly like an unmeasured frame.
+            func measuredOrNil(_ v: Double?) -> Double? { (v ?? 0) > 0 ? v : nil }
             let fwhmValues: [Double?] = groupEntries.map { entry in
-                allHaveHeaderFWHM ? entry.fwhm : entry.computedFWHM
+                measuredOrNil(allHaveHeaderFWHM ? entry.fwhm : entry.computedFWHM)
             }
             let hfrValues: [Double?] = groupEntries.map { entry in
-                allHaveHeaderHFR ? entry.hfr : entry.computedHFR
+                measuredOrNil(allHaveHeaderHFR ? entry.hfr : entry.computedHFR)
             }
             let starsValues: [Double?] = groupEntries.map { entry in
                 let count = allHaveHeaderStars ? entry.starCount : entry.computedStarCount

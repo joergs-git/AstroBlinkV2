@@ -12,6 +12,61 @@ Records with `algorithmVersion < kAlgorithmVersion` are candidates for re-analys
 
 ---
 
+## Version 34 — Failed star-shape fits (value 0) no longer enter group statistics (2026-09-05)
+
+**Whole good sides of a group were flagged "severe defocus". On the curated
+GOLDENSET1 case `RC12red08_1950mm_S_NGC6960_180s`, ALL 11 good frames were marked
+by the Conservative autopilot — the mode that is supposed to produce essentially
+no false positives.**
+
+**Root cause — the v33 principle, one layer higher.** v33 established that a
+star-shape metric of 0 is a FAILED FIT, not a measurement, and fixed the RULES
+that read it. The STATISTICS still ingested it: `fwhmValues` / `hfrValues` passed
+0.0 straight through, and `sortedMedian` only skips `nil`, never 0. A featureless
+frame (dome closed, opaque cloud) reports 0, so enough of them drag the group
+median into the zero block:
+
+```
+S_NGC6960:  18 cloud frames @ HFR 0.00  +  11 good frames @ HFR ~3.66
+            group median collapses 3.66 → 1.44   (inside the block of zeros)
+            Rule 4 threshold = 2 × 1.44 = 2.87
+            → every intact frame in the group exceeds it → "severe defocus"
+```
+
+The rule then declares the only usable frames in the group to be garbage. Note
+the inversion: the MORE garbage a group contains, the more certainly its good
+frames get flagged.
+
+**Fix (`QualityEstimator.swift`):** `measuredOrNil()` maps a non-positive FWHM/HFR
+to `nil` when the metric arrays are built, so failed fits are simply absent —
+identical to a frame that was never measured. No real star has zero width, so
+there is no legitimate 0 to lose. Rules 3 and 4 (and every median, MAD and z-score
+derived from these arrays) now see only actual measurements.
+
+**Impact — GOLDENSET1 (464 frames, 21 cases, 3 setups), by priority:**
+
+| | v32 | v33 | v34 |
+|---|---|---|---|
+| **Conservative false positives** | 32 (15.5%) | 30 (14.6%) | **4 (1.9%)** |
+| false positives, all tiers | 88 (42%) | 41 (19%) | **18 (8%)** |
+| A dark | 23 (36%) | 63 (100%) | 63 (100%) |
+| A cloud | 22 (36%) | 56 (91%) | 55 (90%) |
+| A trail | 37 (72%) | 23 (45%) | 23 (45%) |
+| A defocus | 4 (40%) | 4 (40%) | 4 (40%) |
+| C gradient | 30 (41%) | 17 (23%) | 17 (23%) |
+
+Prio-A catch is unchanged (one cloud frame moves, within run-to-run GPU variance);
+false alarms drop 87% from the v32 baseline. Aggregate false-alarm rate
+41.9% → 7.4%, catch 43.2% → 61.6%.
+
+All 4 remaining Conservative false positives carry the reason "star
+trailing/elongation" — the same trailing-measurement blind spot that also explains
+the 45% trail catch. One defect, two symptoms; tracked as the top open item.
+
+ScoringRegression (9) + ScoringValidation (53) green.
+
+---
+
 ## Version 33 — Garbage detection reads measured pixels, not derived or header values (2026-09-05)
 
 **Dome-closed frames scored GOOD. Surfaced on a real RASA/600mm ASI6200MM Ha set
