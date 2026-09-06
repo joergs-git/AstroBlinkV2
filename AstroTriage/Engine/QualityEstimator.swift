@@ -248,17 +248,36 @@ struct QualityEstimator {
     }
 
     // Dark/dome/cap-on detection: ceiling on background scatter (normalized MAD, [0,1]).
-    // A frame that carries real sky has spatial structure — stars, gradients, nebulosity —
-    // so its background MAD sits well above the sensor's read-noise floor. A dark frame is a
-    // flat pedestal: the whole background varies by only a few ADU. 0.0002 ≈ 13 ADU of 65535.
+    // A frame carrying real sky varies spatially — stars, gradients, nebulosity — so its
+    // background MAD sits above the sensor's read-noise floor. A dark frame is a flat
+    // pedestal. 0.0001 ≈ 6.5 ADU of 65535: a background moving by less than that across the
+    // whole frame carries no structure at all.
     //
-    // This replaces the former SNR-based guard (`snr > 5` = "has signal"), which was INVERTED
-    // for this failure mode: the app's SNR is noiseMedian/noiseMAD, so a flat frame — maximal
-    // median over near-zero scatter — produces the HIGHEST SNR in a session. Dome-closed
-    // sequences therefore read as "lots of signal" and escaped detection entirely.
-    // Validated on GOLDENSET1 (464 frames): `stars >= 10000 && noiseMAD < this` selects all
-    // 63 dark frames and nothing else — no good/trail/cloud frame is touched.
-    static let darkFrameMADCeiling: Double = 0.0002
+    // Replaces the former SNR guard (`snr > 5` = "has signal"), which was INVERTED here: SNR
+    // is noiseMedian/noiseMAD, so a flat frame — maximal median over near-zero scatter —
+    // produces the HIGHEST SNR in a session, and dome-closed sequences read as "full of
+    // signal".
+    //
+    // v33 shipped this at 0.0002, calibrated on three setups where darks sat at 0.000068
+    // against a good-frame median of 0.000396. That did not generalise: on live RC12 SII at
+    // 180s the whole distribution is an octave lower (median 0.000204) and 0.0002 landed on
+    // the group median, flagging 45% of a good narrowband set as dome/cap. 0.0001 sits in the
+    // gap between the darks (0.000068) and the lowest good frame measured anywhere
+    // (0.000114): 63/63 GOLDENSET1 darks still caught, 0 of 206 good frames touched, and the
+    // misclassified live SII frames released while the one genuine dark in that folder is
+    // still caught.
+    //
+    // A group-RELATIVE version (MAD < 0.33 x group median) was tried and rejected: it fails
+    // exactly where it matters most. The two-pass night grouping can produce a group that is
+    // almost entirely darks (one night in the calibration set is 62 of 64), and there the
+    // reference level IS the dark level, so the test collapses — 24 darks lost their garbage
+    // reason and false alarms went 15 → 56. A robust relative reference needs the learned
+    // per-setup baseline, not the group.
+    //
+    // KNOWN RISK: this is still an absolute photometric threshold and could be wrong again for
+    // a sensor or exposure regime quieter than anything measured so far. The durable fix is
+    // the per-setup learned corridor.
+    static let darkFrameMADCeiling: Double = 0.0001
 
     // Broadband filters where star count is a reliable quality indicator.
     // Everything else — narrowband (Ha, OIII, SII...), dual-band (L-eXtreme, L-Ultimate),

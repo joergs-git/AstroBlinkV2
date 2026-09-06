@@ -4,6 +4,29 @@ All notable changes to AstroBlink & AIsaac will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [6.7.1] — 2026-09-06
+
+**Hotfix: good narrowband frames were wrongly marked as dome-closed.**
+
+Reported from a live 833-frame session: on RC12 narrowband data, 92 of 244 perfectly
+good SII frames were flagged "noise peaks, not real stars (dome/cap)" — including
+frames with visible star trailing, which are obviously not dome-closed.
+
+The dark-frame detector judges whether a frame's background has any structure, and
+the limit it used was a fixed number calibrated on three telescopes. Narrowband at
+long focal length produces a much smoother background, so the whole distribution sits
+lower and that fixed number landed in the middle of the normal range instead of below
+it. Lowered so it sits between real dark frames and the quietest genuine frame
+measured on any setup.
+
+### Fixed
+
+- **Good narrowband frames marked as dome/cap (Algorithm v36).** No change to any
+  other frame type: measured on the 464-frame calibration set, every result is
+  identical to 6.7.0 — all 63 dark frames still caught, no good frame affected. On the
+  reported live session all 92 false flags are gone while the one genuine dark frame in
+  that folder is still detected.
+
 ## [6.7.0] — 2026-09-05
 
 **Unusable frames — dome closed, lens cap on, opaque cloud — are now reliably

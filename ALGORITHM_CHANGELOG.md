@@ -12,6 +12,65 @@ Records with `algorithmVersion < kAlgorithmVersion` are candidates for re-analys
 
 ---
 
+## Version 36 — Dark-detection scatter ceiling lowered to fit narrowband data (2026-09-06)
+
+**Live-test regression report. On a real 833-frame RC12 session, 92 of 244 perfectly
+good SII frames were marked "noise peaks, not real stars (dome/cap)" — including
+frames with visible star trailing, which are obviously not dome-closed.**
+
+**Root cause — the same mistake this rule set out to fix, reintroduced while fixing
+it.** `darkFrameMADCeiling` shipped in v33 as an absolute 0.0002, calibrated on three
+setups where dark frames sat at 0.000068 against a good-frame median of 0.000396 — a
+factor of six, so a value in between looked safe. It does not generalise. On RC12
+narrowband at 180s the entire distribution is an octave lower:
+
+```
+RC12 SII 180s, 244 frames:  min 0.000068  p10 0.000113  MEDIAN 0.000204  p90 0.000590
+darkFrameMADCeiling = 0.000200   ->  lands exactly on the group median, 45% below it
+```
+
+The reported frames measured 0.000181 and 0.000157 — ordinary values for narrowband at
+long focal length, where the background is simply smoother. Their high star counts
+(16k–20k) are real sensor artefacts (hot pixels), which is what pushed them past the
+`stars >= 10000` branch.
+
+**Fix:** ceiling 0.0002 → **0.0001** (≈6.5 ADU of 65535). This sits in the gap between
+the darks (0.000068) and the lowest good frame measured anywhere (0.000114).
+
+| | GOLDENSET1 | live RC12 SII |
+|---|---|---|
+| dark frames caught | 63/63 → **63/63** | 1 genuine dark still caught |
+| good frames touched | 0/206 → **0/206** | 92 → **0** |
+| false alarms / catch | 15 / 154 → **15 / 154** | — |
+
+Every per-label figure on GOLDENSET1 is identical to v35: the change is neutral on the
+calibration set and resolves the live regression entirely.
+
+### A group-relative version was tried and rejected
+
+`MAD < 0.33 x group median` is the obviously more principled formulation and it fails
+exactly where it matters most. Per case the discriminator was perfect — all darks below
+the ceiling, no good frame below it, in every one of 17 cases. But the two-pass night
+grouping can produce a group that is almost entirely darks (one night in the calibration
+set is 62 of 64), and there the reference level IS the dark level, so the test measures
+against itself and collapses: 24 darks lost their garbage reason and false alarms went
+15 → 56.
+
+Worth recording because a threshold sweep on raw metrics *predicted zero false alarms*
+for that factor. It checks separation, not what the group statistics do afterwards. Only
+the end-to-end measurement is decisive.
+
+### Known risk, deliberately accepted
+
+This remains an ABSOLUTE photometric threshold and can be wrong again for a sensor or
+exposure regime quieter than anything measured so far. Both failed approaches point the
+same way: the reference frame must not come from the data being judged. The durable fix
+is the per-setup learned corridor (`CalibrationDatabase`, which today only promotes).
+
+ScoringRegression (9) + ScoringValidation (53) + TrailingConsensus (7) green.
+
+---
+
 ## Version 35 — Physical plausibility corridor for star-shape measurements (2026-09-05)
 
 **A measured FWHM below what the atmosphere and the sampling allow is not a sharp
