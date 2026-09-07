@@ -371,23 +371,68 @@ struct AutoMarkPopover: View {
         let color: Color
         // Sorted by exposure desc (biggest loss first). Empty or 1-entry = row hides this line.
         let filterBreakdown: [FilterImpact]
+        let mode: AutoMarkMode
+    }
+
+    /// The three autopilot levels, defined by WHICH FRAME OF REFERENCE each is allowed to
+    /// judge against — not merely by how far down the tier list it reaches.
+    ///
+    /// Scoring already records which KIND of signal produced a verdict, so this needs no
+    /// scoring change:
+    ///   • `garbageReasons`            — a DEFECT in this frame. Either absolute (no stars,
+    ///     no PSF, dome/cap, trailing, tracking hops) or measured against the frames the user
+    ///     actually loaded (gradient, low SNR, abnormal background).
+    ///   • `sessionSanityReasons`      — RANKING inside the loaded session ("far below session
+    ///     norm"). The frame is intact, it just is not among the best.
+    ///   • `historicalBaselineReasons` — RANKING against earlier nights of this setup.
+    ///   • `.trash` with all three empty — pure z-score ranking within its own group.
+    ///
+    /// Conservative therefore takes DEFECTS ONLY. A frame is not garbage merely for being the
+    /// weakest of an otherwise fine night. On a real 154-frame RC12 Ha session, session sanity
+    /// demoted 11 of 19 frames of one night to trash — 9 of them with a z-score ABOVE their own
+    /// group average — only because another night that happened to be loaded had better seeing.
+    /// That is an Aggressive judgement and it was reaching Conservative.
+    ///
+    /// Measured: on the curated calibration set this is exactly neutral (147 frames either way,
+    /// 4 false alarms either way, A-garbage catch 134 either way) because there every trash
+    /// frame carries a real defect. On live sessions it releases the ranking-only frames
+    /// (RC12 Ha 76 → 56, SII 82 → 68).
+    ///
+    /// The levels nest: conservative ⊆ balanced ⊆ aggressive. `applyOption` relies on that when
+    /// it un-marks frames that fall outside the chosen level.
+    enum AutoMarkMode {
+        case conservative   // defects only — absolute + measured against the loaded frames
+        case balanced       // + every ranking verdict that stays inside the loaded session
+        case aggressive     // + rankings against earlier nights, uncertain and weak-good frames
+
+        func matches(_ entry: ImageEntry) -> Bool {
+            let bd = entry.qualityBreakdown
+            let hasDefect = !(bd?.garbageReasons.isEmpty ?? true)
+            switch self {
+            case .conservative:
+                return hasDefect
+            case .balanced:
+                return hasDefect
+                    || entry.qualityTier == .trash
+                    || (entry.qualityTier == .borderline && (bd?.borderlineSeverity ?? 0) >= 2)
+            case .aggressive:
+                // Weak-good: tier is .good but SNR contribution is < 30% of the best frame.
+                // These add negligible signal (<55% SNR of best) and degrade the stack.
+                return entry.qualityTier == .trash
+                    || entry.qualityTier == .borderline
+                    || entry.qualityTier == .uncertain
+                    || (entry.qualityTier == .good && (bd?.snrContribution ?? 100) < 30)
+            }
+        }
     }
 
     private var options: [MarkOption] {
         let images = viewModel.images
         let totalExposure = images.reduce(0.0) { $0 + ($1.exposure ?? 0.0) }
 
-        let conservativeTarget = images.filter { $0.qualityTier == .trash }
-        let balancedTarget = images.filter {
-            $0.qualityTier == .trash ||
-            ($0.qualityTier == .borderline && ($0.qualityBreakdown?.borderlineSeverity ?? 0) >= 2)
-        }
-        let aggressiveTarget = images.filter {
-            $0.qualityTier == .trash || $0.qualityTier == .borderline || $0.qualityTier == .uncertain ||
-            // Weak-good: tier is .good but SNR contribution is < 30% of best frame.
-            // These frames add negligible signal (<55% SNR of best) and degrade the stack.
-            ($0.qualityTier == .good && ($0.qualityBreakdown?.snrContribution ?? 100) < 30)
-        }
+        let conservativeTarget = images.filter { AutoMarkMode.conservative.matches($0) }
+        let balancedTarget = images.filter { AutoMarkMode.balanced.matches($0) }
+        let aggressiveTarget = images.filter { AutoMarkMode.aggressive.matches($0) }
 
         let trashExp = conservativeTarget.reduce(0.0) { $0 + ($1.exposure ?? 0.0) }
         let balancedExp = balancedTarget.reduce(0.0) { $0 + ($1.exposure ?? 0.0) }
@@ -421,15 +466,15 @@ struct AutoMarkPopover: View {
         }
 
         return [
-            MarkOption(title: "Conservative", subtitle: "Nebula — maximize integration time.\nOnly removes definite garbage.",
+            MarkOption(title: "Conservative", subtitle: "Only frames with an actual defect —\nno stars, trailing, clouds, gradient.",
                        count: conservativeTarget.count, integrationLoss: lossStr(trashExp), color: .green,
-                       filterBreakdown: filterBreakdown(conservativeTarget)),
-            MarkOption(title: "Balanced", subtitle: "General use — removes garbage\n+ worst borderline frames.",
+                       filterBreakdown: filterBreakdown(conservativeTarget), mode: .conservative),
+            MarkOption(title: "Balanced", subtitle: "Defects + the weakest frames\nof what you loaded.",
                        count: balancedTarget.count, integrationLoss: lossStr(balancedExp), color: .orange,
-                       filterBreakdown: filterBreakdown(balancedTarget)),
-            MarkOption(title: "Aggressive", subtitle: "Stars/Galaxy — prioritize sharpness.\nRemoves questionable + weak frames (<30% SNR).",
+                       filterBreakdown: filterBreakdown(balancedTarget), mode: .balanced),
+            MarkOption(title: "Aggressive", subtitle: "Also judges against earlier nights\n+ drops weak frames (<30% SNR).",
                        count: aggressiveTarget.count, integrationLoss: lossStr(aggressiveExp), color: .red,
-                       filterBreakdown: filterBreakdown(aggressiveTarget)),
+                       filterBreakdown: filterBreakdown(aggressiveTarget), mode: .aggressive),
         ]
     }
 
@@ -644,24 +689,16 @@ struct AutoMarkPopover: View {
     }
 
     private func applyOption(_ option: MarkOption) {
-        let title = option.title
         for i in viewModel.images.indices {
             let entry = viewModel.images[i]
 
-            let shouldMark: Bool
-            if title == "Conservative" {
-                shouldMark = entry.qualityTier == .trash
-            } else if title == "Balanced" {
-                shouldMark = entry.qualityTier == .trash ||
-                    (entry.qualityTier == .borderline && (entry.qualityBreakdown?.borderlineSeverity ?? 0) >= 2)
-            } else {
-                // Aggressive: trash + borderline + uncertain + weak-good (<30% SNR contribution)
-                shouldMark = entry.qualityTier == .trash || entry.qualityTier == .borderline || entry.qualityTier == .uncertain ||
-                    (entry.qualityTier == .good && (entry.qualityBreakdown?.snrContribution ?? 100) < 30)
-            }
+            // Same predicate that produced the preview count — must never diverge, or the
+            // dialog promises one number and the action performs another.
+            let shouldMark = option.mode.matches(entry)
 
-            let isAutopilotEligible = entry.qualityTier == .trash || entry.qualityTier == .borderline || entry.qualityTier == .uncertain ||
-                (entry.qualityTier == .good && (entry.qualityBreakdown?.snrContribution ?? 100) < 30)
+            // Anything the widest level would take is autopilot territory; only those may be
+            // un-marked again, so a manual mark by the user is never silently removed.
+            let isAutopilotEligible = AutoMarkMode.aggressive.matches(entry)
             if shouldMark && !entry.isMarkedForDeletion {
                 viewModel.images[i].isMarkedForDeletion = true
             } else if !shouldMark && entry.isMarkedForDeletion && isAutopilotEligible {
