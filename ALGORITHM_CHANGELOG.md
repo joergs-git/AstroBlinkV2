@@ -12,6 +12,64 @@ Records with `algorithmVersion < kAlgorithmVersion` are candidates for re-analys
 
 ---
 
+## Version 38 — Elongation is a defect, not a ranking; narrowband star floor (2026-09-07)
+
+**Live report: four RC12 frames with clearly visible elongation carried no elongation
+reason, and one frame with 2257 real stars was flagged "zero/near-zero stars".**
+
+### Elongation was gated behind a relative outlier test
+
+All four elongation rules (4, 5, 6, 6a) started with
+
+```swift
+let isTrailingOutlier = (trailingZscores[localIdx] ?? 99) > 1.0
+```
+
+so a frame could only be found elongated if it was trailed MORE than its own group. A
+mount problem affects a whole night — the median is then trailed too, nobody stands out,
+and nothing is detected. The reported frame measured trailingScore 0.805, consensus 0.91,
+eccentricity 0.72 — unambiguous systematic tracking error — with trailingZ **-2.07**:
+badly trailed, but less so than its neighbours.
+
+Rule 6a is documented as *"Absolute trailing ceiling — severe trailing is garbage
+regardless of filter"* and the guard made it not absolute at all.
+
+**Fix:** Rule 6a no longer checks `isTrailingOutlier`. Its two conditions are already
+group-independent: a high trailing score means elongated stars, and high directional
+consensus means they are elongated the SAME way — that is mount motion. Optical
+aberration produces random position angles and fails the consensus test, which is what
+continues to protect fast optics. Rules 4/5/6 keep the guard; 6a alone covers the
+absolute case.
+
+Measured on the live session: frames with trailingScore > 0.6 AND consensus > 0.5 that
+carried NO elongation reason — Ha 17, SII 22 — are now all detected. Elongation reasons
+Ha 22 → 39, SII 19 → 41.
+
+### Narrowband star floor (Rule 1c)
+
+A frame with 2257 real stars was called "zero/near-zero stars". Rule 1(c) flags below 15%
+of the group P90, and the P90 was inflated by hot-pixel frames: in that night 9 of 18
+frames report over 10000 "stars" while genuine frames sit near 3300, putting the bar at
+2550. Rule 1(b) already relaxes its factor for narrowband (0.15 vs 0.25 broadband) because
+the target is nebulosity and stars are incidental; 1(c) used a flat 0.15 regardless of
+filter. Now filter-aware in the same way (narrowband 0.09).
+
+Live: false "zero stars" Ha 25 → 16, SII 24 → 21.
+
+### Impact — GOLDENSET1 (464 frames)
+
+| | v37 | v38 |
+|---|---|---|
+| false alarms | 15 | **15** |
+| Conservative false positives | 4 | **4** |
+| catch | 154 | **161** |
+| A dark | 63/63 | 63/63 |
+
+No good frame is affected either way; the gain is pure catch. ScoringRegression (9) +
+ScoringValidation (53) + TrailingConsensus (7) green.
+
+---
+
 ## Version 37 — Background MAD floored so a stable night cannot collapse the denominator (2026-09-07)
 
 **Reported from a live session: a good RC12 Ha frame was flagged "abnormal background

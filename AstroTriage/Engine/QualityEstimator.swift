@@ -785,10 +785,18 @@ struct QualityEstimator {
                         // 4540-frame curated set (2026-04-18) showed switching to an
                         // interpolated percentile changed only 3 classifications, 2 of
                         // which were correct catches that would be lost. Kept as-is.
+                        //
+                        // Filter-aware like (b): on narrowband the target is nebulosity, stars
+                        // are incidental, and the P90 is easily inflated — hot-pixel frames on
+                        // this sensor report 10-20k "stars" while genuine frames of the same
+                        // night sit near 3k, so a flat 15% of P90 lands above real frames. A
+                        // reported RC12 Ha frame with 2257 real stars was called "zero/near-zero
+                        // stars" for exactly this reason.
                         let sortedStars = cleanStarsValues.compactMap { $0 }.sorted()
                         if sortedStars.count >= 5 {
                             let p90 = sortedStars[Int(Double(sortedStars.count) * 0.9)]
-                            if p90 > 100 && stars < p90 * 0.15 {
+                            let p90Factor = isNarrowband ? 0.15 * 0.6 : 0.15
+                            if p90 > 100 && stars < p90 * p90Factor {
                                 if !garbageReasons.contains(.noStars) {
                                     garbageReasons.append(.noStars)
                                 }
@@ -855,7 +863,22 @@ struct QualityEstimator {
                 // Tracking error produces normal FWHM (good seeing) + high eccentricity
                 // (mount drift). The consensus requirement already guards against optical
                 // aberrations (which produce random PA, not consensus).
-                if isTrailingOutlier, !garbageReasons.contains(.elongated),
+                // NOT gated on isTrailingOutlier: this is the ABSOLUTE ceiling, and elongation
+                // is a defect of the frame itself, not a ranking. The outlier guard made it
+                // relative, so a whole night of trailed frames detected nothing — the median
+                // was trailed, so nobody stood out. Measured on a live RC12 session: 39 Ha and
+                // 39 SII frames had trailingScore > 0.6 with consensus > 0.5 (systematic
+                // tracking error, not optics), and 17 resp. 22 of them carried NO elongation
+                // reason purely because of this guard. One reported frame measured
+                // trailingScore 0.805 / consensus 0.91 / eccentricity 0.72 and was passed over
+                // with trailingZ = -2.07: badly trailed, but less so than its neighbours.
+                //
+                // Safe without the guard because the two conditions are already absolute and
+                // independent of the group: a high trailing score means elongated stars, and
+                // high directional consensus means they are elongated the SAME way — that is
+                // mount motion. Optical aberration produces random position angles and fails
+                // the consensus test, which is what protects fast optics here.
+                if !garbageReasons.contains(.elongated),
                    let ts = entry.trailingScore, ts > effectiveTrailingCeiling,
                    let consensus = entry.trailingConsensus, consensus > config.absoluteTrailingCeilingConsensus {
                     garbageReasons.append(.elongated)

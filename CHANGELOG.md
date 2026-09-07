@@ -4,6 +4,49 @@ All notable changes to AstroBlink & AIsaac will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [6.7.2] — 2026-09-07
+
+**Conservative auto-mark now only removes frames that actually have a defect.**
+
+Reported from a live 833-frame session: Conservative was marking frames with no defect
+at all — in one case 11 of 19 frames of a night, 9 of them scoring ABOVE their own group
+average, purely because a different night that happened to be loaded had better seeing.
+
+### Fixed
+
+- **Conservative marked frames that were merely below average (auto-mark levels).** The
+  three levels used to differ only in how far down the quality list they reached, so
+  "this frame has no stars" and "this frame is not among the session's best" were
+  indistinguishable. They now differ by what each level is allowed to compare against:
+  Conservative takes only frames with an actual defect (no stars, trailing, tracking
+  hops, clouds, gradient, low SNR — judged absolutely or against the frames you loaded);
+  Balanced adds the weakest frames of what you loaded; Aggressive additionally judges
+  against your earlier nights. Measured on the curated calibration set this changes
+  nothing (identical selection, identical false alarms), and on the reported live session
+  it releases 20 of 76 Ha frames and 14 of 82 SII frames that had no defect.
+- **Elongated frames not detected when a whole night was affected (Algorithm v38).** Star
+  elongation could only be flagged if a frame was trailed more than its own group — so a
+  mount problem lasting a whole night went undetected, because the night's own median was
+  trailed and nothing stood out. One reported frame was clearly trailed (consensus 0.91)
+  yet measured *below* its neighbours. The absolute rule now judges the frame itself:
+  strong elongation with a consistent direction is mount motion regardless of what the
+  rest of the night looks like. Optical aberration still passes, because it produces
+  random star angles rather than one direction. On the reported session this detects 17
+  additional Ha and 22 additional SII frames.
+- **Narrowband frames with thousands of stars flagged "zero/near-zero stars" (Algorithm
+  v38).** The star-count floor compares against the best frames of the group, and frames
+  with hot-pixel artefacts reporting 10-20k "stars" pushed that bar above genuine frames.
+  On narrowband the target is nebulosity and stars are incidental — the neighbouring rule
+  already accounted for that, this one did not. Now consistent.
+
+- **Good frames flagged "abnormal background" on very stable nights (Algorithm v37).**
+  The background check measures how far a frame deviates from its group. When a night is
+  so stable that most frames report an identical background, that comparison had nothing
+  left to divide by, and a difference of 3 ADU out of 65535 registered as a large
+  anomaly. The comparison now has a lower bound that scales with the sky brightness of
+  the group. Genuine outliers are unaffected — a frame at 9x the background of its night
+  is still caught.
+
 ## [6.7.1] — 2026-09-06
 
 **Hotfix: good narrowband frames were wrongly marked as dome-closed.**
