@@ -201,7 +201,16 @@ extension SessionOrchestrator {
                 if let idx = host.images.firstIndex(where: { $0.url == url }) {
                     if metrics.medianHFR > 0 { host.images[idx].computedHFR = metrics.medianHFR }
                     if metrics.medianFWHM > 0 { host.images[idx].computedFWHM = metrics.medianFWHM }
-                    host.images[idx].computedStarCount = metrics.totalStarCount
+                    // A star count only counts as MEASURED when the shape measurement actually
+                    // succeeded. `totalStarCount` is the raw detector output, which on an empty
+                    // frame is hot-pixel noise; the fallback StarMetrics built when measurement
+                    // fails carries `measuredStarCount: 0` with that raw count still attached.
+                    // Assigning it unconditionally gave frames with nothing in them a plausible
+                    // star count, and Rule 0's "has signal" exception (snr > 5 AND stars > 100)
+                    // then suppressed the "no signal detected" verdict — an empty frame scored
+                    // Good. ScoringRunner (the path the golden set measures) always did this
+                    // correctly, so the CLI caught these frames and the app did not.
+                    host.images[idx].computedStarCount = metrics.measuredStarCount > 0 ? metrics.totalStarCount : nil
                     host.images[idx].computedEccentricity = metrics.medianEccentricity
                     host.images[idx].psfFluxSum = metrics.psfFluxSum
                     host.images[idx].psfMeanFlux = metrics.psfMeanFlux
@@ -533,7 +542,16 @@ extension SessionOrchestrator {
                 if let idx = host.images.firstIndex(where: { $0.url == url }) {
                     if metrics.medianHFR > 0 { host.images[idx].computedHFR = metrics.medianHFR }
                     if metrics.medianFWHM > 0 { host.images[idx].computedFWHM = metrics.medianFWHM }
-                    host.images[idx].computedStarCount = metrics.totalStarCount
+                    // A star count only counts as MEASURED when the shape measurement actually
+                    // succeeded. `totalStarCount` is the raw detector output, which on an empty
+                    // frame is hot-pixel noise; the fallback StarMetrics built when measurement
+                    // fails carries `measuredStarCount: 0` with that raw count still attached.
+                    // Assigning it unconditionally gave frames with nothing in them a plausible
+                    // star count, and Rule 0's "has signal" exception (snr > 5 AND stars > 100)
+                    // then suppressed the "no signal detected" verdict — an empty frame scored
+                    // Good. ScoringRunner (the path the golden set measures) always did this
+                    // correctly, so the CLI caught these frames and the app did not.
+                    host.images[idx].computedStarCount = metrics.measuredStarCount > 0 ? metrics.totalStarCount : nil
                     host.images[idx].computedEccentricity = metrics.medianEccentricity
                     host.images[idx].psfFluxSum = metrics.psfFluxSum
                     host.images[idx].psfMeanFlux = metrics.psfMeanFlux

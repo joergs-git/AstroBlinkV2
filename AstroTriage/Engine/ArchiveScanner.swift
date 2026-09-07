@@ -433,7 +433,9 @@ class ArchiveScanner: ObservableObject {
             ) {
                 entry.computedHFR = metrics.medianHFR > 0 ? metrics.medianHFR : nil
                 entry.computedFWHM = metrics.medianFWHM > 0 ? metrics.medianFWHM : nil
-                entry.computedStarCount = metrics.totalStarCount
+                // Only a successful measurement yields a usable star count — see
+                // SessionOrchestrator+Prefetch for why the raw detector count must not be used.
+                entry.computedStarCount = metrics.measuredStarCount > 0 ? metrics.totalStarCount : nil
                 entry.computedEccentricity = metrics.medianEccentricity
                 entry.starChainFraction = metrics.starChainFraction
                 entry.psfFluxSum = metrics.psfFluxSum > 0 ? metrics.psfFluxSum : nil
@@ -452,7 +454,9 @@ class ArchiveScanner: ObservableObject {
                     }
                 }
             } else {
-                entry.computedStarCount = totalStarCount
+                // Measurement failed entirely — the raw detector count is not evidence of
+                // stars, so leave it unset rather than fabricating one.
+                entry.computedStarCount = nil
             }
         }
 

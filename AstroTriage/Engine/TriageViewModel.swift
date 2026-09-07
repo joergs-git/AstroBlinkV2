@@ -4208,7 +4208,10 @@ class TriageViewModel: ObservableObject {
                     if let idx = self.images.firstIndex(where: { $0.url == url }) {
                         if metrics.medianHFR > 0 { self.images[idx].computedHFR = metrics.medianHFR }
                         if metrics.medianFWHM > 0 { self.images[idx].computedFWHM = metrics.medianFWHM }
-                        self.images[idx].computedStarCount = metrics.totalStarCount
+                        // See SessionOrchestrator+Prefetch: only a successful measurement
+                        // yields a usable star count; the raw detector output on an empty frame
+                        // is hot-pixel noise and suppresses the no-signal verdict.
+                        self.images[idx].computedStarCount = metrics.measuredStarCount > 0 ? metrics.totalStarCount : nil
                         self.images[idx].computedEccentricity = metrics.medianEccentricity
                         if !metrics.starDetails.isEmpty {
                             self.images[idx].starDetails = metrics.starDetails

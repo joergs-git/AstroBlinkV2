@@ -4,6 +4,24 @@ All notable changes to AstroBlink & AIsaac will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [6.7.3] — 2026-09-07
+
+**Hotfix: frames with nothing in them were scored as good in the app.**
+
+Reported from live testing: frames containing no stars at all — not one — were rated
+"Good" and survived even the Aggressive level.
+
+### Fixed
+
+- **Empty frames scored as good (app measurement path).** A star count only counts as
+  measured when the shape measurement actually succeeded; the raw detector output on an
+  empty frame is hot-pixel noise. Four places in the app assigned that raw count
+  unconditionally, so a frame with nothing in it carried a plausible star count, and the
+  "no signal detected" check has an exception for frames that clearly do have signal —
+  which the fabricated count satisfied. The headless scoring path used for calibration
+  always did this correctly, which is why the calibration set never showed the problem
+  and the app did. All five places now agree.
+
 ## [6.7.2] — 2026-09-07
 
 **Conservative auto-mark now only removes frames that actually have a defect.**
