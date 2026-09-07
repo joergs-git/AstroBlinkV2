@@ -12,6 +12,36 @@ Records with `algorithmVersion < kAlgorithmVersion` are candidates for re-analys
 
 ---
 
+## Version 37 — Background MAD floored so a stable night cannot collapse the denominator (2026-09-07)
+
+**Reported from a live session: a good RC12 Ha frame was flagged "abnormal background
+(clouds/gradient)" although its background sat 0.1 MAD BELOW its own group median.**
+
+Rule 8 measures how far a frame's background deviates from its group, in MADs. On a
+stable night that denominator can collapse: in the reported night **12 of 19 frames
+reported an identical background level**, so the group MAD went to zero. The offending
+frame sat 0.0005 above the median — **3 ADU out of 65535, physically nothing** — and
+divided by ~0 that read as tens of MADs.
+
+Same class as v34 and v35: a relative measure with no floor under the denominator. The
+main z-score path (`zscores()`) has floored every metric for a long time via
+`practicalMADFloor`; Rule 8 computes its own MAD via `medianAbsoluteDeviation` and
+divides directly, so it bypassed that protection. It was the only such bypass — an audit
+of every division by a spread measure found `MosaicGenerator` already guards with a floor,
+the SNR computations are ratios rather than z-scores, and `QualityEstimator+Historical`
+is informational only (it never changes a tier).
+
+**Fix:** `bgMAD` is floored at 2% of the group's own background level — scale-free, so it
+follows sky brightness, filter and exposure instead of fixing a number. Genuine outliers
+stay obvious: in that same night a frame at 9× the median background still measures 412
+MADs and is still caught.
+
+**Impact:** exactly neutral on GOLDENSET1 (15 false alarms / 154 caught, unchanged). On
+the reported live session the frame is released while the real outlier of the same night
+is retained; "abnormal background" on that Ha group drops 29 → 27.
+
+---
+
 ## Version 36 — Dark-detection scatter ceiling lowered to fit narrowband data (2026-09-06)
 
 **Live-test regression report. On a real 833-frame RC12 session, 92 of 244 perfectly

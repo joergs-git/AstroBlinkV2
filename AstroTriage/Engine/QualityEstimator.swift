@@ -220,6 +220,10 @@ struct QualityEstimator {
     // Genuinely bad frames are already caught by Stage 1 garbage detection.
     static let zscoreCap: Double = 3.0
 
+    // Minimum background MAD as a fraction of the group's background level, so Rule 8 cannot
+    // divide by a collapsed denominator on a very stable night. See the use site.
+    static let backgroundMADFloorFactor: Double = 0.02
+
     // Stage 1: absolute garbage detection threshold (relative to group median).
     static let garbageDropFactor: Double = 0.50  // Value < 50% of group median → definite garbage
 
@@ -618,7 +622,18 @@ struct QualityEstimator {
                 darkFrameIndices.contains($0.offset) ? nil : $0.element
             }
             let bgMedian = sortedMedian(cleanBgValues)
+            // Floor the background MAD, exactly as FWHM/star-count z-scores are floored.
+            // On a stable night the frame-to-frame background barely moves — one real RC12 Ha
+            // night had 12 of 19 frames reporting an IDENTICAL background, so the MAD
+            // collapsed to zero. Rule 8 then divides by ~0 and a difference of 3 ADU out of
+            // 65535 reads as tens of MADs, flagging perfectly good frames as "abnormal
+            // background". A floor of 2% of the group's own background level is scale-free
+            // (it scales with sky brightness, filter and exposure) and keeps genuine outliers
+            // obvious: in that same night a frame at 9x the median background still measures
+            // 412 MADs. Without the floor the rule effectively asks "is this frame different
+            // at all", not "is it abnormal".
             let bgMAD = medianAbsoluteDeviation(cleanBgValues, median: bgMedian)
+                .map { max($0, (bgMedian ?? 0) * backgroundMADFloorFactor) }
 
             // Plate-solved center coordinates for pointing offset detection
             // Compute group median RA/Dec and FOV (degrees) for decentered-target check
