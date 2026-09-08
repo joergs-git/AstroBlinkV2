@@ -102,6 +102,11 @@ enum StarMetricsCalculator {
     // shapes. Only reached on frames where the normal pass failed, so this is not a per-frame
     // cost. See the use site.
     private static let maxShapeRescueCandidates = 600
+    // Below this many measured shapes the trailing analysis cannot produce direction
+    // statistics (TrailingAnalyzer.minStarsForConsensus is 5, counted over ELONGATED stars
+    // only), so the rescue pass must aim for a real sample rather than the bare 3 a median
+    // needs. See the use site.
+    private static let minStarsForUsableTrailing = 12
     // Acceptance gate for a GPU PSF fit: RMS residual as a fraction of the fitted amplitude.
     //
     // Replaces the former `chi2 < 1000`. The kernel's chi2 is reduced by degrees of freedom
@@ -521,8 +526,17 @@ enum StarMetricsCalculator {
         // frames the user reported as obviously elongated measure ecc 0.86 / 0.90 / 0.90 once
         // real stars are reached.
         //
-        // Only runs when the normal pass failed, so frames that already worked are untouched.
-        if eccValues.count < 3 {
+        // Threshold is TrailingAnalyzer's requirement, not the bare median minimum. A frame
+        // with 3-4 shapes produces a median eccentricity but no direction statistics — the
+        // analyser needs `minStarsForConsensus` (5) ELONGATED stars, and a handful of samples
+        // rarely clears that — so trailingScore and consensus come out 0 and every elongation
+        // rule stays silent while eccentricity reads 0.98. That gap between "enough for a
+        // median" and "enough for a direction" is exactly where the reported frame fell: seven
+        // frames of one live RC12 night measured eccentricity 0.64-0.98 with trailingScore 0,
+        // all of them hot-pixel frames with >10000 detections.
+        //
+        // Only runs when the normal pass fell short, so frames that already worked are untouched.
+        if eccValues.count < minStarsForUsableTrailing {
             // Collect a FULL sample, not the bare minimum. A rescue that stops at 3 stars
             // yields a median eccentricity but no usable direction statistics — TrailingAnalyzer
             // returned trailingScore 0 and consensus 0 — so the elongation rules still could not

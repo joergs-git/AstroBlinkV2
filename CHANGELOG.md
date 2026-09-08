@@ -13,6 +13,11 @@ Reported from live testing: frames containing no stars at all — not one — we
 
 ### Fixed
 
+- **Frames with near-linear stars still passing (Algorithm v40).** A follow-up to the
+  fix below: rescuing just enough star shapes to compute an average was not enough to
+  analyse their direction, so a frame whose stars measured as almost straight lines still
+  reported no trailing at all and passed every check. The rescue now collects a sample
+  large enough for the analysis that consumes it.
 - **Egg-shaped stars not detected on frames with sensor artefacts (Algorithm v39).**
   Shape measurement uses the brightest detections, and on a sensor with hot pixels those
   are the hot pixels — single bright dots that get discarded, leaving too few real

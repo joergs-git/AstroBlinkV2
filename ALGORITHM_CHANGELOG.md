@@ -12,6 +12,44 @@ Records with `algorithmVersion < kAlgorithmVersion` are candidates for re-analys
 
 ---
 
+## Version 40 — Shape rescue must reach a usable sample, not just a median (2026-09-08)
+
+**Follow-up to v39, from the same live session. A frame measuring eccentricity 0.98 —
+essentially a line — scored good and survived even Aggressive, because its trailingScore
+and consensus were 0.**
+
+v39's rescue triggers when fewer than 3 shapes were measured, since 3 is what a median
+needs. But `TrailingAnalyzer` needs `minStarsForConsensus` (5) **elongated** stars before
+it will compute direction statistics; with only 3-4 samples that is rarely reached, so it
+returns trailingScore 0 and consensus 0. A frame landing in that gap gets a valid
+eccentricity and no trailing analysis at all — and every elongation rule keys off trailing,
+so nothing fires.
+
+Seven frames of one live RC12 night sat in exactly that gap, eccentricity 0.64-0.98 with
+trailingScore 0, all of them hot-pixel frames with >10000 detections.
+
+**Fix:** the rescue now aims for 12 measured shapes rather than 3. The threshold is derived
+from what the consumer needs, not from what a median needs.
+
+**Impact — GOLDENSET1 (464 frames), v39 → v40:**
+
+| | v39 | v40 |
+|---|---|---|
+| Conservative false positives | 4 | **4** |
+| A total | 145 | **146** |
+| A cloud | 54 | **55** |
+| false alarms, all tiers | 24 | 29 |
+
+The 5 additional soft-tier flags carry no defect reason — pure z-score movement from frames
+that now contribute real eccentricity to their group. Conservative is untouched.
+
+Live: the reported frame now measures trailingScore 0.64 / consensus 0.51 and is correctly
+flagged; all 7 frames of that night with measured eccentricity but zero trailing are fixed.
+
+ScoringRegression (9) + ScoringValidation (53) + TrailingConsensus (7) green.
+
+---
+
 ## Version 39 — Shape rescue when hot pixels crowd out the star sample (2026-09-08)
 
 **Live report: three RC12 frames with obviously egg-shaped stars scored as good. Their
