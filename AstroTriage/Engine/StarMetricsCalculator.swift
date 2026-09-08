@@ -98,6 +98,10 @@ enum StarMetricsCalculator {
     private static let streakAxisRatioThreshold: Double = 0.12
     // Fixed aperture for quick pre-filter shape check (before FWHM-adaptive aperture is known)
     private static let preFilterAperture: Float = 5.0
+    // How deep the RESCUE pass may scan past the top-60 when those yielded too few measurable
+    // shapes. Only reached on frames where the normal pass failed, so this is not a per-frame
+    // cost. See the use site.
+    private static let maxShapeRescueCandidates = 600
     // Acceptance gate for a GPU PSF fit: RMS residual as a fraction of the fitted amplitude.
     //
     // Replaces the former `chi2 < 1000`. The kernel's chi2 is reduced by degrees of freedom
@@ -410,6 +414,19 @@ enum StarMetricsCalculator {
 
         // Use wider crop for shape/eccentricity, but pre-filter streaks here too
         let shapeStars = filterStarsForShape(refinedStars, width: w, height: h, ptr: ptr, channelOffset: channelOffset)
+        // Candidates are ordered brightest-first. On a sensor with hot pixels the brightest
+        // "detections" ARE the hot pixels: single-pixel spikes whose second moments are
+        // degenerate, so they either fail computeShape or land below streakAxisRatioThreshold
+        // and get discarded as satellite streaks. Taking a fixed top-60 then leaves fewer than
+        // the 3 measurements needed for a median, eccentricity comes out nil — and with it
+        // trailingScore and consensus — so EVERY elongation rule silently has nothing to test
+        // and a visibly egg-shaped frame scores as good. Measured on a live RC12 night: 12 of
+        // 21 OIII frames had no eccentricity at all, 8 of them with >10000 detections.
+        //
+        // The rescue below runs ONLY when the top-60 pass yields too few measurements, so a
+        // frame that already worked keeps exactly the same star sample and the same result.
+        // (A first attempt simply widened the pool for everyone; that shifted the median onto
+        // dimmer stars and cost 6 additional Conservative false alarms on the calibration set.)
         let shapeCandidates = Array(shapeStars.prefix(maxMeasuredStars))
 
         for star in shapeCandidates {
@@ -494,6 +511,45 @@ enum StarMetricsCalculator {
 
         // Eccentricity: 3 stars minimum for reliable median
         let medianEcc: Double?
+        // Rescue pass: the top-60 candidates yielded too few measurable shapes. On a sensor
+        // with hot pixels that is the normal case for an affected frame — the brightest
+        // "detections" are single-pixel spikes, which fail computeShape or fall below
+        // streakAxisRatioThreshold. Without this, eccentricity stays nil, and with it
+        // trailingScore and consensus, so every elongation rule has nothing to test and a
+        // visibly egg-shaped frame scores as good. Measured on a live RC12 night: 12 of 21
+        // OIII frames had no eccentricity at all, 8 of them with >10000 detections; the three
+        // frames the user reported as obviously elongated measure ecc 0.86 / 0.90 / 0.90 once
+        // real stars are reached.
+        //
+        // Only runs when the normal pass failed, so frames that already worked are untouched.
+        if eccValues.count < 3 {
+            // Collect a FULL sample, not the bare minimum. A rescue that stops at 3 stars
+            // yields a median eccentricity but no usable direction statistics — TrailingAnalyzer
+            // returned trailingScore 0 and consensus 0 — so the elongation rules still could not
+            // fire, while the now-non-nil eccentricity unblocked Rule 9's cross-check and
+            // produced 6 new false alarms on the calibration set. Half a measurement is worse
+            // than none.
+            for star in shapeStars.dropFirst(shapeCandidates.count).prefix(maxShapeRescueCandidates) {
+                if eccValues.count >= maxMeasuredStars { break }
+                let cx = Int(star.x.rounded())
+                let cy = Int(star.y.rounded())
+                let safeR = Int(max(bgOuterRadius, eccAperture + 2))
+                guard cx - safeR >= 0, cx + safeR < w, cy - safeR >= 0, cy + safeR < h else { continue }
+                let bg = estimateBackground(ptr: ptr, channelOffset: channelOffset, width: w,
+                                            cx: cx, cy: cy, innerR: bgInnerRadius, outerR: bgOuterRadius)
+                guard let shape = computeShape(ptr: ptr, channelOffset: channelOffset, width: w,
+                                               cx: star.x, cy: star.y, aperture: eccAperture,
+                                               background: bg, medianFWHM: medianFWHM) else { continue }
+                if shape.axisRatio < streakAxisRatioThreshold { continue }
+                eccValues.append(shape.eccentricity)
+                details.append(StarDetail(x: star.x, y: star.y,
+                                          eccentricity: shape.eccentricity,
+                                          hfr: nil, fwhm: nil,
+                                          positionAngle: shape.positionAngle,
+                                          axisRatio: shape.axisRatio))
+            }
+        }
+
         if eccValues.count >= 3 {
             eccValues.sort()
             medianEcc = eccValues[eccValues.count / 2]

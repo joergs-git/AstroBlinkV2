@@ -12,6 +12,80 @@ Records with `algorithmVersion < kAlgorithmVersion` are candidates for re-analys
 
 ---
 
+## Version 39 — Shape rescue when hot pixels crowd out the star sample (2026-09-08)
+
+**Live report: three RC12 frames with obviously egg-shaped stars scored as good. Their
+eccentricity, trailing score and consensus were all nil — the shape had never been
+measured at all.**
+
+### Why the measurement never happened
+
+Shape measurement takes the 60 brightest detections. On a sensor with hot pixels the
+brightest "detections" ARE the hot pixels: single-pixel spikes whose second moments are
+degenerate, so they either fail `computeShape` or fall below `streakAxisRatioThreshold`
+and are discarded as satellite streaks. Fewer than the 3 measurements needed for a median
+remain, `medianEccentricity` returns nil — and with it trailingScore and consensus — so
+all four elongation rules have nothing to test and a visibly trailed frame looks flawless.
+
+Measured on a live RC12 night: **12 of 21 OIII frames had no eccentricity at all**, 8 of
+them with >10000 detections. Once real stars are reached the reported frames measure
+eccentricity 0.86 / 0.90 / 0.90 with trailing 0.62–1.00.
+
+**Fix:** a rescue pass scans deeper into the brightness-ordered candidate list, but ONLY
+when the normal pass produced fewer than 3 measurements — a frame that already worked
+keeps exactly the same star sample and the same result. It collects a full sample rather
+than the bare minimum (see below).
+
+### Two rejected attempts, recorded because both looked reasonable
+
+1. **Widen the candidate pool for every frame.** Costs 6 additional Conservative false
+   positives: on healthy frames the extra candidates are dimmer stars that shift the
+   eccentricity median.
+2. **Rescue, but stop at the 3 measurements needed for a median.** Same 6 false positives
+   AND the reported frames still went undetected: 3 stars give a median but no usable
+   direction statistics, so TrailingAnalyzer returned trailingScore 0 / consensus 0, the
+   elongation rules stayed silent, while the now-non-nil eccentricity unblocked Rule 9's
+   cross-check. Half a measurement is worse than none.
+
+### Rule 9 cross-check now requires direction, not amount
+
+With shapes finally measured, four GOOD RC12 narrowband frames were flagged as tracking
+hops. Their stars are genuinely elongated (ecc 0.69–0.87) but point every which way
+(consensus 0.22–0.49) — that is optics and seeing at 1964 mm, not the mount. The
+cross-check accepted raw eccentricity above an FL baseline with no direction requirement.
+
+Raising the trailing amount from 0.15 to 0.5 was tried first and **broke the M82
+regression case**, whose confirmed tracking hops carry trailingScore 0.30–0.50 — exactly
+the range the good frames occupy. The amount does not separate the two cases; the
+direction does:
+
+| | trailingScore | consensus |
+|---|---|---|
+| M82 confirmed hops | 0.30–0.50 | 0.50 |
+| user's confirmed hopped frame | 0.62 | 0.50 |
+| four good RC12 frames | 0.24–0.39 | **0.22–0.49** |
+
+So the amount stays at the permissive 0.15 and `consensus >= 0.5` is now required. This
+is also the better test on its own terms: what makes a hop is that every star moves the
+same way, not how far.
+
+### Impact — GOLDENSET1 (464 frames)
+
+| | v38 | v39 |
+|---|---|---|
+| Conservative false positives | 4 | **4** |
+| A dark / cloud / trail / defocus | 63 / 54 / 23 / 5 | **63 / 54 / 23 / 5** |
+| A total | 145 | **145** |
+| false alarms, all tiers | 18 | 24 |
+
+Prio A is untouched and Conservative is unchanged. The 6 additional soft-tier flags carry
+no defect reason at all — they are pure z-score movement, caused by frames that previously
+contributed *nothing* to the group statistics now contributing real eccentricity values.
+
+ScoringRegression (9) + ScoringValidation (53) + TrailingConsensus (7) green.
+
+---
+
 ## Version 38 — Elongation is a defect, not a ranking; narrowband star floor (2026-09-07)
 
 **Live report: four RC12 frames with clearly visible elongation carried no elongation

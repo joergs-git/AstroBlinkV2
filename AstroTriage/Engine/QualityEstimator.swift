@@ -1007,8 +1007,28 @@ struct QualityEstimator {
                         // Cross-check: stars must show SOME elongation to confirm tracking error.
                         // Chain pattern alone with round stars is coincidental (dense field, optics).
                         let hasElongation: Bool = {
-                            if let ts = entry.trailingScore, ts > 0.15 { return true }
-                            if let ecc = entry.computedEccentricity {
+                            // Direction consensus decides, not the amount of elongation. At long
+                            // focal length ordinary optics and seeing produce trailingScore
+                            // 0.24-0.39 — four good RC12 narrowband frames sat exactly there and
+                            // were reported as tracking hops — but their stars point every which
+                            // way (consensus 0.22-0.49). Real hops move every star the same way:
+                            // the M82 regression case sits at consensus 0.50, and the user's
+                            // confirmed hopped frame at 0.50 with trailingScore 0.62. So keep the
+                            // permissive 0.15 amount and require the direction instead. Raising
+                            // the amount to 0.5 instead was tried and broke the M82 case, whose
+                            // frames carry trailingScore 0.30-0.50.
+                            if let ts = entry.trailingScore, ts > 0.15,
+                               let consensus = entry.trailingConsensus, consensus >= 0.5 { return true }
+                            // Raw eccentricity alone is NOT evidence of mount motion: at long
+                            // focal length optics and seeing routinely produce ecc 0.55-0.87
+                            // with the stars pointing in random directions. Requiring direction
+                            // consensus here is the same discipline the elongation rules apply —
+                            // a chain pattern plus randomly-oriented stars is coincidence, which
+                            // is exactly what this cross-check exists to reject. Five good RC12
+                            // narrowband frames (consensus 0.21-0.49) were flagged as tracking
+                            // hops purely on their raw eccentricity.
+                            if let ecc = entry.computedEccentricity,
+                               let consensus = entry.trailingConsensus, consensus > 0.5 {
                                 let fl = entry.focalLength ?? 0
                                 let baseline = fl > 0
                                     ? min(0.70, max(0.15, 0.8 / (fl / 200.0).squareRoot()))

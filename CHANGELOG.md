@@ -13,6 +13,20 @@ Reported from live testing: frames containing no stars at all — not one — we
 
 ### Fixed
 
+- **Egg-shaped stars not detected on frames with sensor artefacts (Algorithm v39).**
+  Shape measurement uses the brightest detections, and on a sensor with hot pixels those
+  are the hot pixels — single bright dots that get discarded, leaving too few real
+  measurements. Eccentricity then came out as "not measured", and every elongation check
+  silently had nothing to look at, so a clearly trailed frame appeared flawless. On the
+  reported session 12 of 21 OIII frames had no shape measurement at all. A rescue pass now
+  looks further down the list, but only for frames where the normal measurement failed —
+  frames that already worked are untouched.
+- **Good frames at long focal length flagged as tracking hops (Algorithm v39).** With
+  shapes finally being measured, frames whose stars are elongated by optics and seeing were
+  reported as mount errors. What distinguishes a real tracking hop is that every star moves
+  in the SAME direction; ordinary optical elongation points every which way. That direction
+  agreement is now required.
+
 - **Empty frames scored as good (app measurement path).** A star count only counts as
   measured when the shape measurement actually succeeded; the raw detector output on an
   empty frame is hot-pixel noise. Four places in the app assigned that raw count

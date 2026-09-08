@@ -298,12 +298,15 @@ final class ScoringValidationTests: XCTestCase {
     func testR9_TrackingHops() {
         var entries = makeBaselineGroup(setup: Self.rc12, count: 10)
         entries[0].starChainFraction = 0.30
-        // v20: chain detection now requires elongation cross-check — add trailing evidence
-        entries[0].trailingScore = 0.25  // above 0.15 cross-check threshold
+        // Chain detection requires an elongation cross-check: some trailing AND a consistent
+        // direction. The direction is what distinguishes a hop from ordinary optics — at long
+        // focal length good frames reach trailingScore 0.24-0.39 with consensus 0.22-0.49.
+        entries[0].trailingScore = 0.25
+        entries[0].trailingConsensus = 0.55
 
         let scores = score(entries: entries)
         XCTAssertTrue(reasons(for: 0, in: entries, scores: scores).contains(.trackingHop),
-            "starChainFraction=0.30 + trailing=0.25 must trigger R9")
+            "starChainFraction=0.30 + trailing=0.25 with consensus must trigger R9")
     }
 
     func testR9_Guard_BelowThreshold() {
@@ -354,8 +357,9 @@ final class ScoringValidationTests: XCTestCase {
         entries[0].computedFWHM = Self.rc12.fwhmGoodMean * 2.5
         entries[0].computedHFR = Self.rc12.fwhmGoodMean * 2.5 * 0.65
         entries[0].starChainFraction = 0.35
-        // v20: chain requires elongation cross-check — add trailing
+        // Chain requires an elongation cross-check — see testR9_TrackingHops.
         entries[0].trailingScore = 0.25
+        entries[0].trailingConsensus = 0.55
 
         let scores = score(entries: entries)
         let r = reasons(for: 0, in: entries, scores: scores)
