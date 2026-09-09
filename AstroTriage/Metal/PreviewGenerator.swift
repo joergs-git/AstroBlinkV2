@@ -591,6 +591,11 @@ final class PreviewGenerator: @unchecked Sendable {
     ///   - channel: Which channel for detection (0=mono/first, 1=green for OSC)
     ///   - median: Background median in uint16 scale (from StarDetector.computeThreshold)
     ///   - threshold: Detection threshold in uint16 scale
+    ///   - fullResBuffer: the UNBINNED uint16 buffer the binned one was derived from. The
+    ///     kernel reads it for the spatial-extent gate that rejects single-pixel sensor
+    ///     defects (hot pixels) — on the binned grid a hot pixel is indistinguishable from a
+    ///     faint star, so that decision has to be taken on the original pixels.
+    ///   - fullWidth / fullHeight: dimensions of `fullResBuffer`
     /// - Returns: Array of detected stars in full-res coordinates, sorted by brightness
     func detectStarsGPU(
         binnedBuffer: MTLBuffer,
@@ -599,7 +604,10 @@ final class PreviewGenerator: @unchecked Sendable {
         channelCount: Int,
         channel: Int,
         median: Float,
-        threshold: Float
+        threshold: Float,
+        fullResBuffer: MTLBuffer,
+        fullWidth: Int,
+        fullHeight: Int
     ) -> [DetectedStar] {
         guard let pipeline = starDetectPipeline else { return [] }
 
@@ -641,6 +649,13 @@ final class PreviewGenerator: @unchecked Sendable {
         encoder.setBytes(&ch, length: 4, index: 7)
         encoder.setBytes(&cc, length: 4, index: 8)
         encoder.setBytes(&maxC, length: 4, index: 9)
+
+        // Full-resolution data for the spatial-extent gate (see kernel comment)
+        var fw = Int32(fullWidth)
+        var fh = Int32(fullHeight)
+        encoder.setBuffer(fullResBuffer, offset: 0, index: 10)
+        encoder.setBytes(&fw, length: 4, index: 11)
+        encoder.setBytes(&fh, length: 4, index: 12)
 
         let threadGroupSize = MTLSize(width: 32, height: 32, depth: 1)
         let threadGroups = MTLSize(
@@ -755,7 +770,10 @@ final class PreviewGenerator: @unchecked Sendable {
             channelCount: channels,
             channel: channel,
             median: median,
-            threshold: threshold
+            threshold: threshold,
+            fullResBuffer: image.buffer,
+            fullWidth: srcW,
+            fullHeight: srcH
         )
 
         // Sanity check: if too many candidates (> 5000), the threshold is catching
@@ -774,7 +792,10 @@ final class PreviewGenerator: @unchecked Sendable {
                     channelCount: channels,
                     channel: channel,
                     median: med2,
-                    threshold: thresh2
+                    threshold: thresh2,
+                    fullResBuffer: image.buffer,
+                    fullWidth: srcW,
+                    fullHeight: srcH
                 )
                 if lastTotalStarCount <= 5000 { break }
             }

@@ -81,7 +81,7 @@ func csvRow(_ o: ScoringRunner.FrameOutcome) -> String {
     let e = o.entry
     let b = e.qualityBreakdown
     func f(_ v: Double?) -> String { v.map { String(format: "%.4f", $0) } ?? "" }
-    func fF(_ v: Float?) -> String { v.map { String(format: "%.4f", Double($0)) } ?? "" }
+    func fF(_ v: Float?) -> String { v.map { String(format: "%.6f", Double($0)) } ?? "" }   // 6 decimals: MAD ceilings live at 1e-4
     func i(_ v: Int?) -> String { v.map(String.init) ?? "" }
     let snr: String = {
         if let m = e.noiseMedian, let mad = e.noiseMAD, mad > 0 { return String(format: "%.3f", Double(m / mad)) }

@@ -14,7 +14,33 @@ Nice side effect: Finally you have a native XISF and FITS Quicklook for macOS. (
 
 ---
 
-## What's New in v6.5.2 (Build 103)
+## What's New in v6.8.0 (Build 109)
+
+**Hot pixels are no longer counted as stars — and everything that depended on
+that count is fixed with it (Algorithm v41).**
+
+- **Sensor defects rejected at detection.** Every star candidate is now checked
+  on the original, unbinned pixels: light from a star spreads in two dimensions,
+  so the pixel above/below the peak AND the pixel left/right of it must each
+  carry a real share of its brightness. Single hot pixels, adjacent pairs and
+  short chains extend along one axis only and are dropped. On the 464-frame
+  calibration set, frames reporting >10000 "stars" go 30 → 0, frames whose star
+  shapes could not be measured 70 → 3, bad frames caught 147 → 158, good frames
+  wrongly flagged unchanged at 4.
+- **Dome-closed frames stay caught.** The dark-frame rules used to ride on the
+  phantom counts; a structureless, flat background is now a dark frame on its own.
+- **Hazy frames caught by measurement, not by accident.** Frames that were only
+  flagged because the measurement had failed on them now measure their real
+  (tiny) star count and are flagged for that.
+- **Since v6.6.0 (6.7.x, previously TestFlight only):** dome/cloud detection
+  reads measured pixels (v33-v35), stable-night background floor (v37),
+  elongation is a defect not a ranking (v38), shape rescue on hot-pixel frames
+  (v39/v40), Conservative auto-mark = defects only, plus the physical
+  plausibility limits for star measurements. See CHANGELOG.md.
+
+---
+
+## Previously in v6.5.2 (Build 103)
 
 **Change Filter now works reliably on NAS / external volumes, keeps the
 cache warm after a rename, and adds a Sky Bg column.**

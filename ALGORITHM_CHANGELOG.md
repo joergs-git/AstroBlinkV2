@@ -12,6 +12,109 @@ Records with `algorithmVersion < kAlgorithmVersion` are candidates for re-analys
 
 ---
 
+## Version 41 — Sensor defects are not stars: two-axis extent gate on unbinned data (2026-09-09)
+
+**User request: "Isolated hot pixels without neighbours must never be counted as stars."
+This is the common root of three bugs already fixed one at a time (v38 P90 inflation, v39/v40
+shape sample crowded out, `fc05188` empty frames with a fabricated count).**
+
+### What was wrong
+
+Neither star detector required a detection to have any spatial extent. The GPU kernel tests
+"above threshold" and "3x3 local maximum"; the CPU fallback adds a sharpness test that a hot
+pixel passes better than any star. On the ASI6200 the brightest "detections" of a narrowband
+frame were sensor defects: live RC12 SII frames reported 10000-25000 stars where the same
+frames carry ~2500 real ones.
+
+### Two placements tried and rejected (v40 session, stashed)
+
+1. In the kernel on the BINNED grid — 2x2 averaging smears a hot pixel into its neighbours,
+   so noise passes: 11 cloud frames went from "no signal" to 857 stars.
+2. Full-res after detection — correct, but only reaches the capped list of 1000 while the
+   count comes from a GPU atomic over ~20000 candidates.
+
+### The fix: extent test inside the kernel, reading the UNBINNED buffer
+
+Detection stays on the binned grid; every candidate that passed threshold + local maximum
+then locates its true peak in the 4x4 full-resolution block and checks that peak's direct
+neighbours. `detect_stars_binned` takes the full-res buffer as buffer(10); the CPU fallback
+(`StarDetector.hasStellarExtent`) does the same around its subsampled position. Cost is
+bounded by candidate count, not image size (20 extra reads per candidate).
+
+**The gate requires extent in BOTH image axes**: the brighter vertical neighbour (N or S)
+AND the brighter horizontal neighbour (E or W) must each carry ≥ 25% of the peak's amplitude
+above background. A first version accepted ANY one bright neighbour — and on this sensor
+that is not enough: hot pixels come in adjacent PAIRS and short straight chains. Measured on
+a good RC12 OIII frame (crop mosaics of the 32 brightest survivors): with the one-neighbour
+test roughly half were 2-3 px clusters; with the two-axis test 29 of 32 are stars. Light from
+a star spreads in two dimensions — even an undersampled star (FWHM 1.3 px) centred on a pixel
+integrates ~28% of its peak into each direct neighbour — while defects extend along one axis.
+
+| candidates > 5000 ADU | any neighbour | both axes |
+|---|---|---|
+| RASA dark frame (should be 0) | 6.9% pass | **0.0%** |
+| RASA good frame | 98.1% | 98.0% |
+| RC12 good OIII frame | 55% | 52% |
+
+A neighbour-SUM test (8 neighbours ≥ 1x peak) separates similarly but has only a 44% margin
+for undersampled stars and no golden case to validate it against — rejected in favour of the
+simpler two-axis rule.
+
+### The dark rule was riding on the phantoms
+
+With the phantoms gone, **62 dome-closed RASA frames scored GOOD**: both dark paths (Rule 0b,
+pre-pass) key on a star count — ≥10000, or an FL-scaled threshold that clamps to 10000 at
+620 mm — and those counts had been 18000 hot pixels. The physical signature was already in
+the code as a co-condition: a flat pedestal (`noiseMAD < darkFrameMADCeiling`, calibrated in
+v36: darks at 0.000068, lowest good frame anywhere 0.000114). It is now sufficient on its
+own, in the pre-pass and as Rule 0b(c). Star-count paths stay for the second signature
+(near-zero level with ordinary read noise).
+
+### What the golden set had been catching by accident
+
+18 hazy RC12 OIII frames of 2026-09-01 were flagged "no signal detected" — the shape
+measurement had FAILED on them (hot pixels + few real stars), and a failed measurement read
+as a defect happened to be right. They now measure: 38-370 real stars against 800-3300 on
+the same night, FWHM 9-10 px against 6-7. They are caught as "zero/near-zero stars" — a
+measured verdict instead of an accidental one. The four "egg-shaped" frames from the v39
+report belong to this set: their eccentricity 0.86-0.91 was measured on hot-pixel CHAINS
+(vertical 4-6 px streaks); the real stars on them measure ecc ~0.4. They are caught by the
+star count (46-142 stars).
+
+### Impact — GOLDENSET1 (464 frames), v40 → v41
+
+| | v40 | v41 |
+|---|---|---|
+| Conservative false positives | 4 | **4** |
+| bad frames caught (garbage reason) | 147 | **158** |
+| good frames below Good, any tier | 29 | **21** |
+| frames reporting > 10000 stars | 30 | **0** |
+| frames without eccentricity | 70 | **3** (empty ZWO frames, now "no signal") |
+| star count on good frames, RASA | 4409 | 4345 (-1.5%) |
+| star count on good frames, RC12 broadband | 4232 | 3818 (-10%) |
+| star count on good frames, RC12 narrowband | 1824-3025 | 1065-1786 (phantoms removed) |
+
+No bad frame lost its catch. Live check on the two hot-pixel nights (2026-09-01 hazy,
+2026-09-05 unculled): catch 12 → 17 of 19 PRE-DELETE frames; the 09-05 night gains six
+elongation hits with consensus 0.83-1.00 — crop mosaics show every star trailed diagonally
+in the same direction, some doubled. The user had not culled that night yet.
+
+**OSC caveat:** detection runs on the bilinear-debayered green channel, where a hot pixel
+becomes a "+" of four interpolated neighbours at exactly 25% — the gate catches about half
+of them (ZWO 60 s frames: 1902 → 490 counted, the rejects are all "+" spikes, the survivors
+still include some). A clean OSC fix needs a CFA-domain test before debayer.
+
+**Performance:** faster, not slower. AstroScoreCLI on GOLDENSET1 (464 frames, local SSD,
+two back-to-back runs each): v40 127.5 s / 127.3 s → v41 96.6 s / 96.5 s (−24%, 0.275 →
+0.208 s per frame). The gate costs 20 reads per candidate, but ~18000 phantom candidates per
+hot-pixel frame no longer reach the PSF fits, the shape rescue, or the >5000-candidate
+threshold re-dispatch.
+
+ScoringRegression + ScoringValidation + TrailingConsensus green; new `HotPixelRejectionTests`
+(synthetic stars + single / pair / chain defects, CPU and GPU paths, undersampled worst case).
+
+---
+
 ## Version 40 — Shape rescue must reach a usable sample, not just a median (2026-09-08)
 
 **Follow-up to v39, from the same live session. A frame measuring eccentricity 0.98 —

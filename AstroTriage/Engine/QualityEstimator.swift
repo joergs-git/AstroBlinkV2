@@ -540,11 +540,23 @@ struct QualityEstimator {
                 let noStructure = (entry.noiseMAD.map(Double.init) ?? .infinity) < darkFrameMADCeiling
                 let noMeasurableSignal = !(snrValues[i].map { $0 > 5.0 } ?? false)
                 let noSkySignal = noStructure || noMeasurableSignal
-                // A frame the star detector could not measure AT ALL (stars nil) on a
-                // structureless background is a dark/dome frame whose hot pixels didn't even
-                // survive detection. Without this branch it keeps its metrics in the group
-                // statistics — every star-keyed path below is gated on `if let stars`.
-                if starsValues[i] == nil && noStructure {
+                // A flat pedestal IS a dark frame — no star count required (algo v41).
+                //
+                // Until v40 this branch only fired when the star detector had measured
+                // nothing at all; otherwise the frame had to reach Path A/B below, which
+                // both key on a star count. On the RASA that count was 18000 phantom
+                // "stars" from single hot pixels — the ONLY reason 62 dome-closed frames of
+                // one night were ever recognised. The v41 spatial-extent gate in the star
+                // detector removes those phantoms (18000 → ~3800 warm-pixel clusters), and
+                // with them the accidental detection: Path A needs ≥10000, Path B's
+                // FL-scaled threshold clamps to 10000 at 620 mm. Dark frames scored GOOD.
+                //
+                // The background scatter is the physical signature and has been calibrated
+                // as such (see darkFrameMADCeiling: darks at 0.000068, lowest good frame
+                // anywhere 0.000114, 0 of 206 good frames below the ceiling). Path A/B stay
+                // for the second signature — near-zero level with ordinary read noise —
+                // which the MAD alone cannot see.
+                if noStructure {
                     darkFrameIndices.insert(i)
                     continue
                 }
@@ -750,6 +762,16 @@ struct QualityEstimator {
                               noSkySignal {
                         garbageReasons.append(.noisePeaks)
                     }
+                }
+                // (c) Flat pedestal — the background carries no spatial structure at all
+                // (algo v41). Independent of any star count: see the pre-pass for why the
+                // count-keyed paths above stopped seeing RASA dome-closed frames once the
+                // star detector no longer counts single hot pixels. Same reason text as the
+                // count paths — for the user it is the same verdict (dome/cap), and the
+                // reason string is stored in Frame History, so no new enum case.
+                if (entry.noiseMAD.map(Double.init) ?? .infinity) < darkFrameMADCeiling,
+                   !garbageReasons.contains(.noisePeaks) {
+                    garbageReasons.append(.noisePeaks)
                 }
 
                 // Rule 1: No stars or near-zero stars → garbage

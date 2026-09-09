@@ -1,4 +1,5 @@
 // v3.6.0 — Shared star detection utility
+// v6.8.0 (algo v41) — spatial-extent gate: single hot pixels are not stars
 // Extracted from QuickStackEngineV2 for reuse by StarMetricsCalculator and both stack engines.
 // CPU-based: threshold above background + 3x3 local maxima + weighted centroid.
 // Operates on subsampled data for speed (~50-80ms per 50MP image at 4x subsample).
@@ -146,6 +147,20 @@ enum StarDetector {
                 if sumW > 0 {
                     let fullX = (sumX / sumW) * Float(subsampleFactor)
                     let fullY = (sumY / sumW) * Float(subsampleFactor)
+
+                    // Spatial-extent gate on the FULL-resolution data (mirrors the GPU
+                    // kernel `detect_stars_binned`). Everything above is passed perfectly
+                    // by a single hot pixel: it is trivially a local maximum, and its
+                    // sharpness ratio is maximal because its neighbours sit at background.
+                    // The subsampled grid cannot tell the two apart — a real star with
+                    // FWHM 5-8 px occupies only 1-2 sample points there — so probe the
+                    // original pixels around the coarse position.
+                    guard hasStellarExtent(ptr: ptr, channelOffset: channelOffset,
+                                           width: w, height: h,
+                                           nearX: Int(fullX.rounded()), nearY: Int(fullY.rounded()),
+                                           searchRadius: subsampleFactor / 2 + 1,
+                                           background: median) else { continue }
+
                     stars.append(DetectedStar(x: fullX, y: fullY, brightness: val - median))
                 }
             }
@@ -154,6 +169,51 @@ enum StarDetector {
         stars.sort()
         let totalCount = stars.count
         return (Array(stars.prefix(maxStars)), totalCount)
+    }
+
+    /// Minimum fraction of the peak's amplitude (above background) that its brighter vertical
+    /// neighbour AND its brighter horizontal neighbour must each carry for a detection to
+    /// count as a star rather than a sensor defect. Deliberately permissive — the goal is to
+    /// exclude hot pixels, not to judge star quality (that is what the shape measurement
+    /// downstream is for). Worst case is an undersampled star (FWHM ~1.3 px) centred exactly
+    /// on a pixel: each adjacent pixel still integrates ~28% of the peak, so 25% keeps it.
+    /// Same constant as `kStarMinNeighbourFraction` in Shaders.metal — keep them in sync.
+    static let minNeighbourFraction: Float = 0.25
+
+    /// True when the brightest pixel near (nearX, nearY) spreads its light in BOTH image
+    /// axes — i.e. it has the two-dimensional extent of a star. A single hot pixel has no
+    /// bright neighbour at all; hot-pixel PAIRS and short straight chains (common on the
+    /// ASI6200, and brighter than most stars) extend along one axis only, so a test that
+    /// accepts any one bright neighbour lets them through. See `detect_stars_binned` in
+    /// Shaders.metal for the measurements behind this.
+    ///
+    /// `searchRadius` locates the true peak first: the caller's position comes from a coarser
+    /// grid (subsampled or binned), so it can be a few pixels off the actual maximum.
+    static func hasStellarExtent(ptr: UnsafeMutablePointer<UInt16>, channelOffset: Int,
+                                 width: Int, height: Int,
+                                 nearX: Int, nearY: Int, searchRadius: Int,
+                                 background: Float) -> Bool {
+        // Peak search window plus its 1-px neighbourhood must lie inside the image.
+        let r = searchRadius
+        guard nearX - r >= 1, nearY - r >= 1, nearX + r < width - 1, nearY + r < height - 1 else {
+            return false
+        }
+        var peak: UInt16 = 0
+        var px = nearX, py = nearY
+        for y in (nearY - r)...(nearY + r) {
+            let row = channelOffset + y * width
+            for x in (nearX - r)...(nearX + r) {
+                let v = ptr[row + x]
+                if v > peak { peak = v; px = x; py = y }
+            }
+        }
+        let amplitude = Float(peak) - background
+        guard amplitude > 0 else { return false }
+        let need = amplitude * minNeighbourFraction
+        let peakIdx = channelOffset + py * width + px
+        let vertical = Float(max(ptr[peakIdx - width], ptr[peakIdx + width])) - background
+        let horizontal = Float(max(ptr[peakIdx - 1], ptr[peakIdx + 1])) - background
+        return vertical >= need && horizontal >= need
     }
 
     /// Refine star positions using full-resolution weighted centroid.

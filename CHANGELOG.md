@@ -4,6 +4,47 @@ All notable changes to AstroBlink & AIsaac will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [6.8.0] — 2026-09-09
+
+**Hot pixels are no longer counted as stars (Algorithm v41).**
+
+Requested from live testing on an ASI6200: "isolated hot pixels without neighbours must
+never be counted as stars." Hot-pixel frames reported 10000-25000 "stars" where the same
+frames carry ~2500 real ones, and that single flaw was the root of three problems fixed
+separately in 6.7.2 / 6.7.3 (star-count floor inflated, shape measurement crowded out,
+empty frames with a fabricated count).
+
+### Fixed
+
+- **Sensor defects counted as stars (Algorithm v41).** Neither star detector required a
+  detection to have any spatial extent — a hot pixel is trivially a local maximum and
+  maximally "sharp". Every candidate is now checked on the ORIGINAL, unbinned pixels: light
+  from a star spreads in two dimensions, so the pixel above or below the peak AND the pixel
+  left or right of it must each carry a real share of its brightness. Single hot pixels, and
+  the adjacent pairs and short chains this sensor produces, extend along one axis only and
+  are rejected. Measured on the 464-frame calibration set: frames reporting more than 10000
+  stars 30 → 0, frames whose star shapes could not be measured at all 70 → 3, bad frames
+  caught 147 → 158, good frames wrongly flagged unchanged at 4, good frames below "Good"
+  29 → 21. Star counts on frames without artefacts move by 1-2% (RASA) to 10% (RC12
+  broadband); on narrowband RC12 frames they roughly halve — that half was hot pixels.
+- **Dome-closed frames scored good once the phantoms were gone.** The dark-frame rules
+  keyed on a star count of 10000 or more — and on the RASA those counts had been hot
+  pixels. A frame whose background carries no spatial structure at all (a flat pedestal,
+  the physical signature calibrated in 6.7.1) is now a dark frame on its own, no star count
+  required. All 62 dome-closed frames of the affected night are caught again.
+- **Hazy frames were caught by accident, now by measurement.** 18 hazy OIII frames of one
+  night had been flagged "no signal detected" only because the shape measurement FAILED on
+  them (hot pixels plus few real stars). They now measure 40-370 real stars against
+  800-3300 on the same night and are flagged "zero/near-zero stars" — a verdict from the
+  pixels instead of from a failure. On the unculled second night the fix surfaces six frames
+  whose stars are all trailed diagonally in one direction; crop mosaics confirm the defect.
+
+### Known limitation
+
+- On one-shot-colour cameras detection runs on the debayered green channel, where a hot
+  pixel becomes a small cross of interpolated neighbours. The new check catches about half
+  of those; a complete fix needs a test on the raw colour-filter data before debayering.
+
 ## [6.7.3] — 2026-09-07
 
 **Hotfix: frames with nothing in them were scored as good in the app.**

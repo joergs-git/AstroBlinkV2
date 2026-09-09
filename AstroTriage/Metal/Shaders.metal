@@ -1,4 +1,5 @@
 // v3.2.0
+// v6.8.0 (algo v41) — detect_stars_binned: spatial-extent gate on unbinned data (hot pixels are not stars)
 // STF Auto-Stretch + Debayer: PixInsight-compatible Screen Transfer Function
 // Applies per-channel Midtones Transfer Function for proper astro visualization
 // Includes bilinear debayer kernel for OSC (one-shot color) cameras
@@ -427,6 +428,29 @@ kernel void post_process(
 // GPU Star Detection — threshold + 3x3 local maxima on binned uint16 data
 // Operates on the bin2x output buffer (already computed during prefetch).
 // Candidates are atomically appended to an output buffer for CPU readback.
+//
+// Spatial-extent gate (algo v41): detection runs on the BINNED grid, but the
+// decision "star or sensor defect" is taken on the UNBINNED data. A hot pixel
+// passes threshold + local-maximum perfectly, and on the binned grid it is
+// indistinguishable from a faint star because 2x2 averaging smears it into its
+// neighbours (measured: an extent test on binned data let 11 cloud frames report
+// 857 "stars" instead of 0).
+//
+// The gate requires extent in BOTH image axes: the peak's vertical neighbour
+// (N or S) AND its horizontal neighbour (E or W) must each carry a sizeable
+// fraction of its amplitude. Light from a star spreads in two dimensions, so
+// even an undersampled, pixel-centred star (FWHM ~1.3 px) puts ~28% of its peak
+// into each of the four direct neighbours. Sensor defects do not: a single hot
+// pixel has no bright neighbour, and — decisive on the ASI6200 — hot pixels
+// come in adjacent PAIRS and short straight chains, which extend along one
+// axis only. A one-neighbour test let those through: on an RC12 frame the
+// 60 brightest survivors were mostly 2-3 px clusters. Measured on a good RC12
+// OIII frame, candidates brighter than 5000 ADU: any-neighbour 55% pass,
+// both-axes 52% — the real stars kept, the clusters gone.
+//
+// Cost is bounded by candidate count, not image size: only pixels that already
+// passed threshold + local maximum read the 4x4 full-res block (16) plus the
+// 4 direct neighbours of its peak (4) — 20 extra reads per candidate.
 // ==========================================================================
 
 struct StarCandidate {
@@ -434,6 +458,15 @@ struct StarCandidate {
     uint y;      // Binned pixel y coordinate
     float value; // Background-subtracted brightness
 };
+
+// Minimum fraction of the peak's amplitude (above background) that its brighter
+// vertical neighbour AND its brighter horizontal neighbour must each carry for the
+// detection to count as a star. Deliberately permissive: the goal is to exclude
+// sensor defects, not to judge star quality — that is what the shape measurement
+// downstream is for. Worst case is an undersampled star (FWHM ~1.3 px) centred
+// exactly on a pixel: each adjacent pixel still integrates ~28% of the peak, so
+// 25% keeps it. Same constant as `StarDetector.minNeighbourFraction` — keep in sync.
+constant float kStarMinNeighbourFraction = 0.25f;
 
 kernel void detect_stars_binned(
     device const uint16_t* binnedData  [[buffer(0)]],
@@ -446,6 +479,9 @@ kernel void detect_stars_binned(
     constant int& channel              [[buffer(7)]],
     constant int& channelCount         [[buffer(8)]],
     constant int& maxCandidates        [[buffer(9)]],
+    device const uint16_t* fullResData [[buffer(10)]],
+    constant int& fullWidth            [[buffer(11)]],
+    constant int& fullHeight           [[buffer(12)]],
     uint2 gid [[thread_position_in_grid]])
 {
     int w = width;
@@ -474,6 +510,30 @@ kernel void detect_stars_binned(
             if (float(binnedData[nIdx]) >= val) return;
         }
     }
+
+    // Spatial-extent gate on UNBINNED data. Binned pixel (x, y) covers full-res
+    // block (2x..2x+1, 2y..2y+1); a star straddling blocks may peak one pixel
+    // outside it, so search the 4x4 window (2x-1..2x+2) for the true peak first.
+    // The binned border exclusion (3 px) guarantees this window and the peak's
+    // 8 neighbours stay inside the full-res image.
+    int fw = fullWidth;
+    int fullPlane = fw * fullHeight;
+    int fullBase = ch * fullPlane;
+    int px = 2 * x, py = 2 * y;
+    float peak = -1.0f;
+    for (int dy = -1; dy <= 2; dy++) {
+        for (int dx = -1; dx <= 2; dx++) {
+            float v = float(fullResData[fullBase + (2 * y + dy) * fw + (2 * x + dx)]);
+            if (v > peak) { peak = v; px = 2 * x + dx; py = 2 * y + dy; }
+        }
+    }
+    float amplitude = peak - median;
+    if (amplitude <= 0.0f) return;
+    float need = amplitude * kStarMinNeighbourFraction;
+    int peakIdx = fullBase + py * fw + px;
+    float vertical   = max(float(fullResData[peakIdx - fw]), float(fullResData[peakIdx + fw])) - median;
+    float horizontal = max(float(fullResData[peakIdx - 1]),  float(fullResData[peakIdx + 1]))  - median;
+    if (vertical < need || horizontal < need) return;   // no 2-D extent: sensor defect, not a star
 
     // Atomic append to candidate buffer (capped at maxCandidates)
     uint slot = atomic_fetch_add_explicit(candidateCount, 1, memory_order_relaxed);
