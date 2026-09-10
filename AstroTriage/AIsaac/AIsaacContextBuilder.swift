@@ -127,7 +127,10 @@ struct AIsaacContextBuilder {
         if !currentImageHeaders.isEmpty {
             let headers = currentImageHeaders
             var headerLines = ["CURRENT IMAGE FITS/XISF HEADERS (for the frame the user is looking at):"]
-            for h in headers.prefix(40) {  // cap at 40 most important headers
+            // Relevance-ordered by AIsaacWindowController.orderHeadersForAIsaac (OBJECT, FILTER,
+            // optics, sensor, pointing, site, environment first; WCS/bookkeeping last). The cap
+            // now cuts the least relevant keys instead of everything after "N" alphabetically.
+            for h in headers.prefix(60) {
                 headerLines.append("  \(h.key) = \(h.value)")
             }
             parts.append(headerLines.joined(separator: "\n"))
@@ -574,27 +577,58 @@ struct AIsaacContextBuilder {
         This is NORMAL and expected. DO NOT interpret unscored frames as bad quality.
         - The "scoredCount" field tells you how many frames have been scored vs total.
 
-        QUALITY SCORING — SmartCull 5-Stage Pipeline:
-        - Groups: frames are grouped by (target + filter + exposure + observing night) for fair comparison.
+        QUALITY SCORING — SmartCull 5-Stage Pipeline (algorithm version 41, shipped in v6.8.0):
+        - Groups: frames are grouped by (target + filter + exposure + observing night + focal-length bucket) \
+        for fair comparison.
         - A frame can trigger MULTIPLE garbage reasons simultaneously (shown joined with "+").
+        - PRINCIPLE since algorithm v33: every garbage rule judges the frame's OWN MEASURED PIXELS. A header \
+        value (e.g. the FWHM that NINA writes into the filename) is never used to decide whether a frame \
+        carries signal — a dome-closed frame still carries a plausible header FWHM. A measured FWHM of \
+        exactly 0 is a FAILED fit and counts as "not measured", never as a sharp star.
         - Stage 1 — Garbage Detection (Rules 0-10, all checked independently):
-          * R0 No signal: zero stars AND no noise → "no signal detected"
-          * R0b Dark frame / dome closed: stars ≥ 10,000 (hot pixel false detections) or stars ≥ FL-scaled \
-          threshold + background < 0.002 → "noise peaks / dark frame". Detected early, metrics nulled.
-          * R1 Near-zero stars: star count < 15% (NB) / 25% (BB) of median → "zero/near-zero stars"
+          * R0 No signal: no measurable PSF (measured FWHM missing or 0) and no real signal \
+          (signal exception: SNR > 5 AND a MEASURED star count > 100) → "no signal detected"
+          * R0b Dark frame / dome closed / lens cap → "noise peaks, not real stars (dome/cap)". Three paths, \
+          any one suffices: (a) FLAT PEDESTAL — the background carries no spatial structure at all \
+          (noise MAD < 0.0001, i.e. under ~6.5 ADU of 65535; real sky always varies more than that — \
+          the quietest good frame ever measured sits at 0.000114, dark frames at 0.000068) — this is the \
+          physical signature and needs NO star count (v41); (b) stars ≥ 10,000 on a background with no sky \
+          signal (no structure OR SNR ≤ 5); (c) stars ≥ FL-scaled threshold (7500 at 1000 mm, scaled by \
+          1/FL², clamped 5000-10000) AND background level < 0.002 AND no sky signal. Dark frames are removed \
+          from the group statistics BEFORE medians are computed, so they cannot poison the other frames.
+          * R1 Near-zero stars, three checks: (a) absolute — a MEASURED count < 10; (b) relative — count \
+          < 25% (broadband) / 15% (narrowband) of the group median; (c) P90 floor — count < 15% (broadband) \
+          / 9% (narrowband) of the group's 90th-percentile count, which catches clouded frames in bimodal \
+          groups → "zero/near-zero stars". Narrowband floors are lower because stars are incidental there (v38).
           * R1b Decentered target: plate-solved center offset > 30% of FOV → "target shifted off sensor"
           * R2 Low SNR: SNR < 50% of group median → "SNR catastrophically low"
           * R3 High FWHM: FWHM > 2× median → "severe defocus/tracking"
           * R4 High HFR: HFR > 2× median → "severe defocus"
-          * R5 Extreme eccentricity: ecc > 2× FL baseline → "star trailing/elongation" (severity-dependent threshold)
-          * R6a Absolute trailing ceiling: score > 0.60 + consensus > 0.50 + trailing outlier (z > 1.0σ) \
-          → "star trailing/elongation" (filter-independent, bypasses FWHM cross-check) [ceiling raised 0.50→0.60 in v20]
-          * R6 Trailing (consensus): score > 0.7/effectiveMult (FWHM cross-checked) → "star trailing/elongation"
-          * R7 Star count anomaly: stars > 1.8× median + elevated FWHM/HFR → "doubled stars"
-          * R7b Star count drop: stars < 65% median + SNR < 65% median + FWHM OK → "atmospheric attenuation" \
-          (thin cloud, dew, fog — signal loss without defocus)
-          * R8 Background anomaly: background > 5-6.5 MAD from median → "abnormal background"
-          * R9 Tracking hops: star chain fraction > 25% → "tracking hops (star chains)"
+          * R5 Extreme eccentricity: ecc > 2× FL baseline → "star trailing/elongation" (severity-dependent \
+          threshold, only fires on trailing outliers within the group)
+          * R6a ABSOLUTE trailing ceiling: trailingScore > 0.60 AND direction consensus > 0.50 \
+          → "star trailing/elongation". Filter-independent, NO group comparison since v38: elongation is a \
+          defect of the frame itself, not a ranking. Before v38 this rule also required the frame to be \
+          trailed MORE than its group (z > 1σ), so a mount problem lasting a whole night detected nothing. \
+          High consensus = all stars elongated the same way = mount motion. Optical aberration produces \
+          random angles, fails the consensus test and passes — that is what protects fast optics.
+          * R6 Trailing (group-relative): trailing outlier within the group AND FWHM does not rule it out \
+          (FWHM ≤ 1.15× median means the stars are sharp, so no trailing) AND (score > 0.7/filterMult OR \
+          score > 0.5/filterMult with consensus > 0.8) → "star trailing/elongation"
+          * R7 Star count anomaly: stars > 1.8× median + elevated FWHM/HFR → "doubled stars (tracking jump)"
+          * R7b Star count drop: stars < 65% median + SNR < 65% median + FWHM normal (< 1.3× median) \
+          → "atmospheric attenuation (cloud/dew/fog)" (signal loss without defocus)
+          * R8 Background anomaly: background more than 5 raw MADs (6.5 for groups of 10, scaling down to \
+          5.0 at 20+) ABOVE the group median → "abnormal background (clouds/gradient)". Only POSITIVE \
+          deviation — a darker sky is better. Since v37 the MAD has a floor of 2% of the group's own \
+          background level, because on a stable night most frames report an IDENTICAL background and the \
+          division by a collapsed MAD made 3 ADU of 65535 look like tens of MADs. Moon-aware: bright moon \
+          (>40%) within 60° relaxes the threshold for broadband filters; narrowband is not relaxed.
+          * R9 Tracking hops: star-chain fraction > 0.10 (rising to 0.22 at coarse plate scales ≥ 2.5"/px) \
+          AND the elongation must point ONE way: trailingScore > 0.15 with consensus ≥ 0.5, or \
+          eccentricity > FL baseline + 0.15 with consensus > 0.5 → "tracking hops (star chains)". \
+          Since v39 the DIRECTION is required, not a larger amount: confirmed hops sit at consensus 0.50+, \
+          good long-focal-length frames with optically elongated stars at 0.22-0.49.
           * R10 Twilight: sun altitude above -12° for broadband/luminance → "captured during twilight/daylight". \
           Filter-aware: narrowband filters (Ha/OIII/SII) tolerate nautical twilight (sun -12° to -6°) because \
           narrow bandpass rejects most sky glow. Only civil twilight (sun > -6°) is garbage for narrowband. \
@@ -606,6 +640,12 @@ struct AIsaacContextBuilder {
           best-decile values, the frame is demoted to trash regardless of within-group z-score.
           * This catches frames that look "OK" within a weak group but are objectively terrible compared \
           to the rest of the session (e.g., a cloudy group where ALL frames are bad).
+          * Requires at least 2 DISTINCT NIGHTS in the loaded session (v33): a single-night multi-filter \
+          session differs by optics and filter, not by a bad night. Stage 1 garbage frames are excluded from \
+          the P10/P90 benchmarks. The "best" benchmarks for stars and SNR are clamped to 2.5× the pool \
+          median (v30), so one freak frame cannot set an unreachable bar.
+          * The sanity flags are kept in the 'sanity' column of PER-FRAME DATA even when a later rescue \
+          changed the tier — the recommendation label then reads "REVIEW — <reason>".
           * v23 (2026-04-18): the single-flag "severe FWHM outlier" demote path was removed after \
           empirical validation against 4540 user-rated frames — it had ~34% precision (65 FPs for every \
           33 TPs) and only fired on frames where FWHM was the sole flag. Genuinely bad frames fail \
@@ -617,10 +657,16 @@ struct AIsaacContextBuilder {
           near zero but tier=trash is almost always a Stage 1.5 demotion; the verdict column tells you which \
           flags fired. A within-group z-score near zero is irrelevant if Stage 1.5 fired — Stage 1.5 uses a \
           different (cross-night, cross-filter) pool and overrides the z-score tier.
+          * For "why is THIS frame rated X" use, in this order: verdict → sanity → hist → the per-metric \
+          z-scores (zFWHM, zStars, zNoise, zTrail, zPSF) to name the metric that actually drove the combined \
+          z → cons/chain to say whether elongation is mount motion (consensus > 0.5) or optics (random). \
+          Quote the numbers; do not guess.
         - MINIMUM GROUP SIZE: Groups with < 6 frames get NO quality score — too few for statistics. \
         These frames are NOT bad — just in a group too small to compare. \
-        Groups with 6-7 frames that have ambiguous quality may receive the "uncertain" tier (blue "?" icon) \
-        instead of a definitive rating, indicating the sample is too small for confident ranking.
+        Groups with 6-7 frames whose frame is BORDERLINE with an ambiguous z-score (between -1.0 and +0.5) \
+        may receive the "uncertain" tier (blue "?" icon) instead of a definitive rating. Since algorithm \
+        v32 this never applies to a frame in the GOOD z-band — a good frame is good regardless of how many \
+        frames its night holds. Uncertainty is about low quality confidence, not small sample size.
         - Stage 2 — Relative Z-Score Ranking (within each group):
           * Median/MAD robust statistics. Metrics weighted: Stars 1.2× (broadband) / 0.5× (narrowband), \
           FWHM 1.0×, Noise 1.0×, Trailing severity-dependent (base: 0.3× NB, 0.6× RGB, 1.0× L, 0.7× unknown; \
@@ -641,6 +687,10 @@ struct AIsaacContextBuilder {
           are excluded from quality scoring entirely. Short-exposure lucky imaging uses fundamentally \
           different metrics — these frames appear as "unscored", which is correct behavior.
           * Tiers: Excellent (z > 0.5), Good (z > -0.5), Borderline (z > -2.0), Trash (z ≤ -2.0)
+          * IMPORTANT DISTINCTION: a tier of Trash from a DEFECT (Stage 1, verdict column non-empty) and a \
+          tier of Trash from RANKING (z ≤ -2.0 inside its group, verdict/sanity/hist all empty) look the \
+          same in the Q column but mean different things. The second one only says "weakest of its group" — \
+          the frame may be perfectly usable. Conservative auto-mark ignores ranking-only trash.
         - Stage 3 — Rescue Rules (only promote, never demote):
           * A: FWHM + noise OK → Good. B: Star dip + sharp → Good. C: FWHM-only → Borderline.
         - Stage 4 — FWHM Sanity Rescue: lifts z-score-trash frames back to Borderline when their FWHM \
@@ -649,7 +699,36 @@ struct AIsaacContextBuilder {
         surface "REVIEW — <reason>" in the recommendation label so the user still sees why the frame was \
         initially flagged. This helps Autopilot and manual culling decisions.
 
-        METRICS EXPLAINED:
+        STAR DETECTION & MEASUREMENT (how the numbers are produced — algorithm v41):
+        - Detection: GPU kernel on a 2x2-binned copy: pixel above background + 5σ (auto-escalating to 8/12/16σ \
+        when > 5000 candidates, i.e. nebulosity) and a strict 3x3 local maximum.
+        - HOT-PIXEL GATE (v41): every candidate is then checked on the ORIGINAL, unbinned pixels and must \
+        spread light in BOTH image axes — the pixel above/below the peak AND the pixel left/right of it must \
+        each carry ≥ 25% of the peak's amplitude above background. Single hot pixels, and the adjacent \
+        PAIRS and short straight chains many CMOS sensors (e.g. ASI6200) produce, extend along one axis \
+        only and are rejected. Before v41 those sensor defects were counted as stars: hot-pixel frames \
+        reported 10,000-25,000 "stars" where ~2,500 are real, which inflated the star-count P90 floor, \
+        crowded real stars out of the brightness-ordered shape sample, and gave empty frames a fabricated \
+        count. If a user compares star counts with an older AstroBlink version: narrowband counts on such \
+        sensors roughly halved in v6.8.0 — the missing half was hot pixels. Broadband counts moved 1-10%.
+        - OSC caveat: on one-shot-colour cameras detection runs on the debayered green channel, where a \
+        hot pixel becomes a small "+" of interpolated neighbours; the gate catches roughly half of those.
+        - Shape sample: the 60 brightest unsaturated, uncrowded detections in the central 90% are measured \
+        (FWHM/HFR in the central 70%). If fewer than 12 usable shapes come out of that (hot pixels, \
+        saturation), a rescue pass scans deeper down the list (v39/v40) — frames that measured fine keep \
+        exactly the same sample. Trailing analysis needs ≥ 5 elongated stars before it reports a direction.
+        - PHYSICAL PLAUSIBILITY CORRIDOR (v35): a measured FWHM below max(1.0" of seeing ÷ plate scale, \
+        1.2 px of sampling) cannot describe a star and is discarded as a failed fit — it never enters a \
+        median, z-score or rule. Scales automatically from a smart telescope to a long-FL SCT. Both limits \
+        are ScoringConfig knobs.
+        - Failed measurements are ABSENT, never zero (v34): a FWHM/HFR of 0 used to be counted in the \
+        group median, dragging it down until every intact frame looked "twice as wide as normal".
+        - Eccentricity comes from 2D image moments (SExtractor method) essentially always. The GPU \
+        elliptical Gaussian fit exists, but its acceptance gate (chi² < 1000) is scaled in raw ADU² and \
+        passes on only ~6% of real frames, so treat "moment eccentricity" as THE eccentricity. When fit \
+        and moment disagree strongly (moment > 0.55, fit < 0.35) the moment wins — a Gaussian fit \
+        collapses a trail longer than its stamp to a round local minimum (v31).
+
         MEASUREMENT LIMITATIONS (v5.25.0, algorithm v21):
         - FWHM/HFR can be nil when all measurable star candidates are saturated in full-resolution. \
         This happens on broadband filters (B, R, G, L) at high gain with bright targets (open clusters, \
@@ -693,6 +772,28 @@ struct AIsaacContextBuilder {
         SELF-CALIBRATION:
         - After 30+ frames with same setup, absolute quality floor activates.
         - Frames meeting learned baseline locked as KEEP (blue lock icon) — z-scores can't override.
+
+        ALGORITHM VERSION HISTORY (recent — kAlgorithmVersion is stored on every Frame History record):
+        - v41 (v6.8.0, 2026-09-09): hot pixels are not stars — two-axis extent gate on unbinned pixels inside \
+        the detection kernel; dark rule keyed on the flat pedestal alone. Calibration set: bad frames caught \
+        147→158, good frames wrongly flagged unchanged at 4, frames reporting > 10,000 stars 30→0.
+        - v40/v39 (v6.7.3): shape rescue when hot pixels crowd out the star sample (aims for 12 shapes, not \
+        3 — 3 give a median but no direction statistics); Rule 9 requires direction consensus, not amount.
+        - v38 (v6.7.2): elongation is a defect, not a ranking (R6a no longer needs the frame to be worse \
+        than its group); narrowband star floors lowered.
+        - v37 (v6.7.2): background MAD floored at 2% of the group background (stable nights collapsed it).
+        - v36 (v6.7.1): dark-frame MAD ceiling 0.0002 → 0.0001 (fit narrowband long-FL data).
+        - v33-v35 (v6.7.0): garbage rules read measured pixels, not headers; FWHM 0 = failed fit; SNR is not \
+        a signal test; physical plausibility corridor for FWHM. Dark catch 36%→100%, cloud 36%→90%.
+        - v32 (v6.6.0): uncertain tier never demotes a GOOD frame in a small group.
+        - v31 (v6.4.2): trails longer than the fit stamp measured "round" — moment eccentricity now wins \
+        over a disagreeing fit.
+        - v30 (v6.0.4): Stage 1.5 P90 benchmarks clamped to 2.5× median.
+        - v29 (v6.0.3): OSC measurement overhaul — annular HFR/FWHM, per-frame channel pick, always debayer.
+        - Also in 6.7.x: the app's measurement path assigned a RAW detector count to frames whose shape \
+        measurement had failed (an empty frame got a plausible star count); fixed so a count only exists \
+        when the measurement succeeded. Records scored with an older algorithmVersion may carry the old \
+        behaviour; the History window can re-analyse them.
 
         USER GUIDE — Complete App Workflow & UI Reference:
 
@@ -759,12 +860,21 @@ struct AIsaacContextBuilder {
         - Only relevant for color cameras (BAYERPAT header present). Mono cameras: no effect.
         - GPU bilinear interpolation, real-time.
 
-        CULLING AUTOPILOT:
+        CULLING AUTOPILOT (levels redefined in v6.7.2 — by FRAME OF REFERENCE, not by tier depth):
         - Auto-Mark toolbar button (wand icon with green-to-red gradient) opens the autopilot popover.
         - Also accessible by clicking the quality status pill in the status bar.
-        - Conservative: marks only Stage 1 garbage (clearly broken frames).
-        - Balanced: + severe borderline (severity ≥ 2, orange-leaning-red).
-        - Aggressive: + all borderline frames.
+        - Conservative: ONLY frames with an actual defect — a non-empty Stage 1 garbage reason (no stars, \
+        dark/dome, trailing, tracking hops, clouds, abnormal background, low SNR, twilight), judged \
+        absolutely or against the loaded frames. It never marks a frame just for being the weakest of its \
+        group, and it ignores rankings against other nights.
+        - Balanced: defects + every ranking verdict that stays INSIDE the loaded session: z-score trash \
+        (weakest of the group), session-sanity demotions, severe borderline (severity ≥ 2).
+        - Aggressive: also judges against EARLIER nights (historical-baseline demotions), plus all \
+        borderline, uncertain, and weak-good frames whose SNR contribution is < 30% of the best frame.
+        - Why: before v6.7.2 the levels only differed in how far down the quality list they reached, so \
+        "this frame has no stars" and "this frame is not among the session's best" were indistinguishable — \
+        Conservative once marked 11 of 19 frames of a night, 9 of them ABOVE their own group average, \
+        because a different loaded night had better seeing.
         - Shows integration loss and SNR impact before applying. Confirmable.
 
         PRE-DELETE WORKFLOW:
@@ -791,12 +901,24 @@ struct AIsaacContextBuilder {
         - Circular fit: replaces CPU linearized Gaussian FWHM with proper fitted σ.
         - Elliptical fit: derives eccentricity analytically from σx/σy and PA from θ (preferred over image moments).
         - PSF Flux column (enable via column picker): total star signal per frame. Higher = better.
-        - PSF flux z-score replaces star count in quality scoring when available (more robust, immune to hot pixel inflation).
+        - PSF flux z-score replaces star count in quality scoring when enough fits are accepted; in practice \
+        the fit acceptance gate rarely passes on real data (see STAR DETECTION & MEASUREMENT), so star count \
+        usually remains the active metric. Hot-pixel inflation of that count was eliminated in v41 at the \
+        detection stage instead.
 
-        DOME/DARK FRAME DETECTION:
-        - Rule 0b: stars ≥10000 (absolute ceiling after auto-escalation) or ≥5000 + background <0.003.
-        - Hot pixel clusters can produce valid HFR — detection uses count + background, not HFR.
-        - Dark frames excluded from group statistics to prevent contaminating real frame scores.
+        DOME/DARK FRAME DETECTION (see Rule 0b for the exact paths):
+        - The decisive signature is the FLAT PEDESTAL: background noise MAD < 0.0001 means the frame has no \
+        spatial structure — no stars, no gradient, no nebulosity. Real sky always varies more than that.
+        - Why SNR cannot be used as a "has signal" test here: SNR = background median ÷ background MAD, so \
+        a flat dark frame with an offset pedestal has the HIGHEST SNR in the session (113 vs ~20 for good \
+        frames on the RASA). Before v33 that inverted guard let entire dome-closed nights score "good".
+        - Before v41 the count-based paths were mostly satisfied by hot pixels (18,000 "stars" on the RASA); \
+        with hot pixels no longer counted, the pedestal path carries the detection.
+        - The 0.0001 ceiling is an absolute photometric threshold (v36 lowered it from 0.0002 after 92 good \
+        RC12 narrowband SII frames were flagged dome/cap — their whole distribution sits an octave lower). \
+        A sensor or exposure regime quieter than anything measured so far could still trip it; the durable \
+        fix is a per-setup learned corridor (planned).
+        - Dark frames are excluded from group statistics before medians are computed.
 
         COLOR COMBINE (mono cameras only):
         - Stack menu → Color Combine. Requires multiple filters (e.g., Ha + OIII + SII).
@@ -1071,7 +1193,16 @@ struct AIsaacContextBuilder {
         // — Stage 1.5 only runs when garbageReasons is empty — so a single column is
         // unambiguous. NEVER speculate why a frame is trash if this column is non-empty
         // — quote it verbatim.
-        lines.append("id|idx|filename|filter|exp|object|night|tier|z|fwhm|hfr|stars|snr|noise|ecc|trail|moon%|moonDist|marked|verdict|twilight")
+        //
+        // v6.8.1 — the per-metric breakdown the Header Inspector shows: zStars/zFWHM/zHFR/zNoise/
+        // zTrail/zPSF are the individual z-scores that make up 'z'; 'cons' is the trailing
+        // direction consensus (every elongation rule keys on it — >0.5 = mount motion, random =
+        // optics); 'chain' is the star-chain fraction (Rule 9); 'flags' carries LOCK (calibration
+        // floor, can only promote), LOWCONF (no historical baseline for this setup); 'sanity' and
+        // 'hist' are the Stage 1.5 / 1.5b flags, which survive a Stage 4 rescue even when the
+        // verdict column shows the rescue text; 'rec' is the KEEP / REVIEW / DELETE label.
+        lines.append("Column guide: z = combined z-score; zStars/zFWHM/zHFR/zNoise/zTrail/zPSF = the per-metric z-scores behind it (negative = worse than group, except zTrail where positive = more trailing = worse). cons = trailing direction consensus 0-1 (>0.5 means the stars are elongated the SAME way = mount motion; random directions = optics/seeing, not a defect). chain = star-chain fraction (tracking hops). flags: LOCK = calibration-locked KEEP, LOWCONF = no historical baseline for this setup. sanity/hist = Stage 1.5 session-sanity / Stage 1.5b historical flags. rec = the recommendation label the user sees. A tier of 'trash' with an EMPTY verdict, sanity and hist means 'weakest of its group by z-score' — no defect was found, and Conservative auto-mark ignores it.")
+        lines.append("id|idx|filename|filter|exp|object|night|tier|z|zStars|zFWHM|zHFR|zNoise|zTrail|zPSF|fwhm|hfr|stars|snr|noise|ecc|trail|cons|chain|moon%|moonDist|marked|flags|verdict|sanity|hist|rec|twilight")
 
         for f in framesToInclude {
             let z = f.zScore.map { String(format: "%+.2f", $0) } ?? "-"
@@ -1093,8 +1224,16 @@ struct AIsaacContextBuilder {
             let twilight = f.twilight ?? ""
             let object = f.object ?? "-"
             let night = f.night ?? "-"
+            func zs(_ v: Double?) -> String { v.map { String(format: "%+.2f", $0) } ?? "-" }
+            let cons = f.consensus.map { String(format: "%.2f", $0) } ?? "-"
+            let chain = f.chainFraction.map { String(format: "%.2f", $0) } ?? "-"
+            var flagList: [String] = []
+            if f.isLockedKeep { flagList.append("LOCK") }
+            if f.lowConfidence { flagList.append("LOWCONF") }
+            let flags = flagList.joined(separator: "+")
+            func clean(_ v: String?) -> String { (v ?? "").replacingOccurrences(of: "|", with: "/") }
 
-            lines.append("\(f.shortId)|\(f.index)|\(f.filename)|\(f.filter)|\(Int(f.exposure))|\(object)|\(night)|\(f.tier)|\(z)|\(fwhm)|\(hfr)|\(stars)|\(snr)|\(noise)|\(ecc)|\(trail)|\(moonPct)|\(moonDist)|\(marked)|\(verdict)|\(twilight)")
+            lines.append("\(f.shortId)|\(f.index)|\(f.filename)|\(f.filter)|\(Int(f.exposure))|\(object)|\(night)|\(f.tier)|\(z)|\(zs(f.starsZ))|\(zs(f.fwhmZ))|\(zs(f.hfrZ))|\(zs(f.noiseZ))|\(zs(f.trailingZ))|\(zs(f.psfFluxZ))|\(fwhm)|\(hfr)|\(stars)|\(snr)|\(noise)|\(ecc)|\(trail)|\(cons)|\(chain)|\(moonPct)|\(moonDist)|\(marked)|\(flags)|\(verdict)|\(clean(f.sanityReasons))|\(clean(f.historicalReasons))|\(clean(f.recommendation))|\(twilight)")
         }
 
         if truncated {

@@ -266,8 +266,7 @@ class AIsaacWindowController: NSWindowController {
             let url = selectedImage.decodingURL
             Task.detached(priority: .userInitiated) {
                 let headers = MetadataExtractor.readHeaders(from: url)
-                let sorted = headers.sorted { a, b in a.key < b.key }
-                    .map { (key: $0.key, value: $0.value) }
+                let sorted = Self.orderHeadersForAIsaac(headers)
                 await MainActor.run {
                     self.model.currentImageHeaders = sorted
                 }
@@ -422,8 +421,59 @@ class AIsaacWindowController: NSWindowController {
                 reasoning: img.qualityBreakdown?.reasoningText,
                 twilight: img.twilightPhase?.rawValue,
                 moonPct: img.moonIllumination.map { $0 * 100 },
-                moonDist: img.moonDistance
+                moonDist: img.moonDistance,
+                starsZ: img.qualityBreakdown?.starsZ,
+                fwhmZ: img.qualityBreakdown?.fwhmZ,
+                hfrZ: img.qualityBreakdown?.hfrZ,
+                noiseZ: img.qualityBreakdown?.noiseZ,
+                trailingZ: img.qualityBreakdown?.trailingZ,
+                psfFluxZ: img.qualityBreakdown?.psfFluxZ,
+                consensus: img.trailingConsensus,
+                chainFraction: img.starChainFraction,
+                isLockedKeep: img.qualityBreakdown?.isLockedKeep ?? false,
+                lowConfidence: img.qualityBreakdown?.lowConfidenceScoring ?? false,
+                sanityReasons: {
+                    guard let r = img.qualityBreakdown?.sessionSanityReasons, !r.isEmpty else { return nil }
+                    return r.joined(separator: "; ")
+                }(),
+                historicalReasons: {
+                    guard let r = img.qualityBreakdown?.historicalBaselineReasons, !r.isEmpty else { return nil }
+                    return r.joined(separator: "; ")
+                }(),
+                recommendation: img.qualityBreakdown?.recommendationLabel
             )
         }
+    }
+
+    // MARK: - Header relevance ordering
+
+    /// Header keys in the order AIsaac should see them. The prompt caps the header list, and an
+    /// alphabetical cut (the previous behaviour) regularly dropped OBJECT, PIXSIZE, RA/DEC, ROTATOR,
+    /// SITELAT/SITELONG, TELESCOP and XBINNING — NINA and ASIAIR write 60-80 keys, most of them
+    /// WCS/CD-matrix and bookkeeping. Keys listed here come first in this order; everything else
+    /// follows alphabetically.
+    static let headerPriority: [String] = [
+        "OBJECT", "FILTER", "EXPOSURE", "EXPTIME", "DATE-OBS", "DATE-LOC", "IMAGETYP",
+        "TELESCOP", "INSTRUME", "FOCALLEN", "FOCRATIO", "APTDIA",
+        "XPIXSZ", "YPIXSZ", "PIXSIZE1", "PIXSIZE2", "XBINNING", "YBINNING", "NAXIS1", "NAXIS2",
+        "GAIN", "OFFSET", "EGAIN", "CCD-TEMP", "SET-TEMP", "BAYERPAT",
+        "RA", "DEC", "OBJCTRA", "OBJCTDEC", "CRVAL1", "CRVAL2", "ROTATOR", "ROTATANG", "POSANGLE",
+        "SITELAT", "SITELONG", "SITEELEV", "AIRMASS", "CENTALT", "CENTAZ", "OBJCTALT", "OBJCTAZ",
+        "FOCPOS", "FOCUSPOS", "FOCTEMP", "FOCUSTEM", "AMBTEMP", "HUMIDITY", "DEWPOINT", "PRESSURE",
+        "WINDSPD", "CLOUDCVR", "SKYTEMP", "SKYQLTY",
+        "STARFWHM", "HFR", "SWCREATE", "SWOWNER", "SSWEIGHT", "PSFSWGHT",
+    ]
+
+    /// Sort headers by relevance: priority keys first (in list order), the rest alphabetically.
+    static func orderHeadersForAIsaac(_ headers: [String: String]) -> [(key: String, value: String)] {
+        let rank = Dictionary(uniqueKeysWithValues: headerPriority.enumerated().map { ($1, $0) })
+        return headers.sorted { a, b in
+            switch (rank[a.key], rank[b.key]) {
+            case let (ra?, rb?): return ra < rb
+            case (_?, nil):      return true
+            case (nil, _?):      return false
+            case (nil, nil):     return a.key < b.key
+            }
+        }.map { (key: $0.key, value: $0.value) }
     }
 }

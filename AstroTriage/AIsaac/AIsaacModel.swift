@@ -137,6 +137,23 @@ struct AIsaacSessionContext {
         let twilight: String?   // Twilight phase at capture time (Night, Astro twilight, etc.)
         let moonPct: Double?    // Moon illumination 0-100%
         let moonDist: Double?   // Angular distance from moon in degrees
+
+        // v6.8.1 — the per-metric breakdown the Header Inspector shows. Without these AIsaac
+        // only saw the COMBINED z-score and had to guess which metric drove a tier; the
+        // "Ask AIsaac about this frame" prompt explicitly asks it to explain the z-scores.
+        let starsZ: Double?
+        let fwhmZ: Double?
+        let hfrZ: Double?
+        let noiseZ: Double?
+        let trailingZ: Double?
+        let psfFluxZ: Double?
+        let consensus: Double?          // trailing direction consensus 0-1 — every elongation rule keys on it
+        let chainFraction: Double?      // star-chain fraction 0-1 (Rule 9 tracking hops)
+        let isLockedKeep: Bool          // calibration floor lock (can only promote)
+        let lowConfidence: Bool         // no historical baseline for this setup
+        let sanityReasons: String?      // Stage 1.5 session-sanity flags, kept even after a Stage 4 rescue
+        let historicalReasons: String?  // Stage 1.5b historical-baseline flags
+        let recommendation: String?     // the KEEP / REVIEW / DELETE label the user sees
     }
 
     struct FilterStat {

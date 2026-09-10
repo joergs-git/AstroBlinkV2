@@ -14,7 +14,18 @@ Nice side effect: Finally you have a native XISF and FITS Quicklook for macOS. (
 
 ---
 
-## What's New in v6.8.0 (Build 109)
+## What's New in v6.8.1 (Build 110)
+
+**AIsaac sees your full quality breakdown and knows the current algorithm.**
+"Ask AIsaac about this frame" now receives the per-metric z-scores, trailing
+consensus, chain fraction, lock/confidence flags and sanity/baseline reasons
+the Header Inspector shows, headers ordered by relevance instead of
+alphabetically, and an algorithm description rewritten to v41 with a version
+history back to v29.
+
+---
+
+## Previously in v6.8.0 (Build 109)
 
 **Hot pixels are no longer counted as stars — and everything that depended on
 that count is fixed with it (Algorithm v41).**

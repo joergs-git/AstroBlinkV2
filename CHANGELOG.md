@@ -4,6 +4,34 @@ All notable changes to AstroBlink & AIsaac will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [6.8.1] — 2026-09-10
+
+**AIsaac now sees the same quality breakdown you see, and knows the current algorithm.**
+
+### Fixed
+
+- **"Ask AIsaac about this frame" could not explain the tier.** The button asked AIsaac to
+  explain the z-scores, but AIsaac only ever received the combined z-score. It now gets the
+  same per-metric breakdown the Header Inspector shows (Stars, FWHM, HFR, Noise, Trailing,
+  PSF flux z-scores), the trailing direction consensus and star-chain fraction that every
+  elongation rule keys on, the calibration-lock and low-confidence flags, the session-sanity
+  and historical-baseline flags (which survive a rescue), and the recommendation label.
+- **AIsaac's algorithm knowledge was three months stale.** Its built-in description still
+  had the pre-6.7 rules: dark frames keyed on 10000 hot-pixel "stars", the absolute trailing
+  ceiling gated on the group, tracking hops on a 25% chain fraction, and the old auto-mark
+  levels. Rewritten to algorithm v41: hot-pixel gate, flat-pedestal dark rule, elongation as
+  an absolute defect, direction-based hop detection, physical plausibility corridor,
+  background MAD floor, the frame-of-reference auto-mark levels, and a version history v29
+  to v41 so it can explain records scored by older versions. The knowledge block is
+  deliberately complete rather than short.
+- **Header list was cut alphabetically.** AIsaac received the first 40 header keys in
+  alphabetical order, so on NINA and ASIAIR files (60 to 80 keys) OBJECT, PIXSIZE, RA/DEC,
+  ROTATOR, SITELAT/SITELONG, TELESCOP and XBINNING were regularly missing. Headers are now
+  ordered by relevance (target, filter, optics, sensor, pointing, site, environment first,
+  WCS and bookkeeping last) and the cap is 60.
+- **Remote knowledge for the already-released 6.8.0** delivers the same algorithm update to
+  6.7.0 through 6.8.0 without an app update.
+
 ## [6.8.0] — 2026-09-09
 
 **Hot pixels are no longer counted as stars (Algorithm v41).**
