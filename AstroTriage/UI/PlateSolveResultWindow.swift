@@ -235,7 +235,7 @@ private struct PlateSolveResultView: View {
                     tag("FOCALLEN off", "\(report.opticsMismatches.count)", .orange)
                 }
                 if unsupportedCount > 0 {
-                    tag("skipped", "\(unsupportedCount) non-FITS", .secondary)
+                    tag("skipped", "\(unsupportedCount) unsupported", .secondary)
                 }
             }
 
@@ -567,7 +567,7 @@ enum PlateSolveResultBuilder {
                                 filename: $0.filename, object: "—",
                                 ra: "", dec: "", scaleAndFL: "",
                                 opticsConsistent: nil, opticsTooltip: "",
-                                centre: "", scale: "", rotation: "", detail: "not FITS")
+                                centre: "", scale: "", rotation: "", detail: "unsupported format")
         }
         return rows
     }
@@ -592,7 +592,7 @@ enum PlateSolveResultBuilder {
         if report.written > 0 { lines.append("WCS written into files: \(report.written)") }
         if report.objectNamesWritten > 0 { lines.append("OBJECT named in files: \(report.objectNamesWritten)") }
         if let backup = report.backupDirectory { lines.append("Backup: \(backup.path)") }
-        if unsupportedCount > 0 { lines.append("Skipped as non-FITS: \(unsupportedCount)") }
+        if unsupportedCount > 0 { lines.append("Skipped, unsupported format: \(unsupportedCount)") }
         lines.append("")
         lines.append(["STATUS", "FRAME", "OBJECT", "RA", "DEC", "SCALE_FL", "OPTICS",
                       "D_CENTRE_ARCMIN", "D_SCALE_PCT", "D_ROT_DEG", "NOTE"]

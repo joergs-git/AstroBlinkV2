@@ -67,10 +67,15 @@ enum PlateSolveOutcome: Equatable {
 
 final class ASTAPSolver {
 
-    /// Formats ASTAP can read. XISF is deliberately absent: ASTAP answers
-    /// `ERROR=Error reading image file.` and then hangs on its GUI. XISF frames are handled
-    /// by converting to a temporary FITS first (next increment).
-    static let supportedExtensions: Set<String> = ["fit", "fits", "fts"]
+    /// Formats ASTAP itself can read.
+    static let nativeExtensions: Set<String> = ["fit", "fits", "fts"]
+
+    /// Formats AstroBlink decodes in-process and hands to ASTAP as a temporary FITS, because
+    /// ASTAP answers `ERROR=Error reading image file.` for them and then hangs on its GUI.
+    static let convertedExtensions: Set<String> = ["xisf"]
+
+    /// Everything the solver accepts.
+    static let supportedExtensions: Set<String> = nativeExtensions.union(convertedExtensions)
 
     /// Per-frame deadline. A hinted solve takes ~0.3 s and a blind one ~4 s, so 60 s is far
     /// beyond any legitimate run and only ever fires on the hang described above.
@@ -107,27 +112,78 @@ final class ASTAPSolver {
             return .failed(reason: "could not create scratch directory: \(error.localizedDescription)")
         }
 
-        let copy = work.appendingPathComponent("frame.\(ext)")
-        do {
-            try fm.copyItem(at: url, to: copy)
-        } catch {
-            return .failed(reason: "could not read frame: \(error.localizedDescription)")
+        // The pointing hint comes from the ORIGINAL file — the converted temp FITS carries no
+        // headers at all, and for native FITS this is more reliable than hoping ASTAP parses
+        // the same keywords we would.
+        let position = MountPositionReader.read(from: url)
+
+        // Native formats are copied as-is; everything else is decoded and re-written as a
+        // FITS ASTAP can actually read. Either way the original is never handed to ASTAP.
+        let prepared: URL
+        let binning: Int
+        if Self.nativeExtensions.contains(ext) {
+            prepared = work.appendingPathComponent("frame.\(ext)")
+            do {
+                try fm.copyItem(at: url, to: prepared)
+            } catch {
+                return .failed(reason: "could not read frame: \(error.localizedDescription)")
+            }
+            binning = 1
+        } else {
+            do {
+                let exported = try ASTAPFrameExporter.exportForSolving(source: url, into: work)
+                prepared = exported.url
+                binning = exported.binning
+            } catch {
+                return .failed(reason: error.localizedDescription)
+            }
         }
 
+        // The exporter may have binned the frame, so the hint must describe the grid ASTAP
+        // actually sees. The field of view is unchanged by binning — only the pixel count is —
+        // so the FOV hint itself needs no adjustment; the SOLUTION does, below.
+        var outcome = run(image: prepared, fovDegrees: fovDegrees, position: position,
+                          binary: binary, database: database)
         // A wrong FOV hint only costs speed, never correctness — ASTAP reports "inexact
-        // scale" and solves anyway. But if the hinted attempt fails outright, retry blind
-        // before giving up, since a bad FOCALLEN header is common.
-        var outcome = run(image: copy, fovDegrees: fovDegrees, binary: binary, database: database)
-        if case .failed = outcome, fovDegrees != nil {
-            outcome = run(image: copy, fovDegrees: nil, binary: binary, database: database)
+        // scale" and solves anyway. But if the hinted attempt fails outright, retry without
+        // any hint before giving up: a bad FOCALLEN header is common, and so is a mount
+        // position that was never updated.
+        if case .failed = outcome, fovDegrees != nil || position != nil {
+            outcome = run(image: prepared, fovDegrees: nil, position: nil,
+                          binary: binary, database: database)
+        }
+
+        if binning > 1, case .solved(let solution) = outcome {
+            outcome = .solved(Self.rescale(solution, byBinningFactor: binning))
         }
         return outcome
+    }
+
+    /// Convert a solution measured on a binned grid back to the original pixel grid.
+    ///
+    /// Binning does not move the sky: the centre (CRVAL) and the field are unchanged. What
+    /// changes is the mapping from pixels to sky — each binned pixel covered `factor` original
+    /// pixels, so the reference pixel moves and the CD matrix shrinks by the same factor.
+    static func rescale(_ s: WCSSolution, byBinningFactor factor: Int) -> WCSSolution {
+        let f = Double(factor)
+        // FITS pixel coordinates are 1-based and refer to pixel CENTRES, so the mapping is
+        // x_full = f * (x_binned - 0.5) + 0.5 — not a bare multiplication.
+        return WCSSolution(
+            crval1: s.crval1,
+            crval2: s.crval2,
+            crpix1: f * (s.crpix1 - 0.5) + 0.5,
+            crpix2: f * (s.crpix2 - 0.5) + 0.5,
+            cd11: s.cd11 / f, cd12: s.cd12 / f,
+            cd21: s.cd21 / f, cd22: s.cd22 / f,
+            crota2: s.crota2            // rotation is scale-invariant
+        )
     }
 
     // MARK: Process
 
     private func run(image: URL,
                      fovDegrees: Double?,
+                     position: MountPosition?,
                      binary: URL,
                      database: URL) -> PlateSolveOutcome {
 
@@ -138,10 +194,18 @@ final class ASTAPSolver {
         ]
         if let fovDegrees, fovDegrees > 0 {
             arguments += ["-fov", String(format: "%.4f", fovDegrees)]
-            // With a scale hint a tight search radius around the header position is enough.
-            arguments += ["-r", "30"]
         } else {
             arguments += ["-fov", "0"]  // let ASTAP search for the scale
+        }
+
+        // `-r` is a radius AROUND A POSITION. Without one it is meaningless, and ASTAP falls
+        // back to searching the whole sky — which is why the position is passed explicitly
+        // rather than left to the headers. (-ra in hours, -spd = declination + 90.)
+        if let position {
+            arguments += ["-ra", String(format: "%.6f", position.raHours)]
+            arguments += ["-spd", String(format: "%.6f", position.southPoleDistance)]
+            arguments += ["-r", "30"]
+        } else {
             arguments += ["-r", "180"]
         }
 

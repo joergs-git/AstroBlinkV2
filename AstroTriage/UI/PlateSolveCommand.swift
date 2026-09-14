@@ -46,8 +46,8 @@ enum PlateSolveCommand {
 
         guard !supported.isEmpty else {
             alert("Nothing to solve",
-                  "None of the \(candidates.count) selected frames is a FITS file. This first "
-                  + "version solves FITS only — XISF support follows.")
+                  "None of the \(candidates.count) selected frames is a format the solver "
+                  + "can read. Supported: FITS and XISF.")
             return
         }
 
@@ -72,8 +72,8 @@ enum PlateSolveCommand {
             detail += "\(unsolved) frame(s) in \(scope) will be solved with ASTAP.\n\n"
         }
         if unsupported > 0 {
-            detail += "\(unsupported) non-FITS frame(s) will be skipped — this first version "
-                    + "solves FITS only.\n\n"
+            detail += "\(unsupported) frame(s) in an unsupported format will be skipped — "
+                    + "the solver reads FITS and XISF.\n\n"
         }
         detail += "Nothing is written yet: when the run finishes you can look at the results "
                 + "and choose what to save."

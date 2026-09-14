@@ -420,6 +420,72 @@ extern "C" WriteResult write_fits_keyword(const char* path, const char* keyword,
 }
 
 // ============================================================================
+// Minimal FITS image writer (v6.9.0)
+//
+// ASTAP cannot read XISF, so an XISF frame is decoded in-process and written out as a
+// temporary FITS for the solver. Only the pixel grid is written; keywords the solver should
+// see (RA/DEC hints) are added afterwards through write_fits_keyword.
+// ============================================================================
+
+extern "C" WriteResult write_fits_image_mono(const char* path,
+                                             const uint16_t* pixels,
+                                             int32_t width,
+                                             int32_t height) {
+    WriteResult result;
+    memset(&result, 0, sizeof(result));
+
+    if (path == nullptr || pixels == nullptr || width <= 0 || height <= 0) {
+        result.success = 0;
+        snprintf(result.error, sizeof(result.error), "invalid arguments");
+        return result;
+    }
+
+    CFITSIO_LOCK;  // no-op on macOS; serialises on iOS — see top-of-file rationale
+    fitsfile* fptr = nullptr;
+    int status = 0;
+
+    // Overwrite by removing first, NOT with cfitsio's "!" prefix: the _diskfile variants take
+    // the filename literally (that is why they are used throughout this file — paths here can
+    // contain characters cfitsio's extended syntax would otherwise interpret), so a "!" would
+    // become part of the path and the create fails with "couldn't create the named file".
+    ::remove(path);
+    if (fits_create_diskfile(&fptr, path, &status)) {
+        result.success = 0;
+        fits_get_errstatus(status, result.error);
+        return result;
+    }
+
+    // USHORT_IMG is BITPIX=16 with BZERO=32768, i.e. unsigned 16-bit — the same convention
+    // the decoders produce, so no rescaling is needed anywhere.
+    long naxes[2] = { (long)width, (long)height };
+    if (fits_create_img(fptr, USHORT_IMG, 2, naxes, &status)) {
+        result.success = 0;
+        fits_get_errstatus(status, result.error);
+        fits_close_file(fptr, &status);
+        return result;
+    }
+
+    const LONGLONG count = (LONGLONG)width * (LONGLONG)height;
+    // fits_write_img takes a non-const buffer; the cast is safe, cfitsio only reads here.
+    if (fits_write_img(fptr, TUSHORT, 1, count,
+                       const_cast<uint16_t*>(pixels), &status)) {
+        result.success = 0;
+        fits_get_errstatus(status, result.error);
+        fits_close_file(fptr, &status);
+        return result;
+    }
+
+    if (fits_close_file(fptr, &status)) {
+        result.success = 0;
+        fits_get_errstatus(status, result.error);
+        return result;
+    }
+
+    result.success = 1;
+    return result;
+}
+
+// ============================================================================
 // XISF header modification — uses libxisf XISFModify
 // ============================================================================
 
