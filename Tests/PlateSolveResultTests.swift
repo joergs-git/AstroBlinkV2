@@ -282,7 +282,7 @@ final class PlateSolveResultTests: XCTestCase {
         XCTAssertTrue(text.contains("Confirmed existing solve: 1"))
         XCTAssertTrue(text.contains("WCS written into files: 1"))
         XCTAssertTrue(text.contains("_platesolve_backup_x"))
-        XCTAssertTrue(text.contains("Skipped as non-FITS: 2"))
+        XCTAssertTrue(text.contains("Skipped, unsupported format: 2"))
     }
 
     func testClipboardOfAnEmptyReportStillProducesAHeader() {

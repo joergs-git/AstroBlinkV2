@@ -173,12 +173,14 @@ final class PlateSolveTests: XCTestCase {
 
     // MARK: - Format gate
 
-    func testXISFIsNotOfferedToASTAP() {
-        // ASTAP cannot read XISF and hangs on its GUI when handed one — the format gate is
-        // what keeps a 60 s timeout per frame from happening on a whole XISF session.
-        XCTAssertFalse(ASTAPSolver.supportedExtensions.contains("xisf"))
+    func testXISFIsNeverHandedDirectlyToASTAP() {
+        // ASTAP cannot read XISF and hangs on its GUI when handed one. Since v6.9.0 XISF IS
+        // supported — but only through in-process conversion to a temporary FITS, never by
+        // passing the file itself. That distinction is the whole safety of the format gate.
+        XCTAssertTrue(ASTAPSolver.supportedExtensions.contains("xisf"))
+        XCTAssertFalse(ASTAPSolver.nativeExtensions.contains("xisf"))
         for ext in ["fit", "fits", "fts"] {
-            XCTAssertTrue(ASTAPSolver.supportedExtensions.contains(ext))
+            XCTAssertTrue(ASTAPSolver.nativeExtensions.contains(ext))
         }
     }
 
@@ -186,12 +188,12 @@ final class PlateSolveTests: XCTestCase {
         // Must fail fast on the extension, before any process is spawned — the binary and
         // database URLs here are deliberately bogus.
         let outcome = ASTAPSolver().solve(
-            url: URL(fileURLWithPath: "/tmp/does-not-exist.xisf"),
+            url: URL(fileURLWithPath: "/tmp/does-not-exist.tif"),
             fovDegrees: 1.9,
             binary: URL(fileURLWithPath: "/nonexistent/astap"),
             database: URL(fileURLWithPath: "/nonexistent/db")
         )
-        XCTAssertEqual(outcome, .unsupportedFormat("xisf"))
+        XCTAssertEqual(outcome, .unsupportedFormat("tif"))
     }
 
     // MARK: - Integration: a real solve through the real chain

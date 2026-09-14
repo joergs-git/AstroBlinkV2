@@ -25,7 +25,7 @@ the object each frame points at, shows the solved coordinates, and warns when FO
 contradicts the scale actually measured. Nothing is written until you choose, after the run,
 between all frames, only the changed ones, or none; saving backs up first and never overwrites
 an existing OBJECT name. Requires a separate ASTAP install plus a star database (both free —
-licensing prevents bundling them). FITS in this first version; XISF follows.
+licensing prevents bundling them). Works with FITS and XISF.
 An in-app announcement can now be shown as a proper popup instead of the slim
 top banner, and can carry a short YouTube or Vimeo clip. Videos load from the
 privacy-preserving YouTube domain, nothing the player stores survives closing

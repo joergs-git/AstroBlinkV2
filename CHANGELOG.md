@@ -22,7 +22,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   only the changed ones, or none; saving always makes a backup first and never overwrites an
   OBJECT name you already have. Requires ASTAP and one of its star databases to be installed
   (both are free, and licensing prevents shipping them with AstroBlink); AstroBlink asks once
-  for permission to read the database and remembers it.
+  for permission to read the database and remembers it. **Works with FITS and XISF** — ASTAP
+  itself cannot read XISF, so those frames are decoded and handed over as a temporary image;
+  your files are never touched by it.
 - **Message popups.** An announcement can now be shown as a proper popup window instead of
   the slim banner at the top of the window. Which one is used is decided per message, so
   short notes stay unobtrusive and something worth reading gets your attention on launch.

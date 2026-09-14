@@ -155,6 +155,33 @@ Yes, as long as NINA's plate-solve step ran (ASPS, ASTAP, etc.) and the WCS keyw
 **Q: Blink mode now shows star shifts on some frames. Was this always there?**
 Yes — but before AutoRotate, the dither offsets and mount drift were hidden because every frame was displayed at its own natural pixel origin. Now that stars are pixel-locked across frames via WCS, anything that actually moved in the sky (focus drift, trailing, tracking errors) pops out as the only moving thing. This is the intended effect — it makes quality differences visually obvious.
 
+**Q: How do I use plate solving?**
+Install [ASTAP](https://www.hnsky.org/astap.htm) and one of its star databases (both free —
+their licences prevent AstroBlink from bundling them). Then open a session and choose
+**Window → Plate Solve Frames…** (⌘⇧P), or right-click a selection in the file list. The
+first time, macOS asks once for permission to read the star database folder — usually
+`/usr/local/opt/astap`, which Finder hides, so the dialog explains how to get there. That
+grant is remembered.
+
+Works with FITS and XISF. ASTAP itself cannot read XISF, so those frames are decoded by
+AstroBlink and handed over as a temporary image — ASTAP never sees your originals, and
+nothing is written to them unless you choose to save after the run.
+
+**Q: What does "differs from stored WCS" mean in the plate solve results?**
+That frame already carried a plate solve, and re-solving it produced a different answer. The
+table shows how different: centre offset in arcminutes, plate scale in percent, rotation in
+degrees. Small numbers are ordinary solver noise; a large centre offset means the stored WCS
+points somewhere the frame is not — typically a solve copied from another night, or one that
+locked onto the wrong field.
+
+**Q: The result table warns that FOCALLEN is off. Is my telescope wrong?**
+No — the header is. A plate solve measures the true angular size of a pixel, which gives the
+focal length that was actually in the light path. If that disagrees with FOCALLEN by more
+than 2%, something is unrecorded: a reducer or flattener, a focal length taken from the spec
+sheet rather than measured, or a binning the header does not mention. It is worth fixing,
+because AstroBlink uses the pixel scale both to speed up solving and to sanity-check star
+measurements during quality scoring.
+
 **Q: Where does the Target Catalog data come from?**
 A Supabase-backed database with 533+ deep-sky objects. Data is cached locally for offline use and refreshed in the background when a connection is available. The catalog includes coordinates, photometry, angular sizes, filter recommendations, difficulty ratings, and imaging notes.
 

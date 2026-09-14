@@ -65,6 +65,18 @@ WriteResult delete_fits_keyword(const char* path, const char* keyword);
 // Delete an XISF FITS header keyword
 WriteResult delete_xisf_keyword(const char* path, const char* save_path, const char* keyword);
 
+// Write a single-plane 16-bit image as a minimal FITS file (v6.9.0).
+//
+// Exists because ASTAP cannot read XISF: an XISF frame is decoded in-process and handed to
+// ASTAP as a temporary FITS. Deliberately minimal — only what a plate solver needs (a pixel
+// grid). Any keywords the solver should see are added afterwards with write_fits_keyword.
+//
+// `pixels` is row-major, width*height uint16 values. An existing file at `path` is replaced.
+WriteResult write_fits_image_mono(const char* path,
+                                  const uint16_t* pixels,
+                                  int32_t width,
+                                  int32_t height);
+
 // Free pixel data returned by decode functions
 void free_decode_result(DecodeResult* result);
 
