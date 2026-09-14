@@ -277,6 +277,8 @@ class TriageViewModel: ObservableObject {
 
     // In-app messaging banner (fetched from Supabase, shown between toolbar and content)
     @Published var bannerMessage: AppMessage?
+    /// Set instead of `bannerMessage` when the message's display_mode is "modal" (v6.9.0).
+    @Published var modalMessage: AppMessage?
     private var messageCheckTimer: Timer?
 
     // Current setup fingerprint (computed from first image's headers)
@@ -4460,13 +4462,36 @@ class TriageViewModel: ObservableObject {
     // MARK: - In-App Messaging
 
     /// Check for messages from Supabase. Called on launch (deferred) and periodically.
+    ///
+    /// The service picks ONE highest-priority message; `display_mode` decides how it is
+    /// presented. Only one of `bannerMessage` / `modalMessage` is ever non-nil (v6.9.0 —
+    /// before that, display_mode was unread and everything rendered as a banner).
     func checkForMessages() {
         Task {
             let message = await AppMessageService.shared.checkForMessages()
-            bannerMessage = message
+            if let message, message.isModal {
+                bannerMessage = nil
+                modalMessage = message
+            } else {
+                modalMessage = nil
+                bannerMessage = message
+            }
             if let msg = message {
                 AppMessageService.shared.recordImpression(messageId: msg.id)
             }
+        }
+    }
+
+    /// The message currently on screen, whichever channel is showing it.
+    private var activeMessage: AppMessage? { modalMessage ?? bannerMessage }
+
+    /// Clear whichever channel is showing. Banner animates out; the modal is a sheet and
+    /// gets its dismissal animation from SwiftUI.
+    private func clearActiveMessage() {
+        if modalMessage != nil {
+            modalMessage = nil
+        } else {
+            withAnimation(.easeOut(duration: 0.3)) { bannerMessage = nil }
         }
     }
 
@@ -4481,32 +4506,29 @@ class TriageViewModel: ObservableObject {
     }
 
     func dismissBannerMessage() {
-        guard let msg = bannerMessage else { return }
+        guard let msg = activeMessage else { return }
         Task {
             await AppMessageService.shared.dismiss(messageId: msg.id)
         }
-        withAnimation(.easeOut(duration: 0.3)) {
-            bannerMessage = nil
-        }
+        clearActiveMessage()
     }
 
     func snoozeBannerMessage() {
-        guard let msg = bannerMessage else { return }
+        guard let msg = activeMessage else { return }
         Task {
             await AppMessageService.shared.snooze(messageId: msg.id)
         }
-        withAnimation(.easeOut(duration: 0.3)) {
-            bannerMessage = nil
-        }
+        clearActiveMessage()
     }
 
     func respondToBannerMessage(actionType: String, value: String?) {
-        guard let msg = bannerMessage else { return }
+        guard let msg = activeMessage else { return }
         Task {
             await AppMessageService.shared.respond(messageId: msg.id, actionType: actionType, value: value)
         }
-        // For yes/no/radio/slider: show thank-you then remove
-        // The banner view handles the "submitted" state animation
+        // For yes/no/radio/slider: show thank-you then remove.
+        // Both the banner and the modal handle the "submitted" state themselves and call
+        // back into dismiss when the flash has run.
     }
 }
 

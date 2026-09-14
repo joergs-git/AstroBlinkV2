@@ -34,6 +34,7 @@ struct ContentView: View {
     var body: some View {
         bodyContent
             .modifier(ContentViewModifiers(viewModel: viewModel, sliderValue: $sliderValue, renderer: $renderer, keyboardMonitor: $keyboardMonitor))
+            .modifier(AppMessageModalModifier(viewModel: viewModel))
     }
 
     // MARK: - Toolbar Helpers
