@@ -915,6 +915,21 @@ extension FileListView {
 
             menu.addItem(NSMenuItem.separator())
 
+            // Plate solving (v6.9.0). Acts on the whole selection when the clicked row is part
+            // of it, otherwise on just that row — the same convention as the Golden Set and
+            // feedback items above. The title says which, so there is no surprise.
+            let solveRows = plateSolveTargetRows(clickedRow: clickedRow)
+            let solveTitle = solveRows.count == 1
+                ? "Plate Solve This Frame…"
+                : "Plate Solve \(solveRows.count) Selected Frames…"
+            let solveItem = NSMenuItem(title: solveTitle,
+                                       action: #selector(plateSolveFromMenu(_:)), keyEquivalent: "")
+            solveItem.target = self
+            solveItem.tag = clickedRow
+            menu.addItem(solveItem)
+
+            menu.addItem(NSMenuItem.separator())
+
             // Mark/Unmark option
             let markTitle = entry.isMarkedForDeletion ? "Unmark" : "Mark for Deletion"
             let markItem = NSMenuItem(title: markTitle, action: #selector(toggleMarkFromMenu(_:)), keyEquivalent: "")
@@ -1037,6 +1052,29 @@ extension FileListView {
         }
 
         // MARK: - Golden Set Context Menu Action
+
+        // MARK: - Plate Solve Context Menu Action
+
+        /// Rows the plate-solve command should act on: the whole selection when the clicked
+        /// row belongs to it, otherwise just the clicked row. (v6.9.0)
+        private func plateSolveTargetRows(clickedRow: Int) -> IndexSet {
+            guard let tableView = tableView else { return IndexSet(integer: clickedRow) }
+            let selected = tableView.selectedRowIndexes
+            return selected.contains(clickedRow) ? selected : IndexSet(integer: clickedRow)
+        }
+
+        @objc private func plateSolveFromMenu(_ sender: NSMenuItem) {
+            let rows = plateSolveTargetRows(clickedRow: sender.tag)
+            // Resolve against the DISPLAYED list — row indices are view indices, and the list
+            // may be filtered (hide-marked, show-only-marked, text filter).
+            let entries = rows.compactMap { row -> ImageEntry? in
+                row < displayedImages.count ? displayedImages[row] : nil
+            }
+            guard !entries.isEmpty else { return }
+            Task { @MainActor in
+                PlateSolveCommand.runInteractive(viewModel: viewModel, entries: entries)
+            }
+        }
 
         @objc private func setGoldenLabelFromMenu(_ sender: NSMenuItem) {
             let label = GoldenLabel(rawValue: (sender.representedObject as? Int) ?? 0) ?? .none

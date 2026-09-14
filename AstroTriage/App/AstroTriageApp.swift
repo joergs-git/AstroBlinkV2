@@ -170,6 +170,13 @@ struct AstroBlinkV2App: App {
                 Button("MCP Connector (Claude)…") {
                     NotificationCenter.default.post(name: .showMCPConnector, object: nil)
                 }
+                Divider()
+                // Plate solving via a user-installed ASTAP (v6.9.0). Runs on the highlighted
+                // frames, or the whole session when nothing is highlighted.
+                Button("Plate Solve Frames…") {
+                    NotificationCenter.default.post(name: .plateSolveFrames, object: nil)
+                }
+                .keyboardShortcut("p", modifiers: [.command, .shift])
             }
 
             // Advanced menu (safety net for Frame History Database)
@@ -580,6 +587,7 @@ extension Notification.Name {
     static let exportGoldenSet = Notification.Name("exportGoldenSet")
     static let showGoldenSetCoverage = Notification.Name("showGoldenSetCoverage")
     static let checkAppMessages = Notification.Name("checkAppMessages")
+    static let plateSolveFrames = Notification.Name("plateSolveFrames")
     static let frameHistoryDidImport = Notification.Name("frameHistoryDidImport")
     static let zoomInStep = Notification.Name("zoomInStep")
     static let zoomOutStep = Notification.Name("zoomOutStep")

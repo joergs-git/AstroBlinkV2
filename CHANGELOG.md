@@ -10,6 +10,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Added
 
+- **Plate solving with ASTAP.** AstroBlink can now plate-solve the frames of a session —
+  **Window → Plate Solve Frames…** (⌘⇧P), or right-click a selection in the file list. About
+  0.3 seconds per frame, because AstroBlink hands ASTAP the field size it already knows from
+  your focal length and pixel size. Frames that already carry a plate solve can be re-solved
+  as a CHECK: the new solution is compared against the stored one and any that disagree are
+  flagged, which is how a stale or misidentified solve becomes visible. The result table also
+  names the object each frame is pointing at, shows the solved coordinates, and tells you when
+  FOCALLEN disagrees with the scale actually measured — a forgotten reducer shows up
+  immediately. Nothing is written until you decide, after the run, whether to save all frames,
+  only the changed ones, or none; saving always makes a backup first and never overwrites an
+  OBJECT name you already have. Requires ASTAP and one of its star databases to be installed
+  (both are free, and licensing prevents shipping them with AstroBlink); AstroBlink asks once
+  for permission to read the database and remembers it.
 - **Message popups.** An announcement can now be shown as a proper popup window instead of
   the slim banner at the top of the window. Which one is used is decided per message, so
   short notes stay unobtrusive and something worth reading gets your attention on launch.

@@ -490,7 +490,9 @@ struct BatchOperations {
     }
 
     /// Read a single header keyword value from a FITS or XISF file
-    private static func readHeaderValue(url: URL, keyword: String) -> String? {
+    /// Read a single header keyword. Internal (not private) so the plate solver can reuse
+    /// the same proven FITS/XISF accessor instead of growing a second one. (v6.9.0)
+    static func readHeaderValue(url: URL, keyword: String) -> String? {
         let path = url.path
         let ext = url.pathExtension.lowercased()
 
@@ -536,7 +538,10 @@ struct BatchOperations {
     }
 
     /// Write a header keyword to a FITS or XISF file
-    private static func writeHeader(url: URL, keyword: String, value: String) -> String? {
+    /// Write a single header keyword; returns an error string, or nil on success. Internal
+    /// (not private) so the plate solver can reuse it — it already handles the XISF
+    /// write-to-temp-then-atomic-rename dance and the C error buffer correctly. (v6.9.0)
+    static func writeHeader(url: URL, keyword: String, value: String) -> String? {
         let path = url.path
         let ext = url.pathExtension.lowercased()
 

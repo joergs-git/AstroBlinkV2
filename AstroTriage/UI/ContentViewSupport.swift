@@ -125,6 +125,9 @@ struct AppMessageModalModifier: ViewModifier {
 
     func body(content: Content) -> some View {
         content
+            .onReceive(NotificationCenter.default.publisher(for: .plateSolveFrames)) { _ in
+                PlateSolveCommand.runInteractive(viewModel: viewModel)
+            }
             .sheet(item: $viewModel.modalMessage) { message in
                 AppMessageModalView(
                     message: message,

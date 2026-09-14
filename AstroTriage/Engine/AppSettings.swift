@@ -81,6 +81,13 @@ struct AppSettings {
         case showViewerOverlay    // Bool — filter letter / time / mini-map overlay in image viewer (top-left)
         case coffeeNextPromptAt   // Int — sessionCount value at which to show the next "buy me a coffee" dialog
         case coffeeThanked        // Bool — user already donated (or said "no thanks") → never prompt again
+        case astapDatabaseBookmark // Data — security-scoped bookmark for the ASTAP star database
+                                   // folder. The App Sandbox denies /usr/local, where ASTAP
+                                   // installs it, so the user grants it once and the bookmark
+                                   // (which the solver's child process inherits) is reused
+                                   // from then on. See ASTAPLocator.
+        case astapDatabasePath     // String — last known path of that folder, for display and
+                                   // for detecting a still-reachable folder without a bookmark
     }
 
     // Register defaults for new installs (call once at app launch, before startCloudSync)

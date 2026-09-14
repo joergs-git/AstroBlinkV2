@@ -16,12 +16,22 @@ Nice side effect: Finally you have a native XISF and FITS Quicklook for macOS. (
 
 ## What's New in v6.9.0 (Build 111)
 
-**Announcements can be a popup with a video, and they arrive the same day.**
+**Plate solving with ASTAP, and announcements that can be a popup with a video.**
+
+Plate-solve a whole session in about 0.3 s per frame via **Window → Plate Solve Frames…**
+(⌘⇧P) or the file-list context menu. Already-solved frames can be re-solved as a check —
+AstroBlink compares against the stored WCS and flags any that disagree. The result table names
+the object each frame points at, shows the solved coordinates, and warns when FOCALLEN
+contradicts the scale actually measured. Nothing is written until you choose, after the run,
+between all frames, only the changed ones, or none; saving backs up first and never overwrites
+an existing OBJECT name. Requires a separate ASTAP install plus a star database (both free —
+licensing prevents bundling them). FITS in this first version; XISF follows.
 An in-app announcement can now be shown as a proper popup instead of the slim
 top banner, and can carry a short YouTube or Vimeo clip. Videos load from the
 privacy-preserving YouTube domain, nothing the player stores survives closing
 the popup, and links clicked inside the player open your normal browser.
 Messages are also re-checked at every launch instead of once every 24 hours.
+
 No scoring change — the quality algorithm is still v41.
 
 ---
