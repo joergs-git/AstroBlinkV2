@@ -2399,6 +2399,21 @@ class TriageViewModel: ObservableObject {
         displayCurrentImage()
     }
 
+    /// Select and display the frame with this id, e.g. from a click in the plate-solve result
+    /// table. Returns false when the frame is no longer loaded (the session changed since the
+    /// results were produced). (v6.9.0)
+    ///
+    /// Matches on `id` rather than URL so a frame that was renamed or relocated in the
+    /// meantime is still found.
+    @discardableResult
+    func navigateToEntry(id: ImageEntry.ID) -> Bool {
+        guard let index = images.firstIndex(where: { $0.id == id }) else { return false }
+        // Deliberately no needsTableRefresh here — a reload saves and restores the OLD
+        // selection and can swallow the scroll, exactly as documented in navigateToObject.
+        selectImage(at: index)
+        return true
+    }
+
     /// Navigate to the first image matching the given object name (and optionally filter, exposure, night).
     /// Called from session overview when user clicks an object or filter name.
     func navigateToObject(_ objectName: String, filter: String? = nil, exposure: Double? = nil, night: String? = nil) {
@@ -3996,9 +4011,25 @@ class TriageViewModel: ObservableObject {
         }
     }
 
+    /// Locate the viewer's MTKView.
+    ///
+    /// The key window is the right answer while the user works in the main window. But a
+    /// utility panel can hold focus while the frame to display lives in the main window —
+    /// the floating plate-solve result table is exactly that case: clicking a row there left
+    /// the image untouched (the SwiftUI inspector still followed, since it is reactive,
+    /// which made the bug look like a rendering problem rather than a lookup one).
+    /// Falling back keeps the viewer updating no matter which window has focus. (v6.9.0)
     private func findMTKView() -> MTKView? {
-        guard let window = NSApp.keyWindow else { return nil }
-        return findMTKViewIn(view: window.contentView)
+        if let key = NSApp.keyWindow, let view = findMTKViewIn(view: key.contentView) {
+            return view
+        }
+        if let main = NSApp.mainWindow, let view = findMTKViewIn(view: main.contentView) {
+            return view
+        }
+        for window in NSApp.windows where window.isVisible && window.level == .normal {
+            if let view = findMTKViewIn(view: window.contentView) { return view }
+        }
+        return nil
     }
 
     private func findMTKViewIn(view: NSView?) -> MTKView? {
@@ -4457,6 +4488,41 @@ class TriageViewModel: ObservableObject {
         } else {
             return String(format: "%.0fs", seconds)
         }
+    }
+
+    // MARK: - Plate Solving
+
+    /// Apply plate-solve results to the loaded entries.
+    ///
+    /// The solved WCS is stored in exactly the fields `MetadataExtractor` fills when a frame
+    /// arrives already solved, so everything downstream (Auto Rotate, the header inspector,
+    /// decentered-target checks) sees no difference between the two. Entries are matched by
+    /// `id`, which is stable across the rename/relocate paths. (v6.9.0)
+    func applyPlateSolveResults(_ report: PlateSolveReport) {
+        guard !report.solved.isEmpty else {
+            statusMessage = report.headline
+            return
+        }
+
+        var solutions: [ImageEntry.ID: WCSSolution] = [:]
+        for frame in report.solved { solutions[frame.entry.id] = frame.solution }
+
+        for index in images.indices {
+            guard let s = solutions[images[index].id] else { continue }
+            images[index].solvedRA = s.crval1
+            images[index].solvedDec = s.crval2
+            images[index].wcsCRPIX1 = s.crpix1
+            images[index].wcsCRPIX2 = s.crpix2
+            images[index].wcsCD11 = s.cd11
+            images[index].wcsCD12 = s.cd12
+            images[index].wcsCD21 = s.cd21
+            images[index].wcsCD22 = s.cd22
+            // Match MetadataExtractor: prefer CROTA2, else derive rotation from the CD matrix.
+            images[index].wcsRotation = s.crota2 ?? (atan2(-s.cd12, s.cd11) * 180.0 / .pi)
+        }
+
+        statusMessage = report.headline
+        needsTableRefresh = true
     }
 
     // MARK: - In-App Messaging

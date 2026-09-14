@@ -83,28 +83,46 @@ Keep total content under ~3000 tokens (~12KB). The app fetches ALL active snippe
 
 ## In-App Messages (`app_messages`)
 
-Server-driven announcements, feedback collection, and feature announcements.
+Server-driven announcements, feedback collection and feature announcements. Messages appear
+without an app update: create a row, and it shows up at the next launch of every app that
+matches the targeting.
+
+> **Column names below are the real ones.** Earlier revisions of this guide listed
+> `min_version`, `max_version` and a `targeting` JSONB column — none of those exist. Targeting
+> lives in flat columns.
 
 ### Table Schema
 
 | Column | Type | Description |
 |--------|------|-------------|
 | `id` | UUID | Auto-generated |
-| `title` | TEXT | Message title shown in banner |
-| `body` | TEXT | Message body (supports markdown-like formatting) |
-| `message_type` | TEXT | `info`, `warning`, `feedback`, `announcement`, `survey` |
-| `platform` | TEXT | `macos`, `ios`, `all` |
-| `priority` | INT | Higher = shown first |
-| `min_version` | TEXT | Minimum app version to show |
-| `max_version` | TEXT | Maximum app version to show |
-| `is_active` | BOOL | Active flag |
-| `repeat_mode` | TEXT | `once`, `always`, `interval` |
-| `repeat_interval_hours` | INT | For `interval` mode |
-| `actions` | JSONB | Rich action buttons (see below) |
-| `targeting` | JSONB | User targeting rules |
-| `created_at` | TIMESTAMPTZ | Creation time |
+| `title` | TEXT | Headline |
+| `body` | TEXT | Markdown (`**bold**`, `*italic*`, `[text](https://…)`) |
+| `message_type` | TEXT | `info` · `warning` · `update_nudge` · `feedback` · `email_collect` — picks the icon and accent colour |
+| `display_mode` | TEXT | `banner` (slim strip at the top, default) · `modal` (blocking popup) |
+| `media_url` | TEXT | YouTube/Vimeo URL — popup only (v6.9.0+) |
+| `media_type` | TEXT | `video`, or NULL. Required whenever `media_url` is set |
+| `poster_url` | TEXT | Reserved, not yet rendered |
+| `actions` | JSONB | Buttons and inputs (see below) |
+| `platform` | TEXT | `macos` · `ios` · `all` |
+| `min_app_version` | TEXT | Lowest app version that sees it (semver) |
+| `max_app_version` | TEXT | Highest app version that sees it |
+| `min_session_count` | INT | Only for users with at least this many sessions |
+| `min_frame_count` / `max_frame_count` | INT | Frames in the user's history |
+| `requires_entitlement` / `excludes_entitlement` | TEXT | e.g. `aisaac_boost` |
+| `requires_response_to` / `excludes_response_to` | UUID | Chain messages by prior answer |
+| `starts_at` | TIMESTAMPTZ | Defaults to now |
+| `expires_at` | TIMESTAMPTZ | NULL = never |
+| `snooze_hours` | INT | How long "Later" hides it (default 168) |
+| `repeat_mode` | TEXT | `once` · `always` · `interval` |
+| `repeat_interval_hours` | INT | For `interval` |
+| `is_active` | BOOL | The master switch — flip to false to pull a message instantly |
+| `priority` | INT | Higher wins; only ONE message is shown at a time |
 
 ### Action Types
+
+`type` values are exactly: `dismiss`, `yes`, `no`, `later`, `email_input`, `text_input`,
+`radio`, `slider`, `link`.
 
 ```json
 // Simple yes/no
@@ -115,14 +133,14 @@ Server-driven announcements, feedback collection, and feature announcements.
 
 // Email collection (grants AIsaac boost)
 {"actions": [
-    {"type": "email", "label": "Get 50 AIsaac queries/day", "placeholder": "your@email.com"},
-    {"type": "no", "label": "Maybe later"}
+    {"type": "email_input", "label": "Get 50 AIsaac queries/day", "placeholder": "your@email.com"},
+    {"type": "later", "label": "Maybe later"}
 ]}
 
 // Rating slider
 {"actions": [
     {"type": "slider", "label": "Rate AIsaac", "min": 1, "max": 5},
-    {"type": "text", "label": "Any feedback?", "placeholder": "Tell us..."}
+    {"type": "text_input", "label": "Any feedback?", "placeholder": "Tell us..."}
 ]}
 
 // Radio buttons
@@ -130,13 +148,87 @@ Server-driven announcements, feedback collection, and feature announcements.
     {"type": "radio", "label": "How do you image?",
      "options": ["Observatory/dome", "Portable setup", "Remote hosting"]}
 ]}
+
+// External link (https only — anything else is ignored by the app)
+{"actions": [
+    {"type": "link", "label": "Read the notes", "url": "https://github.com/joergs-git/AstroBlinkV2/releases"}
+]}
 ```
+
+---
+
+### Popup with a video, short text and a link (v6.9.0+)
+
+The common case: announce a feature with a short clip, a sentence or two, and a link.
+
+**1. Upload the video to YouTube** (unlisted is fine — unlisted videos play in embeds;
+*private* ones do not). Copy the normal watch URL, e.g.
+`https://www.youtube.com/watch?v=dQw4w9WgXcQ`. Short links (`https://youtu.be/…`), embed
+links and Vimeo links all work — the app normalises them.
+
+**2. Insert the row:**
+
+```sql
+INSERT INTO public.app_messages (
+    title, body, message_type, display_mode,
+    media_url, media_type,
+    actions, platform, expires_at, repeat_mode, snooze_hours, priority
+) VALUES (
+    'Plate solving is here',
+    E'AstroBlink can now plate-solve a whole session with **ASTAP** — 0.3 s per frame, '
+     || E'and it tells you when a FOCALLEN header disagrees with reality.\n\n'
+     || E'Watch the clip, then find it under *Window → Plate Solve Frames…*',
+    'info',
+    'modal',                                              -- popup, not the slim banner
+    'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+    'video',
+    '[{"type":"link","label":"Read the release notes","url":"https://github.com/joergs-git/AstroBlinkV2/releases"},
+      {"type":"later","label":"Later"}]'::jsonb,
+    'macos',
+    now() + interval '21 days',                           -- or NULL to run until you pull it
+    'once',
+    168,
+    10
+);
+```
+
+**3. Pull it again** at any time — no app update needed:
+
+```sql
+UPDATE public.app_messages SET is_active = false WHERE id = '<uuid>';
+```
+
+#### What the user sees
+
+Title with the `message_type` icon · the video player · the markdown body · then the action
+buttons and **Close**. Below the player sits an **Open in browser** button that opens the
+video full size in the user's normal browser.
+
+#### Rules worth knowing before you write the row
+
+- **Popup and video need app ≥ 6.9.0.** Older builds ignore `display_mode` and `media_url`
+  and render the same row as a **banner** — so write the body so it stands on its own without
+  the video. Set `min_app_version = '6.9.0'` only if older builds should not see it at all.
+- **`media_url` requires `media_type = 'video'`** — a CHECK constraint rejects the row otherwise.
+- **Only YouTube and Vimeo, only https.** The app enforces an exact host allowlist and an
+  exact URL shape; anything else renders as a text-only popup, silently. Test the row yourself
+  before relying on it.
+- **Every link must be https** — in `actions` and in the markdown body. Other schemes are
+  stripped and the link degrades to plain text.
+- **Videos do not autoplay.** The viewer presses play.
+- **Only the highest-`priority` matching message is shown**, one at a time.
+- **Testing without disturbing users:** set `min_app_version` above every released version
+  (e.g. `'9.9.9'`) while you check it, then lower it when you are happy. Delete the test row
+  when done — `message_interactions` rows cascade with it.
+
+---
 
 ### Common Operations
 
+
 **Announce a new feature:**
 ```sql
-INSERT INTO app_messages (title, body, message_type, platform, priority, min_version, repeat_mode, actions)
+INSERT INTO app_messages (title, body, message_type, platform, priority, min_app_version, repeat_mode, actions)
 VALUES (
     'New: Chart Hover Tooltips',
     'Hover any data point in the History charts to see detailed breakdowns — targets, filters, FWHM, moon phase, and likely causes for bad nights.',
@@ -159,7 +251,7 @@ VALUES (
     'all',
     3,
     'once',
-    '[{"type": "radio", "label": "Setup type", "options": ["Permanent observatory/dome", "Portable (setup each night)", "Remote hosting service", "Mix of both"]}, {"type": "text", "label": "Anything else?", "placeholder": "Optional"}]'
+    '[{"type": "radio", "label": "Setup type", "options": ["Permanent observatory/dome", "Portable (setup each night)", "Remote hosting service", "Mix of both"]}, {"type": "text_input", "label": "Anything else?", "placeholder": "Optional"}]'
 );
 ```
 
