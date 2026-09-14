@@ -4,6 +4,32 @@ All notable changes to AstroBlink & AIsaac will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [6.9.0] — 2026-09-14
+
+**Announcements can now be a popup with a video, and they show up the same day.**
+
+### Added
+
+- **Message popups.** An announcement can now be shown as a proper popup window instead of
+  the slim banner at the top of the window. Which one is used is decided per message, so
+  short notes stay unobtrusive and something worth reading gets your attention on launch.
+- **Video in announcements.** A popup can carry a short YouTube or Vimeo clip — useful for
+  showing a new feature rather than describing it. An **Open in browser** button below the
+  player takes the video full size in your normal browser, where it also outlives the popup.
+  Videos are loaded from the privacy-preserving YouTube domain, nothing the player stores
+  survives closing the popup, and clicking a link inside the player opens your normal
+  browser instead of navigating inside AstroBlink.
+
+### Changed
+
+- **Announcements arrive the same day.** Messages were only re-fetched every 24 hours, so a
+  new announcement could take a day to appear. AstroBlink now checks once at every launch
+  and keeps the 24-hour interval only for the periodic check while the app stays open.
+
+### Notes
+
+- No scoring change — the quality algorithm is untouched (still v41).
+
 ## [6.8.1] — 2026-09-10
 
 **AIsaac now sees the same quality breakdown you see, and knows the current algorithm.**

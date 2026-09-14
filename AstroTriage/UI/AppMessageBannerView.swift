@@ -164,7 +164,7 @@ struct AppMessageBannerView: View {
                     onSnooze()
                 }
             case "link":
-                if let urlStr = action.url, let url = URL(string: urlStr) {
+                if let url = AppMessageLink.safe(action.url) {
                     Link(destination: url) {
                         Text(action.label ?? "Open")
                             .font(.system(size: 10, weight: .medium, design: .monospaced))
@@ -409,7 +409,8 @@ struct AppMessageBannerView: View {
 
             let linkText = String(afterBracket[afterBracket.startIndex..<closeBracket.lowerBound])
             let linkURL = String(afterBracket[closeBracket.upperBound..<closeParen.lowerBound])
-            parts.append(BodyPart(text: linkText, url: URL(string: linkURL)))
+            // A rejected link degrades to plain text rather than disappearing.
+            parts.append(BodyPart(text: linkText, url: AppMessageLink.safe(linkURL)))
             remaining = String(afterBracket[closeParen.upperBound...])
         }
 

@@ -14,7 +14,19 @@ Nice side effect: Finally you have a native XISF and FITS Quicklook for macOS. (
 
 ---
 
-## What's New in v6.8.1 (Build 110)
+## What's New in v6.9.0 (Build 111)
+
+**Announcements can be a popup with a video, and they arrive the same day.**
+An in-app announcement can now be shown as a proper popup instead of the slim
+top banner, and can carry a short YouTube or Vimeo clip. Videos load from the
+privacy-preserving YouTube domain, nothing the player stores survives closing
+the popup, and links clicked inside the player open your normal browser.
+Messages are also re-checked at every launch instead of once every 24 hours.
+No scoring change — the quality algorithm is still v41.
+
+---
+
+## Previously in v6.8.1 (Build 110)
 
 **AIsaac sees your full quality breakdown and knows the current algorithm.**
 "Ask AIsaac about this frame" now receives the per-metric z-scores, trailing

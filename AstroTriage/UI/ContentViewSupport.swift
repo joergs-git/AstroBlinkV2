@@ -114,6 +114,31 @@ struct GoldenSetModifier: ViewModifier {
     }
 }
 
+// Standalone modifier for the in-app message popup (display_mode == "modal", v6.9.0).
+// Separate for the same reason as GoldenSetModifier / ChangeFilterModifier: ContentView's
+// own chain is already at the SwiftUI type-checker budget.
+//
+// Presented as a sheet so it blocks the window the way a launch announcement should, while
+// the inline banner path (display_mode == "banner") stays exactly as it was.
+struct AppMessageModalModifier: ViewModifier {
+    @ObservedObject var viewModel: TriageViewModel
+
+    func body(content: Content) -> some View {
+        content
+            .sheet(item: $viewModel.modalMessage) { message in
+                AppMessageModalView(
+                    message: message,
+                    nightMode: viewModel.nightMode,
+                    onDismiss: { viewModel.dismissBannerMessage() },
+                    onSnooze: { viewModel.snoozeBannerMessage() },
+                    onRespond: { actionType, value in
+                        viewModel.respondToBannerMessage(actionType: actionType, value: value)
+                    }
+                )
+            }
+    }
+}
+
 struct ContentViewModifiers2: ViewModifier {
     @ObservedObject var viewModel: TriageViewModel
     @Binding var sliderValue: Double

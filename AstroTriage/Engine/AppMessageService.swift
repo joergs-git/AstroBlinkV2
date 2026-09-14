@@ -21,6 +21,11 @@ final class AppMessageService {
     private var cachedInteractions: [String: MessageInteraction] = [:]  // keyed by message_id
     private var cachedEntitlements: [DeviceEntitlement] = []
     private var lastFetchDate: Date?
+    /// False until the first check of this app run has fetched. The 24 h interval is meant
+    /// to keep the in-session hourly timer quiet, not to delay a launch — without this, a
+    /// message created today could take up to 24 h to surface, which defeats the whole
+    /// point of being able to announce something ad hoc. (v6.9.0)
+    private var hasFetchedThisLaunch = false
 
     private init() {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
@@ -38,14 +43,19 @@ final class AppMessageService {
     func checkForMessages() async -> AppMessage? {
         guard SupabaseClient.isConfigured else { return nil }
 
-        // Fetch from network if stale
+        // Always fetch once per app run, then fall back to the 24 h interval for the
+        // periodic in-session checks. One small REST GET at launch; the cached state is
+        // already loaded in init(), so nothing waits on the network to render.
         let needsFetch: Bool
-        if let last = lastFetchDate {
+        if !hasFetchedThisLaunch {
+            needsFetch = true
+        } else if let last = lastFetchDate {
             needsFetch = Date().timeIntervalSince(last) > fetchIntervalSeconds
         } else {
             needsFetch = true
         }
         if needsFetch {
+            hasFetchedThisLaunch = true
             await fetchAll()
         }
 
