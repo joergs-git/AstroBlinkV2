@@ -134,6 +134,73 @@ final class PlateSolveWriteBackTests: XCTestCase {
                           "XISF write-back is rewriting the file per keyword again")
     }
 
+    // MARK: - Reproduction: solve → write → re-solve must agree
+
+    func testResolvingAfterWriteBackAgreesWithWhatWasWritten() throws {
+        let locator = ASTAPLocator.shared
+        let binary = try XCTUnwrap(locator.findBinary(), "ASTAP not installed — skipping")
+        let database = URL(fileURLWithPath: "/usr/local/opt/astap")
+        try XCTSkipUnless(locator.isStarDatabase(database), "No ASTAP star database — skipping")
+
+        let frame = try testFrame(named: "2026-03-03_IC1848_00-06-44_RC12_ZWO ASI6200MM Pro_LIGHT_H_300.00s_#0004__bin1x1_gain100_O50_T-10.00c.xisf")
+
+        var entry = ImageEntry(url: frame)
+        entry.focalLength = 2455
+        entry.pixelSizeMicrons = 3.76
+        entry.binning = "1x1"
+        entry.width = 9576
+        entry.height = 6388
+
+        let fov = ASTAPSolver.fieldOfViewDegrees(heightPixels: entry.height,
+                                                 arcsecPerPixel: entry.arcsecPerPixel,
+                                                 binning: entry.binning)
+        let solver = ASTAPSolver()
+
+        // 1. Solve.
+        guard case .solved(let first) = solver.solve(url: frame, fovDegrees: fov,
+                                                     binary: binary, database: database) else {
+            return XCTFail("first solve failed")
+        }
+
+        // 2. Write it back.
+        var r = PlateSolveReport()
+        r.solved = [SolvedFrame(entry: entry, solution: first, previous: nil, identification: nil)]
+        PlateSolveEngine().writeBack(&r, sessionRoot: work)
+        XCTAssertEqual(r.written, 1, "\(r.writeFailures)")
+
+        // 3. Re-read the WCS out of the file, exactly as loading a session would.
+        let keys = ["CRVAL1","CRVAL2","CRPIX1","CRPIX2","CD1_1","CD1_2","CD2_1","CD2_2","CROTA2"]
+        let stored = BatchOperations.readHeaderValues(url: frame, keywords: keys)
+        var reloaded = ImageEntry(url: frame)
+        reloaded.solvedRA   = stored["CRVAL1"].flatMap(Double.init)
+        reloaded.solvedDec  = stored["CRVAL2"].flatMap(Double.init)
+        reloaded.wcsCRPIX1  = stored["CRPIX1"].flatMap(Double.init)
+        reloaded.wcsCRPIX2  = stored["CRPIX2"].flatMap(Double.init)
+        reloaded.wcsCD11    = stored["CD1_1"].flatMap(Double.init)
+        reloaded.wcsCD12    = stored["CD1_2"].flatMap(Double.init)
+        reloaded.wcsCD21    = stored["CD2_1"].flatMap(Double.init)
+        reloaded.wcsCD22    = stored["CD2_2"].flatMap(Double.init)
+        reloaded.wcsRotation = stored["CROTA2"].flatMap(Double.init)
+
+        let previous = try XCTUnwrap(WCSSolution(existingOn: reloaded),
+                                     "the written WCS did not read back as a complete solution")
+
+        // The values in the file must BE the values we solved.
+        XCTAssertEqual(previous.crval1, first.crval1, accuracy: 1e-6, "CRVAL1 round trip")
+        XCTAssertEqual(previous.crpix1, first.crpix1, accuracy: 1e-3, "CRPIX1 round trip")
+        XCTAssertEqual(previous.cd11, first.cd11, accuracy: abs(first.cd11) * 1e-6, "CD1_1 round trip")
+
+        // 4. Solve again and compare, as the app does on a re-solve.
+        guard case .solved(let second) = solver.solve(url: frame, fovDegrees: fov,
+                                                      binary: binary, database: database) else {
+            return XCTFail("second solve failed")
+        }
+        let comparison = PlateSolveComparison(existing: previous, fresh: second)
+        print("REPRO comparison: \(comparison.summary) significant=\(comparison.isSignificant)")
+        XCTAssertFalse(comparison.isSignificant,
+                       "re-solving a frame we just wrote must confirm it, not differ: \(comparison.summary)")
+    }
+
     // MARK: - Batch header access
 
     func testBatchReadReturnsTheSameValuesAsSingleReads() throws {

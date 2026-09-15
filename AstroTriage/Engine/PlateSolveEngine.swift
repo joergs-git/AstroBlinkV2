@@ -55,6 +55,8 @@ struct PlateSolveReport {
     var writeFailures: [(filename: String, reason: String)] = []
     var backupDirectory: URL?
     var duration: TimeInterval = 0
+    /// True when the user stopped the run; the frames not reached are simply absent.
+    var wasCancelled = false
 
     var attempted: Int { solved.count + failed.count }
 
@@ -83,11 +85,14 @@ struct PlateSolveReport {
     /// One-line outcome, shown at the top of the result window.
     var headline: String {
         if attempted == 0 && skippedUnsupported.isEmpty && skippedAlreadySolved == 0 {
-            return "Nothing to solve."
+            return wasCancelled ? "Cancelled before any frame was solved." : "Nothing to solve."
         }
         let rate = attempted > 0 ? Int((Double(solved.count) / Double(attempted)) * 100) : 0
-        return "Solved \(solved.count) of \(attempted) frames (\(rate)%) in "
-             + String(format: "%.1f s", duration)
+        let base = "Solved \(solved.count) of \(attempted) frames (\(rate)%) in "
+                 + String(format: "%.1f s", duration)
+        // Say so plainly: the frames never reached are simply absent from the table, and a
+        // silently short list would read as "these were all there were".
+        return wasCancelled ? base + " — CANCELLED, remaining frames not solved" : base
     }
 }
 
@@ -116,6 +121,25 @@ final class PlateSolveEngine {
     private let solver = ASTAPSolver()
     private let fm = FileManager.default
 
+    /// Set by `cancel()` from the main thread and read by every worker. Guarded rather than
+    /// atomic-by-hope: it is written while up to four operations are reading it.
+    private let cancelLock = NSLock()
+    private var isCancelled = false
+
+    /// Stop the run. Frames already in flight finish (ASTAP is a separate process and killing
+    /// it mid-solve buys nothing); nothing further is started.
+    func cancel() {
+        cancelLock.lock()
+        isCancelled = true
+        cancelLock.unlock()
+    }
+
+    private var cancelRequested: Bool {
+        cancelLock.lock()
+        defer { cancelLock.unlock() }
+        return isCancelled
+    }
+
     /// Solve `entries`, reporting progress as (completed, total).
     ///
     /// Blocking — call off the main thread. `binary` and `database` come from
@@ -128,7 +152,7 @@ final class PlateSolveEngine {
                binary: URL,
                database: URL,
                skipAlreadySolved: Bool = true,
-               progress: @escaping (Int, Int) -> Void) -> PlateSolveReport {
+               progress: @escaping (Int, Int, String) -> Void) -> PlateSolveReport {
 
         let started = Date()
         var report = PlateSolveReport()
@@ -162,6 +186,10 @@ final class PlateSolveEngine {
 
         for entry in todo {
             queue.addOperation { [solver] in
+                // Queued work that has not started yet is dropped on cancel; the frames simply
+                // do not appear in the report.
+                guard !self.cancelRequested else { return }
+
                 let fov = ASTAPSolver.fieldOfViewDegrees(
                     heightPixels: entry.height,
                     arcsecPerPixel: entry.arcsecPerPixel,
@@ -204,11 +232,12 @@ final class PlateSolveEngine {
                 let done = completed
                 lock.unlock()
 
-                progress(done, todo.count)
+                progress(done, todo.count, entry.filename)
             }
         }
         queue.waitUntilAllOperationsAreFinished()
 
+        report.wasCancelled = cancelRequested
         report.duration = Date().timeIntervalSince(started)
         return report
     }

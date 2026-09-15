@@ -82,6 +82,37 @@ struct PlateSolveResultRow: Identifiable {
     let detail: String          // failure reason / skip reason, or ""
 }
 
+// MARK: - Column layout
+
+/// Column widths in one place: the header, the rows and the WINDOW all derive from these, so
+/// the default window width can match the table exactly and no horizontal scrolling is needed
+/// until the user makes the window narrower.
+enum PlateSolveColumns {
+    static let status: CGFloat   = 22
+    static let frame: CGFloat    = 200
+    static let object: CGFloat   = 130
+    static let ra: CGFloat       = 100
+    static let dec: CGFloat      = 95
+    static let scaleFL: CGFloat  = 120
+    static let optics: CGFloat   = 28
+    static let deltaCentre: CGFloat = 80
+    static let deltaScale: CGFloat  = 72
+    static let deltaRotation: CGFloat = 62
+    static let note: CGFloat     = 150
+
+    static let spacing: CGFloat = 10
+    static let horizontalPadding: CGFloat = 14
+
+    /// Natural width of the table, with or without the comparison columns.
+    static func naturalWidth(includingComparison: Bool) -> CGFloat {
+        var widths: [CGFloat] = [status, frame, object, ra, dec, scaleFL, optics]
+        if includingComparison { widths += [deltaCentre, deltaScale, deltaRotation] }
+        widths.append(note)
+        let gutters = spacing * CGFloat(widths.count - 1)
+        return widths.reduce(0, +) + gutters + horizontalPadding * 2
+    }
+}
+
 // MARK: - Controller
 
 final class PlateSolveResultWindowController {
@@ -103,12 +134,19 @@ final class PlateSolveResultWindowController {
         // that matters is the minimum — without it NSHostingView derives a tall, narrow
         // intrinsic size from the unbreakable monospaced rows and the window becomes
         // unresizable (the v6.4.1 pitfall).
+        // Default to the table's own width so nothing has to be scrolled to be seen, but never
+        // wider than the screen it opens on.
+        let hasComparison = report.solved.contains { $0.comparison != nil }
+        let natural = PlateSolveColumns.naturalWidth(includingComparison: hasComparison)
+        let screenWidth = NSScreen.main?.visibleFrame.width ?? 1440
+        let defaultWidth = min(natural, screenWidth - 80)
+
         let rootView = PlateSolveResultView(report: report,
                                             unsupportedCount: unsupportedCount,
                                             onSelectFrame: onSelectFrame,
                                             onSave: onSave)
-            .frame(minWidth: 720, idealWidth: 900, maxWidth: .infinity,
-                   minHeight: 360, idealHeight: 620, maxHeight: .infinity)
+            .frame(minWidth: 640, maxWidth: .infinity,
+                   minHeight: 320, maxHeight: .infinity)
 
         // Reuse the window whenever we still hold one — NOT only when it is currently
         // visible. `isReleasedWhenClosed = false` keeps a closed window alive, so the old
@@ -117,23 +155,33 @@ final class PlateSolveResultWindowController {
         if let w = window {
             (w.contentViewController as? NSHostingController<AnyView>)?
                 .rootView = AnyView(rootView)
+            // Respect a size the user chose, but GROW if this run's table is wider than the
+            // last one's — a re-solve adds three comparison columns, and silently forcing the
+            // user to scroll for them would defeat sizing to the table in the first place.
+            let current = w.contentRect(forFrameRect: w.frame)
+            if current.width + 1 < defaultWidth {
+                w.setContentSize(NSSize(width: defaultWidth, height: current.height))
+            }
             w.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
             return
         }
 
-        // NSHostingController reports a sane preferredContentSize to AppKit; a plain
-        // NSHostingView races its own first layout pass and the window snaps to whatever
-        // SwiftUI computed, which is what made this window unmovable and unresizable.
+        // NSHostingController hosts the SwiftUI lifecycle, but its `preferredContentSize` is
+        // deliberately NOT set: giving a contentViewController a preferred size makes AppKit
+        // pin the content view to it, and the user can then no longer drag the window edges.
+        // (Programmatic setContentSize still works, which is exactly why that flavour of test
+        // missed it twice — the size must be checked AFTER a layout pass.)
         let controller = NSHostingController(rootView: AnyView(rootView))
-        controller.preferredContentSize = NSSize(width: 900, height: 620)
 
         let win = NSWindow(contentViewController: controller)
         win.styleMask = [.titled, .closable, .resizable, .miniaturizable]
         win.title = "Plate Solve Results"
         win.isRestorable = false
-        win.setContentSize(NSSize(width: 900, height: 620))
-        win.minSize = NSSize(width: 720, height: 360)
+        win.setContentSize(NSSize(width: defaultWidth, height: 620))
+        win.contentMinSize = NSSize(width: 640, height: 320)
+        win.contentMaxSize = NSSize(width: CGFloat.greatestFiniteMagnitude,
+                                    height: CGFloat.greatestFiniteMagnitude)
         win.isReleasedWhenClosed = false
         // Floating: the whole point is to click rows here and watch the main window follow.
         // At normal level this panel would sit on top of the very thing it is driving.
@@ -279,23 +327,23 @@ private struct PlateSolveResultView: View {
 
     private var tableHeader: some View {
         HStack(spacing: 10) {
-            cell("", width: 22)
-            cell("FRAME", width: 200)
-            cell("OBJECT", width: 130)
-            cell("RA (J2000)", width: 100)
-            cell("DEC", width: 95)
-            cell("SCALE · FL", width: 120)
-            cell("OPT", width: 28)
+            cell("", width: PlateSolveColumns.status)
+            cell("FRAME", width: PlateSolveColumns.frame)
+            cell("OBJECT", width: PlateSolveColumns.object)
+            cell("RA (J2000)", width: PlateSolveColumns.ra)
+            cell("DEC", width: PlateSolveColumns.dec)
+            cell("SCALE · FL", width: PlateSolveColumns.scaleFL)
+            cell("OPT", width: PlateSolveColumns.optics)
             if model.hasComparison {
-                cell("Δ CENTRE", width: 80, align: .trailing)
-                cell("Δ SCALE", width: 72, align: .trailing)
-                cell("Δ ROT", width: 62, align: .trailing)
+                cell("Δ CENTRE", width: PlateSolveColumns.deltaCentre, align: .trailing)
+                cell("Δ SCALE", width: PlateSolveColumns.deltaScale, align: .trailing)
+                cell("Δ ROT", width: PlateSolveColumns.deltaRotation, align: .trailing)
             }
-            cell("NOTE", width: 150)
+            cell("NOTE", width: PlateSolveColumns.note)
         }
         .font(.system(size: 9, weight: .bold, design: .monospaced))
         .foregroundColor(.secondary)
-        .padding(.horizontal, 14)
+        .padding(.horizontal, PlateSolveColumns.horizontalPadding)
         .padding(.vertical, 5)
         .background(.bar)
     }
@@ -305,26 +353,26 @@ private struct PlateSolveResultView: View {
             Image(systemName: row.status.glyph)
                 .foregroundColor(row.status.tint)
                 .font(.system(size: 11))
-                .frame(width: 22, alignment: .leading)
+                .frame(width: PlateSolveColumns.status, alignment: .leading)
                 .help(row.status.label)
 
-            cell(row.filename, width: 200).help(row.filename)
-            cell(row.object, width: 130)
-            cell(row.ra, width: 100)
-            cell(row.dec, width: 95)
-            cell(row.scaleAndFL, width: 120).help(row.opticsTooltip)
-            opticsBadge(row).frame(width: 28, alignment: .leading)
+            cell(row.filename, width: PlateSolveColumns.frame).help(row.filename)
+            cell(row.object, width: PlateSolveColumns.object)
+            cell(row.ra, width: PlateSolveColumns.ra)
+            cell(row.dec, width: PlateSolveColumns.dec)
+            cell(row.scaleAndFL, width: PlateSolveColumns.scaleFL).help(row.opticsTooltip)
+            opticsBadge(row).frame(width: PlateSolveColumns.optics, alignment: .leading)
             if model.hasComparison {
-                cell(row.centre, width: 80, align: .trailing)
-                cell(row.scale, width: 72, align: .trailing)
-                cell(row.rotation, width: 62, align: .trailing)
+                cell(row.centre, width: PlateSolveColumns.deltaCentre, align: .trailing)
+                cell(row.scale, width: PlateSolveColumns.deltaScale, align: .trailing)
+                cell(row.rotation, width: PlateSolveColumns.deltaRotation, align: .trailing)
             }
-            cell(row.detail, width: 150).help(row.detail)
+            cell(row.detail, width: PlateSolveColumns.note).help(row.detail)
         }
         .font(.system(size: 10, design: .monospaced))
         .foregroundColor(row.status == .failed ? .red
                          : (row.status == .disagrees ? .orange : .primary))
-        .padding(.horizontal, 14)
+        .padding(.horizontal, PlateSolveColumns.horizontalPadding)
         .padding(.vertical, 3)
         .background(rowBackground(row: row, index: index))
         .contentShape(Rectangle())          // the whole row is the hit target, not just the text

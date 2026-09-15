@@ -119,21 +119,29 @@ enum PlateSolveCommand {
         viewModel.statusMessage = "Plate solving 0/\(work.count)…"
         let engine = PlateSolveEngine()
 
+        // A status-bar line is too easy to miss on a run that takes minutes and shows nothing.
+        PlateSolveProgressWindowController.shared.show(total: work.count) {
+            engine.cancel()
+        }
+
         Task.detached(priority: .userInitiated) {
             var report = engine.solve(
                 entries: work,
                 binary: binary,
                 database: database,
                 skipAlreadySolved: false,     // the partition above already decided this
-                progress: { done, total in
+                progress: { done, total, filename in
                     Task { @MainActor in
                         viewModel.statusMessage = "Plate solving \(done)/\(total)…"
+                        PlateSolveProgressWindowController.shared
+                            .update(completed: done, total: total, filename: filename)
                     }
                 }
             )
 
             let finished = report
             await MainActor.run {
+                PlateSolveProgressWindowController.shared.dismiss()
                 ASTAPLocator.shared.releaseDatabase()
                 viewModel.applyPlateSolveResults(finished)
                 presentResults(finished,
@@ -182,6 +190,8 @@ enum PlateSolveCommand {
                     return report
                 }
                 viewModel.statusMessage = "Writing WCS into files…"
+                PlateSolveProgressWindowController.shared.show(total: 0, onCancel: {})
+                PlateSolveProgressWindowController.shared.showWriting()
                 // Off the main thread: writeBack copies, writes and verifies every file.
                 var updated = report
                 await Task.detached(priority: .userInitiated) {
@@ -190,6 +200,7 @@ enum PlateSolveCommand {
                                      scope: scope,
                                      writeObjectName: writeObjectName)
                 }.value
+                PlateSolveProgressWindowController.shared.dismiss()
                 viewModel.statusMessage = updated.headline
                 return updated
             } : nil
