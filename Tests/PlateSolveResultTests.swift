@@ -150,6 +150,36 @@ final class PlateSolveResultTests: XCTestCase {
         XCTAssertNil(PlateSolveResultBuilder.dominantField(report))
     }
 
+    // MARK: - Frames that were never attempted
+
+    func testHeadlineNamesFramesSkippedAsAlreadySolved() {
+        // Live report: 381 frames loaded, 375 already carried a solve, "Only Unsolved" chosen.
+        // The headline said "Solved 6 of 6 (100%)" and read as if 375 frames had been forgotten.
+        var report = PlateSolveReport()
+        report.solved = [fresh("a.fit"), fresh("b.fit")]
+        report.skippedAlreadySolved = 375
+        report.duration = 1.6
+
+        XCTAssertTrue(report.headline.contains("375"),
+                      "the headline hides frames that were never attempted: \(report.headline)")
+        XCTAssertTrue(report.headline.lowercased().contains("already solved"),
+                      "and must say WHY they were skipped: \(report.headline)")
+    }
+
+    func testHeadlineStaysCleanWhenNothingWasSkipped() {
+        var report = PlateSolveReport()
+        report.solved = [fresh("a.fit")]
+        XCTAssertFalse(report.headline.lowercased().contains("skipped"))
+    }
+
+    func testClipboardCarriesTheSkippedCount() {
+        var report = PlateSolveReport()
+        report.solved = [fresh("a.fit")]
+        report.skippedAlreadySolved = 375
+        let text = PlateSolveResultBuilder.clipboardText(report: report, unsupportedCount: 0)
+        XCTAssertTrue(text.contains("Skipped, already solved: 375"))
+    }
+
     // MARK: - Save scope
 
     func testChangedFramesAreTheOnesWritingWouldActuallyAlter() {

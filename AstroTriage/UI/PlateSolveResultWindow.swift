@@ -282,6 +282,11 @@ private struct PlateSolveResultView: View {
                 if !report.opticsMismatches.isEmpty {
                     tag("FOCALLEN off", "\(report.opticsMismatches.count)", .orange)
                 }
+                // The frames that were never attempted matter as much as the ones that were:
+                // omitting them made a 6-of-381 run look like a 6-frame session.
+                if report.skippedAlreadySolved > 0 {
+                    tag("already solved", "\(report.skippedAlreadySolved) skipped", .secondary)
+                }
                 if unsupportedCount > 0 {
                     tag("skipped", "\(unsupportedCount) unsupported", .secondary)
                 }
@@ -635,6 +640,9 @@ enum PlateSolveResultBuilder {
         var lines: [String] = []
         lines.append("AstroBlink plate solve — \(report.headline)")
         if let field = dominantField(report) { lines.append("Field: \(field)") }
+        if report.skippedAlreadySolved > 0 {
+            lines.append("Skipped, already solved: \(report.skippedAlreadySolved)")
+        }
         if report.confirmations > 0 { lines.append("Confirmed existing solve: \(report.confirmations)") }
         if !report.disagreements.isEmpty { lines.append("Disagree with existing solve: \(report.disagreements.count)") }
         if report.written > 0 { lines.append("WCS written into files: \(report.written)") }

@@ -88,8 +88,14 @@ struct PlateSolveReport {
             return wasCancelled ? "Cancelled before any frame was solved." : "Nothing to solve."
         }
         let rate = attempted > 0 ? Int((Double(solved.count) / Double(attempted)) * 100) : 0
-        let base = "Solved \(solved.count) of \(attempted) frames (\(rate)%) in "
+        var base = "Solved \(solved.count) of \(attempted) frames (\(rate)%) in "
                  + String(format: "%.1f s", duration)
+        // Name the frames that were never attempted. Without this a run over 381 frames where
+        // 375 already carried a solve reported "6 of 6 (100%)" and read as if the other 375
+        // had been forgotten.
+        if skippedAlreadySolved > 0 {
+            base += " · \(skippedAlreadySolved) skipped, already solved"
+        }
         // Say so plainly: the frames never reached are simply absent from the table, and a
         // silently short list would read as "these were all there were".
         return wasCancelled ? base + " — CANCELLED, remaining frames not solved" : base
