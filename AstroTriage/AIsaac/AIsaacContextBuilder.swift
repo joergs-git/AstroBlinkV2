@@ -885,6 +885,17 @@ struct AIsaacContextBuilder {
         - Files are NEVER permanently deleted by the app. User can empty _predel/ manually or via Finder Trash.
         - K key: toggle skip-marked during arrow navigation. H key: cycle hide marked / show only marked / show all.
 
+        PLATE SOLVING (ASTAP) — v6.9.0:
+        - Window → Plate Solve Frames… (Cmd+Shift+P), or right-click a selection in the file list.         Runs on the highlighted frames, or the whole session when nothing is highlighted.
+        - Requires ASTAP plus one of its star databases, installed by the user. Both are free; their         licences prevent bundling them (ASTAP is GPL-3, the database folder carries non-commercial data).         macOS blocks the database folder (usually /usr/local/opt/astap) until the user grants access ONCE;         the grant is remembered and is inherited by the ASTAP process AstroBlink starts.
+        - ~0.3 s per frame, because AstroBlink passes the field size it already knows from FOCALLEN and         XPIXSZ, plus the mount position from RA/DEC. Works with FITS and XISF — ASTAP cannot read XISF,         so those frames are decoded by AstroBlink and handed over as a temporary image. ASTAP never sees         the user's originals and never writes to them.
+        - Writes standard WCS keywords: CRVAL1/2, CRPIX1/2, CD1_1..CD2_2, CTYPE1/2, CROTA2. This is what         Auto Rotate uses to pixel-lock frames, and what decentered-target checks need.
+        - RE-SOLVING IS A CHECK: a frame that already carries a solve can be solved again and compared         against the stored WCS — centre offset (arcmin), plate scale (%) and rotation (degrees),         tolerances 1'/1%/0.5°. A large centre offset means the stored WCS points somewhere the frame is         not: a solve copied from another night, or one that locked onto the wrong field.
+        - OBJECT IDENTIFICATION: the solved centre is matched against the 229-target deep-sky catalogue,         ranked by distance OUTSIDE the object's extent (so a large nebula the frame sits inside wins over         a nearer tiny galaxy). Optionally written to OBJECT — but only where OBJECT is empty. An existing         name is NEVER overwritten; the discrepancy is reported instead.
+        - FOCALLEN CHECK: the solve measures the true angular pixel size, which gives the focal length         actually in the light path. If it disagrees with FOCALLEN by more than 2%, the result flags it —         typically a forgotten reducer/flattener, a spec-sheet focal length, or an unrecorded binning.         This matters because arcsecPerPixel feeds both the solving speed hint and the plausibility         corridor that quality scoring uses to reject impossible FWHM measurements.
+        - SAVING IS DECIDED AFTER THE RUN, in the result window: all solved frames, only the changed ones         (no WCS before, or disagreeing with what was stored), or none. A backup folder is always created         first, each file is verified by reading it back, and a file that fails any step is restored from         its backup while the rest of the batch continues.
+        - Without saving, solutions apply to the loaded session only and are lost on reload.
+
         SSWEIGHT & PSFSignalWeight EXPORT:
         - Toolbar → SSWEIGHT Export. Writes to highlighted files (or all if none selected).
         - SSWEIGHT formula: (50 + z-score × 20) × trailing penalty. Filter-aware multiplier.

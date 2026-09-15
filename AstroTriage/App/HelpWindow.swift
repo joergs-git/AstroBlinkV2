@@ -118,11 +118,43 @@ struct HelpContentView: View {
                 shortcutRow("C", "Compare with Best — side-by-side with best frame in group")
                 shortcutRow("Double-click row", "Open image in floating preview with stretch/denoise/deconv")
                 shortcutRow("Cmd + O", "Open folder containing FITS/XISF images")
+                shortcutRow("Cmd + Shift + P", "Plate solve frames with ASTAP (selection, or whole session)")
                 shortcutRow("Cmd + / Cmd -", "Zoom in / out by 25% steps")
                 shortcutRow("Cmd + 0", "Fit image to view (reset zoom)")
                 shortcutRow("Cmd + 1", "Zoom to 100% (actual pixels)")
                 shortcutRow("Cmd + 2", "Zoom to 200%")
                 shortcutRow("1 / 2 / 3", "Set confidence rating (1-3 stars, same key clears)")
+
+                Divider()
+
+                // Plate Solving (v6.9.0)
+                sectionHeader("Plate Solving (ASTAP)")
+
+                featureRow("What it does",
+                           "Measures where each frame actually points, and writes standard WCS "
+                           + "keywords into it. That is what Auto Rotate uses to pixel-lock frames, "
+                           + "and what lets AstroBlink name the object a frame is showing.")
+                featureRow("Requirements",
+                           "ASTAP and one of its star databases, installed separately — both free. "
+                           + "Their licences prevent AstroBlink from bundling them. macOS asks once "
+                           + "for permission to read the database folder (usually /usr/local/opt/astap, "
+                           + "which Finder hides); that grant is remembered.")
+                featureRow("How to run",
+                           "Window → Plate Solve Frames… (Cmd+Shift+P), or right-click a selection "
+                           + "in the file list. Works with FITS and XISF. About 0.3 s per frame.")
+                featureRow("Re-solving as a check",
+                           "Frames that already carry a solve can be solved again and compared: "
+                           + "centre offset, plate scale and rotation against what is stored. A large "
+                           + "centre offset means the stored WCS points somewhere the frame is not.")
+                featureRow("FOCALLEN check",
+                           "The solve measures the true pixel scale, so it knows the focal length that "
+                           + "was really in the light path. A warning means the header disagrees by "
+                           + "more than 2% — a forgotten reducer, or a focal length taken from the "
+                           + "spec sheet rather than measured.")
+                featureRow("Saving",
+                           "Nothing is written until you choose, after the run: all frames, only the "
+                           + "changed ones, or none. A backup folder is always created first, and an "
+                           + "OBJECT name you already have is never overwritten.")
 
                 Divider()
 

@@ -53,4 +53,5 @@
 | Cmd+O | Open folder |
 | Cmd+M | Move marked files to a chosen folder |
 | Cmd+Shift+R | Batch rename & header edit |
+| Cmd+Shift+P | Plate solve frames with ASTAP (selection, or whole session) |
 | Cmd+Shift+F | Change Filter — set FILTER keyword + rename filter token (highlighted files) |
