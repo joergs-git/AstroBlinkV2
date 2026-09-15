@@ -142,17 +142,13 @@ struct AppMessageModalModifier: ViewModifier {
     }
 }
 
-struct ContentViewModifiers2: ViewModifier {
+// Frame History DB reset/destroy and curated-dataset receivers. Split out of
+// ContentViewModifiers2 because that chain exceeded the Xcode 27 type-checker limit.
+struct DatabaseMaintenanceModifier: ViewModifier {
     @ObservedObject var viewModel: TriageViewModel
-    @Binding var sliderValue: Double
-    @Binding var renderer: MetalRenderer?
-    @Binding var keyboardMonitor: Any?
 
     func body(content: Content) -> some View {
         content
-            .modifier(ContentViewMCPModifiers(viewModel: viewModel))
-            .modifier(ChangeFilterModifier(viewModel: viewModel))
-            .modifier(GoldenSetModifier(viewModel: viewModel))
             .onReceive(NotificationCenter.default.publisher(for: .resetFrameHistory)) { _ in
                 let alert = NSAlert()
                 alert.alertStyle = .critical
@@ -215,6 +211,28 @@ struct ContentViewModifiers2: ViewModifier {
                     }
                 }
             }
+    }
+}
+
+struct ContentViewModifiers2: ViewModifier {
+    @ObservedObject var viewModel: TriageViewModel
+    @Binding var sliderValue: Double
+    @Binding var renderer: MetalRenderer?
+    @Binding var keyboardMonitor: Any?
+
+    /// Main window title. Kept out of the modifier chain below to lighten the expression
+    /// the type-checker has to solve (Xcode 27 is stricter than 26 here).
+    private var windowTitle: String {
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
+        return "AstroBlink & AIsaac v\(version) — Fast Visual Culling for Astrophotography"
+    }
+
+    func body(content: Content) -> some View {
+        content
+            .modifier(ContentViewMCPModifiers(viewModel: viewModel))
+            .modifier(ChangeFilterModifier(viewModel: viewModel))
+            .modifier(GoldenSetModifier(viewModel: viewModel))
+            .modifier(DatabaseMaintenanceModifier(viewModel: viewModel))
             .modifier(AIsaacStateObserver(viewModel: viewModel))
             .onReceive(NotificationCenter.default.publisher(for: .fontScaleIncrease)) { _ in
                 viewModel.fontScale = min(1.5, viewModel.fontScale + 0.1)
@@ -261,7 +279,7 @@ struct ContentViewModifiers2: ViewModifier {
             .onChange(of: viewModel.stretchStrength) { _, newValue in
                 sliderValue = Double(newValue)
             }
-            .navigationTitle("AstroBlink & AIsaac v\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?") — Fast Visual Culling for Astrophotography")
+            .navigationTitle(windowTitle)
             .frame(minWidth: 800, minHeight: 500)
             .modifier(ZoomNotificationModifier(viewModel: viewModel))
     }
