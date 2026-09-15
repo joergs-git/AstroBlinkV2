@@ -146,7 +146,13 @@ final class QualityEstimatorTests: XCTestCase {
 
     func testNegatedZscoresForLowerIsBetter() {
         var entries = makeGroup(count: 24, fwhm: 5.0, hfr: 4.0, noiseMAD: 0.02)
-        let betterSeeing = makeEntry(index: 99, fwhm: 1.0, hfr: 0.5, starCount: 500, noiseMAD: 0.002)
+        // The sharp frame must stay PHYSICALLY PLAUSIBLE. This test used to use FWHM 1.0 px,
+        // which the v35 plausibility corridor now rejects outright: without focal length and
+        // pixel size the floor is `minPlausibleFWHMPixels` = 1.2 px, and a star measured
+        // narrower than that is a failed fit or a hot pixel, not exceptional seeing. The frame
+        // was therefore correctly scored .trash and the test was asserting pre-v35 behaviour.
+        // 2.5 px is unambiguously better than the group's 5.0 and comfortably measurable.
+        let betterSeeing = makeEntry(index: 99, fwhm: 2.5, hfr: 1.5, starCount: 500, noiseMAD: 0.002)
         entries.append(betterSeeing)
 
         let scores = QualityEstimator.computeScores(for: entries)
@@ -1275,13 +1281,21 @@ final class QualityEstimatorTests: XCTestCase {
                       computedFWHM: 3.0, computedStarCount: 3000,
                       computedEccentricity: 0.35)
         }
-        // 6 bad frames with chain fraction → Stage 1 garbage (trackingHop)
+        // 6 bad frames with chain fraction → Stage 1 garbage (trackingHop).
+        //
+        // A chain fraction alone is no longer enough, and deliberately so: since v40 the rule
+        // also requires DIRECTION consensus > 0.5, because chain-shaped detections plus
+        // randomly-oriented stars are coincidence. Amount-only flagged five good RC12
+        // narrowband frames (consensus 0.21-0.49) as tracking hops. A real hop moves every
+        // star the same way, so a genuine one carries high consensus — which is what this
+        // fixture must provide to represent one.
         let badChain: [ImageEntry] = (0..<6).map { i in
             var e = makeEntry(index: 200 + i, filter: "B", target: "M82", exposure: 180,
                               noiseMAD: 0.006, noiseMedian: 0.05,
                               computedFWHM: 10.0, computedStarCount: 2400,
                               computedEccentricity: 0.65)
-            e.starChainFraction = 0.5  // Above R9 threshold 0.25
+            e.starChainFraction = 0.5      // above the chain threshold
+            e.trailingConsensus = 0.7      // …and the stars agree on a direction: a real hop
             return e
         }
 
