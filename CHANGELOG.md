@@ -4,7 +4,7 @@ All notable changes to AstroBlink & AIsaac will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
-## [6.9.1] — unreleased
+## [6.9.1] — 2026-09-15
 
 ### Fixed
 

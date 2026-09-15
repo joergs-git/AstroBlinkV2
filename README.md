@@ -14,7 +14,19 @@ Nice side effect: Finally you have a native XISF and FITS Quicklook for macOS. (
 
 ---
 
-## What's New in v6.9.0 (Build 114)
+## What's New in v6.9.1 (Build 115)
+
+**The plate-solve result now says how many frames it skipped.** Choosing "Only Unsolved" on a
+session where most frames already carry a solve used to report something like "Solved 6 of 6
+frames (100%)", with no word about the hundreds skipped as already solved — it read as if the
+session had shrunk. The skipped count now appears in the summary line, as a chip in the result
+window, and in the clipboard export.
+
+No scoring change — the quality algorithm is still v41.
+
+---
+
+## Previously in v6.9.0 (Build 114)
 
 **Plate solving with ASTAP, and announcements that can be a popup with a video.**
 
