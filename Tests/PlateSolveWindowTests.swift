@@ -71,15 +71,24 @@ final class PlateSolveWindowTests: XCTestCase {
         XCTAssertTrue(window.styleMask.contains(.closable))
     }
 
+    /// Resize and let AppKit lay out before measuring.
+    ///
+    /// Measuring immediately after `setContentSize` is what let this bug through TWICE: a
+    /// contentViewController with a `preferredContentSize` pins the content view with layout
+    /// constraints, and those only fight back on the next layout pass. Programmatic resizing
+    /// appears to work; dragging the window edge does not.
+    private func resize(_ window: NSWindow, to size: NSSize) -> NSSize {
+        window.setContentSize(size)
+        window.layoutIfNeeded()
+        window.contentView?.layoutSubtreeIfNeeded()
+        return window.contentRect(forFrameRect: window.frame).size
+    }
+
     func testWindowCanActuallyShrinkToItsStatedMinimum() throws {
         let window = try showWindow(wideReport())
-        let minimum = window.minSize
+        let minimum = window.contentMinSize
 
-        // THE regression: if the SwiftUI content demands more width than this, AppKit refuses
-        // the resize and the window stays stuck at the content's size.
-        window.setContentSize(NSSize(width: minimum.width, height: minimum.height))
-
-        let achieved = window.contentRect(forFrameRect: window.frame)
+        let achieved = resize(window, to: minimum)
         XCTAssertEqual(achieved.width, minimum.width, accuracy: 2,
                        "window would not shrink to its minimum width — content is forcing it wider")
         XCTAssertEqual(achieved.height, minimum.height, accuracy: 2,
@@ -88,11 +97,39 @@ final class PlateSolveWindowTests: XCTestCase {
 
     func testWindowCanGrowBeyondItsDefaultSize() throws {
         let window = try showWindow(wideReport())
-        window.setContentSize(NSSize(width: 1400, height: 900))
-
-        let achieved = window.contentRect(forFrameRect: window.frame)
+        let achieved = resize(window, to: NSSize(width: 1400, height: 900))
         XCTAssertEqual(achieved.width, 1400, accuracy: 2, "window would not grow")
         XCTAssertEqual(achieved.height, 900, accuracy: 2)
+    }
+
+    func testTheContentViewControllerImposesNoFixedSize() throws {
+        let window = try showWindow(wideReport())
+        let controller = try XCTUnwrap(window.contentViewController)
+        // A non-zero preferredContentSize is what makes AppKit pin the content view and
+        // silently disable user resizing — the exact cause of this window shipping stuck
+        // three times. It must stay zero.
+        XCTAssertEqual(controller.preferredContentSize, .zero,
+                       "preferredContentSize pins the window and blocks dragging the edges")
+    }
+
+    func testDefaultWidthShowsTheWholeTableWithoutScrolling() throws {
+        let window = try showWindow(wideReport())
+        let natural = PlateSolveColumns.naturalWidth(includingComparison: true)
+        let screenWidth = NSScreen.main?.visibleFrame.width ?? 1440
+        let expected = min(natural, screenWidth - 80)
+
+        // At least the table's width: the panel is reused across runs and keeps a size the
+        // user chose, but must never be NARROWER than the table it is showing.
+        let content = window.contentRect(forFrameRect: window.frame)
+        XCTAssertGreaterThanOrEqual(content.width, expected - 2,
+                                    "the window is narrower than its table — the user has to scroll to see it")
+    }
+
+    func testNaturalWidthShrinksWhenThereIsNothingToCompare() {
+        // Without a re-solve the three delta columns are not drawn, and the window should not
+        // open wider than it needs to be.
+        XCTAssertLessThan(PlateSolveColumns.naturalWidth(includingComparison: false),
+                          PlateSolveColumns.naturalWidth(includingComparison: true))
     }
 
     func testContentViewDoesNotExtendBeyondTheWindow() throws {

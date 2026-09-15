@@ -102,6 +102,7 @@
 		6A801D391463BD0101AE4EAA /* BatchOperations.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC91195CA425D12B99F20516 /* BatchOperations.swift */; };
 		6AEB1DC1022411F454593347 /* PlateSolveCommand.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C74B4EA02B3A9417957A2EA /* PlateSolveCommand.swift */; };
 		6B006685C8E57967F270FB71 /* QualityEstimator+SessionSanity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 205821A931EC1043DCFE29E3 /* QualityEstimator+SessionSanity.swift */; };
+		6C1FC917469E66A51A4DE06A /* SessionScannerBackupTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8589E6978470263300B1D9AB /* SessionScannerBackupTests.swift */; };
 		6E688C4FD0D0B572989E8A42 /* ContentViewSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10083CA51B9CA8F2790A556 /* ContentViewSupport.swift */; };
 		6F0B663C43C9629F2CE3C655 /* GPUStarDetectionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 107592623F603E84A4E408A9 /* GPUStarDetectionTests.swift */; };
 		6FA733CDA65AB773F874383C /* ScoringValidationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 349FE588694CBEF50831E753 /* ScoringValidationTests.swift */; };
@@ -194,6 +195,7 @@
 		C68B19C9394B11C71200BB0A /* ThresholdLearner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4BB5154736A5300B56852D5A /* ThresholdLearner.swift */; };
 		C68EC1D0FE54ABE5A60B0B5C /* MoonCalculator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E25E535A2CFCECDD16EF936 /* MoonCalculator.swift */; };
 		C772EE6EDD6E46C4CCB6C3AE /* FrameHistoryDatabase+MCP.swift in Sources */ = {isa = PBXBuildFile; fileRef = F147389EE788A66FF3B997DF /* FrameHistoryDatabase+MCP.swift */; };
+		C91410C1AFF6CA02D332F33E /* PlateSolveProgressWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B11A4BF065A6E075C28D829 /* PlateSolveProgressWindow.swift */; };
 		CA1EA27ADB477F23799F40F6 /* TriageState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 340E4F50F68B830073674E41 /* TriageState.swift */; };
 		CC6E11E8FA4788135037A3CE /* NINAFilenameParserTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E291DE3DBC147FB649506D61 /* NINAFilenameParserTests.swift */; };
 		CCC0A640BC6FB06A49C4F621 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 048345D935BF6D509B7E7C8D /* OnboardingView.swift */; };
@@ -335,6 +337,7 @@
 		349FE588694CBEF50831E753 /* ScoringValidationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScoringValidationTests.swift; sourceTree = "<group>"; };
 		3851FC9EBAA52A0E6D47F927 /* PlateSolveComparison.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlateSolveComparison.swift; sourceTree = "<group>"; };
 		3923A3D2A9D0D2C76B69D6B5 /* ScoringRunner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScoringRunner.swift; sourceTree = "<group>"; };
+		3B11A4BF065A6E075C28D829 /* PlateSolveProgressWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlateSolveProgressWindow.swift; sourceTree = "<group>"; };
 		3B33772E7CA2FB77F9998ADB /* SessionOrchestrator+Prefetch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SessionOrchestrator+Prefetch.swift"; sourceTree = "<group>"; };
 		3B3E41AED2C1FD9826CD93D3 /* MetricsChart.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetricsChart.swift; sourceTree = "<group>"; };
 		3BCBBE41D0B90CC98443F843 /* GradientRemoval.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GradientRemoval.swift; sourceTree = "<group>"; };
@@ -403,6 +406,7 @@
 		82CCA266935E7C178B9B0C26 /* ASTAPLocator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ASTAPLocator.swift; sourceTree = "<group>"; };
 		837394D162B707B718C708C9 /* AstroTriageQuickLookThumbnail.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = AstroTriageQuickLookThumbnail.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		8540C9E125E41BA9B2D59F49 /* SessionOrchestrator+Headers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "SessionOrchestrator+Headers.swift"; sourceTree = "<group>"; };
+		8589E6978470263300B1D9AB /* SessionScannerBackupTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionScannerBackupTests.swift; sourceTree = "<group>"; };
 		85A0D5497E7EBF43F03546F6 /* BatchRenameWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatchRenameWindow.swift; sourceTree = "<group>"; };
 		8840EA9D612D56DC3123EC77 /* MetalRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetalRenderer.swift; sourceTree = "<group>"; };
 		89EEE83F2E32D51E10E2F6DE /* AstroScoreCLI */ = {isa = PBXFileReference; includeInIndex = 0; path = AstroScoreCLI; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -587,6 +591,7 @@
 				7F143D9906FBF9F56814DB68 /* QualityEstimatorTests.swift */,
 				0F05D0AADC47ABFB523CD5B5 /* ScoringRegressionTests.swift */,
 				349FE588694CBEF50831E753 /* ScoringValidationTests.swift */,
+				8589E6978470263300B1D9AB /* SessionScannerBackupTests.swift */,
 				A05ABE70A121689E1D00FB32 /* SessionScannerTests.swift */,
 				C73F68266BEC1BE0872283EB /* StarAnalyzerTests.swift */,
 				0FD25CD193E7118FAD97655E /* TargetIdentifierTests.swift */,
@@ -823,6 +828,7 @@
 				DCF74E5E4FB5BA8074C43D1D /* MCPConnectorWindow.swift */,
 				3B3E41AED2C1FD9826CD93D3 /* MetricsChart.swift */,
 				7C74B4EA02B3A9417957A2EA /* PlateSolveCommand.swift */,
+				3B11A4BF065A6E075C28D829 /* PlateSolveProgressWindow.swift */,
 				3D404961E89FDCFEE8FA9B04 /* PlateSolveResultWindow.swift */,
 				740CADC7ADA01E2160E95DCC /* QuickStackWindow.swift */,
 				F523409C99088A95634ED4F9 /* ReleaseNotesWindow.swift */,
@@ -1176,6 +1182,7 @@
 				FC90856759FCA3D20B44ABED /* QualityEstimatorTests.swift in Sources */,
 				777AC090953D11459D00BCC3 /* ScoringRegressionTests.swift in Sources */,
 				6FA733CDA65AB773F874383C /* ScoringValidationTests.swift in Sources */,
+				6C1FC917469E66A51A4DE06A /* SessionScannerBackupTests.swift in Sources */,
 				E54F7D793DBBAA3ADA082451 /* SessionScannerTests.swift in Sources */,
 				9D950EBF4E4EBC1A00430834 /* StarAnalyzerTests.swift in Sources */,
 				A8A385B3FC81D9AE2F46D542 /* TargetIdentifierTests.swift in Sources */,
@@ -1295,6 +1302,7 @@
 				6AEB1DC1022411F454593347 /* PlateSolveCommand.swift in Sources */,
 				9E8ADD04A26F084AF6540B0D /* PlateSolveComparison.swift in Sources */,
 				49766BBD944A19C94F339171 /* PlateSolveEngine.swift in Sources */,
+				C91410C1AFF6CA02D332F33E /* PlateSolveProgressWindow.swift in Sources */,
 				F1107A96B79F39115F8FE07B /* PlateSolveResultWindow.swift in Sources */,
 				2BCAFB12B4EB32102A53F0A4 /* PlaybackController.swift in Sources */,
 				B54934C587552F12AB659721 /* PrefetchCache.swift in Sources */,
@@ -1435,7 +1443,7 @@
 				CODE_SIGN_ENTITLEMENTS = QuickLookExtension/QuickLookExtension.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 113;
+				CURRENT_PROJECT_VERSION = 114;
 				DEVELOPMENT_TEAM = FDSVBU33S8;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -1466,7 +1474,7 @@
 				CODE_SIGN_ENTITLEMENTS = QuickLookPreview/QuickLookPreview.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 113;
+				CURRENT_PROJECT_VERSION = 114;
 				DEVELOPMENT_TEAM = FDSVBU33S8;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -1497,7 +1505,7 @@
 				CODE_SIGN_ENTITLEMENTS = QuickLookExtension/QuickLookExtension.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 113;
+				CURRENT_PROJECT_VERSION = 114;
 				DEVELOPMENT_TEAM = FDSVBU33S8;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -1546,7 +1554,7 @@
 				CODE_SIGN_ENTITLEMENTS = AstroTriage/AstroTriage.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 113;
+				CURRENT_PROJECT_VERSION = 114;
 				DEVELOPMENT_TEAM = FDSVBU33S8;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -1679,7 +1687,7 @@
 				CODE_SIGN_ENTITLEMENTS = AstroTriage/AstroTriage.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 113;
+				CURRENT_PROJECT_VERSION = 114;
 				DEVELOPMENT_TEAM = FDSVBU33S8;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -1823,7 +1831,7 @@
 				CODE_SIGN_ENTITLEMENTS = QuickLookPreview/QuickLookPreview.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 113;
+				CURRENT_PROJECT_VERSION = 114;
 				DEVELOPMENT_TEAM = FDSVBU33S8;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;

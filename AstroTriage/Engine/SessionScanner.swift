@@ -28,6 +28,22 @@ struct SessionScanner {
         return preDeleteFolderNames.contains(folderName.lowercased())
     }
 
+    // Safety-backup folders that AstroBlink writes INTO the session root before modifying
+    // files: `_platesolve_backup_<ts>`, `_batch_backup_<ts>`, `_filter_backup_<ts>`.
+    //
+    // They must never be scanned back in. Doing so loads every modified frame TWICE — once
+    // current, once pre-modification — which silently doubles the session, doubles what gets
+    // scored, and makes the untouched copies look like frames that disagree with their own
+    // headers forever. (v6.9.0; the batch/filter backups had the same flaw since 6.5.0.)
+    //
+    // Matched by shape rather than by an exact list so a future backup folder is covered too:
+    // a leading underscore AND the word "backup". A user folder called "Backups" is not
+    // matched — the underscore marks these as AstroBlink's own.
+    static func isBackupFolder(_ folderName: String) -> Bool {
+        let lower = folderName.lowercased()
+        return lower.hasPrefix("_") && lower.contains("backup")
+    }
+
     // Check if a folder name contains any calibration keyword (case-insensitive)
     // Used for folder-level exclusion where substring matching is appropriate
     // (folders named "Dark", "FlatFrames", "BiasFrames" etc.)
@@ -92,6 +108,11 @@ struct SessionScanner {
         // frames while keeping normal session opens free of their PRE-DELETE
         // subfolder contents.
         if depth > 0 && isPreDeleteFolder(url.lastPathComponent) { return }
+
+        // Never recurse into our own safety backups — see isBackupFolder. Unlike PRE-DELETE
+        // these are skipped at depth 0 too: opening a backup folder as a session is not a
+        // workflow, and the copies inside are by definition stale.
+        if isBackupFolder(url.lastPathComponent) { return }
 
         // Skip calibration folders entirely when lightsOnly is active
         // Matches any folder containing "dark", "flat", or "bias" anywhere in the name

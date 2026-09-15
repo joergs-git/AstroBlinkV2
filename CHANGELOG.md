@@ -35,6 +35,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   survives closing the popup, and clicking a link inside the player opens your normal
   browser instead of navigating inside AstroBlink.
 
+- **Progress while plate solving.** A panel shows how many frames are done, which one is being
+  worked on right now, and a Cancel button that actually stops the run. A long run used to show
+  nothing but a line in the status bar.
+
+### Fixed
+
+- **AstroBlink's own backup folders were being loaded back into the session.** Any folder
+  AstroBlink creates before modifying your files — `_platesolve_backup_…`, and since 6.5.0 also
+  `_batch_backup_…` and `_filter_backup_…` — was scanned like a normal subfolder the next time
+  you opened that session. Every modified frame appeared **twice**: once current, once as it was
+  before the change. That doubled the session, doubled what was scored, and made the untouched
+  copies look like frames permanently disagreeing with their own headers. Backup folders are now
+  skipped. **Worth checking your session folders for old `_batch_backup_*` and `_filter_backup_*`
+  directories — they may have been counted for a while.**
+- **The plate-solve result window could not be resized.** It now opens exactly as wide as its
+  table, so nothing has to be scrolled to be seen, and grows if a later run adds columns.
+
 ### Changed
 
 - **Announcements arrive the same day.** Messages were only re-fetched every 24 hours, so a
