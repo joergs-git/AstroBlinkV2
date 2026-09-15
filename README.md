@@ -14,7 +14,7 @@ Nice side effect: Finally you have a native XISF and FITS Quicklook for macOS. (
 
 ---
 
-## What's New in v6.9.0 (Build 111)
+## What's New in v6.9.0 (Build 114)
 
 **Plate solving with ASTAP, and announcements that can be a popup with a video.**
 
@@ -31,6 +31,10 @@ top banner, and can carry a short YouTube or Vimeo clip. Videos load from the
 privacy-preserving YouTube domain, nothing the player stores survives closing
 the popup, and links clicked inside the player open your normal browser.
 Messages are also re-checked at every launch instead of once every 24 hours.
+
+Also fixed: AstroBlink's own backup folders (`_batch_backup_…`, `_filter_backup_…`,
+`_platesolve_backup_…`) were scanned back into the session, so every modified frame
+appeared twice. They are now skipped — worth checking old session folders for them.
 
 No scoring change — the quality algorithm is still v41.
 

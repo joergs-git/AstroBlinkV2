@@ -4,7 +4,7 @@ All notable changes to AstroBlink & AIsaac will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
-## [6.9.0] — 2026-09-14
+## [6.9.0] — 2026-09-15
 
 **Announcements can now be a popup with a video, and they show up the same day.**
 
