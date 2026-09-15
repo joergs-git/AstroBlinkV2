@@ -286,17 +286,21 @@ final class PlateSolveEngine {
                 }
             }
 
-            var failure: String?
-            for (keyword, value) in pairs {
-                if let error = BatchOperations.writeHeader(url: url, keyword: keyword, value: value) {
-                    failure = "\(keyword): \(error)"
-                    break
-                }
+            // Write the whole set in as few file rewrites as possible, then verify it in a
+            // single pass. Doing either per keyword rewrites and re-parses a 116 MB XISF once
+            // per keyword — fine on an SSD, gigabytes of traffic over a NAS.
+            var failure = BatchOperations.writeHeaders(url: url, values: pairs)
+
+            if failure == nil {
                 // Read-back verify: a silent no-op write would otherwise look like success.
-                guard let readBack = BatchOperations.readHeaderValue(url: url, keyword: keyword),
-                      Self.matches(written: value, readBack: readBack) else {
-                    failure = "\(keyword) did not read back"
-                    break
+                let readBack = BatchOperations.readHeaderValues(url: url,
+                                                                keywords: pairs.map(\.0))
+                for (keyword, value) in pairs {
+                    guard let stored = readBack[keyword.uppercased()],
+                          Self.matches(written: value, readBack: stored) else {
+                        failure = "\(keyword) did not read back"
+                        break
+                    }
                 }
             }
 
