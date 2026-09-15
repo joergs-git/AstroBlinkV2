@@ -4,6 +4,17 @@ All notable changes to AstroBlink & AIsaac will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [6.9.1] — unreleased
+
+### Fixed
+
+- **The plate-solve result hid the frames it never attempted.** Running plate solving over a
+  session where most frames already carry a solve, and choosing "Only Unsolved", reported
+  something like "Solved 6 of 6 frames (100%)" — with no mention of the several hundred frames
+  that were skipped because they were already solved. The result read as if the session had
+  shrunk. The count now appears in the summary line, as a chip in the result window, and in the
+  clipboard export.
+
 ## [6.9.0] — 2026-09-15
 
 **Announcements can now be a popup with a video, and they show up the same day.**
