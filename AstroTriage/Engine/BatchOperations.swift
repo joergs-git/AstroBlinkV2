@@ -537,6 +537,97 @@ struct BatchOperations {
         return nil
     }
 
+    /// Read several keywords in ONE pass over the file. (v6.9.0)
+    ///
+    /// `readHeaderValue` re-parses the whole file per keyword; verifying a written WCS with it
+    /// meant eleven parses of a 116 MB frame. Keys are returned upper-cased.
+    static func readHeaderValues(url: URL, keywords: [String]) -> [String: String] {
+        let wanted = Set(keywords.map { $0.uppercased() })
+        guard !wanted.isEmpty else { return [:] }
+
+        var result = url.pathExtension.lowercased() == "xisf"
+            ? read_xisf_headers(url.path)
+            : read_fits_headers(url.path)
+        defer { free_header_result(&result) }
+        guard result.success != 0, result.entries != nil else { return [:] }
+
+        var found: [String: String] = [:]
+        for index in 0..<Int(result.count) {
+            let key = withUnsafePointer(to: &result.entries[index].key) {
+                $0.withMemoryRebound(to: CChar.self,
+                                     capacity: MemoryLayout.size(ofValue: result.entries[index].key)) {
+                    String(cString: $0)
+                }
+            }.uppercased()
+            guard wanted.contains(key), found[key] == nil else { continue }
+            found[key] = withUnsafePointer(to: &result.entries[index].value) {
+                $0.withMemoryRebound(to: CChar.self,
+                                     capacity: MemoryLayout.size(ofValue: result.entries[index].value)) {
+                    String(cString: $0)
+                }
+            }
+        }
+        return found
+    }
+
+    /// Write several keywords in as few file rewrites as possible; returns an error string, or
+    /// nil on success. (v6.9.0)
+    ///
+    /// For XISF this matters a lot: libxisf has no in-place header update, so the single-key
+    /// writer rewrites the entire file per call. FITS updates in place either way, so the loop
+    /// there is already cheap.
+    static func writeHeaders(url: URL, values: [(String, String)]) -> String? {
+        guard !values.isEmpty else { return nil }
+
+        guard url.pathExtension.lowercased() == "xisf" else {
+            for (keyword, value) in values {
+                if let error = writeHeader(url: url, keyword: keyword, value: value) { return error }
+            }
+            return nil
+        }
+
+        // XISF: one open/save cycle for the whole set, then the same atomic replace the
+        // single-key path uses.
+        let path = url.path
+        let tempPath = path + ".tmp"
+
+        let keywordStrings = values.map { strdup($0.0) }
+        let valueStrings = values.map { strdup($0.1) }
+        defer {
+            keywordStrings.forEach { free($0) }
+            valueStrings.forEach { free($0) }
+        }
+
+        var keywordPointers = keywordStrings.map { UnsafePointer<CChar>($0) }
+        var valuePointers = valueStrings.map { UnsafePointer<CChar>($0) }
+
+        let result = keywordPointers.withUnsafeMutableBufferPointer { keys in
+            valuePointers.withUnsafeMutableBufferPointer { vals in
+                write_xisf_keywords(path, tempPath,
+                                    keys.baseAddress, vals.baseAddress,
+                                    Int32(values.count))
+            }
+        }
+
+        guard result.success != 0 else {
+            try? FileManager.default.removeItem(atPath: tempPath)
+            var copy = result
+            return withUnsafePointer(to: &copy.error) {
+                $0.withMemoryRebound(to: CChar.self, capacity: 256) { String(cString: $0) }
+            }
+        }
+
+        do {
+            try FileManager.default.removeItem(atPath: path)
+            try FileManager.default.moveItem(atPath: tempPath, toPath: path)
+        } catch {
+            // Leave no stray .tmp behind; the caller holds a backup and restores from it.
+            try? FileManager.default.removeItem(atPath: tempPath)
+            return "Atomic rename failed: \(error.localizedDescription)"
+        }
+        return nil
+    }
+
     /// Write a header keyword to a FITS or XISF file
     /// Write a single header keyword; returns an error string, or nil on success. Internal
     /// (not private) so the plate solver can reuse it — it already handles the XISF

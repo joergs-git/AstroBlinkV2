@@ -59,6 +59,18 @@ WriteResult write_fits_keyword(const char* path, const char* keyword, const char
 WriteResult write_xisf_keyword(const char* path, const char* save_path,
                                 const char* keyword, const char* value);
 
+// Modify SEVERAL XISF FITS keywords in ONE open/save cycle (v6.9.0).
+//
+// write_xisf_keyword rewrites the entire file per call — libxisf has no in-place header
+// update. Writing a WCS one keyword at a time therefore rewrote a 116 MB frame eleven times;
+// over a NAS that is gigabytes of traffic per frame. This applies them all in a single pass.
+//
+// keywords[i] / values[i] are parallel arrays of `count` entries.
+WriteResult write_xisf_keywords(const char* path, const char* save_path,
+                                 const char* const* keywords,
+                                 const char* const* values,
+                                 int32_t count);
+
 // Delete a FITS header keyword (removes the keyword entirely)
 WriteResult delete_fits_keyword(const char* path, const char* keyword);
 

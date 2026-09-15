@@ -521,6 +521,56 @@ extern "C" WriteResult write_xisf_keyword(const char* path, const char* save_pat
 }
 
 // ============================================================================
+// Batch XISF keyword write — one open/save cycle for many keywords (v6.9.0)
+//
+// libxisf offers no in-place header update: every save rewrites the whole file. Applying a
+// WCS keyword by keyword therefore rewrote a 116 MB frame eleven times, which is fine on an
+// SSD and ruinous over a network share. Same contract as write_xisf_keyword, applied to a
+// list.
+// ============================================================================
+
+extern "C" WriteResult write_xisf_keywords(const char* path, const char* save_path,
+                                           const char* const* keywords,
+                                           const char* const* values,
+                                           int32_t count) {
+    WriteResult result;
+    memset(&result, 0, sizeof(result));
+
+    if (path == nullptr || save_path == nullptr || keywords == nullptr
+        || values == nullptr || count <= 0) {
+        result.success = 0;
+        snprintf(result.error, sizeof(result.error), "invalid arguments");
+        return result;
+    }
+
+    try {
+        LibXISF::XISFModify modify;
+        modify.open(path);
+
+        for (int32_t i = 0; i < count; ++i) {
+            if (keywords[i] == nullptr || values[i] == nullptr) continue;
+            LibXISF::FITSKeyword kw;
+            kw.name = keywords[i];
+            kw.value = values[i];
+            kw.comment = "";
+            // add=true creates the keyword when the frame does not already carry it.
+            modify.updateFITSKeyword(0, kw, true);
+        }
+
+        modify.save(save_path);
+        modify.close();
+
+        result.success = 1;
+
+    } catch (const std::exception& e) {
+        result.success = 0;
+        snprintf(result.error, sizeof(result.error), "XISF write error: %.240s", e.what());
+    }
+
+    return result;
+}
+
+// ============================================================================
 // FITS header keyword deletion — removes keyword entirely
 // ============================================================================
 
