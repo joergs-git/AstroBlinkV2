@@ -343,7 +343,7 @@ struct HelpContentView: View {
                 // Supported Formats
                 sectionHeader("Supported Formats")
 
-                featureRow("XISF", "Uncompressed, LZ4, LZ4HC, zlib, ByteShuffle")
+                featureRow("XISF", "Uncompressed, LZ4, LZ4HC, zlib, zstd, ByteShuffle")
                 featureRow("FITS", "Uncompressed, fpack (Rice, GZIP)")
                 Text("Metadata parsed from NINA filenames and FITS/XISF headers.")
                     .font(.system(size: 11))

@@ -84,6 +84,7 @@ Source code: [github.com/joergs-git/AstroBlinkV2](https://github.com/joergs-git/
 
 Libraries used:
 - **libxisf** (GPLv3) — XISF 1.0 file format reader
+- **zstd** (BSD 3-Clause) — Zstandard codec for XISF, bundled with libxisf
 - **cfitsio** (NASA Open Source) — FITS file format reader
 
 ---

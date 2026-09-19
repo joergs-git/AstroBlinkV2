@@ -11,8 +11,13 @@ let package = Package(
         .library(name: "ImageDecoderBridge", targets: ["ImageDecoderBridge"])
     ],
     targets: [
-        // libxisf: C++17 XISF reader with bundled 3rdparty (lz4, pugixml)
-        // zstd is NOT included (NINA doesn't use it yet, system dependency optional)
+        // libxisf: C++17 XISF reader with bundled 3rdparty (lz4, pugixml, zstd)
+        //
+        // zstd is vendored (3rdparty/zstd, see its README) because XISF 1.0 Revision 1
+        // (September 2026) made `zstd` / `zstd+sh` standard codecs — the recommended ones,
+        // and what PixInsight 1.9.5 writes. Apple ships no public libzstd, so it has to be
+        // built in. HAVE_ZSTD switches libxisf's zstd paths on; ZSTD_DISABLE_ASM selects the
+        // C decoder because the x86-64 assembly file is not vendored.
         .target(
             name: "libxisf",
             path: "Sources/libxisf",
@@ -21,14 +26,19 @@ let package = Package(
             cSettings: [
                 .headerSearchPath("3rdparty/lz4"),
                 .headerSearchPath("3rdparty/pugixml"),
+                .headerSearchPath("3rdparty/zstd"),
                 .headerSearchPath("include"),
                 .define("LIBXISF_STATIC_LIB"),
+                .define("ZSTD_DISABLE_ASM"),
+                .define("ZSTD_LEGACY_SUPPORT", to: "0"),
             ],
             cxxSettings: [
                 .headerSearchPath("3rdparty/lz4"),
                 .headerSearchPath("3rdparty/pugixml"),
+                .headerSearchPath("3rdparty/zstd"),
                 .headerSearchPath("include"),
                 .define("LIBXISF_STATIC_LIB"),
+                .define("HAVE_ZSTD"),
             ],
             linkerSettings: [
                 .linkedLibrary("z") // system zlib

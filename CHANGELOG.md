@@ -4,6 +4,23 @@ All notable changes to AstroBlink & AIsaac will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [Unreleased]
+
+### Fixed
+
+- **XISF files compressed with Zstandard could not be opened.** Revision 1 of the XISF 1.0
+  specification (September 2026) made `zstd` and `zstd+sh` standard codecs — the recommended
+  ones, and what PixInsight 1.9.5 writes. AstroBlink's reader had zstd compiled
+  out, so such a file failed with "Unknown compression codec" before even its header could be
+  read: no thumbnail, no metadata, no plate-solve write-back. zstd 1.5.7 is now built into the
+  decoder, on macOS, in the Quick Look extensions and on iOS alike. The README had claimed
+  zstd support all along; now it is true.
+- **An empty vector or matrix property made the whole XISF file unreadable.** Revision 1
+  defines how a zero-length vector is stored (an inline block with empty contents), and the new
+  standard astrometric-solution properties are vectors and matrices. The reader tripped over a
+  zero-length block and gave up on the entire file, pixels and headers included. It now reads
+  the empty property and moves on.
+
 ## [6.9.1] — 2026-09-15
 
 ### Fixed
