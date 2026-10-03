@@ -1932,6 +1932,15 @@ A full rework of the meridian-flip / cross-session orientation system after an e
 - Navigation: arrow keys stop at boundaries (no wrap-around).
 - Column order: checkbox, #, filename, object, filter, exp, amb, foc, temp, gain, size, fwhm, hfr, stars, subfolder.
 
+## [1.6.0] — 2026-10-03 (iOS AstroFileViewer)
+
+### Added
+- **Manual rotate (90° steps)** — Two rotate buttons in the adjustments panel turn the image clockwise or counter-clockwise in 90° steps, on top of Auto-Rotate. For frames that come out "head down" or any orientation you prefer. The rotation is per image and resets when another file is opened; Auto-Rotate stays the persistent preference it was. User request.
+- **Save to Photos honours the manual rotation** — The JPEG is written with the pixels physically rotated (no EXIF orientation flag), so it is upright in every viewer. Auto-Rotate is still not baked in, as before.
+
+### Changed
+- Re-orienting the displayed image (rotate taps, Auto-Rotate toggle) no longer re-reads the GPU texture; the converted image is cached per texture, so rotating is instant.
+
 ## [1.5.0] — 2026-05-02 (iOS AstroFileViewer)
 
 ### Added

@@ -112,6 +112,10 @@ class ViewerViewModel: ObservableObject {
             objectWillChange.send()
         }
     }
+    // Manual rotation in 90° clockwise steps (0...3). Per image, not persisted:
+    // reset whenever a different file is shown. Applied on top of auto-rotate
+    // at display time and baked into Save to Photos.
+    @Published var rotationQuarterTurns: Int = 0
     @Published var debayerEnabled: Bool = false {    // Manual debayer toggle
         didSet { reprocessFromRaw() }
     }
@@ -173,6 +177,26 @@ class ViewerViewModel: ObservableObject {
     // True when current image is landscape (wider than tall)
     var isLandscapeImage: Bool {
         imageWidth > imageHeight && imageWidth > 0
+    }
+
+    // Rotation to apply at display time, in 90° clockwise steps (0...3).
+    // Auto-rotate turns landscape images 90° counter-clockwise (= 3 clockwise steps).
+    var displayQuarterTurns: Int {
+        let auto = (autoRotate && isLandscapeImage) ? 3 : 0
+        return (auto + rotationQuarterTurns) % 4
+    }
+
+    // "0°", "90°", "180°", "270°" — the manual rotation, clockwise
+    var rotationLabel: String {
+        "\(rotationQuarterTurns * 90)°"
+    }
+
+    func rotateClockwise() {
+        rotationQuarterTurns = (rotationQuarterTurns + 1) % 4
+    }
+
+    func rotateCounterClockwise() {
+        rotationQuarterTurns = (rotationQuarterTurns + 3) % 4
     }
 
     // True when the displayed image has color (RGB or debayered)
@@ -298,6 +322,7 @@ class ViewerViewModel: ObservableObject {
         gradientCoefficients = nil
         bayerPatternDetected = nil
         debayerEnabled = false
+        rotationQuarterTurns = 0
         imageSNR = 0
         imageStarCount = 0
         cachedSTFParams = nil
@@ -492,6 +517,7 @@ class ViewerViewModel: ObservableObject {
         gradientCoefficients = nil
         bayerPatternDetected = nil
         debayerEnabled = false
+        rotationQuarterTurns = 0
         imageSNR = 0
         imageStarCount = 0
         cachedSTFParams = nil
@@ -557,6 +583,7 @@ class ViewerViewModel: ObservableObject {
         imageStarCount = 0
         bayerPatternDetected = nil
         debayerEnabled = false
+        rotationQuarterTurns = 0
         showAdjustments = false
         statusMessage = "Open a FITS or XISF file"
     }
@@ -1077,6 +1104,7 @@ class ViewerViewModel: ObservableObject {
 
     func saveToPhotos() {
         guard let texture = displayTexture else { return }
+        let quarterTurns = rotationQuarterTurns   // manual rotation only; auto-rotate is a display aid
         isSaving = true
         saveMessage = ""
 
@@ -1145,7 +1173,17 @@ class ViewerViewModel: ObservableObject {
                 return
             }
 
-            let uiImage = UIImage(cgImage: bin2CGImage)
+            // Bake the manual rotation into the pixels (no EXIF orientation flag),
+            // so the JPEG is upright in every viewer
+            guard let outputCGImage = Self.rotated(bin2CGImage, clockwiseQuarterTurns: quarterTurns, colorSpace: colorSpace) else {
+                await MainActor.run {
+                    self.isSaving = false
+                    self.saveMessage = "Failed to rotate"
+                }
+                return
+            }
+
+            let uiImage = UIImage(cgImage: outputCGImage)
 
             guard let jpegData = uiImage.jpegData(compressionQuality: 0.92) else {
                 await MainActor.run {
@@ -1162,7 +1200,7 @@ class ViewerViewModel: ObservableObject {
                 }
                 await MainActor.run {
                     self.isSaving = false
-                    self.saveMessage = "Saved \(bin2Width)x\(bin2Height) JPEG to Photos"
+                    self.saveMessage = "Saved \(outputCGImage.width)x\(outputCGImage.height) JPEG to Photos"
                     Task {
                         try? await Task.sleep(nanoseconds: 3_000_000_000)
                         if self.saveMessage.starts(with: "Saved") {
@@ -1177,5 +1215,47 @@ class ViewerViewModel: ObservableObject {
                 }
             }
         }
+    }
+
+    // MARK: - Rotation helper
+
+    /// Returns `image` turned by `clockwiseQuarterTurns` × 90° with the pixels
+    /// physically rearranged (exact, no resampling). 0 turns returns the input.
+    nonisolated private static func rotated(_ image: CGImage, clockwiseQuarterTurns: Int, colorSpace: CGColorSpace) -> CGImage? {
+        let turns = ((clockwiseQuarterTurns % 4) + 4) % 4
+        guard turns != 0 else { return image }
+
+        let w = image.width
+        let h = image.height
+        let swapsAxes = turns % 2 == 1
+        let outW = swapsAxes ? h : w
+        let outH = swapsAxes ? w : h
+
+        guard let ctx = CGContext(
+            data: nil,
+            width: outW,
+            height: outH,
+            bitsPerComponent: 8,
+            bytesPerRow: outW * 4,
+            space: colorSpace,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return nil }
+
+        // Quartz user space is y-up: positive angles rotate counter-clockwise.
+        // Integer translations keep the result pixel-exact.
+        ctx.interpolationQuality = .none
+        switch turns {
+        case 1:   // 90° clockwise
+            ctx.translateBy(x: 0, y: CGFloat(outH))
+            ctx.rotate(by: -.pi / 2)
+        case 2:   // 180°
+            ctx.translateBy(x: CGFloat(outW), y: CGFloat(outH))
+            ctx.rotate(by: .pi)
+        default:  // 270° clockwise = 90° counter-clockwise
+            ctx.translateBy(x: CGFloat(outW), y: 0)
+            ctx.rotate(by: .pi / 2)
+        }
+        ctx.draw(image, in: CGRect(x: 0, y: 0, width: CGFloat(w), height: CGFloat(h)))
+        return ctx.makeImage()
     }
 }

@@ -19,7 +19,7 @@ struct ContentView: View {
                     ZStack {
                         ZoomableImageContainer(
                             texture: texture,
-                            autoRotate: viewModel.autoRotate && viewModel.isLandscapeImage,
+                            quarterTurns: viewModel.displayQuarterTurns,
                             onSwipeLeft: { viewModel.navigateForward() },
                             onSwipeRight: { viewModel.navigateBack() }
                         )
@@ -334,6 +334,46 @@ struct AdjustmentsPanel: View {
                 Spacer()
             }
 
+            // Manual rotate — 90° steps, per image (not persisted)
+            HStack(spacing: 8) {
+                Image(systemName: "rotate.right")
+                    .font(.caption)
+                    .foregroundColor(.gray)
+                    .frame(width: 18)
+
+                Text("Rotate")
+                    .font(.caption.bold())
+                    .foregroundColor(.white)
+                    .frame(width: 58, alignment: .leading)
+
+                Button(action: { viewModel.rotateCounterClockwise() }) {
+                    Image(systemName: "rotate.left")
+                        .font(.body)
+                        .foregroundColor(.indigo)
+                        .frame(width: 44, height: 28)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Rotate counter-clockwise")
+
+                Button(action: { viewModel.rotateClockwise() }) {
+                    Image(systemName: "rotate.right")
+                        .font(.body)
+                        .foregroundColor(.indigo)
+                        .frame(width: 44, height: 28)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Rotate clockwise")
+
+                Spacer()
+
+                Text(viewModel.rotationLabel)
+                    .font(.caption.monospaced())
+                    .foregroundColor(.gray)
+                    .frame(width: 36)
+            }
+
             // Reset button
             if viewModel.hasNonDefaultSettings {
                 Button(action: {
@@ -494,13 +534,17 @@ struct HelpAboutView: View {
                             title: "Auto-Rotate",
                             text: "Landscape images are automatically rotated to fill the screen in portrait mode. No need to turn your phone! Toggle off in adjustments if you prefer the original orientation.")
 
+                    HelpRow(icon: "rotate.right", color: .indigo,
+                            title: "Rotate (90° steps)",
+                            text: "Image upside down? The two rotate buttons in the adjustments panel turn it in 90° steps, counter-clockwise or clockwise, on top of Auto-Rotate. The rotation is per image and resets when you open another file. Save to Photos bakes the manual rotation in; Auto-Rotate stays display-only.")
+
                     HelpRow(icon: "hand.pinch", color: .white,
                             title: "Zoom & Pan",
                             text: "Pinch to zoom (up to 10x), drag to pan. Works naturally even on rotated images.")
 
                     HelpRow(icon: "square.and.arrow.down", color: .white,
                             title: "Save to Photos",
-                            text: "Saves the current view as a bin2 JPEG to your photo library. All active adjustments are baked in — stretch, dark, denoise, sharpen, and gradient correction.")
+                            text: "Saves the current view as a bin2 JPEG to your photo library. All active adjustments are baked in — stretch, dark, denoise, sharpen, gradient correction, and manual rotation.")
 
                     HelpRow(icon: "info.circle", color: .white,
                             title: "Header Inspector",
@@ -699,12 +743,12 @@ struct HeaderListView: View {
 
 struct ZoomableImageContainer: UIViewRepresentable {
     let texture: MTLTexture
-    var autoRotate: Bool = false
+    var quarterTurns: Int = 0   // display rotation in 90° clockwise steps (auto-rotate + manual)
     var onSwipeLeft: (() -> Void)?
     var onSwipeRight: (() -> Void)?
 
     func makeUIView(context: Context) -> ZoomableImageView {
-        let view = ZoomableImageView(texture: texture, autoRotate: autoRotate)
+        let view = ZoomableImageView(texture: texture, quarterTurns: quarterTurns)
         view.onSwipeLeft = onSwipeLeft
         view.onSwipeRight = onSwipeRight
         return view
@@ -713,7 +757,7 @@ struct ZoomableImageContainer: UIViewRepresentable {
     func updateUIView(_ uiView: ZoomableImageView, context: Context) {
         uiView.onSwipeLeft = onSwipeLeft
         uiView.onSwipeRight = onSwipeRight
-        uiView.updateTexture(texture, autoRotate: autoRotate)
+        uiView.updateTexture(texture, quarterTurns: quarterTurns)
     }
 }
 
@@ -721,11 +765,16 @@ struct ZoomableImageContainer: UIViewRepresentable {
 class ZoomableImageView: UIScrollView, UIScrollViewDelegate {
     private let imageView = UIImageView()
     private var imageSize: CGSize = .zero
-    private var currentAutoRotate: Bool = false
+    private var currentQuarterTurns: Int = 0
+    // Readback cache. The view model hands out a fresh MTLTexture per reprocess,
+    // so one texture object always holds the same pixels; re-orienting (rotate
+    // taps, Auto-Rotate toggle) then needs no GPU readback.
+    private var cachedTexture: MTLTexture?
+    private var cachedCGImage: CGImage?
     var onSwipeLeft: (() -> Void)?
     var onSwipeRight: (() -> Void)?
 
-    init(texture: MTLTexture, autoRotate: Bool) {
+    init(texture: MTLTexture, quarterTurns: Int) {
         super.init(frame: .zero)
 
         delegate = self
@@ -750,7 +799,7 @@ class ZoomableImageView: UIScrollView, UIScrollViewDelegate {
         swipeRight.direction = .right
         addGestureRecognizer(swipeRight)
 
-        updateTexture(texture, autoRotate: autoRotate)
+        updateTexture(texture, quarterTurns: quarterTurns)
     }
 
     @objc private func handleSwipeLeft() {
@@ -775,14 +824,43 @@ class ZoomableImageView: UIScrollView, UIScrollViewDelegate {
         centerImageView()
     }
 
-    func updateTexture(_ texture: MTLTexture, autoRotate: Bool) {
-        let width = texture.width
-        let height = texture.height
-        let newSize = CGSize(width: width, height: height)
-        let rotateChanged = autoRotate != currentAutoRotate
+    func updateTexture(_ texture: MTLTexture, quarterTurns: Int) {
+        let turns = ((quarterTurns % 4) + 4) % 4
+        let sameTexture = cachedCGImage != nil && cachedTexture === texture
+        let rotateChanged = turns != currentQuarterTurns
+        // SwiftUI calls updateUIView on every view-model change; bail out when
+        // neither the pixels nor the orientation changed.
+        if sameTexture && !rotateChanged { return }
+
+        let newSize = CGSize(width: texture.width, height: texture.height)
         let isNewImage = newSize != imageSize || rotateChanged
         imageSize = newSize
-        currentAutoRotate = autoRotate
+        currentQuarterTurns = turns
+
+        let cgImage: CGImage
+        if sameTexture, let cached = cachedCGImage {
+            cgImage = cached
+        } else {
+            guard let fresh = Self.makeCGImage(from: texture) else { return }
+            cachedTexture = texture
+            cachedCGImage = fresh
+            cgImage = fresh
+        }
+
+        // Rotation via UIImage orientation metadata (zero-cost, no pixel copy)
+        imageView.image = UIImage(cgImage: cgImage, scale: 1.0,
+                                  orientation: Self.orientation(forClockwiseQuarterTurns: turns))
+
+        if isNewImage {
+            zoomScale = 1.0
+            imageView.frame = bounds
+        }
+    }
+
+    // GPU readback + BGRA -> RGBA swizzle into a CGImage
+    private static func makeCGImage(from texture: MTLTexture) -> CGImage? {
+        let width = texture.width
+        let height = texture.height
         let bytesPerRow = width * 4
 
         var pixels = [UInt8](repeating: 0, count: bytesPerRow * height)
@@ -806,20 +884,18 @@ class ZoomableImageView: UIScrollView, UIScrollViewDelegate {
             bytesPerRow: bytesPerRow,
             space: colorSpace,
             bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-        ), let cgImage = context.makeImage() else { return }
+        ) else { return nil }
+        return context.makeImage()
+    }
 
-        // Auto-rotate: use UIImage orientation metadata (zero-cost, no pixel copy)
-        let uiImage: UIImage
-        if autoRotate && width > height {
-            uiImage = UIImage(cgImage: cgImage, scale: 1.0, orientation: .left)
-        } else {
-            uiImage = UIImage(cgImage: cgImage)
-        }
-        imageView.image = uiImage
-
-        if isNewImage {
-            zoomScale = 1.0
-            imageView.frame = bounds
+    // UIImage.Orientation for n × 90° clockwise. `.right` shows the raw pixels
+    // turned 90° clockwise, `.left` 90° counter-clockwise (EXIF 6 / 8).
+    private static func orientation(forClockwiseQuarterTurns turns: Int) -> UIImage.Orientation {
+        switch ((turns % 4) + 4) % 4 {
+        case 1: return .right
+        case 2: return .down
+        case 3: return .left
+        default: return .up
         }
     }
 

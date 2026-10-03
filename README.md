@@ -645,6 +645,7 @@ After a night of imaging you might have 200-600 sub-exposures. Some have clouds,
 - **Auto gradient correction** — adjustable removal of linear light pollution gradients (0–300%)
 - **File history & swipe navigation** — cached files with swipe left/right to navigate between recently viewed images
 - **Auto-rotate** — landscape images automatically rotated to fill the screen in portrait mode
+- **Manual rotate (v1.6.0)** — turn any image in 90° steps from the adjustments panel, e.g. when a target was captured "head down"; baked into Save to Photos
 - **OSC debayer** — automatic Bayer pattern detection with GPU-accelerated bilinear interpolation
 - **Sharpening** — real-time unsharp mask with adjustable strength
 - **FITS/XISF header viewer** — browse all metadata keywords with priority sorting
