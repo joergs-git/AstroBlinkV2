@@ -274,19 +274,63 @@ GROUP BY m.id, m.title;
 
 ## Device Entitlements (`device_entitlements`)
 
-Per-device feature flags and rate limits.
+Per-device feature flags and rate limits. Since the 2026-10 security audit the table is
+**write-only for the service role** (SQL editor, trigger) — the app can only read its
+own rows (`x-device-id` header), so an e-mail address stored in `value` is never visible
+to another device.
 
-**Grant AIsaac boost (after email signup):**
+**Grant AIsaac boost manually** (the e-mail opt-in trigger does this automatically with `'50'`):
 ```sql
-INSERT INTO device_entitlements (machine_hash, entitlement_key, entitlement_value)
-VALUES ('abc123...', 'aisaac_daily_limit', '50')
-ON CONFLICT (machine_hash, entitlement_key) DO UPDATE SET entitlement_value = '50';
+INSERT INTO device_entitlements (machine_hash, entitlement, value)
+VALUES ('abc123...', 'aisaac_boost', '50')
+ON CONFLICT (machine_hash, entitlement) DO UPDATE SET value = '50';
 ```
+The value raises that device's `ask-aisaac` daily limit above the default in `api_limits`
+(read inside `api_usage_check`, so it takes effect on the next request).
 
 **Check a device's entitlements:**
 ```sql
 SELECT * FROM device_entitlements WHERE machine_hash = 'abc123...';
 ```
+
+---
+
+## API Limits & Kill Switch (`api_limits`, `api_usage`)
+
+The three paid proxies (`ask-aisaac` → Claude Sonnet, `vlm-check` → Claude Opus,
+`weather-forecast` → Meteoblue) count every request in Postgres — per device, per
+network (day-salted hash of the IP, never the IP) and globally per UTC day. Limits and
+the kill switch live in one row per function. Changes take effect on the **next request**,
+no redeploy. Full background: the internal report `supabase/SECURITY_AUDIT_2026-10.md`
+(kept out of the public repo like `RLS_AUDIT.md`).
+
+**Pause a function right now (clients get 503 "temporarily paused"):**
+```sql
+UPDATE api_limits SET enabled = false, updated_at = now() WHERE function_name = 'ask-aisaac';
+```
+
+**Re-enable / change limits:**
+```sql
+UPDATE api_limits SET enabled = true, device_daily = 20, ip_daily = 100, global_daily = 300,
+       updated_at = now()
+WHERE function_name = 'ask-aisaac';
+```
+
+**Today's usage per function:**
+```sql
+SELECT function_name, scope, COUNT(*) AS subjects, SUM(count) AS requests
+FROM api_usage WHERE day = (now() AT TIME ZONE 'utc')::date
+GROUP BY 1, 2 ORDER BY 1, 2;
+```
+
+**Who is hammering (subjects are hashes):**
+```sql
+SELECT * FROM api_usage WHERE day = (now() AT TIME ZONE 'utc')::date
+ORDER BY count DESC LIMIT 20;
+```
+
+Pushover alerts fire once per day each: 80 % of a daily budget (quiet), global cap reached,
+a single network at its cap. Counters older than 14 days are pruned automatically.
 
 ---
 
