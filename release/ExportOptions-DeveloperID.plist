@@ -7,10 +7,14 @@
     <string>developer-id</string>
     <key>teamID</key>
     <string>FDSVBU33S8</string>
-    <!-- signingStyle + certificate are required: without them xcodebuild picks the wrong
-         identity and the export fails. -->
+    <!-- signingCertificate pins the identity type: without it xcodebuild picks the wrong
+         one and the export fails. signingStyle MUST be automatic: the Developer ID profile
+         ("Mac Team Direct Provisioning Profile") is Xcode-managed, and with manual Xcode 27
+         refuses it ("is Xcode managed, but signing settings require a manually managed
+         profile") or, without a mapping, claims no profile has the iCloud + Push features
+         (verified 2026-10-22, 6.9.2). Needs -allowProvisioningUpdates on the export. -->
     <key>signingStyle</key>
-    <string>manual</string>
+    <string>automatic</string>
     <key>signingCertificate</key>
     <string>Developer ID Application</string>
     <key>destination</key>
