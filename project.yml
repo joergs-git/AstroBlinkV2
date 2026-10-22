@@ -98,8 +98,8 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.joergsflow.AstroBlinkV2
         GENERATE_INFOPLIST_FILE: NO
         INFOPLIST_FILE: AstroTriage/Info.plist
-        CURRENT_PROJECT_VERSION: 115
-        MARKETING_VERSION: "6.9.1"
+        CURRENT_PROJECT_VERSION: 116
+        MARKETING_VERSION: "6.9.2"
         SWIFT_EMIT_LOC_STRINGS: YES
         ENABLE_APP_SANDBOX: YES
         ENABLE_HARDENED_RUNTIME: YES
@@ -121,7 +121,14 @@ targets:
           # For archive builds, use the distribution cert directly since the export
           # step re-signs the main app but skips resource bundles.
           if [ "${CONFIGURATION}" = "Release" ]; then
-            SIGN_IDENTITY="Apple Distribution: Joerg Klaas (FDSVBU33S8)"
+            # Resolve the certificate by hash, not by name: a login keychain holding two
+            # "Apple Distribution" certs for the team (renewal, second Mac) makes a name
+            # lookup ambiguous and codesign fails. `-v` lists valid identities only.
+            SIGN_IDENTITY=$(security find-identity -v -p codesigning | grep -E "Apple Distribution: .*\(FDSVBU33S8\)" | head -1 | awk '{print $2}')
+            if [ -z "${SIGN_IDENTITY}" ]; then
+              echo "error: no valid 'Apple Distribution' identity for team FDSVBU33S8 in the keychain"
+              exit 1
+            fi
           else
             SIGN_IDENTITY="${EXPANDED_CODE_SIGN_IDENTITY}"
           fi
@@ -179,8 +186,8 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.joergsflow.AstroBlinkV2.QuickLookThumbnail
         GENERATE_INFOPLIST_FILE: NO
         INFOPLIST_FILE: QuickLookExtension/Info.plist
-        CURRENT_PROJECT_VERSION: 115
-        MARKETING_VERSION: "6.9.1"
+        CURRENT_PROJECT_VERSION: 116
+        MARKETING_VERSION: "6.9.2"
         MACOSX_DEPLOYMENT_TARGET: "14.0"
         SWIFT_VERSION: "5.9"
         CLANG_CXX_LANGUAGE_STANDARD: c++17
@@ -214,8 +221,8 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.joergsflow.AstroBlinkV2.QuickLookPreview
         GENERATE_INFOPLIST_FILE: NO
         INFOPLIST_FILE: QuickLookPreview/Info.plist
-        CURRENT_PROJECT_VERSION: 115
-        MARKETING_VERSION: "6.9.1"
+        CURRENT_PROJECT_VERSION: 116
+        MARKETING_VERSION: "6.9.2"
         MACOSX_DEPLOYMENT_TARGET: "14.0"
         SWIFT_VERSION: "5.9"
         CLANG_CXX_LANGUAGE_STANDARD: c++17

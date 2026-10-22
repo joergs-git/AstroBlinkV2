@@ -9,13 +9,20 @@ import SwiftUI
 
 // Kept as a standalone modifier with its own type-check budget so it doesn't bloat the
 // already-large ContentView modifier chains (which hit the SwiftUI type-checker limit).
+// It also hosts the other Edit-menu command that acts on the loaded session
+// (Move Marked to PRE-DELETE…) for the same reason.
 struct ChangeFilterModifier: ViewModifier {
     @ObservedObject var viewModel: TriageViewModel
 
     func body(content: Content) -> some View {
-        content.onReceive(NotificationCenter.default.publisher(for: .changeFilterRequest)) { _ in
-            ChangeFilterWindowController.shared.show(viewModel: viewModel)
-        }
+        content
+            .onReceive(NotificationCenter.default.publisher(for: .changeFilterRequest)) { _ in
+                ChangeFilterWindowController.shared.show(viewModel: viewModel)
+            }
+            // Edit → Move Marked to PRE-DELETE… (6.9.2): same path as ⌘⌫ and the toolbar button.
+            .onReceive(NotificationCenter.default.publisher(for: .moveMarkedToPreDeleteRequest)) { _ in
+                viewModel.moveMarkedToPreDelete()
+            }
     }
 }
 

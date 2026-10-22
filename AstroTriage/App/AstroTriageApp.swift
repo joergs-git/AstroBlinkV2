@@ -1,4 +1,4 @@
-// v4.0.0
+// v6.9.2
 import SwiftUI
 
 // MARK: - App Store URL (update when published)
@@ -154,6 +154,16 @@ struct AstroBlinkV2App: App {
                     NotificationCenter.default.post(name: .changeFilterRequest, object: nil)
                 }
                 .keyboardShortcut("f", modifiers: [.command, .shift])
+
+                Divider()
+
+                // Same action as ⌘⌫, the toolbar button and the file-list context menu (6.9.2).
+                // No key equivalent on purpose: ⌘⌫ is handled by KeyboardHandler, which steps
+                // aside while a text field is being edited so the search field keeps its
+                // delete-to-line-start. A menu key equivalent would fire there instead.
+                Button("Move Marked to PRE-DELETE...") {
+                    NotificationCenter.default.post(name: .moveMarkedToPreDeleteRequest, object: nil)
+                }
             }
 
             // Window menu: Benchmark Stats + Target Catalog
@@ -573,6 +583,7 @@ extension Notification.Name {
     static let showBenchmarkStats = Notification.Name("showBenchmarkStats")
     static let showBatchRename = Notification.Name("showBatchRename")
     static let changeFilterRequest = Notification.Name("changeFilterRequest")
+    static let moveMarkedToPreDeleteRequest = Notification.Name("moveMarkedToPreDeleteRequest")
     static let showAIsaac = Notification.Name("showAIsaac")
     static let askAIsaacAboutQuality = Notification.Name("askAIsaacAboutQuality")
     static let fontScaleIncrease = Notification.Name("fontScaleIncrease")

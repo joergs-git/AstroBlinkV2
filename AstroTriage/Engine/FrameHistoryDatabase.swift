@@ -168,14 +168,23 @@ final class FrameHistoryDatabase {
         }
     }
 
-    /// Mark frames as deleted by file hash (called during pre-delete).
+    /// Mark frames as deleted by file hash (called after a PRE-DELETE move succeeded).
     func markDeleted(fileHashes: [String]) throws {
+        try setDeletedFlag(1, fileHashes: fileHashes)
+    }
+
+    /// Clear the deleted flag after an undo brought the frames back into the session (6.9.2).
+    func markRestored(fileHashes: [String]) throws {
+        try setDeletedFlag(0, fileHashes: fileHashes)
+    }
+
+    private func setDeletedFlag(_ flag: Int, fileHashes: [String]) throws {
         guard !fileHashes.isEmpty else { return }
         try dbQueue.write { db in
             for hash in fileHashes {
                 try db.execute(
-                    sql: "UPDATE frame_record SET wasDeleted = 1 WHERE fileHash = ?",
-                    arguments: [hash]
+                    sql: "UPDATE frame_record SET wasDeleted = ? WHERE fileHash = ?",
+                    arguments: [flag, hash]
                 )
             }
         }
