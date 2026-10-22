@@ -56,3 +56,7 @@ stagingcheckundpruefanweisungsdatei.md
 supabase/RLS_AUDIT.md
 docs/Competitive-Analysis-2026.md
 /project.yml
+
+# Internal security audit material — never in the public repo (see RLS_AUDIT rule above)
+supabase/SECURITY_AUDIT_*.md
+SECURITY-FIX_*.md

@@ -1,226 +1,146 @@
-// AIsaac — Supabase Edge Function proxy to Claude API
-// Rate-limited by device UUID, never exposes API key to client
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+// AIsaac — Supabase Edge Function proxy to the Claude API.
+// Never exposes the API key to the client.
+//
+// v2 (security audit 2026-10, finding B1):
+//   • persistent per-device / per-IP / global daily limits + kill switch via
+//     ../_shared/limits.ts (table api_limits, RPC api_usage_check) — the old
+//     in-memory Map reset on every cold start and was keyed by a free-form header
+//   • strict x-device-id format (24-hex machine hash) — no more "anonymous" bucket
+//   • the aisaac_boost entitlement is resolved inside the RPC; the string-built
+//     PostgREST filter that invited parameter injection is gone
+//   • request shape pinned: body size, system length, message count/roles, text
+//     length, image count/size; tool/document blocks rejected
+//   • model and max_tokens stay server-side constants (never client-controlled)
+// Response shapes (success JSON, SSE pass-through, 429 body, X-Remaining header)
+// are unchanged so every shipped app build keeps working.
+//
+// Deploy with the CLI so ../_shared is bundled and verify_jwt stays off:
+//   supabase functions deploy ask-aisaac --project-ref <ref> --no-verify-jwt
 
+import {
+  alertOnThresholds,
+  checkUsage,
+  jsonResponse,
+  limitResponse,
+  readDeviceId,
+  readJsonBody,
+  sendPushover,
+  validateMessages,
+  validateSystem,
+  verifyRollingToken,
+} from "../_shared/limits.ts";
+
+const FUNCTION_NAME = "ask-aisaac";
 const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
-const PUSHOVER_USER = Deno.env.get("PUSHOVER_USER") || "";
-const PUSHOVER_TOKEN = Deno.env.get("PUSHOVER_TOKEN") || "";
-const DEFAULT_DAILY_LIMIT = 20;
-const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
-const SUPABASE_SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 // Model — update when newer versions release
 const MODEL = "claude-sonnet-4-6";
 // 4096 ≈ 3000 words — prevents silent mid-word truncation seen at 1024
 // (Sonnet 4.6 supports up to 64K output; 4096 is a safe free-tier budget)
 const MAX_TOKENS = 4096;
 
-// Track API errors for Pushover alerting
+// Payload bounds. The app sends: knowledge block (~55 KB) + session context +
+// per-frame table (≤ 200 rows) + 60 headers + weather as `system`; ≤ 10 history
+// messages + 1 user message, the last one optionally with an 800 px JPEG thumbnail
+// (≤ ~300 KB base64). Bounds are several times those sizes, and small enough that a
+// single request cannot cost more than a few cents.
+const MAX_BODY_CHARS = 6_000_000;
+const MAX_SYSTEM_CHARS = 500_000;
+const MESSAGE_LIMITS = {
+  maxMessages: 12,
+  maxTextChars: 30_000,
+  maxImages: 2,
+  maxImageBase64Chars: 2_000_000,
+};
+
+const CORS_PREFLIGHT_HEADERS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-device-id, x-aisaac-token, x-stream, content-type, apikey",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+};
+
+// ---------------------------------------------------------------------------
+// Claude API outage alert (unchanged behaviour): one Pushover after >60 min of errors
+// ---------------------------------------------------------------------------
 let firstErrorTime: number | null = null;
-let pushoverSent = false;
-
-// In-memory rate limiter (resets on cold start — good enough for Stage 1)
-const rateLimits = new Map<string, { count: number; resetAt: number }>();
-// In-memory cache for device entitlement limits (1h TTL)
-const entitlementCache = new Map<string, { limit: number; expiresAt: number }>();
-
-async function getDeviceLimit(deviceId: string): Promise<number> {
-  // Check in-memory cache first
-  const cached = entitlementCache.get(deviceId);
-  if (cached && Date.now() < cached.expiresAt) return cached.limit;
-
-  // Query Supabase for aisaac_boost entitlement
-  if (SUPABASE_URL && SUPABASE_SERVICE_KEY) {
-    try {
-      const res = await fetch(
-        `${SUPABASE_URL}/rest/v1/device_entitlements?machine_hash=eq.${deviceId}&entitlement=eq.aisaac_boost&select=value`,
-        {
-          headers: {
-            apikey: SUPABASE_SERVICE_KEY,
-            Authorization: `Bearer ${SUPABASE_SERVICE_KEY}`,
-          },
-        }
-      );
-      if (res.ok) {
-        const rows = await res.json();
-        if (rows.length > 0 && rows[0].value) {
-          const limit = parseInt(rows[0].value) || DEFAULT_DAILY_LIMIT;
-          entitlementCache.set(deviceId, { limit, expiresAt: Date.now() + 3_600_000 });
-          return limit;
-        }
-      }
-    } catch {
-      // Fallback to default on error
-    }
-  }
-
-  entitlementCache.set(deviceId, { limit: DEFAULT_DAILY_LIMIT, expiresAt: Date.now() + 3_600_000 });
-  return DEFAULT_DAILY_LIMIT;
-}
-
-async function checkRateLimit(deviceId: string): Promise<{ allowed: boolean; remaining: number; limit: number }> {
-  const now = Date.now();
-  let entry = rateLimits.get(deviceId);
-  const limit = await getDeviceLimit(deviceId);
-
-  if (!entry || now > entry.resetAt) {
-    entry = { count: 0, resetAt: now + 86_400_000 }; // 24h window
-  }
-
-  if (entry.count >= limit) {
-    rateLimits.set(deviceId, entry);
-    return { allowed: false, remaining: 0, limit };
-  }
-
-  entry.count++;
-  rateLimits.set(deviceId, entry);
-  return { allowed: true, remaining: limit - entry.count, limit };
-}
-
-async function sendPushover(title: string, message: string) {
-  if (!PUSHOVER_USER || !PUSHOVER_TOKEN) return;
-  try {
-    await fetch("https://api.pushover.net/1/messages.json", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        token: PUSHOVER_TOKEN,
-        user: PUSHOVER_USER,
-        title,
-        message,
-        priority: 1, // high priority
-        sound: "siren",
-      }),
-    });
-  } catch (e) {
-    console.error("Pushover send failed:", e);
-  }
-}
+let outageAlertSent = false;
 
 function trackError(status: number, detail: string) {
   const now = Date.now();
-  if (!firstErrorTime) {
-    firstErrorTime = now;
-  }
-  // If errors persist for >60 minutes, send Pushover alert (once)
+  if (!firstErrorTime) firstErrorTime = now;
   const errorDurationMin = (now - firstErrorTime) / 60000;
-  if (errorDurationMin > 60 && !pushoverSent) {
-    pushoverSent = true;
+  if (errorDurationMin > 60 && !outageAlertSent) {
+    outageAlertSent = true;
     sendPushover(
       "🚨 AIsaac API Down >60min",
-      `Claude API errors since ${new Date(firstErrorTime).toISOString()}.\nLast error: ${status} — ${detail}`
+      `Claude API errors since ${new Date(firstErrorTime).toISOString()}.\nLast error: ${status} — ${detail}`,
     );
   }
 }
 
 function clearErrorTracking() {
   firstErrorTime = null;
-  pushoverSent = false;
+  outageAlertSent = false;
 }
 
-serve(async (req) => {
-  // CORS preflight
+// ---------------------------------------------------------------------------
+
+Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
-    return new Response(null, {
-      headers: {
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Headers":
-          "authorization, x-device-id, x-aisaac-token, content-type, apikey",
-        "Access-Control-Allow-Methods": "POST, OPTIONS",
-      },
-    });
+    return new Response(null, { headers: CORS_PREFLIGHT_HEADERS });
   }
-
   if (req.method !== "POST") {
-    return new Response(JSON.stringify({ error: "Method not allowed" }), {
-      status: 405,
-      headers: { "Content-Type": "application/json" },
-    });
+    return jsonResponse({ error: "Method not allowed" }, 405);
   }
-
   if (!ANTHROPIC_API_KEY) {
-    return new Response(
-      JSON.stringify({ error: "Server misconfigured — missing API key" }),
-      { status: 500, headers: { "Content-Type": "application/json" } }
-    );
+    return jsonResponse({ error: "Server misconfigured — missing API key" }, 500);
   }
 
-  // Verify rolling token (YYYYMMDD - currentUTCHour)
-  const token = req.headers.get("x-aisaac-token");
-  const now = new Date();
-  const dateNum =
-    now.getUTCFullYear() * 10000 +
-    (now.getUTCMonth() + 1) * 100 +
-    now.getUTCDate();
-  const expectedToken = String(dateNum - now.getUTCHours());
-  // Allow ±1 hour tolerance for clock skew
-  const prevHourToken = String(dateNum - ((now.getUTCHours() + 23) % 24));
-
-  if (token !== expectedToken && token !== prevHourToken) {
-    return new Response(
-      JSON.stringify({ error: "Unauthorized" }),
-      {
-        status: 403,
-        headers: {
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "*",
-        },
-      }
-    );
+  // Bot deterrent (rolling token, ±1 h). Authentication proper is the usage check.
+  if (!verifyRollingToken(req.headers.get("x-aisaac-token"))) {
+    return jsonResponse({ error: "Unauthorized" }, 403);
   }
 
-  const deviceId = req.headers.get("x-device-id") || "anonymous";
-
-  // Rate limiting (async — checks device_entitlements for custom limits)
-  const { allowed, remaining, limit } = await checkRateLimit(deviceId);
-  if (!allowed) {
-    return new Response(
-      JSON.stringify({
-        error: "Daily query limit reached. Try again tomorrow.",
-        remaining: 0,
-        limit,
-      }),
-      {
-        status: 429,
-        headers: {
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "*",
-        },
-      }
-    );
+  const deviceId = readDeviceId(req.headers.get("x-device-id"));
+  if (!deviceId) {
+    return jsonResponse({ error: "Invalid or missing x-device-id" }, 400);
   }
+
+  // Persistent limits: device (20/day, boosted by entitlement), IP, global, kill switch.
+  const usage = await checkUsage(FUNCTION_NAME, deviceId, req);
+  await alertOnThresholds(FUNCTION_NAME, usage);
+  if (!usage.allowed) {
+    return limitResponse(usage, "query");
+  }
+  const remaining = usage.remaining;
+
+  // Body: size cap → JSON → shape.
+  const parsed = await readJsonBody(req, MAX_BODY_CHARS);
+  if (!parsed.ok) return parsed.response;
+  const { system, messages } = parsed.body;
+
+  const systemError = validateSystem(system, MAX_SYSTEM_CHARS);
+  if (systemError) return jsonResponse({ error: systemError }, 400);
+  const messagesError = validateMessages(messages, MESSAGE_LIMITS);
+  if (messagesError) return jsonResponse({ error: messagesError }, 400);
 
   try {
-    const { system, messages } = await req.json();
-
-    if (!messages || !Array.isArray(messages) || messages.length === 0) {
-      return new Response(
-        JSON.stringify({ error: "Missing or empty messages array" }),
-        { status: 400, headers: { "Content-Type": "application/json" } }
-      );
-    }
-
-    // Check if client wants streaming
     const wantStream = req.headers.get("x-stream") === "true";
 
-    // Call Claude API
-    const anthropicResponse = await fetch(
-      "https://api.anthropic.com/v1/messages",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": ANTHROPIC_API_KEY,
-          "anthropic-version": "2023-06-01",
-        },
-        body: JSON.stringify({
-          model: MODEL,
-          max_tokens: MAX_TOKENS,
-          system: system || "",
-          messages: messages,
-          stream: wantStream,
-        }),
-      }
-    );
+    const anthropicResponse = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify({
+        model: MODEL,
+        max_tokens: MAX_TOKENS,
+        system: (system as string | undefined) ?? "",
+        messages,
+        stream: wantStream,
+      }),
+    });
 
     if (!anthropicResponse.ok) {
       const errorBody = await anthropicResponse.text();
@@ -228,7 +148,6 @@ serve(async (req) => {
       console.error("Claude API error:", status, errorBody);
       trackError(status, errorBody.substring(0, 200));
 
-      // User-friendly error messages
       let userMessage: string;
       if (status === 401) {
         userMessage = "🔑 API key issue — the service admin needs to check the configuration.";
@@ -241,17 +160,7 @@ serve(async (req) => {
       } else {
         userMessage = `⚠️ AI service error (${status}). Please try again later.`;
       }
-
-      return new Response(
-        JSON.stringify({ error: userMessage, remaining }),
-        {
-          status: 502,
-          headers: {
-            "Content-Type": "application/json",
-            "Access-Control-Allow-Origin": "*",
-          },
-        }
-      );
+      return jsonResponse({ error: userMessage, remaining }, 502);
     }
 
     clearErrorTracking();
@@ -271,36 +180,21 @@ serve(async (req) => {
 
     // Non-streaming fallback
     const data = await anthropicResponse.json();
-    const text =
-      data.content?.[0]?.text || "I couldn't generate a response. Try again.";
-
-    return new Response(
-      JSON.stringify({
+    const text = data.content?.[0]?.text || "I couldn't generate a response. Try again.";
+    return jsonResponse(
+      {
         text,
         remaining,
         usage: {
           input: data.usage?.input_tokens || 0,
           output: data.usage?.output_tokens || 0,
         },
-      }),
-      {
-        headers: {
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "*",
-        },
-      }
+      },
+      200,
+      { "X-Remaining": String(remaining) },
     );
   } catch (err) {
     console.error("Edge function error:", err);
-    return new Response(
-      JSON.stringify({ error: "Internal server error", remaining }),
-      {
-        status: 500,
-        headers: {
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "*",
-        },
-      }
-    );
+    return jsonResponse({ error: "Internal server error", remaining }, 500);
   }
 });
