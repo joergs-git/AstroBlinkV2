@@ -936,6 +936,24 @@ extension FileListView {
             markItem.target = self
             markItem.tag = clickedRow
             menu.addItem(markItem)
+
+            // Move everything that is marked (6.9.2) — same action as ⌘⌫ / the toolbar button.
+            // Counts the whole session, not the displayed rows, so the number stays right while
+            // marked rows are hidden (H). Disabled (no action) when nothing is marked.
+            let marked = viewModel.markedCount
+            let moveTitle = marked == 0
+                ? "Move Marked to PRE-DELETE…"
+                : "Move \(marked) Marked to PRE-DELETE…"
+            let moveItem = NSMenuItem(title: moveTitle,
+                                      action: marked > 0 ? #selector(moveMarkedToPreDeleteFromMenu(_:)) : nil,
+                                      keyEquivalent: "")
+            moveItem.target = self
+            moveItem.isEnabled = marked > 0
+            menu.addItem(moveItem)
+        }
+
+        @objc private func moveMarkedToPreDeleteFromMenu(_ sender: NSMenuItem) {
+            Task { @MainActor in viewModel.moveMarkedToPreDelete() }
         }
 
         @objc private func copyFilename(_ sender: NSMenuItem) {
