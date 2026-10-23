@@ -1,4 +1,4 @@
-// v4.3.0
+// v6.9.2
 import SwiftUI
 
 // Root view: toolbar on top, optional side panels (inspector left, session right),
@@ -630,6 +630,13 @@ struct ContentView: View {
             sfToolbarButton("square.and.arrow.up", "SSWEIGHT\nExport",
                 "Export quality weights to FITS/XISF headers for WBPP.\nOperates on highlighted files (or all if none selected).\nAlso creates CSV backup.\nUse Batch Rename to remove SSWEIGHT keywords.") {
                 viewModel.exportSSWEIGHT()
+            }
+            // Move-to-PRE-DELETE was keyboard-only (⌘⌫) until 6.9.2. Dimmed while nothing is
+            // marked; the action itself reports "No images marked" in that case.
+            sfToolbarButton("trash", "Pre-Delete",
+                "Move all marked files to the PRE-DELETE folder (⌘⌫).\nNothing is deleted — undo with ⌘Z.",
+                iconColor: viewModel.markedCount == 0 ? nightFgDim : nil) {
+                viewModel.moveMarkedToPreDelete()
             }
             if viewModel.canUndoPreDelete {
                 sfToolbarButton("arrow.uturn.backward", "Undo", "Undo last Pre-Delete (⌘Z)") { viewModel.undoPreDelete() }

@@ -805,7 +805,7 @@ struct AIsaacContextBuilder {
         4. Compare suspicious frames: select + press C for side-by-side with best frame. Star overlay shows elongation.
         5. Mark bad frames: Space key (single or multi-selection). Shift-click/Cmd-click for range/individual selection.
         6. Optional: use Culling Autopilot (click quality pill in status bar) for one-click auto-marking.
-        7. Pre-delete: Cmd+Backspace moves marked files to _predel/ staging folder. Never permanent. Full Cmd+Z undo.
+        7. Pre-delete: Cmd+Backspace — or, since 6.9.2, the Pre-Delete toolbar button, Edit → Move Marked to PRE-DELETE…, or the file-list context menu — moves marked files to the PRE-DELETE/ staging folder (older builds: _predel/). Never permanent. Full Cmd+Z undo. Since 6.9.2 only frames that physically moved leave the list; frames whose move failed stay marked and a dialog names the reason.
         8. Optional: export SSWEIGHT to FITS/XISF headers (File menu) for PixInsight WBPP weighted integration.
 
         STRETCH MODES (S key cycles):
@@ -879,9 +879,9 @@ struct AIsaacContextBuilder {
 
         PRE-DELETE WORKFLOW:
         - Space marks/unmarks frames (checkmark icon). Works on multi-selection.
-        - Cmd+Backspace physically moves marked files to _predel/ subfolder in session directory.
+        - Cmd+Backspace (or the Pre-Delete toolbar button / Edit menu / context menu, 6.9.2+) physically moves marked files to the PRE-DELETE/ subfolder in the session directory (older builds: _predel/). If the folder is not writable the app asks for folder access again first; frames whose move failed stay in the list, still marked (6.9.2).
         - Confirmation dialog shows: # of files, integration loss, SNR impact, tier breakdown.
-        - Full undo: Cmd+Z moves files back from _predel/ to original location.
+        - Full undo: Cmd+Z moves files back from PRE-DELETE/ to the original location.
         - Files are NEVER permanently deleted by the app. User can empty _predel/ manually or via Finder Trash.
         - K key: toggle skip-marked during arrow navigation. H key: cycle hide marked / show only marked / show all.
 
@@ -956,7 +956,7 @@ struct AIsaacContextBuilder {
         KEYBOARD SHORTCUTS — Complete Reference:
         - ←/→: prev/next image. Page Up/Home: first. Page Down/End: last.
         - Space: toggle pre-delete mark (works on multi-selection).
-        - Cmd+Backspace: move marked to _predel/ folder. Cmd+Z: undo last pre-delete.
+        - Cmd+Backspace: move marked to the PRE-DELETE/ folder (also the Pre-Delete toolbar button, Edit menu, context menu). Cmd+Z: undo last pre-delete.
         - S: cycle stretch mode (auto → locked). D: toggle debayer. N: toggle night mode.
         - I: toggle header inspector panel. C: compare current frame with best in group.
         - K: toggle skip-marked during navigation. H: cycle hide marked / show only marked / show all.

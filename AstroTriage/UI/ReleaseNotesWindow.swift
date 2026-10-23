@@ -34,6 +34,11 @@ class ReleaseNotesWindowController {
 // MARK: - Release notes data (shared between view and copy)
 
 private let allReleases: [(version: String, date: String, items: [(ReleaseNotesView.ChangeType, String, String)])] = [
+    ("6.9.2", "October 22, 2026", [
+        (.fixed, "A Failed PRE-DELETE No Longer Clears the List", "Moving marked frames to PRE-DELETE (also Move to Folder and Quarantine) removed every marked frame from the file list after the move, whether or not the file had actually moved. When the session folder had lost its write access — a NAS, or a session opened from several folders — every move failed, the list emptied as if the delete had worked, and the only trace was a \"(N failed)\" in the status bar. Now only frames that physically moved leave the list, the ones that failed stay in it still marked, and a dialog names the reason. PRE-DELETE also checks that the session folder is writable before moving anything and asks for access again if it is not."),
+        (.added, "Pre-Delete Button, Menu Item and Context Menu", "Moving marked frames to PRE-DELETE was keyboard-only (⌘⌫). It is now also a Pre-Delete toolbar button next to Undo (dimmed while nothing is marked), an Edit → Move Marked to PRE-DELETE… menu item, and a file-list context-menu entry that says how many frames are marked."),
+        (.fixed, "Frame History Records PRE-DELETE Moves", "The deleted flag was computed from the list after the moved frames had already been removed from it, so it was always empty. Moved frames are now flagged as deleted, and ⌘Z clears the flag again."),
+    ]),
     ("6.9.1", "September 15, 2026", [
         (.fixed, "Plate-Solve Result Shows Skipped Frames", "Running plate solving over a session where most frames already carry a solve, and choosing \"Only Unsolved\", reported something like \"Solved 6 of 6 frames (100%)\" with no mention of the several hundred frames skipped because they were already solved. The result read as if the session had shrunk. The skipped count now appears in the summary line, as a chip in the result window, and in the clipboard export."),
     ]),

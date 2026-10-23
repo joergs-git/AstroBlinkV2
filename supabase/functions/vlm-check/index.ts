@@ -1,202 +1,112 @@
-// VLM Check — Supabase Edge Function proxy for visual anomaly detection
-// Routes mosaic images to Claude Vision API with separate rate limiting.
-// 10 checks/day per device, global daily cap, Pushover usage notifications.
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+// VLM Check — Supabase Edge Function proxy for visual anomaly detection.
+// Routes mosaic images to Claude Vision (Opus + extended thinking).
+//
+// v2 (security audit 2026-10, finding B4): this is the most expensive endpoint of
+// the project (~0.90 USD per call) and had the same weaknesses as ask-aisaac — a
+// per-isolate in-memory limiter keyed by a free-form header, no payload bounds.
+//   • persistent per-device / per-IP / global daily limits + kill switch via
+//     ../_shared/limits.ts (api_limits row 'vlm-check': 10 / 30 / 100 per day)
+//   • strict x-device-id format
+//   • request shape pinned: ≤ 2 messages, ≤ 2 base64 JPEG/PNG images of ≤ 5 MB
+//     base64 each (Claude's own per-image limit), text ≤ 50 K chars
+//   • Pushover: 80 % budget, global cap, single-IP cap (replaces the old
+//     every-10-checks usage summary)
+// Response shapes (text/remaining/usage JSON, 413 + 429 bodies, X-Remaining header)
+// are unchanged.
+//
+// Deploy with the CLI so ../_shared is bundled and verify_jwt stays off:
+//   supabase functions deploy vlm-check --project-ref <ref> --no-verify-jwt
 
+import {
+  alertOnThresholds,
+  checkUsage,
+  jsonResponse,
+  limitResponse,
+  readDeviceId,
+  readJsonBody,
+  validateMessages,
+  validateSystem,
+  verifyRollingToken,
+} from "../_shared/limits.ts";
+
+const FUNCTION_NAME = "vlm-check";
 const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
-const PUSHOVER_USER = Deno.env.get("PUSHOVER_USER") || "";
-const PUSHOVER_TOKEN = Deno.env.get("PUSHOVER_TOKEN") || "";
-const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
-const SUPABASE_SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
-
-// VLM-specific limits (separate from AIsaac text chat)
-const DEVICE_DAILY_LIMIT = 10;
-const GLOBAL_DAILY_CAP = 500; // Safety cap across all devices
 const MODEL = "claude-opus-4-20250514"; // Opus for best visual anomaly detection accuracy
 const MAX_TOKENS = 16000; // Extended thinking budget + structured JSON output
 const THINKING_BUDGET = 10000; // Tokens for systematic tile-by-tile analysis
 
-// In-memory rate limiter per device (resets on cold start)
-const deviceLimits = new Map<string, { count: number; resetAt: number }>();
-// Global counter (resets on cold start + daily)
-let globalCount = 0;
-let globalResetAt = Date.now() + 86_400_000;
-// Track daily usage for Pushover reporting
-let dailyDevices = new Set<string>();
-let lastPushoverSummary = 0;
+// Payload bounds. The app sends one user message with: caption, mosaic JPEG
+// (≤ 4.8 MB base64), optional caption + deviation-map JPEG (≤ 4.8 MB base64), prompt.
+const MAX_BODY_CHARS = 14_000_000;
+const MAX_SYSTEM_CHARS = 100_000;
+const MESSAGE_LIMITS = {
+  maxMessages: 2,
+  maxTextChars: 50_000,
+  maxImages: 2,
+  maxImageBase64Chars: 5_000_000,
+};
 
-function checkRateLimit(
-  deviceId: string
-): { allowed: boolean; remaining: number; reason?: string } {
-  const now = Date.now();
+const CORS_PREFLIGHT_HEADERS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-device-id, x-aisaac-token, content-type, apikey",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+};
 
-  // Reset global counter daily
-  if (now > globalResetAt) {
-    globalCount = 0;
-    globalResetAt = now + 86_400_000;
-    dailyDevices = new Set();
-    lastPushoverSummary = 0;
+Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") {
+    return new Response(null, { headers: CORS_PREFLIGHT_HEADERS });
+  }
+  if (req.method !== "POST") {
+    return jsonResponse({ error: "Method not allowed" }, 405);
+  }
+  if (!ANTHROPIC_API_KEY) {
+    return jsonResponse({ error: "Server misconfigured" }, 500);
   }
 
-  // Check global cap
-  if (globalCount >= GLOBAL_DAILY_CAP) {
-    return {
-      allowed: false,
-      remaining: 0,
-      reason: "Service temporarily at capacity. Try again tomorrow.",
-    };
+  // Same rolling token as ask-aisaac (bot deterrent, ±1 h).
+  if (!verifyRollingToken(req.headers.get("x-aisaac-token"))) {
+    return jsonResponse({ error: "Unauthorized" }, 403);
   }
 
-  // Check per-device limit
-  let entry = deviceLimits.get(deviceId);
-  if (!entry || now > entry.resetAt) {
-    entry = { count: 0, resetAt: now + 86_400_000 };
+  const deviceId = readDeviceId(req.headers.get("x-device-id"));
+  if (!deviceId) {
+    return jsonResponse({ error: "Invalid or missing x-device-id" }, 400);
   }
 
-  if (entry.count >= DEVICE_DAILY_LIMIT) {
-    return {
-      allowed: false,
-      remaining: 0,
-      reason: `Daily VLM check limit reached (${DEVICE_DAILY_LIMIT}/day). Try again tomorrow.`,
-    };
+  const usage = await checkUsage(FUNCTION_NAME, deviceId, req);
+  await alertOnThresholds(FUNCTION_NAME, usage);
+  if (!usage.allowed) {
+    return limitResponse(usage, "VLM check");
   }
+  const remaining = usage.remaining;
 
-  entry.count++;
-  deviceLimits.set(deviceId, entry);
-  globalCount++;
-  dailyDevices.add(deviceId);
+  const parsed = await readJsonBody(req, MAX_BODY_CHARS);
+  if (!parsed.ok) return parsed.response;
+  const { system, messages } = parsed.body;
 
-  return { allowed: true, remaining: DEVICE_DAILY_LIMIT - entry.count };
-}
+  const systemError = validateSystem(system, MAX_SYSTEM_CHARS);
+  if (systemError) return jsonResponse({ error: systemError }, 400);
+  const messagesError = validateMessages(messages, MESSAGE_LIMITS);
+  if (messagesError) return jsonResponse({ error: messagesError }, 400);
 
-async function sendPushover(title: string, message: string, priority = 0) {
-  if (!PUSHOVER_USER || !PUSHOVER_TOKEN) return;
   try {
-    await fetch("https://api.pushover.net/1/messages.json", {
+    // Non-streaming: the client expects one structured JSON text block.
+    const anthropicResponse = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01",
+      },
       body: JSON.stringify({
-        token: PUSHOVER_TOKEN,
-        user: PUSHOVER_USER,
-        title,
-        message,
-        priority,
+        model: MODEL,
+        max_tokens: MAX_TOKENS,
+        thinking: { type: "enabled", budget_tokens: THINKING_BUDGET },
+        system: (system as string | undefined) ?? "",
+        messages,
+        stream: false,
       }),
     });
-  } catch (e) {
-    console.error("Pushover send failed:", e);
-  }
-}
-
-// Send usage summary every 10 checks or when approaching limits
-function maybeNotifyUsage() {
-  const now = Date.now();
-  // Notify every 10 global checks (but max once per hour)
-  if (globalCount % 10 === 0 && now - lastPushoverSummary > 3_600_000) {
-    lastPushoverSummary = now;
-    sendPushover(
-      `VLM Check: ${globalCount} today`,
-      `${dailyDevices.size} devices, ${globalCount}/${GLOBAL_DAILY_CAP} global cap.\nEstimated cost: ~$${(globalCount * 0.90).toFixed(2)} (Opus + thinking)`
-    );
-  }
-  // Alert if approaching global cap
-  if (globalCount === Math.floor(GLOBAL_DAILY_CAP * 0.8)) {
-    sendPushover(
-      "VLM Check: 80% of daily cap",
-      `${globalCount}/${GLOBAL_DAILY_CAP} checks used by ${dailyDevices.size} devices.`,
-      1 // high priority
-    );
-  }
-}
-
-serve(async (req) => {
-  // CORS
-  if (req.method === "OPTIONS") {
-    return new Response(null, {
-      headers: {
-        "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Headers":
-          "authorization, x-device-id, x-aisaac-token, content-type, apikey",
-        "Access-Control-Allow-Methods": "POST, OPTIONS",
-      },
-    });
-  }
-
-  if (req.method !== "POST") {
-    return new Response(JSON.stringify({ error: "Method not allowed" }), {
-      status: 405,
-      headers: { "Content-Type": "application/json" },
-    });
-  }
-
-  if (!ANTHROPIC_API_KEY) {
-    return new Response(
-      JSON.stringify({ error: "Server misconfigured" }),
-      { status: 500, headers: { "Content-Type": "application/json" } }
-    );
-  }
-
-  // Verify rolling token (same as ask-aisaac)
-  const token = req.headers.get("x-aisaac-token");
-  const now = new Date();
-  const dateNum =
-    now.getUTCFullYear() * 10000 +
-    (now.getUTCMonth() + 1) * 100 +
-    now.getUTCDate();
-  const expectedToken = String(dateNum - now.getUTCHours());
-  const prevHourToken = String(dateNum - ((now.getUTCHours() + 23) % 24));
-
-  if (token !== expectedToken && token !== prevHourToken) {
-    return new Response(JSON.stringify({ error: "Unauthorized" }), {
-      status: 403,
-      headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
-    });
-  }
-
-  const deviceId = req.headers.get("x-device-id") || "anonymous";
-
-  // Rate limiting
-  const { allowed, remaining, reason } = checkRateLimit(deviceId);
-  if (!allowed) {
-    return new Response(
-      JSON.stringify({ error: reason, remaining: 0 }),
-      {
-        status: 429,
-        headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
-      }
-    );
-  }
-
-  try {
-    const { system, messages } = await req.json();
-
-    if (!messages || !Array.isArray(messages) || messages.length === 0) {
-      return new Response(
-        JSON.stringify({ error: "Missing or empty messages array" }),
-        { status: 400, headers: { "Content-Type": "application/json" } }
-      );
-    }
-
-    // Call Claude Vision API (non-streaming for structured JSON output)
-    const anthropicResponse = await fetch(
-      "https://api.anthropic.com/v1/messages",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": ANTHROPIC_API_KEY,
-          "anthropic-version": "2023-06-01",
-        },
-        body: JSON.stringify({
-          model: MODEL,
-          max_tokens: MAX_TOKENS,
-          thinking: { type: "enabled", budget_tokens: THINKING_BUDGET },
-          system: system || "",
-          messages,
-          stream: false,
-        }),
-      }
-    );
 
     if (!anthropicResponse.ok) {
       const errorBody = await anthropicResponse.text();
@@ -204,51 +114,33 @@ serve(async (req) => {
       console.error("Claude Vision API error:", status, errorBody.substring(0, 300));
 
       if (status === 413 || errorBody.includes("too large")) {
-        return new Response(
-          JSON.stringify({ error: "Mosaic image too large. Try with fewer frames.", remaining }),
-          { status: 413, headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } }
-        );
+        return jsonResponse({ error: "Mosaic image too large. Try with fewer frames.", remaining }, 413);
       }
-
       // Include Claude's actual error for debugging
       const detail = errorBody.substring(0, 300);
-      return new Response(
-        JSON.stringify({ error: `Claude ${status}: ${detail}`, remaining }),
-        { status: 502, headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } }
-      );
+      return jsonResponse({ error: `Claude ${status}: ${detail}`, remaining }, 502);
     }
 
     const data = await anthropicResponse.json();
     // With extended thinking, response has both "thinking" and "text" content blocks.
     // Extract only the "text" block (contains the JSON result).
-    const textBlock = data.content?.find((b: any) => b.type === "text");
+    const textBlock = data.content?.find((b: { type?: string }) => b.type === "text");
     const text = textBlock?.text || "[]";
 
-    // Track usage for notifications
-    maybeNotifyUsage();
-
-    return new Response(
-      JSON.stringify({
+    return jsonResponse(
+      {
         text,
         remaining,
         usage: {
           input: data.usage?.input_tokens || 0,
           output: data.usage?.output_tokens || 0,
         },
-      }),
-      {
-        headers: {
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "*",
-          "X-Remaining": String(remaining),
-        },
-      }
+      },
+      200,
+      { "X-Remaining": String(remaining) },
     );
   } catch (err) {
     console.error("VLM Check edge function error:", err);
-    return new Response(
-      JSON.stringify({ error: "Internal server error" }),
-      { status: 500, headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } }
-    );
+    return jsonResponse({ error: "Internal server error" }, 500);
   }
 });

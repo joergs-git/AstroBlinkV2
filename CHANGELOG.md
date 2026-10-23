@@ -4,7 +4,7 @@ All notable changes to AstroBlink & AIsaac will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
-## [Unreleased]
+## [6.10.0] — unreleased
 
 ### Fixed
 
@@ -20,6 +20,35 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   standard astrometric-solution properties are vectors and matrices. The reader tripped over a
   zero-length block and gave up on the entire file, pixels and headers included. It now reads
   the empty property and moves on.
+
+No scoring change — the quality algorithm is still v41.
+
+## [6.9.2] — 2026-10-22
+
+### Added
+
+- **PRE-DELETE has a button now.** Moving marked frames to PRE-DELETE was keyboard-only
+  (⌘⌫). It is now also a **Pre-Delete** toolbar button next to Undo (dimmed while nothing is
+  marked), an **Edit → Move Marked to PRE-DELETE…** menu item, and a file-list context-menu
+  entry that says how many frames are marked. All four run the same confirmation dialog.
+
+### Fixed
+
+- **A failed PRE-DELETE cleared the list while every file stayed in place.** All three move
+  commands — PRE-DELETE (⌘⌫), Move to Folder (⌘M) and Quarantine (Q) — removed every marked
+  frame from the file list after the move loop, whether or not the file had actually moved.
+  When the session folder had lost its write access (a NAS, or a session opened from several
+  folders or individual files), every move failed, the list emptied as if the delete had
+  worked, and the only trace was a "(N failed)" in the status bar. Now only frames that
+  physically moved leave the list; the ones that failed stay in it, still marked, and a dialog
+  names the reason. PRE-DELETE also checks that the session folder is writable BEFORE moving
+  anything and asks for access again if it is not — previously that check only ran when the
+  PRE-DELETE folder did not exist yet, so a second delete, or a reopened session, skipped it.
+- **Frame History never learned which frames went to PRE-DELETE.** The flag was computed from
+  the list after the moved frames had already been removed from it, so it was always empty.
+  Moved frames are now flagged as deleted, and ⌘Z clears the flag again.
+
+No scoring change — the quality algorithm is still v41.
 
 ## [6.9.1] — 2026-09-15
 

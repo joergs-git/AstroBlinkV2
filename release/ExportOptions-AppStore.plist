@@ -8,8 +8,12 @@
     <string>app-store-connect</string>
     <key>teamID</key>
     <string>FDSVBU33S8</string>
+    <!-- signingStyle MUST be automatic: the Store profile ("Mac Team Store Provisioning
+         Profile") is Xcode-managed; with manual, Xcode 27 claims no profile has the iCloud +
+         Push features. Automatic needs a signed-in Apple ID in Xcode (Settings → Accounts) and
+         -allowProvisioningUpdates on the export (verified 2026-10-23, 6.9.2 build 116). -->
     <key>signingStyle</key>
-    <string>manual</string>
+    <string>automatic</string>
     <key>signingCertificate</key>
     <string>Apple Distribution</string>
     <key>destination</key>

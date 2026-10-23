@@ -1,4 +1,4 @@
-// v4.3.0
+// v6.9.2
 import Foundation
 import Combine
 import SwiftUI
@@ -3279,6 +3279,119 @@ class TriageViewModel: ObservableObject {
 
     var canUndoPreDelete: Bool { !preDeleteUndoStack.isEmpty }
 
+    // MARK: - Shared move machinery (PRE-DELETE / Move to Folder / Quarantine)
+
+    /// Outcome of moving a batch of marked frames out of the session. Only frames that
+    /// PHYSICALLY moved get an undo entry — the list, the undo stack and the Frame History
+    /// "deleted" flag are all driven from this, never from "everything that was marked".
+    ///
+    /// 6.9.2: all three move commands removed every MARKED frame from the list after the
+    /// loop, whether or not its `moveItem` had succeeded. When the move failed (lost or
+    /// missing security scope on a NAS / reconstructed multi-folder root) the list was
+    /// cleared while every file stayed in place, and the only trace was a "(N failed)" in
+    /// the status bar.
+    struct MarkedMoveResult {
+        var undoEntries: [PreDeleteUndoEntry] = []
+        var failedCount = 0
+        /// First failure, verbatim from Foundation — shown to the user so a permission
+        /// problem reads as a permission problem instead of as a successful delete.
+        var firstError: String?
+
+        var movedCount: Int { undoEntries.count }
+        var movedURLs: Set<URL> { Set(undoEntries.map { $0.originalURL }) }
+    }
+
+    /// Moves `frames` into `destDir`, suffixing name collisions (`name_1.ext`, `name_2.ext`…),
+    /// and reports exactly which files moved. Pure file-system work with no view-model state,
+    /// so `PreDeleteMoveTests` can exercise it on a temp folder. `originalIndex` is the frame's
+    /// row at the time of the move; undo re-inserts at that position.
+    nonisolated static func moveFrames(_ frames: [(entry: ImageEntry, originalIndex: Int)],
+                                       into destDir: URL) -> MarkedMoveResult {
+        let fm = FileManager.default
+        var result = MarkedMoveResult()
+        for frame in frames {
+            let entry = frame.entry
+            var finalDest = destDir.appendingPathComponent(entry.filename)
+            var suffix = 1
+            while fm.fileExists(atPath: finalDest.path) {
+                let name = entry.url.deletingPathExtension().lastPathComponent
+                let ext = entry.url.pathExtension
+                finalDest = destDir.appendingPathComponent("\(name)_\(suffix).\(ext)")
+                suffix += 1
+            }
+            do {
+                try fm.moveItem(at: entry.url, to: finalDest)
+                result.undoEntries.append(PreDeleteUndoEntry(
+                    originalURL: entry.url,
+                    preDeleteURL: finalDest,
+                    entry: entry,
+                    originalIndex: frame.originalIndex
+                ))
+            } catch {
+                result.failedCount += 1
+                if result.firstError == nil {
+                    result.firstError = error.localizedDescription
+                    // One line for the first failure only — a NAS with a dead scope fails
+                    // every frame identically and hundreds of lines would just bury it.
+                    print("[Move] \(entry.filename) → \(destDir.lastPathComponent) failed: \(error.localizedDescription)")
+                }
+            }
+        }
+        if result.failedCount > 0 {
+            print("[Move] \(result.movedCount) moved, \(result.failedCount) failed → \(destDir.path)")
+        }
+        return result
+    }
+
+    /// Pairs each marked frame with its current row so undo can put it back where it was.
+    /// Captured BEFORE anything leaves the list.
+    private func rowsForMove(_ marked: [ImageEntry]) -> [(entry: ImageEntry, originalIndex: Int)] {
+        marked.map { entry in
+            (entry: entry, originalIndex: images.firstIndex(where: { $0.url == entry.url }) ?? 0)
+        }
+    }
+
+    /// Shared tail of the three move commands. Drops ONLY the moved frames from the list —
+    /// failed ones stay, still marked, so the user can see them and retry — pushes the undo
+    /// batch when there is one, re-selects near the first affected row and refreshes the
+    /// table and session stats. Status text stays with the caller (each command has its own).
+    private func applyMarkedMove(_ result: MarkedMoveResult, firstMarkedIndex: Int) {
+        if !result.undoEntries.isEmpty {
+            preDeleteUndoStack.append(result.undoEntries)
+        }
+
+        let movedURLs = result.movedURLs
+        images.removeAll { movedURLs.contains($0.url) }
+
+        if !images.isEmpty {
+            let newIndex = min(firstMarkedIndex, images.count - 1)
+            selectImage(at: max(0, newIndex))
+        } else {
+            selectedIndex = -1
+            currentDecodedImage = nil
+        }
+
+        needsTableRefresh = true
+        sessionOverviewModel.updateStats(from: images)
+    }
+
+    /// Tells the user when a move batch did not fully succeed. Modal on purpose: the status
+    /// bar line alone let "0 moved, N failed" pass as a successful delete.
+    private func reportFailedMoves(_ result: MarkedMoveResult, destinationName: String) {
+        guard result.failedCount > 0 else { return }
+        let total = result.movedCount + result.failedCount
+        let alert = NSAlert()
+        alert.messageText = result.movedCount == 0
+            ? "No files were moved to \(destinationName)"
+            : "\(result.failedCount) of \(total) files could not be moved to \(destinationName)"
+        alert.informativeText = (result.firstError ?? "Unknown error")
+            + "\n\nThe files that failed are still in the list and still marked — nothing was moved or lost. "
+            + "Check write access to the session folder (reopen it with \u{2318}O to re-grant access) and try again."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
+    }
+
     /// Returns a security-scoped, actually-WRITABLE session-root URL, prompting the user
     /// for explicit folder access if the current scope can't create files there.
     ///
@@ -3291,9 +3404,12 @@ class TriageViewModel: ObservableObject {
     /// NSOpenPanel (which grants a fresh, full read-write scope) and adopt that URL.
     ///
     /// MUST be called on the main thread — it may present an NSOpenPanel. Returns nil if no
-    /// session is open or the user declines the access prompt.
+    /// session is open or the user declines the access prompt. `message` is the prompt shown
+    /// on that panel so each caller can say what the access is for.
     @MainActor
-    func ensureWritableSessionRoot() -> URL? {
+    func ensureWritableSessionRoot(
+        message: String = "Grant write access to the session folder so the edit can back up and modify these files"
+    ) -> URL? {
         guard let root = sessionRootURL else { return nil }
         let fm = FileManager.default
 
@@ -3321,7 +3437,7 @@ class TriageViewModel: ObservableObject {
         panel.canChooseFiles = false
         panel.allowsMultipleSelection = false
         panel.directoryURL = root
-        panel.message = "Grant write access to the session folder so the edit can back up and modify these files"
+        panel.message = message
         panel.prompt = "Grant Access"
         guard panel.runModal() == .OK, let granted = panel.url else { return nil }
         guard granted.startAccessingSecurityScopedResource() else { return nil }
@@ -3403,119 +3519,47 @@ class TriageViewModel: ObservableObject {
         // Latch the multi-source confirmation for the remainder of this session.
         if multiSourceSession { multiSourcePreDeleteConfirmed = true }
 
-        // Create PRE-DELETE folder if needed
-        let preDeleteDir = rootURL.appendingPathComponent("PRE-DELETE", isDirectory: true)
+        // Make sure we can actually WRITE into the session root before touching a single file.
+        // Until 6.9.2 access was only re-requested when CREATING the PRE-DELETE folder failed;
+        // once that folder existed (second delete, or a reopened session) no check ran at all,
+        // every move failed silently and the list was cleared anyway. The shared probe (the
+        // one Change Filter / Batch Rename / plate solving use) re-acquires the scope or asks.
         let fm = FileManager.default
-
+        guard let sessionRoot = ensureWritableSessionRoot(
+            message: "Grant write access to the session folder for PRE-DELETE"
+        ) else {
+            statusMessage = "PRE-DELETE cancelled — folder access not granted"
+            return
+        }
+        let activePreDeleteDir = sessionRoot.appendingPathComponent("PRE-DELETE", isDirectory: true)
         do {
-            if !fm.fileExists(atPath: preDeleteDir.path) {
-                try fm.createDirectory(at: preDeleteDir, withIntermediateDirectories: true)
+            if !fm.fileExists(atPath: activePreDeleteDir.path) {
+                try fm.createDirectory(at: activePreDeleteDir, withIntermediateDirectories: true)
             }
         } catch {
-            // Sandbox may block write if user selected individual files instead of folder.
-            // Request explicit folder access via NSOpenPanel.
-            let folderPanel = NSOpenPanel()
-            folderPanel.canChooseDirectories = true
-            folderPanel.canChooseFiles = false
-            folderPanel.allowsMultipleSelection = false
-            folderPanel.directoryURL = rootURL
-            folderPanel.message = "Grant write access to the session folder for PRE-DELETE"
-            folderPanel.prompt = "Grant Access"
-
-            guard folderPanel.runModal() == .OK, let grantedURL = folderPanel.url else {
-                statusMessage = "PRE-DELETE cancelled — folder access not granted"
-                return
-            }
-
-            // Start security-scoped access to the granted folder. ADD to the
-            // existing scopes rather than replacing — we still want to keep
-            // scope on the original session folders so we can read the source
-            // files during the move.
-            if grantedURL.startAccessingSecurityScopedResource() {
-                accessedURLs.append(grantedURL)
-                sessionRootURL = grantedURL
-            }
-
-            // Retry folder creation with new access
-            do {
-                let retryDir = grantedURL.appendingPathComponent("PRE-DELETE", isDirectory: true)
-                if !fm.fileExists(atPath: retryDir.path) {
-                    try fm.createDirectory(at: retryDir, withIntermediateDirectories: true)
-                }
-            } catch {
-                statusMessage = "Error creating PRE-DELETE folder: \(error.localizedDescription)"
-                return
-            }
+            statusMessage = "Error creating PRE-DELETE folder: \(error.localizedDescription)"
+            return
         }
 
         // Remember the first marked index for re-selection later
         let firstMarkedIndex = images.firstIndex(where: { $0.isMarkedForDeletion }) ?? selectedIndex
 
-        // Use current sessionRootURL (may have been updated by folder access grant
-        // above, or reset to nil if the user revoked access mid-flow).
-        guard let sessionRoot = sessionRootURL else {
-            statusMessage = "Session folder unavailable — reopen the folder and try again"
-            return
-        }
-        let activePreDeleteDir = sessionRoot.appendingPathComponent("PRE-DELETE", isDirectory: true)
+        let result = Self.moveFrames(rowsForMove(markedImages), into: activePreDeleteDir)
 
-        // Move files and build undo entries
-        var movedCount = 0
-        var failedCount = 0
-        var undoEntries: [PreDeleteUndoEntry] = []
+        // Only the frames that really moved leave the list; failed ones stay marked.
+        applyMarkedMove(result, firstMarkedIndex: firstMarkedIndex)
 
-        for entry in markedImages {
-            let destURL = activePreDeleteDir.appendingPathComponent(entry.filename)
-            do {
-                // Handle name collision: add numeric suffix
-                var finalDest = destURL
-                var suffix = 1
-                while fm.fileExists(atPath: finalDest.path) {
-                    let name = entry.url.deletingPathExtension().lastPathComponent
-                    let ext = entry.url.pathExtension
-                    finalDest = activePreDeleteDir.appendingPathComponent("\(name)_\(suffix).\(ext)")
-                    suffix += 1
-                }
-                let originalIndex = images.firstIndex(where: { $0.url == entry.url }) ?? 0
-                try fm.moveItem(at: entry.url, to: finalDest)
-                undoEntries.append(PreDeleteUndoEntry(
-                    originalURL: entry.url,
-                    preDeleteURL: finalDest,
-                    entry: entry,
-                    originalIndex: originalIndex
-                ))
-                movedCount += 1
-            } catch {
-                failedCount += 1
-            }
-        }
-
-        // Push to undo stack
-        preDeleteUndoStack.append(undoEntries)
-
-        // Remove moved images from the list
-        let markedURLs = Set(markedImages.map { $0.url })
-        images.removeAll { markedURLs.contains($0.url) }
-
-        // Select a single image near where the deleted ones were
-        if !images.isEmpty {
-            let newIndex = min(firstMarkedIndex, images.count - 1)
-            selectImage(at: max(0, newIndex))
+        if result.failedCount > 0 {
+            statusMessage = result.movedCount == 0
+                ? "No files moved to PRE-DELETE — \(result.failedCount) failed"
+                : "Moved \(result.movedCount) files to PRE-DELETE (\(result.failedCount) failed) — Undo available"
         } else {
-            selectedIndex = -1
-            currentDecodedImage = nil
+            statusMessage = "Moved \(result.movedCount) files to PRE-DELETE — Undo available"
         }
+        reportFailedMoves(result, destinationName: "PRE-DELETE")
 
-        needsTableRefresh = true
-
-        // Update session overview with remaining images
-        sessionOverviewModel.updateStats(from: images)
-
-        if failedCount > 0 {
-            statusMessage = "Moved \(movedCount) files to PRE-DELETE (\(failedCount) failed) — Undo available"
-        } else {
-            statusMessage = "Moved \(movedCount) files to PRE-DELETE — Undo available"
-        }
+        // Nothing left the session → nothing to learn from, nothing to flag as deleted.
+        guard result.movedCount > 0 else { return }
 
         // Commit retained frames to the calibration database (for learning)
         // and upload the anonymous session summary to the community service.
@@ -3523,8 +3567,10 @@ class TriageViewModel: ObservableObject {
         // PRE-DELETE flow only has to invoke a single session-lifecycle hook.
         orchestrator.commitSession()
 
-        // Mark deleted frames in Frame History Database
-        let deletedHashes = images.filter { $0.isMarkedForDeletion }.compactMap { $0.fileHash }
+        // Flag the MOVED frames as deleted in the Frame History Database. (Before 6.9.2 this
+        // filtered `images` for marked entries AFTER they had been removed — always empty, so
+        // the flag was never set from here.)
+        let deletedHashes = result.undoEntries.compactMap { $0.entry.fileHash }
         if !deletedHashes.isEmpty {
             Task.detached {
                 try? FrameHistoryDatabase.shared.markDeleted(fileHashes: deletedHashes)
@@ -3548,6 +3594,7 @@ class TriageViewModel: ObservableObject {
 
         let fm = FileManager.default
         var restoredCount = 0
+        var restoredHashes: [String] = []
 
         // Sort by original index so they get re-inserted in the right order
         let sorted = lastUndo.sorted { $0.originalIndex < $1.originalIndex }
@@ -3561,8 +3608,17 @@ class TriageViewModel: ObservableObject {
                 let insertAt = min(undo.originalIndex, images.count)
                 images.insert(restored, at: insertAt)
                 restoredCount += 1
+                if let hash = undo.entry.fileHash { restoredHashes.append(hash) }
             } catch {
                 // File may have been manually moved/deleted — skip
+            }
+        }
+
+        // The restored frames are back in the session: clear the Frame History "deleted" flag
+        // that moveMarkedToPreDelete set (a no-op for Move-to-Folder / Quarantine undos).
+        if !restoredHashes.isEmpty {
+            Task.detached {
+                try? FrameHistoryDatabase.shared.markRestored(fileHashes: restoredHashes)
             }
         }
 
@@ -3616,67 +3672,23 @@ class TriageViewModel: ObservableObject {
         // Security-scoped access for the destination
         let accessed = destDir.startAccessingSecurityScopedResource()
 
-        let fm = FileManager.default
         let firstMarkedIndex = images.firstIndex(where: { $0.isMarkedForDeletion }) ?? selectedIndex
-
-        var movedCount = 0
-        var failedCount = 0
-        var undoEntries: [PreDeleteUndoEntry] = []
-
-        for entry in markedImages {
-            // Handle name collision: add numeric suffix
-            var finalDest = destDir.appendingPathComponent(entry.filename)
-            var suffix = 1
-            while fm.fileExists(atPath: finalDest.path) {
-                let name = entry.url.deletingPathExtension().lastPathComponent
-                let ext = entry.url.pathExtension
-                finalDest = destDir.appendingPathComponent("\(name)_\(suffix).\(ext)")
-                suffix += 1
-            }
-            do {
-                let originalIndex = images.firstIndex(where: { $0.url == entry.url }) ?? 0
-                try fm.moveItem(at: entry.url, to: finalDest)
-                undoEntries.append(PreDeleteUndoEntry(
-                    originalURL: entry.url,
-                    preDeleteURL: finalDest,
-                    entry: entry,
-                    originalIndex: originalIndex
-                ))
-                movedCount += 1
-            } catch {
-                failedCount += 1
-            }
-        }
+        let result = Self.moveFrames(rowsForMove(markedImages), into: destDir)
 
         if accessed { destDir.stopAccessingSecurityScopedResource() }
 
-        // Push to undo stack (same stack as PRE-DELETE — Cmd+Z undoes both)
-        if !undoEntries.isEmpty {
-            preDeleteUndoStack.append(undoEntries)
-        }
-
-        // Remove moved images from the list
-        let markedURLs = Set(markedImages.map { $0.url })
-        images.removeAll { markedURLs.contains($0.url) }
-
-        // Re-select near where moved files were
-        if !images.isEmpty {
-            let newIndex = min(firstMarkedIndex, images.count - 1)
-            selectImage(at: max(0, newIndex))
-        } else {
-            selectedIndex = -1
-            currentDecodedImage = nil
-        }
-
-        needsTableRefresh = true
-        sessionOverviewModel.updateStats(from: images)
+        // Only the frames that really moved leave the list; failed ones stay marked (6.9.2).
+        applyMarkedMove(result, firstMarkedIndex: firstMarkedIndex)
 
         let destName = destDir.lastPathComponent
-        if failedCount > 0 {
-            statusMessage = "Moved \(movedCount) to \"\(destName)\" (\(failedCount) failed) — Undo available"
+        if result.failedCount > 0 {
+            statusMessage = result.movedCount == 0
+                ? "No files moved to \"\(destName)\" — \(result.failedCount) failed"
+                : "Moved \(result.movedCount) to \"\(destName)\" (\(result.failedCount) failed) — Undo available"
         } else {
-            statusMessage = "Moved \(movedCount) file(s) to \"\(destName)\" — Undo available"
+            statusMessage = "Moved \(result.movedCount) file(s) to \"\(destName)\" — Undo available"
         }
+        reportFailedMoves(result, destinationName: "\"\(destName)\"")
     }
 
     // MARK: - Global Quarantine (Q key)
@@ -3737,61 +3749,20 @@ class TriageViewModel: ObservableObject {
         }
 
         let firstMarkedIndex = images.firstIndex(where: { $0.isMarkedForDeletion }) ?? selectedIndex
+        let result = Self.moveFrames(rowsForMove(markedImages), into: quarantineDir)
 
-        var movedCount = 0
-        var failedCount = 0
-        var undoEntries: [PreDeleteUndoEntry] = []
-
-        for entry in markedImages {
-            var finalDest = quarantineDir.appendingPathComponent(entry.filename)
-            var suffix = 1
-            while fm.fileExists(atPath: finalDest.path) {
-                let name = entry.url.deletingPathExtension().lastPathComponent
-                let ext = entry.url.pathExtension
-                finalDest = quarantineDir.appendingPathComponent("\(name)_\(suffix).\(ext)")
-                suffix += 1
-            }
-            do {
-                let originalIndex = images.firstIndex(where: { $0.url == entry.url }) ?? 0
-                try fm.moveItem(at: entry.url, to: finalDest)
-                undoEntries.append(PreDeleteUndoEntry(
-                    originalURL: entry.url,
-                    preDeleteURL: finalDest,
-                    entry: entry,
-                    originalIndex: originalIndex
-                ))
-                movedCount += 1
-            } catch {
-                failedCount += 1
-            }
-        }
-
-        // Push to undo stack (same as PRE-DELETE — Cmd+Z undoes both)
-        if !undoEntries.isEmpty {
-            preDeleteUndoStack.append(undoEntries)
-        }
-
-        // Remove moved images from the list
-        let markedURLs = Set(markedImages.map { $0.url })
-        images.removeAll { markedURLs.contains($0.url) }
-
-        if !images.isEmpty {
-            let newIndex = min(firstMarkedIndex, images.count - 1)
-            selectImage(at: max(0, newIndex))
-        } else {
-            selectedIndex = -1
-            currentDecodedImage = nil
-        }
-
-        needsTableRefresh = true
-        sessionOverviewModel.updateStats(from: images)
+        // Only the frames that really moved leave the list; failed ones stay marked (6.9.2).
+        applyMarkedMove(result, firstMarkedIndex: firstMarkedIndex)
         recomputeSNRRetention()
 
-        if failedCount > 0 {
-            statusMessage = "Quarantined \(movedCount) files (\(failedCount) failed) — Undo available"
+        if result.failedCount > 0 {
+            statusMessage = result.movedCount == 0
+                ? "No files quarantined — \(result.failedCount) failed"
+                : "Quarantined \(result.movedCount) files (\(result.failedCount) failed) — Undo available"
         } else {
-            statusMessage = "Quarantined \(movedCount) file(s) to ~/Desktop/Astro-Quarantine — Undo available"
+            statusMessage = "Quarantined \(result.movedCount) file(s) to ~/Desktop/Astro-Quarantine — Undo available"
         }
+        reportFailedMoves(result, destinationName: "Astro-Quarantine")
     }
 
     // MARK: - Header Inspector

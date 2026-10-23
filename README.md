@@ -14,7 +14,25 @@ Nice side effect: Finally you have a native XISF and FITS Quicklook for macOS. (
 
 ---
 
-## What's New in v6.9.1 (Build 115)
+## What's New in v6.9.2 (Build 116)
+
+**A failed PRE-DELETE no longer pretends it worked.** When the session folder had lost its
+write access (typically a NAS, or a session opened from several folders), moving marked frames
+to PRE-DELETE failed for every file — yet the list emptied as if the delete had gone through,
+with only a "(N failed)" in the status bar as a trace. Now only frames that physically moved
+leave the list, the ones that failed stay in it still marked, a dialog names the reason, and
+PRE-DELETE re-checks write access before moving anything (that check used to run only on the
+very first delete into a folder). Same fix for Move to Folder and Quarantine. Frame History
+also records which frames went to PRE-DELETE, which it silently never did before.
+
+**And PRE-DELETE has a button now.** It was keyboard-only (⌘⌫); there is now a Pre-Delete
+toolbar button next to Undo, an Edit-menu item and a context-menu entry in the file list.
+
+No scoring change — the quality algorithm is still v41.
+
+---
+
+## Previously in v6.9.1 (Build 115)
 
 **The plate-solve result now says how many frames it skipped.** Choosing "Only Unsolved" on a
 session where most frames already carry a solve used to report something like "Solved 6 of 6

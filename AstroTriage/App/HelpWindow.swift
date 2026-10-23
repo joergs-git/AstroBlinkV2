@@ -257,7 +257,7 @@ struct HelpContentView: View {
                 sectionHeader("Triage Workflow")
 
                 featureRow("Space — Mark/Unmark", "Toggle pre-delete mark on selected images")
-                featureRow("Cmd+⌫ — Move to PRE-DELETE", "Move all marked files to PRE-DELETE folder")
+                featureRow("Cmd+⌫ — Move to PRE-DELETE", "Move all marked files to PRE-DELETE folder — also the Pre-Delete toolbar button, Edit → Move Marked to PRE-DELETE…, or the file-list context menu")
                 featureRow("Cmd+M — Move to folder", "Move marked files to any folder (create or select)")
                 featureRow("Cmd+Z — Undo", "Undo last move operation (PRE-DELETE or Cmd+M)")
                 featureRow("K — Skip marked", "Arrow keys skip over marked images during blinking")
