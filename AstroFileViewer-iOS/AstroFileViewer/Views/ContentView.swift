@@ -555,7 +555,7 @@ struct HelpAboutView: View {
                             VStack(spacing: 4) {
                                 Text("Open Source — GPLv3 License")
                                     .font(.caption2)
-                                Text("Uses libxisf (GPLv3) and cfitsio (NASA Open Source)")
+                                Text("Uses libxisf (GPLv3), zstd (BSD) and cfitsio (NASA Open Source)")
                                     .font(.caption2)
                                     .foregroundColor(.secondary)
                             }

@@ -798,7 +798,7 @@ LightspeedStacker does support optional Lanczos-3 interpolation and min/max pixe
 
 This project is licensed under the **GPLv3 License** — see [LICENSE](LICENSE) for details.
 
-libxisf is licensed under GPLv3. cfitsio is licensed under the NASA Open Source Agreement.
+libxisf is licensed under GPLv3. cfitsio is licensed under the NASA Open Source Agreement. zstd (bundled with libxisf) is licensed under the BSD 3-Clause License.
 
 ---
 

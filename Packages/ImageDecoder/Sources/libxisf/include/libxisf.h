@@ -56,9 +56,12 @@ public:
     ByteArray(const ByteArray &d);
     char& operator[](size_t i);
     const char& operator[](size_t i) const;
-    char* data() { return &_data->at(0); }
-    const char* data() const { return &_data->at(0); }
-    const char* constData() const { return &_data->at(0); }
+    // std::vector::data() instead of &at(0): a zero-length block (an empty vector or
+    // matrix property, serialized as an inline block with empty contents — XISF 1.0
+    // Revision 1, §11.1) must not throw std::out_of_range and take the whole file down.
+    char* data() { return _data->data(); }
+    const char* data() const { return _data->data(); }
+    const char* constData() const { return _data->data(); }
     size_t size() const;
     void resize(size_t newsize);
     void append(char c);

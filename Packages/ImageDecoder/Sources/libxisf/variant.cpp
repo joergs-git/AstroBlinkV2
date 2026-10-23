@@ -139,7 +139,8 @@ void fromCharsVector(Variant &v, size_t len, const ByteArray &data)
     v = T();
     v.value<T>().resize(len);
     size_t size = len * sizeof(typename T::value_type);
-    std::memcpy(&v.value<T>()[0], data.data(), size);
+    if(size)
+        std::memcpy(&v.value<T>()[0], data.data(), size);
 }
 
 template<typename T>
@@ -147,7 +148,8 @@ void fromCharsMatrix(Variant &v, size_t rows, size_t cols, const ByteArray &data
 {
     v = T(rows, cols);
     size_t size = rows * cols * sizeof(typename T::value_type);
-    std::memcpy(&v.value<T>()(0, 0), data.data(), size);
+    if(size)
+        std::memcpy(&v.value<T>()(0, 0), data.data(), size);
 }
 
 template<typename T>
