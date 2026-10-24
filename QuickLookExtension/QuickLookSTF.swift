@@ -75,10 +75,12 @@ struct QuickLookSTF {
         }
 
         let normalizedMAD = 1.4826 * mad
-        let c0 = max(0.0, min(1.0, median + shadowsClip * normalizedMAD))
+        // Never let c0 reach 1.0: the LUT divides by (1 - c0). A saturated frame (median 1.0,
+        // MAD 0) used to produce exactly 1.0 here and crash the thumbnail extension.
+        let c0 = max(0.0, min(0.9999, median + shadowsClip * normalizedMAD))
 
         let mb: Float
-        if c0 >= 1.0 {
+        if c0 >= 0.9999 {
             mb = 0.5
         } else {
             let medNorm = (median - c0) / (1.0 - c0)

@@ -8,6 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Fixed
 
+- **Quick Look thumbnails crashed on a fully saturated frame.** A frame whose median sits at
+  full scale (a blown-out flat, a lamp test, a clipped export) drove the auto-stretch shadows
+  point to exactly 1.0; the thumbnail extension then divided by zero, produced NaN and trapped
+  while converting it to a byte (EXC_BREAKPOINT in `buildLUT`, seen on macOS 27.0.1). Finder
+  showed a generic icon and the extension restarted. The stretch parameters are now kept
+  strictly inside their valid range and non-finite values never reach the conversion.
 - **XISF files compressed with Zstandard could not be opened.** Revision 1 of the XISF 1.0
   specification (September 2026) made `zstd` and `zstd+sh` standard codecs — the recommended
   ones, and what PixInsight 1.9.5 writes. AstroBlink's reader had zstd compiled

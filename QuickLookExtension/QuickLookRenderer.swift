@@ -119,8 +119,13 @@ struct QuickLookRenderer {
     // Build a 65536-entry lookup table mapping uint16 → stretched UInt8.
     // Pre-computes the full STF stretch so the rendering loop is just table lookups.
     private static func buildLUT(params: QuickLookSTFParams) -> [UInt8] {
-        let c0 = params.c0
-        let mb = params.mb
+        // A fully saturated frame (median at full scale, MAD 0) yields c0 == 1.0. Then
+        // invRange is infinite and the full-scale entry computes (1 - 1) * inf = NaN, which
+        // slips past both range checks and traps in Int(NaN) — the extension crashed with
+        // EXC_BREAKPOINT in exactly this closure (macOS 27.0.1, 2026-10-22). Keep c0 strictly
+        // below 1 and the midtone inside (0, 1), and never hand a non-finite value to Int().
+        let c0 = params.c0.isFinite ? min(max(params.c0, 0.0), 0.9999) : 0.0
+        let mb = params.mb.isFinite ? min(max(params.mb, 0.0001), 0.9999) : 0.5
         let invRange = 1.0 / (1.0 - c0)
 
         return (0..<65536).map { i in
@@ -135,7 +140,8 @@ struct QuickLookRenderer {
             if v == mb { v = 0.5 }
             else { v = (mb - 1.0) * v / ((2.0 * mb - 1.0) * v - mb) }
 
-            // Scale to byte
+            // Scale to byte — guard the conversion, Int(NaN/inf) is a runtime trap.
+            guard v.isFinite else { return v > 0 ? 255 : 0 }
             let byte = Int(v * 255.0 + 0.5)
             return UInt8(max(0, min(255, byte)))
         }
