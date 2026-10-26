@@ -6,7 +6,43 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ## [6.10.0] — unreleased
 
+### Added
+
+- **A "Field" column shows which patch of sky each frame points at.** Frames are grouped by their
+  plate-solved center (CRVAL, or the OBJCTRA/OBJCTDEC header) into sky fields: `F1` is the field
+  with the most frames, `F2`… the others, each with its own color. The grouping tolerance follows
+  the optics — frames count as one field while their centers are within 60% of the larger field
+  edge, which is the overlap LightspeedStacker needs to align them. The column stays blank while
+  the whole session is one field. Right-click a frame → *Select All N Frames of Field F2*
+  highlights that field, ready to stack. Night mode keeps the number and drops the color.
+
+### Changed
+
+- **LightspeedStacker's same-target check is now field-of-view aware, honest, and overridable.**
+  It refused selections whose frames were more than a fixed 1° from the FIRST selected frame —
+  35% of an 85 mm / APS-C field (two pointings 1.2° apart overlap by 60% and stack fine), yet
+  more than the whole field of an RC12 — and when the object names also differed it blamed the
+  names ("mixed targets detected") for what was a coordinate mismatch. It now groups the
+  selection into sky fields with the same optics-based tolerance as the Field column, measures
+  from each field's center rather than from whichever frame happened to be first, and handles a
+  field straddling 0h RA (a plain |ΔRA| read 359°). The dialog lists the fields with frame
+  counts, object names, centers and separation, states the field of view and the tolerance, and
+  offers **Stack Anyway**: the engine aligns whatever overlaps the largest field and skips the
+  rest, so a mixed selection can lose frames but never corrupt the stack. The trigger was a
+  session with SH2-157 and SH2-188 in one folder — 17° apart, correctly refused, wrongly
+  explained. Also found there: NINA copies the centering solve (taken BEFORE the correction
+  slew) into the following frames' CRVAL, up to 1.4° off, so within ONE object the old gate
+  could refuse the object itself.
+
 ### Fixed
+
+- **Plate solving wrote WCS keywords as quoted strings.** Every keyword went through the string
+  writer, so an in-app solve left `CRVAL1 = '22.7545063223'` (CRPIX, CD and CROTA2 alike) in the
+  FITS header. AstroBlink's own reader strips the quotes, so nothing looked wrong in the app —
+  but the FITS standard requires numeric cards, and PixInsight, Siril, ASTAP or NINA may ignore
+  a quoted number and treat the frame as unsolved. WCS keywords, SSWEIGHT and PSFSWGHT are now
+  written as numeric cards. Files solved by 6.9.x keep their quoted values until re-solved:
+  Window → Plate Solve Frames… with **All** rewrites them (a backup folder is made as always).
 
 - **Quick Look thumbnails crashed on a fully saturated frame.** A frame whose median sits at
   full scale (a blown-out flat, a lamp test, a clipped export) drove the auto-stretch shadows

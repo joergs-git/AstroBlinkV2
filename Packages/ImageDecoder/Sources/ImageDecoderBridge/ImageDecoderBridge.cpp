@@ -419,6 +419,37 @@ extern "C" WriteResult write_fits_keyword(const char* path, const char* keyword,
     return result;
 }
 
+// Numeric variant of write_fits_keyword. A negative `decim` makes cfitsio use G format with
+// |decim| significant digits: enough for a CD matrix element (~1e-5 deg/px) to survive the
+// round trip, and cfitsio appends the decimal point a FITS floating literal needs ("60." style).
+extern "C" WriteResult write_fits_keyword_double(const char* path, const char* keyword, double value) {
+    WriteResult result;
+    memset(&result, 0, sizeof(result));
+
+    CFITSIO_LOCK;  // no-op on macOS; serialises on iOS — see top-of-file rationale
+    fitsfile* fptr = nullptr;
+    int status = 0;
+
+    if (fits_open_diskfile(&fptr, path, READWRITE, &status)) {
+        result.success = 0;
+        fits_get_errstatus(status, result.error);
+        return result;
+    }
+
+    // Update or create the keyword as a floating-point card (cfitsio handles both cases).
+    // An existing string card of the same name is replaced by the numeric card.
+    if (fits_update_key_dbl(fptr, keyword, value, -12, nullptr, &status)) {
+        result.success = 0;
+        fits_get_errstatus(status, result.error);
+        fits_close_file(fptr, &status);
+        return result;
+    }
+
+    fits_close_file(fptr, &status);
+    result.success = 1;
+    return result;
+}
+
 // ============================================================================
 // Minimal FITS image writer (v6.9.0)
 //

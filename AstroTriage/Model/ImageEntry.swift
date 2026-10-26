@@ -187,6 +187,10 @@ struct ImageEntry: Identifiable, Hashable {
     // build a calibration set via GoldenSetExporter. Session-transient (not persisted in v1).
     var goldenLabel: GoldenLabel = .none
 
+    // Sky-field index from FieldGrouping (1 = the field with the most frames), recomputed after
+    // header enrichment and after an in-app plate solve. Nil = no coordinates. Session-transient.
+    var fieldIndex: Int?
+
     // Star-based visual alignment transform (frame pixels → reference pixels).
     // Computed in the prefetch pipeline against the per-target reference frame.
     // Nil = not yet computed or alignment failed (display falls back to header flip).

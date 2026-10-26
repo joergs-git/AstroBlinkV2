@@ -158,6 +158,7 @@ protocol SessionHost: AnyObject, Sendable {
     // scope for SessionOrchestrator splits.
     func detectMeridianFlip()
     func applyWCSAlignment()
+    func recomputeFieldGroups()
     func updateMeridianRotation()
     func checkForMixedDimensions()
     func applySortByColumnOrder(_ columnIdentifiers: [String])

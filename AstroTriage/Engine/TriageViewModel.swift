@@ -316,6 +316,11 @@ class TriageViewModel: ObservableObject {
     // Selected row indices from the file list (for multi-select operations like stacking)
     var selectedTableIndices: IndexSet = IndexSet()
 
+    /// Sky-field groups of the loaded session (largest first), computed by `recomputeFieldGroups()`
+    /// after header enrichment and after an in-app plate solve. Drives the "Field" column badges
+    /// and tooltips; empty while nothing is loaded or no frame carries coordinates.
+    var fieldSummaries: [FieldSummary] = []
+
     /// Returns the currently selected visible entries, or empty if nothing selected.
     /// Used by batch operations to operate only on highlighted files.
     var selectedEntries: [ImageEntry] {
@@ -1152,10 +1157,12 @@ class TriageViewModel: ObservableObject {
                     _ = write_xisf_keyword(path, path, "PSFSWGHT", psfswStr)
                 }
             } else if entry.isFITS {
-                let r1 = write_fits_keyword(path, "SSWEIGHT", weightStr)
+                // Numeric cards (6.10.0): PixInsight reads a quoted '55.20' too, but the FITS
+                // standard — and stricter readers — want a floating-point card for a weight.
+                let r1 = write_fits_keyword_double(path, "SSWEIGHT", Double(weightStr) ?? weight)
                 writeOK = r1.success == 1
-                if !psfswStr.isEmpty {
-                    _ = write_fits_keyword(path, "PSFSWGHT", psfswStr)
+                if let psfsw = Double(psfswStr) {
+                    _ = write_fits_keyword_double(path, "PSFSWGHT", psfsw)
                 }
             } else {
                 continue
@@ -2084,31 +2091,10 @@ class TriageViewModel: ObservableObject {
     }
 
     // Parse RA string to degrees. Supports "HH MM SS.ss" or decimal degrees.
-    private func parseRA(_ ra: String) -> Double? {
-        let parts = ra.split(separator: " ").compactMap { Double($0) }
-        if parts.count >= 3 {
-            // HH MM SS → degrees (15° per hour)
-            return (parts[0] + parts[1] / 60.0 + parts[2] / 3600.0) * 15.0
-        }
-        if parts.count == 1 { return parts[0] }
-        return nil
-    }
+    private func parseRA(_ ra: String) -> Double? { FieldGrouping.parseRA(ra) }
 
     // Parse Dec string to degrees. Supports "+DD MM SS.ss" or decimal degrees.
-    private func parseDec(_ dec: String) -> Double? {
-        let trimmed = dec.trimmingCharacters(in: .whitespaces)
-        let isNegative = trimmed.hasPrefix("-")
-        let cleaned = trimmed.replacingOccurrences(of: "+", with: "").replacingOccurrences(of: "-", with: "")
-        let parts = cleaned.split(separator: " ").compactMap { Double($0) }
-        if parts.count >= 3 {
-            let deg = parts[0] + parts[1] / 60.0 + parts[2] / 3600.0
-            return isNegative ? -deg : deg
-        }
-        if parts.count == 1 {
-            return isNegative ? -parts[0] : parts[0]
-        }
-        return nil
-    }
+    private func parseDec(_ dec: String) -> Double? { FieldGrouping.parseDec(dec) }
 
     // MARK: - Zoom
 
@@ -2209,14 +2195,25 @@ class TriageViewModel: ObservableObject {
 
         guard entries.count >= 3 else { return }
 
-        if let mismatch = validateSameTarget(entries) {
+        // Same-field gate (6.10.0): FOV-aware tolerance, median-centred fields, honest message,
+        // and an override — the engine skips frames it cannot align, so stacking a mixed
+        // selection can only lose frames, never corrupt the stack.
+        var stackEntries = entries
+        let check = FieldGrouping.checkStackability(entries)
+        if !check.isSingleField {
             let alert = NSAlert()
-            alert.messageText = "Cannot LightspeedStack"
-            alert.informativeText = mismatch
+            alert.messageText = check.alertTitle
+            alert.informativeText = check.alertMessage
             alert.alertStyle = .warning
-            alert.addButton(withTitle: "OK")
-            alert.runModal()
-            return
+            alert.addButton(withTitle: "Cancel")
+            alert.addButton(withTitle: "Stack Anyway")
+            guard alert.runModal() == .alertSecondButtonReturn else { return }
+            // Lead with the frame nearest the largest field's center: the engine's reference is
+            // always the first frame, and this way most of the selection can align to it.
+            if let lead = check.leadingEntryIndex, lead > 0 {
+                stackEntries.remove(at: lead)
+                stackEntries.insert(entries[lead], at: 0)
+            }
         }
 
         if quickStackEngineV2 == nil, let device = device {
@@ -2227,12 +2224,12 @@ class TriageViewModel: ObservableObject {
 
         showQuickStackV2 = true
         benchmarkStats.markQuickStackStart(
-            frameCount: entries.count,
+            frameCount: stackEntries.count,
             engine: "lightspeed",
-            imageWidth: entries.first?.width ?? 0,
-            imageHeight: entries.first?.height ?? 0
+            imageWidth: stackEntries.first?.width ?? 0,
+            imageHeight: stackEntries.first?.height ?? 0
         )
-        engine.startStack(entries: entries, debayerEnabled: debayerEnabled)
+        engine.startStack(entries: stackEntries, debayerEnabled: debayerEnabled)
     }
 
     // Color Combine: groups all visible images by filter, stacks each group, combines to RGB
@@ -2270,63 +2267,21 @@ class TriageViewModel: ObservableObject {
         showColorCombine = true
     }
 
-    // Validate all entries target the same sky object. Returns error message if mismatch found, nil if OK.
-    // Checks by object name first; when names differ, falls back to RA/DEC coordinate proximity
-    // (1° tolerance) since nearby targets (e.g. M81 & M82, ~0.6° apart) share the same FOV.
-    private func validateSameTarget(_ entries: [ImageEntry]) -> String? {
-        // Collect unique target names (ignoring nil/empty/unknown)
-        let targets = Set(entries.compactMap { entry -> String? in
-            guard let t = entry.target, !t.isEmpty, t.lowercased() != "unknown" else { return nil }
-            return t.trimmingCharacters(in: .whitespaces).lowercased()
-        })
+    // MARK: - Sky fields
 
-        // When names match (or no names), skip straight to coordinate check if needed
-        let namesMismatch = targets.count > 1
-
-        // RA/DEC proximity check: allows stacking of nearby targets sharing the same FOV.
-        // Prefer plate-solved coordinates (CRVAL1/CRVAL2), fall back to OBJCTRA/OBJCTDEC.
-        let coords = entries.compactMap { entry -> (ra: Double, dec: Double)? in
-            if let ra = entry.solvedRA, let dec = entry.solvedDec { return (ra, dec) }
-            guard let raStr = entry.objctRA, let decStr = entry.objctDec,
-                  let ra = parseRA(raStr), let dec = parseDec(decStr) else { return nil }
-            return (ra, dec)
+    /// Assigns every frame a sky-field index (see FieldGrouping) and refreshes the summaries.
+    /// Called when header enrichment finishes and after an in-app plate solve changed the
+    /// coordinates. Pure bookkeeping — no scoring involved. Mutates `images` in place, element
+    /// by element, like every other post-load enrichment (a snapshot-and-reassign would drop
+    /// prefetch metric callbacks that land in between).
+    func recomputeFieldGroups() {
+        let result = FieldGrouping.group(images)
+        for index in images.indices where images[index].fieldIndex != result.assignments[index] {
+            images[index].fieldIndex = result.assignments[index]
         }
-
-        if coords.count >= 2 {
-            let refRA = coords[0].ra
-            let refDec = coords[0].dec
-            for coord in coords.dropFirst() {
-                let dRA: Double = Swift.abs(coord.ra - refRA) * cos(refDec * Double.pi / 180.0)
-                let dDec: Double = Swift.abs(coord.dec - refDec)
-                let separation: Double = (dRA * dRA + dDec * dDec).squareRoot()
-                if separation > 1.0 {  // >1° apart = truly different field
-                    if namesMismatch {
-                        let names = Set(entries.compactMap { entry -> String? in
-                            guard let t = entry.target, !t.isEmpty, t.lowercased() != "unknown" else { return nil }
-                            return t.trimmingCharacters(in: .whitespaces)
-                        })
-                        return "Cannot stack: mixed targets detected (\(names.sorted().joined(separator: ", "))). Select only images of the same object."
-                    }
-                    return "Cannot stack: images point to different sky regions (>1° apart). Select only images of the same target field."
-                }
-            }
-            // Coordinates within 1° — same FOV, allow stacking regardless of name difference
-            return nil
-        }
-
-        // No coordinates available — fall back to name check only
-        if namesMismatch {
-            let names = Set(entries.compactMap { entry -> String? in
-                guard let t = entry.target, !t.isEmpty, t.lowercased() != "unknown" else { return nil }
-                return t.trimmingCharacters(in: .whitespaces)
-            })
-            return "Cannot stack: mixed targets detected (\(names.sorted().joined(separator: ", "))). Select only images of the same object."
-        }
-
-        return nil
+        fieldSummaries = result.fields
+        needsTableRefresh = true
     }
-
-    // parseRA and parseDec already defined above (Auto Meridian section)
 
     // MARK: - Post-Processing
 
@@ -4492,6 +4447,8 @@ class TriageViewModel: ObservableObject {
             images[index].wcsRotation = s.crota2 ?? (atan2(-s.cd12, s.cd11) * 180.0 / .pi)
         }
 
+        // Fresh centers may merge or split sky fields (a stale NINA solve replaced by a real one).
+        recomputeFieldGroups()
         statusMessage = report.headline
         needsTableRefresh = true
     }

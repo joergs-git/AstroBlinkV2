@@ -94,6 +94,36 @@ final class PlateSolveWriteBackTests: XCTestCase {
         print("WRITEBACK fits elapsed=\(String(format: "%.2f", elapsed))s")
     }
 
+    /// 6.10.0: WCS keywords must be NUMERIC cards. Until then every keyword went through
+    /// fits_update_key_str and the file ended up with `CRVAL1 = '22.7545063223'` — readable by
+    /// AstroBlink (its reader strips the quotes) but not standard FITS, and other software may
+    /// ignore the solution. The raw header bytes are the only honest witness here, because the
+    /// app's own reader hides the difference.
+    func testWriteBackWritesNumericWCSCards() throws {
+        let frame = try testFrame(named: "Light_Orion_300.0s_Bin1_2600MC_gain100_20240227-205213_-20.0C_0008.fit")
+        var r = report(for: frame)
+        PlateSolveEngine().writeBack(&r, sessionRoot: work)
+        XCTAssertEqual(r.written, 1, "\(r.writeFailures)")
+
+        let handle = try FileHandle(forReadingFrom: frame)
+        defer { try? handle.close() }
+        let headerBytes = try XCTUnwrap(handle.read(upToCount: 2880 * 16))
+        let header = String(decoding: headerBytes, as: UTF8.self)
+
+        for keyword in ["CRVAL1", "CRVAL2", "CRPIX1", "CRPIX2", "CD1_1", "CD2_2", "CROTA2"] {
+            let card = keyword.padding(toLength: 8, withPad: " ", startingAt: 0) + "= "
+            guard let range = header.range(of: card) else {
+                XCTFail("\(keyword) card missing"); continue
+            }
+            // Fixed-format card: the value sits in columns 11-30, the comment follows a "/".
+            let value = header[range.upperBound...].prefix(20)
+            XCTAssertFalse(value.contains("'"), "\(keyword) is a quoted string card: \(value)")
+            XCTAssertNotNil(Double(value.trimmingCharacters(in: .whitespaces)),
+                            "\(keyword) value field is not a number: \(value)")
+        }
+        XCTAssertTrue(header.contains("CTYPE1  = 'RA---TAN'"), "CTYPE1 stays a string card")
+    }
+
     // MARK: - XISF
 
     func testWriteBackIntoXISF() throws {
