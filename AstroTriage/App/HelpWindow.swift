@@ -816,7 +816,12 @@ struct HelpBackgroundView: View {
                     """
                     Built-in GPU-accelerated stacking for quick preview of your integration result. \
                     Not a replacement for dedicated stacking software, but useful for checking session \
-                    quality and sharing quick previews. Includes hot/cold pixel rejection before stacking.
+                    quality and sharing quick previews. Includes hot/cold pixel rejection before stacking. \
+                    Select 3+ frames of one sky field: the Field column (F1, F2, …) shows which frames share \
+                    a field, and right-click \u{2192} Select All Frames of Field F2 picks one. Frames count as one \
+                    field while their centers are within 60% of the larger field edge \u{2014} enough overlap \
+                    to align. A mixed selection gets a dialog naming the fields and their separation; \
+                    Stack Anyway aligns what overlaps and skips the rest.
                     """)
 
                 Divider()

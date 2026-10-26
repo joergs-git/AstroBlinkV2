@@ -265,6 +265,17 @@ macOS SwiftUI blocks external event delivery (URL schemes, Apple Events, etc.) w
 **Q: Is LightspeedStacker a replacement for PixInsight/APP?**
 No — it's a quick preview stacker for checking session quality and sharing previews. For final results, use dedicated stacking software. LightspeedStacker includes min/max pixel rejection and Lanczos-3 interpolation.
 
+**Q: LightspeedStacker says my frames point to different sky fields — but they are the same object?**
+Since 6.10.0 the check is about overlap, not names: frames count as one field while their centers
+are within 60% of the larger field edge (so ≥40% overlap for the star matcher), measured from the
+field's center and with your optics taken into account. The dialog lists the fields it found with
+frame counts, object names, centers and their separation. If the frames really overlap — an alias,
+a mosaic panel name, a NINA solve copied from the centering step — pick **Stack Anyway**: the engine
+aligns whatever overlaps the largest field and skips the rest. If the dialog shows two centers
+degrees apart, the names were right and the frames are two targets. The **Field** column (F1, F2, …)
+shows the same grouping in the file list; right-click → *Select All Frames of Field F2* selects one
+field for stacking.
+
 **Q: What is SSWEIGHT?**
 A quality weight (0-100) written to your FITS/XISF headers. PixInsight's WBPP (Weighted Batch Pre-Processing) uses this for weighted integration — better frames get more weight in the final stack.
 

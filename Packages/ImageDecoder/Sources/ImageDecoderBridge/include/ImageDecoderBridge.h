@@ -54,6 +54,12 @@ typedef struct {
 // Creates the keyword if it doesn't exist. Overwrites if it does.
 WriteResult write_fits_keyword(const char* path, const char* keyword, const char* value);
 
+// Modify a FITS header keyword with a NUMERIC value (fits_update_key_dbl, 12 significant digits).
+// write_fits_keyword() always produces a quoted string card; the FITS standard requires numeric
+// cards for WCS keywords (CRVAL/CRPIX/CD/CROTA) and weights, and other software (PixInsight,
+// Siril, ASTAP, NINA) may ignore a quoted number. Creates the keyword if it doesn't exist.
+WriteResult write_fits_keyword_double(const char* path, const char* keyword, double value);
+
 // Modify an XISF FITS keyword value
 // save_path: output file path (can be same as path for in-place, or different for save-as)
 WriteResult write_xisf_keyword(const char* path, const char* save_path,

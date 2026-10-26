@@ -22,6 +22,7 @@ struct ColumnDefinition {
         ColumnDefinition(identifier: "marked",      title: "",          defaultWidth: 28,  minWidth: 28,  isDefaultVisible: true,  isHideable: false),
         ColumnDefinition(identifier: "frameNumber", title: "#",         defaultWidth: 62,  minWidth: 50,  isDefaultVisible: true,  isHideable: true),
         ColumnDefinition(identifier: "filter",      title: "Filter",    defaultWidth: 50,  minWidth: 40,  isDefaultVisible: true,  isHideable: true),
+        ColumnDefinition(identifier: "field",       title: "Field",     defaultWidth: 44,  minWidth: 36,  isDefaultVisible: true,  isHideable: true),
         ColumnDefinition(identifier: "quality",     title: "Q",         defaultWidth: 28,  minWidth: 28,  isDefaultVisible: true,  isHideable: true),
         ColumnDefinition(identifier: "qualityFeedback", title: "FB",    defaultWidth: 28,  minWidth: 28,  isDefaultVisible: true,  isHideable: true),
         ColumnDefinition(identifier: "goldenLabel",     title: "GS",    defaultWidth: 28,  minWidth: 28,  isDefaultVisible: false, isHideable: true),
@@ -79,25 +80,25 @@ struct ColumnDefinition {
     // Sort: filter ASC → exposure DESC → quality DESC → starCount DESC → fwhm ASC
     private static let singleTargetMultiFilter: [String] =
         ["marked", "frameNumber", "filter", "exposure", "quality", "qualityFeedback", "userConfidence", "snrContrib", "starCount", "fwhm", "hfr", "snr", "eccentricity",
-         "nightDate", "time", "target"] + columnTail
+         "nightDate", "time", "target", "field"] + columnTail
 
     // Case B: Single target, single filter — exposure groups, then quality + time
     // Sort: exposure DESC → quality DESC → starCount DESC → fwhm ASC
     private static let singleTargetSingleFilter: [String] =
         ["marked", "frameNumber", "exposure", "quality", "qualityFeedback", "userConfidence", "snrContrib", "starCount", "fwhm", "hfr", "snr", "eccentricity",
-         "time", "nightDate", "filter", "target"] + columnTail
+         "time", "nightDate", "filter", "target", "field"] + columnTail
 
     // Case C: Multi target, multi filter — target+filter+exp group, then quality
     // Sort: target ASC → filter ASC → exposure DESC → quality DESC → starCount DESC
     private static let multiTargetMultiFilter: [String] =
         ["marked", "frameNumber", "target", "filter", "exposure", "quality", "qualityFeedback", "userConfidence", "snrContrib", "starCount", "fwhm", "hfr", "snr", "eccentricity",
-         "nightDate", "time"] + columnTail
+         "field", "nightDate", "time"] + columnTail
 
     // Case D: Multi target, single filter — target+exp group, then quality
     // Sort: target ASC → exposure DESC → quality DESC → starCount DESC
     private static let multiTargetSingleFilter: [String] =
         ["marked", "frameNumber", "target", "exposure", "quality", "qualityFeedback", "userConfidence", "snrContrib", "starCount", "fwhm", "hfr", "snr", "eccentricity",
-         "time", "nightDate", "filter"] + columnTail
+         "field", "time", "nightDate", "filter"] + columnTail
 
     /// Returns the recommended column order based on session composition
     static func recommendedColumnOrder(isMultiObject: Bool, isMultiFilter: Bool) -> [String] {
@@ -120,6 +121,7 @@ struct ColumnDefinition {
         case "quality":     return ""  // Icon cell; handled separately in FileListView
         case "qualityFeedback": return ""  // Icon cell; handled separately in FileListView
         case "goldenLabel": return ""  // Icon cell; handled separately in FileListView
+        case "field":       return ""  // Badge cell (F1/F2…); handled separately in FileListView
         case "userConfidence": return ""  // Star icon cell; handled separately in FileListView
         case "time":        return entry.time ?? ""
         case "date":        return entry.date ?? ""
@@ -198,6 +200,7 @@ struct ColumnDefinition {
         case "quality":     return entry.qualityZScore ?? entry.qualityTier.map { Double($0.rawValue) }
         case "qualityFeedback": return Double(entry.qualityFeedback.rawValue)
         case "goldenLabel": return Double(entry.goldenLabel.rawValue)
+        case "field":       return entry.fieldIndex.map { Double($0) }
         case "userConfidence": return Double(entry.userConfidence)
         case "snr":
             guard let med = entry.noiseMedian, let mad = entry.noiseMAD, mad > 0 else { return nil }
@@ -238,7 +241,7 @@ struct ColumnDefinition {
     static func isNumericColumn(_ columnId: String) -> Bool {
         switch columnId {
         case "frameNumber", "exposure", "hfr", "starCount", "psfFlux", "sensorTemp",
-             "fwhm", "gain", "offset", "focuserTemp", "ambientTemp", "fileSize", "snr", "quality", "qualityFeedback", "goldenLabel", "snrContrib", "eccentricity",
+             "fwhm", "gain", "offset", "focuserTemp", "ambientTemp", "fileSize", "snr", "quality", "qualityFeedback", "goldenLabel", "field", "snrContrib", "eccentricity",
              "moonPhase", "moonDist", "userConfidence", "skyBg":
             return true
         default:
@@ -253,6 +256,8 @@ struct ColumnDefinition {
             return "Your personal confidence rating (1-3 stars).\nPress 1/2/3 to rate selected frames. Press same key again to clear.\nOrthogonal to auto-quality — tracks your own judgment."
         case "qualityFeedback":
             return "Your feedback on the algorithm's quality assessment.\nPress A to cycle: Agree / Disagree / Partly / Clear.\nGreen checkmark = agree, Red X = disagree, Orange half = partly.\nFeedback helps the calibration system learn your preferences."
+        case "field":
+            return "Sky field this frame points at, from the plate solve (CRVAL) or the OBJCTRA/OBJCTDEC header.\nF1 = the field with the most frames, F2… the others by frame count; one color per field.\nFrames count as one field while their centers are within 60% of the larger field edge\n(≥40% overlap — what LightspeedStacker needs to align them). Blank when the whole session is one field.\nRight-click a frame → Select All Frames of Field Fn."
         case "goldenLabel":
             return "Golden-set curation label (right-click → Golden Set).\nGold star = good reference frame; red icon = a defect (trailing/cloud/gradient/defocus/low-SNR/dark/bad-star).\nUsed by 'Export Golden Set' to build a calibration set of file copies."
         case "quality":

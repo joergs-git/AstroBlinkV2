@@ -308,6 +308,8 @@ extension SessionOrchestrator {
                 // Fix for MainActor Task delivery race (same as local path)
                 self.scheduleQualityRescore()
                 host.detectMeridianFlip()
+                // Sky-field grouping for the Field column and the stacking gate (6.10.0)
+                host.recomputeFieldGroups()
                 // Apply WCS-based alignment (fast, exact) now that headers are available.
                 // For every frame with complete plate-solve data, overrides whatever the
                 // star-based prefetch alignment computed earlier with an exact transform.

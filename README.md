@@ -14,7 +14,35 @@ Nice side effect: Finally you have a native XISF and FITS Quicklook for macOS. (
 
 ---
 
-## What's New in v6.9.2 (Build 116)
+## What's New in v6.10.0 (Build 117)
+
+**A "Field" column tells you which patch of sky each frame points at.** Frames are grouped by
+their plate-solved center into sky fields — `F1` is the field with the most frames, `F2`… the
+others, each in its own color — and the tolerance follows your optics: frames belong to one field
+while their centers are within 60% of the larger field edge, the overlap LightspeedStacker needs
+to align them. The column is blank while the whole session is one field. Right-click a frame →
+*Select All N Frames of Field F2*, then stack.
+
+**LightspeedStacker's same-target check got honest.** It used to refuse anything more than a
+fixed 1° from the first selected frame — a third of an 85 mm / APS-C field, more than the whole
+field of an RC12 — and blamed "mixed targets" when the names differed, even though the distance
+was the problem. It now uses the same optics-based tolerance as the Field column, measures from
+each field's center, lists the fields with counts, names and separation, and offers **Stack
+Anyway**: the engine aligns what overlaps and skips the rest.
+
+**Plate solving now writes proper numeric WCS cards.** Since 6.9.0 the in-app solve stored
+CRVAL/CRPIX/CD as quoted strings; AstroBlink read them fine, other software may not have. Files
+solved with 6.9.x are repaired by re-running Plate Solve with *All*.
+
+**zstd-compressed XISF opens.** XISF 1.0 Revision 1 made `zstd` / `zstd+sh` standard — it is what
+PixInsight 1.9.5 writes — and the decoder now carries zstd on macOS, iOS and in Quick Look. Also
+fixed: a fully saturated frame crashed the Quick Look thumbnail extension.
+
+No scoring change — the quality algorithm is still v41.
+
+---
+
+## Previously in v6.9.2 (Build 116)
 
 **A failed PRE-DELETE no longer pretends it worked.** When the session folder had lost its
 write access (typically a NAS, or a session opened from several folders), moving marked frames

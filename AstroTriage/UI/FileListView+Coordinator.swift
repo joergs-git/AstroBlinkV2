@@ -102,6 +102,10 @@ extension FileListView {
             if colId == "goldenLabel" {
                 return makeGoldenCell(for: entry, in: tableView)
             }
+            // Sky-field column: "F1"/"F2"… badge, one color per field (6.10.0)
+            if colId == "field" {
+                return makeFieldCell(for: entry, in: tableView)
+            }
             if colId == "qualityFeedback" {
                 return makeFeedbackCell(for: entry, in: tableView)
             }
@@ -928,6 +932,17 @@ extension FileListView {
             solveItem.tag = clickedRow
             menu.addItem(solveItem)
 
+            // Sky-field selection (6.10.0): one click highlights every frame of the clicked
+            // frame's field — the natural input for LightspeedStacker on a multi-field session.
+            if viewModel.fieldSummaries.count > 1, let fieldIndex = entry.fieldIndex {
+                let count = displayedImages.filter { $0.fieldIndex == fieldIndex }.count
+                let fieldItem = NSMenuItem(title: "Select All \(count) Frames of Field F\(fieldIndex)",
+                                           action: #selector(selectFieldFromMenu(_:)), keyEquivalent: "")
+                fieldItem.target = self
+                fieldItem.tag = fieldIndex
+                menu.addItem(fieldItem)
+            }
+
             menu.addItem(NSMenuItem.separator())
 
             // Mark/Unmark option
@@ -1124,6 +1139,101 @@ extension FileListView {
         }
 
         /// SF Symbol for a golden label (menu + badge cell). Shared so both stay in sync.
+        // MARK: Sky-field column (6.10.0)
+
+        /// Hue for sky field `index` of `count`: a rainbow spread so neighbouring fields differ
+        /// clearly. Night mode never calls this (red-on-black keeps the number only).
+        static func fieldColor(index: Int, count: Int) -> NSColor {
+            let hue = CGFloat(index - 1) / CGFloat(max(count, 1))
+            return NSColor(calibratedHue: hue, saturation: 0.7, brightness: 0.8, alpha: 1)
+        }
+
+        /// Badge cell for the "Field" column: "F1", "F2", … on a colored pill. Blank while the
+        /// session has a single field — the column only speaks up when there is something to say.
+        /// The label is deliberately NOT the cell's `textField`: the selection-change pass recolors
+        /// every textField to label/white, which would wipe the badge's contrast.
+        @MainActor
+        private func makeFieldCell(for entry: ImageEntry, in tableView: NSTableView) -> NSView {
+            let identifier = NSUserInterfaceItemIdentifier("Cell_field")
+            let cellView: NSTableCellView
+            let badge: NSTextField
+            if let reused = tableView.makeView(withIdentifier: identifier, owner: self) as? NSTableCellView,
+               let label = reused.viewWithTag(102) as? NSTextField {
+                cellView = reused
+                badge = label
+            } else {
+                let cell = NSTableCellView()
+                cell.identifier = identifier
+                let label = NSTextField(labelWithString: "")
+                label.translatesAutoresizingMaskIntoConstraints = false
+                label.font = .monospacedSystemFont(ofSize: 10, weight: .semibold)
+                label.alignment = .center
+                label.wantsLayer = true
+                label.layer?.cornerRadius = 7
+                label.layer?.masksToBounds = true
+                label.tag = 102
+                cell.addSubview(label)
+                NSLayoutConstraint.activate([
+                    label.widthAnchor.constraint(equalToConstant: 30),
+                    label.heightAnchor.constraint(equalToConstant: 15),
+                    label.centerXAnchor.constraint(equalTo: cell.centerXAnchor),
+                    label.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
+                ])
+                cellView = cell
+                badge = label
+            }
+
+            let fields = viewModel.fieldSummaries
+            guard fields.count > 1, let index = entry.fieldIndex else {
+                badge.stringValue = ""
+                badge.layer?.backgroundColor = nil
+                if entry.fieldIndex == nil {
+                    cellView.toolTip = "No sky coordinates in this frame's header (plate solve CRVAL or OBJCTRA/OBJCTDEC) — not assigned to a field"
+                } else {
+                    cellView.toolTip = "All frames of this session point at one sky field"
+                }
+                return cellView
+            }
+
+            badge.stringValue = "F\(index)"
+            if viewModel.nightMode {
+                badge.layer?.backgroundColor = nil
+                badge.textColor = .systemRed
+            } else {
+                badge.layer?.backgroundColor = Self.fieldColor(index: index, count: fields.count).cgColor
+                badge.textColor = .white
+            }
+            if let summary = fields.first(where: { $0.index == index }) {
+                var tip = "Sky field \(index) of \(fields.count) · \(summary.frameCount) frames · center \(summary.centerText)"
+                if !summary.targetNames.isEmpty {
+                    tip += "\nObjects: " + summary.targetNames.joined(separator: ", ")
+                }
+                if index > 1 {
+                    tip += String(format: "\n%.2f° from field 1", summary.separationFromFirst)
+                }
+                tip += "\nFrames of one field overlap enough to align in LightspeedStacker."
+                tip += "\nRight-click → Select All Frames of Field F\(index)."
+                cellView.toolTip = tip
+            }
+            return cellView
+        }
+
+        /// Context-menu action: highlight every visible frame of the clicked frame's sky field.
+        /// Goes through the table's own selection so the selection-change delegate updates the
+        /// view model and the viewer exactly as a shift-click would.
+        @MainActor
+        @objc private func selectFieldFromMenu(_ sender: NSMenuItem) {
+            guard let tableView = tableView else { return }
+            let fieldIndex = sender.tag
+            var rows = IndexSet()
+            for (row, entry) in displayedImages.enumerated() where entry.fieldIndex == fieldIndex {
+                rows.insert(row)
+            }
+            guard !rows.isEmpty else { return }
+            tableView.selectRowIndexes(rows, byExtendingSelection: false)
+            if let first = rows.first { tableView.scrollRowToVisible(first) }
+        }
+
         static func goldenIcon(for label: GoldenLabel) -> NSImage? {
             let name: String
             switch label {

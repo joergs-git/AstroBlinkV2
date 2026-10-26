@@ -632,6 +632,18 @@ struct BatchOperations {
     /// Write a single header keyword; returns an error string, or nil on success. Internal
     /// (not private) so the plate solver can reuse it — it already handles the XISF
     /// write-to-temp-then-atomic-rename dance and the C error buffer correctly. (v6.9.0)
+    /// FITS keywords whose value must be a numeric card, not a quoted string. Until 6.10.0 every
+    /// keyword went through `fits_update_key_str`, so an in-app plate solve left
+    /// `CRVAL1 = '22.7545063223'` in the file: AstroBlink's own reader strips the quotes, but
+    /// other software may ignore a quoted number and lose the solution. WCS keys and the stacking
+    /// weights are the ones AstroBlink writes itself; user free-text header edits are left alone.
+    static let fitsNumericKeywords: Set<String> = [
+        "CRVAL1", "CRVAL2", "CRPIX1", "CRPIX2",
+        "CD1_1", "CD1_2", "CD2_1", "CD2_2",
+        "CDELT1", "CDELT2", "CROTA1", "CROTA2",
+        "SSWEIGHT", "PSFSWGHT"
+    ]
+
     static func writeHeader(url: URL, keyword: String, value: String) -> String? {
         let path = url.path
         let ext = url.pathExtension.lowercased()
@@ -665,8 +677,16 @@ struct BatchOperations {
             }
             return nil
         } else {
-            // FITS: cfitsio writes in-place (backup is already made by caller)
-            let result = write_fits_keyword(path, keyword, value)
+            // FITS: cfitsio writes in-place (backup is already made by caller).
+            // Keywords the FITS standard defines as numeric get a numeric card; everything
+            // else (object names, filters, free-text header edits) stays a string card.
+            let result: WriteResult
+            if Self.fitsNumericKeywords.contains(keyword.uppercased()),
+               let number = Double(value.trimmingCharacters(in: .whitespaces)) {
+                result = write_fits_keyword_double(path, keyword, number)
+            } else {
+                result = write_fits_keyword(path, keyword, value)
+            }
             if result.success == 0 {
                 return withUnsafePointer(to: result.error) { ptr in
                     ptr.withMemoryRebound(to: CChar.self, capacity: 256) { cStr in

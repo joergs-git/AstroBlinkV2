@@ -821,6 +821,11 @@ struct AIsaacContextBuilder {
         - Quality column icons: full green = excellent, half-green = good, orange gradient (4 sub-levels) = borderline, \
         red X = garbage, blue "?" = uncertain (small group, ambiguous quality). Blue lock badge = calibration-locked KEEP.
         - Hover quality icon for tooltip: per-metric z-scores, SNR contribution %, human-readable reason, KEEP/DELETE advice.
+        - Field column (6.10.0): "F1"/"F2"… badge = the sky field a frame points at (plate-solved center, else OBJCTRA/OBJCTDEC). \
+        F1 = the field with the most frames. Frames share a field while their centers are within 60% of the larger field edge \
+        (≥40% overlap). Blank when the whole session is one field. Right-click → "Select All Frames of Field Fn". \
+        LightspeedStacker uses the same grouping: a mixed selection shows the fields with counts, names and separation and \
+        offers "Stack Anyway" (aligns what overlaps the largest field, skips the rest). Two names in ONE field stack without a dialog.
         - Filter bar (top): type text to filter by filename. Filter syntax: "filter:Ha", "q:trash", "fwhm:>4", \
         "stars:<500", "snr:<20", "trail:>0.5", "rating:>0", "file:NGC". Combine with spaces.
 
