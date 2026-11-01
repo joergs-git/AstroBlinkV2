@@ -625,7 +625,7 @@ struct FrameHistoryContentView: View {
     // MARK: - Filter Colors
 
     /// Canonical filter color mapping — consistent across all charts and views.
-    /// R=red, G=green, B=blue, L=grey, Ha/H=orange, OIII/O=teal, SII/S=yellow
+    /// R=red, G=green, B=blue, L=grey, Ha/H=orange, OIII/O=teal, SII/S=yellow, Lextr/Lenh/Lult=magenta-violet
     static func filterColor(for filter: String) -> Color {
         switch filter.uppercased() {
         case "R":                return .red
@@ -637,6 +637,12 @@ struct FrameHistoryContentView: View {
         case "SII", "S":        return .yellow
         case "HBETA", "HB":     return .cyan
         case "NII":             return .pink
+        // Dual/multi-band (6.11.0): magenta family, distinct from Ha orange and OIII teal
+        case "LEXTR":           return Color(red: 0.90, green: 0.30, blue: 0.60)
+        case "LENH":            return Color(red: 0.65, green: 0.30, blue: 0.90)
+        case "LULT":            return Color(red: 0.40, green: 0.35, blue: 0.85)
+        case "DUO":             return .mint
+        case "QUAD":            return .brown
         default:                return .purple
         }
     }

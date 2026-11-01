@@ -321,6 +321,13 @@ class TriageViewModel: ObservableObject {
     /// and tooltips; empty while nothing is loaded or no frame carries coordinates.
     var fieldSummaries: [FieldSummary] = []
 
+    /// Background ASTAP run started by `startPlateSolveOnLoadIfEnabled()`, kept so the next
+    /// session load can cancel it. Nil while idle.
+    private var loadPlateSolveEngine: PlateSolveEngine?
+    /// Identifies the session a background solve belongs to; results that arrive for an
+    /// earlier session are dropped.
+    private var loadPlateSolveToken = UUID()
+
     /// Returns the currently selected visible entries, or empty if nothing selected.
     /// Used by batch operations to operate only on highlighted files.
     var selectedEntries: [ImageEntry] {
@@ -4429,10 +4436,20 @@ class TriageViewModel: ObservableObject {
             statusMessage = report.headline
             return
         }
+        // Interactive solves feed the on-load cache too: a re-opened session then starts
+        // with the orientation this run established, written back or not.
+        PlateSolveCache.shared.store(report.solved)
 
         var solutions: [ImageEntry.ID: WCSSolution] = [:]
         for frame in report.solved { solutions[frame.entry.id] = frame.solution }
+        applyWCSSolutions(solutions)
+        statusMessage = report.headline
+    }
 
+    /// Store plate solutions on the matching entries (by stable `id`) and refresh what derives
+    /// from a frame's sky position. Shared by the interactive command and the on-load solve.
+    func applyWCSSolutions(_ solutions: [ImageEntry.ID: WCSSolution]) {
+        guard !solutions.isEmpty else { return }
         for index in images.indices {
             guard let s = solutions[images[index].id] else { continue }
             images[index].solvedRA = s.crval1
@@ -4447,10 +4464,99 @@ class TriageViewModel: ObservableObject {
             images[index].wcsRotation = s.crota2 ?? (atan2(-s.cd12, s.cd11) * 180.0 / .pi)
         }
 
-        // Fresh centers may merge or split sky fields (a stale NINA solve replaced by a real one).
+        // Fresh centers may merge or split sky fields (a solve the capture software copied
+        // from an earlier pointing replaced by a real one).
         recomputeFieldGroups()
-        statusMessage = report.headline
         needsTableRefresh = true
+    }
+
+    // MARK: - Plate solve on load (6.11.0)
+
+    /// Opt-in background ASTAP solve of the whole session right after the headers are in,
+    /// applied IN MEMORY only: display orientation (`applyWCSAlignment`), sky fields and object
+    /// identification. Nothing is written to the files — Window → Plate Solve Frames… stays the
+    /// way to save a solution.
+    ///
+    /// Why it exists: a header WCS is only as fresh as the capture software's last solve. ASIAIR
+    /// copies that solve into every following frame, so right after a meridian flip the header
+    /// can still describe the orientation BEFORE the flip; PIERSIDE is often absent; and the
+    /// star-fingerprint fallback is blind to a symmetric field. A fresh per-frame solve settles
+    /// all of that at ~0.3 s per frame on two utility-priority processes. Solutions go to
+    /// `PlateSolveCache`, so a re-opened session is oriented instantly.
+    func startPlateSolveOnLoadIfEnabled() {
+        guard AppSettings.loadBool(for: .plateSolveOnLoad) == true, !images.isEmpty else { return }
+
+        // A new session supersedes a run still in flight for the previous one.
+        loadPlateSolveEngine?.cancel()
+        loadPlateSolveEngine = nil
+        let token = UUID()
+        loadPlateSolveToken = token
+
+        // Cached solutions first: they cost nothing and cover a re-opened session.
+        let cache = PlateSolveCache.shared
+        var cached: [ImageEntry.ID: WCSSolution] = [:]
+        var toSolve: [ImageEntry] = []
+        for entry in images {
+            guard ASTAPSolver.supportedExtensions.contains(entry.url.pathExtension.lowercased()) else { continue }
+            if let solution = cache.solution(for: entry) {
+                cached[entry.id] = solution
+            } else {
+                toSolve.append(entry)
+            }
+        }
+        if !cached.isEmpty {
+            applyWCSSolutions(cached)
+            refreshOrientationAfterSolve()
+        }
+        guard !toSolve.isEmpty else {
+            if !cached.isEmpty { statusMessage = "Orientation from \(cached.count) cached plate solves" }
+            return
+        }
+
+        // Silent readiness check — the on-load path never prompts. A missing ASTAP, or a star
+        // database that still needs its one-time grant, is only reported in the status bar.
+        let readiness = ASTAPLocator.shared.readiness()
+        guard case .ready(let binary, let database) = readiness else {
+            statusMessage = "Plate-solve on load skipped — \(readiness.explanation)"
+            return
+        }
+
+        let engine = PlateSolveEngine(maxConcurrent: 2, qualityOfService: .utility)
+        loadPlateSolveEngine = engine
+        statusMessage = "Plate-solving \(toSolve.count) frames in the background for orientation…"
+
+        Task.detached(priority: .utility) { [weak self] in
+            let report = engine.solve(entries: toSolve, binary: binary, database: database,
+                                      skipAlreadySolved: false) { done, total, _ in
+                guard done % 20 == 0 || done == total else { return }
+                Task { @MainActor [weak self] in
+                    guard let self, self.loadPlateSolveToken == token else { return }
+                    self.statusMessage = "Plate-solving \(done)/\(total) frames for orientation…"
+                }
+            }
+            await MainActor.run { [weak self] in
+                ASTAPLocator.shared.releaseDatabase()
+                guard let self, self.loadPlateSolveToken == token else { return }
+                self.loadPlateSolveEngine = nil
+                cache.store(report.solved)
+                var solutions: [ImageEntry.ID: WCSSolution] = [:]
+                for frame in report.solved { solutions[frame.entry.id] = frame.solution }
+                self.applyWCSSolutions(solutions)
+                self.refreshOrientationAfterSolve()
+                var summary = "Plate-solve on load: \(report.solved.count) solved"
+                if !report.failed.isEmpty { summary += ", \(report.failed.count) failed" }
+                if report.wasCancelled { summary += " (cancelled)" }
+                self.statusMessage = summary + " — in memory only"
+            }
+        }
+    }
+
+    /// Re-run the orientation chain after new solutions arrived, in the order the session-load
+    /// completion uses: survey the flips, apply exact WCS alignment, redraw the current frame.
+    private func refreshOrientationAfterSolve() {
+        detectMeridianFlip()
+        applyWCSAlignment()
+        updateMeridianRotation()
     }
 
     // MARK: - In-App Messaging

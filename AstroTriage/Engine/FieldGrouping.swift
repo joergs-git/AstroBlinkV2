@@ -138,8 +138,8 @@ enum FieldGrouping {
         return 2 * atan2(sqrt(a), sqrt(max(0, 1 - a))) / toRad
     }
 
-    /// The frame's sky center: the plate solve first (CRVAL1/2 — or, on load, NINA's RA/DEC
-    /// mount position), the OBJCTRA/OBJCTDEC catalog position of the named object as fallback.
+    /// The frame's sky center: the plate solve first (CRVAL1/2 — or, on load, the RA/DEC mount
+    /// position header), the OBJCTRA/OBJCTDEC catalog position of the named object as fallback.
     static func skyCenter(of entry: ImageEntry) -> (ra: Double, dec: Double)? {
         if let ra = entry.solvedRA, let dec = entry.solvedDec { return (ra, dec) }
         guard let raText = entry.objctRA, let decText = entry.objctDec,

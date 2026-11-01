@@ -4,6 +4,31 @@ All notable changes to AstroBlink & AIsaac will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [6.11.0] — unreleased
+
+### Added
+
+- **Plate-Solve on Load (Orientation Only).** Window → *Plate-Solve on Load* makes AstroBlink
+  solve every frame with ASTAP right after a session loads — in memory only, nothing is written
+  to the files — and use the fresh solutions for Auto Rotate and the Field column. Why: a header
+  WCS is only as fresh as the capture software's last solve. ASIAIR copies that solve into every
+  following frame, so right after a meridian flip the header can still describe the orientation
+  from before the flip, PIERSIDE is often absent, and the star-pattern fallback is blind to a
+  symmetric field — the "some frames are upside down while blinking" that has haunted Auto
+  Rotate for years. Two background processes at low priority, about 0.3 s per frame; solutions
+  are cached on disk per file so a re-opened session is oriented instantly. Off by default;
+  needs ASTAP and its star database like the Plate Solve Frames… command. Saving a solution into
+  the files still goes through that command.
+
+### Fixed
+
+- **Filter Totals counted L-eXtreme frames as luminance.** The session overview grouped "Extr",
+  "Lextr", "L-eNhance", "L-Pro" and friends under "L", so 460 dual-band frames hid behind 40
+  true L frames and the Frame History L trend lines were dragged down to narrowband levels.
+  Dual- and multi-band filters are now their own classes — Lextr, Lenh, Lult, Duo, Quad — with
+  their own colors, sorted after the pure narrowband filters. Only luminance, clear and
+  broadband light-pollution filters (L-Pro, UV/IR cut) still count as "L".
+
 ## [6.10.0] — 2026-10-26
 
 ### Added
@@ -30,9 +55,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   offers **Stack Anyway**: the engine aligns whatever overlaps the largest field and skips the
   rest, so a mixed selection can lose frames but never corrupt the stack. The trigger was a
   session with SH2-157 and SH2-188 in one folder — 17° apart, correctly refused, wrongly
-  explained. Also found there: NINA copies the centering solve (taken BEFORE the correction
-  slew) into the following frames' CRVAL, up to 1.4° off, so within ONE object the old gate
-  could refuse the object itself.
+  explained. Also found there: ASIAIR copies its last plate solve (the centering step, BEFORE
+  the correction slew) into the following frames' CRVAL, up to 1.4° off, so within ONE object
+  the old gate could refuse the object itself.
 
 ### Fixed
 

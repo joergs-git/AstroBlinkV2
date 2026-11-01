@@ -122,9 +122,17 @@ enum PlateSolveSaveScope {
 final class PlateSolveEngine {
 
     /// ASTAP is single-threaded per frame; a small cap keeps the disk sequentialish.
-    private let maxConcurrent = 4
+    private let maxConcurrent: Int
+    /// The interactive command runs at user-initiated priority; the on-load background solve
+    /// (6.11.0) drops to utility with two processes so culling stays responsive.
+    private let qualityOfService: QualityOfService
 
     private let solver = ASTAPSolver()
+
+    init(maxConcurrent: Int = 4, qualityOfService: QualityOfService = .userInitiated) {
+        self.maxConcurrent = max(1, maxConcurrent)
+        self.qualityOfService = qualityOfService
+    }
     private let fm = FileManager.default
 
     /// Set by `cancel()` from the main thread and read by every worker. Guarded rather than
@@ -188,7 +196,7 @@ final class PlateSolveEngine {
         var completed = 0
         let queue = OperationQueue()
         queue.maxConcurrentOperationCount = maxConcurrent
-        queue.qualityOfService = .userInitiated
+        queue.qualityOfService = qualityOfService
 
         for entry in todo {
             queue.addOperation { [solver] in

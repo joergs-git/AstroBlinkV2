@@ -23,7 +23,7 @@ import Foundation
 
 /// The astrometric solution, in exactly the terms `MetadataExtractor` already reads out of
 /// FITS/XISF headers — so a solved frame is indistinguishable from one that arrived solved.
-struct WCSSolution: Equatable {
+struct WCSSolution: Equatable, Codable {  // Codable: PlateSolveCache (6.11.0)
     let crval1: Double      // center RA, degrees
     let crval2: Double      // center Dec, degrees
     let crpix1: Double
