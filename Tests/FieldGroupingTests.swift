@@ -103,9 +103,9 @@ final class FieldGroupingTests: XCTestCase {
         XCTAssertEqual(first.centerText, "23h16m +60°04'")
     }
 
-    func testStaleNinaSolveStaysInsideItsField() {
-        // NINA copies the centering solve (taken BEFORE the correction slew) into the following
-        // frames: measured up to 1.38° off on this session. On a 2.88° field that is still the
+    func testStaleCopiedSolveStaysInsideItsField() {
+        // ASIAIR copies its last plate solve (the centering step, BEFORE the correction slew) into
+        // the following frames: measured up to 1.38° off on this session. On a 2.88° field that is still the
         // same field — the old first-frame + fixed-1° gate refused the single object.
         var entries = sh2188(10)
         let stale = frame("SH2-188_stale", ra: 22.713 + 1.38 / cos(58.36 * Double.pi / 180), dec: 58.357, target: "SH2-188")

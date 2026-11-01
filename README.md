@@ -14,7 +14,25 @@ Nice side effect: Finally you have a native XISF and FITS Quicklook for macOS. (
 
 ---
 
-## What's New in v6.10.0 (Build 117)
+## What's New in v6.11.0 (Build 118)
+
+**Plate-Solve on Load fixes the frames that blink upside down.** A header WCS is only as fresh as
+the capture software's last solve — ASIAIR copies that solve into every following frame, so right
+after a meridian flip the header can still describe the orientation from before the flip, and
+Auto Rotate had nothing better to go on. Window → *Plate-Solve on Load (Orientation Only)* now
+solves every frame with ASTAP in the background right after loading, in memory only, and Auto
+Rotate and the Field column use those solutions. Cached per file, so a re-opened session is
+oriented instantly. Off by default; saving solutions into files stays with Plate Solve Frames….
+
+**Filter Totals no longer hides L-eXtreme behind "L".** Dual- and multi-band filters (L-eXtreme,
+L-eNhance, L-Ultimate, Duo, Quad) are their own classes in the session overview and the Frame
+History charts, with their own colors.
+
+No scoring change — the quality algorithm is still v41.
+
+---
+
+## Previously in v6.10.0 (Build 117)
 
 **A "Field" column tells you which patch of sky each frame points at.** Frames are grouped by
 their plate-solved center into sky fields — `F1` is the field with the most frames, `F2`… the

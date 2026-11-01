@@ -218,6 +218,7 @@ struct HelpContentView: View {
                     .fixedSize(horizontal: false, vertical: true)
 
                 featureRow("AutoRotate toggle (toolbar)", "Turn on to align all frames of each target to the smart-picked reference")
+                featureRow("Plate-Solve on Load (Window menu)", "Solves every frame with ASTAP after loading, in memory only, so AutoRotate works from fresh solutions instead of a header WCS the capture software copied from before a meridian flip. Off by default; cached per file.")
                 featureRow("Primary path", "WCS plate-solve data (CD matrix) — exact, filter-independent")
                 featureRow("Fallback path", "Rotator-based synthetic rotation for frames without plate-solve data")
                 featureRow("Reference frame", "Auto-picked: the frame closest to the median pointing of the target group")

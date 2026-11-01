@@ -276,6 +276,20 @@ degrees apart, the names were right and the frames are two targets. The **Field*
 shows the same grouping in the file list; right-click → *Select All Frames of Field F2* selects one
 field for stacking.
 
+**Q: Some frames blink upside down even with Auto Rotate on. Why, and what helps?**
+Auto Rotate trusts a frame's header WCS first. That WCS is only as fresh as the capture software's
+last plate solve — ASIAIR copies it into every following frame, so right after a meridian flip the
+header can still describe the orientation from before the flip; PIERSIDE is often missing, and the
+star-pattern fallback cannot tell a symmetric field from its 180° twin. Since 6.11.0, Window →
+*Plate-Solve on Load (Orientation Only)* solves every frame with ASTAP in the background after
+loading, in memory only, and Auto Rotate uses those fresh solutions. Off by default; it needs
+ASTAP and its star database, and solutions are cached per file.
+
+**Q: Filter Totals shows "L" but my session is L-eXtreme?**
+Fixed in 6.11.0. Dual-band filters (L-eXtreme, L-eNhance, L-Ultimate, Duo, Quad) used to be
+counted as luminance; they are now their own classes in the session overview and the Frame
+History charts.
+
 **Q: What is SSWEIGHT?**
 A quality weight (0-100) written to your FITS/XISF headers. PixInsight's WBPP (Weighted Batch Pre-Processing) uses this for weighted integration — better frames get more weight in the final stack.
 

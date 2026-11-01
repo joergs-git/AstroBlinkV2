@@ -53,6 +53,8 @@ struct AppSettings {
         case skipMarked           // Bool
         case hideMarked           // Bool
         case autoMeridian         // Bool — auto-rotate images across meridian flip
+        case plateSolveOnLoad     // Bool — ASTAP-solve every frame after a session loads, in memory
+                                   // only, for display orientation + sky fields (6.11.0, default off)
         case sessionCount         // Int — number of sessions opened (for App Store review prompt)
         case hideSplash           // Bool — never show splash screen on launch
         case hasSeenOnboarding    // Bool — true after user dismissed the first-launch onboarding

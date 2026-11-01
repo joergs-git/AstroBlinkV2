@@ -314,6 +314,8 @@ extension SessionOrchestrator {
                 // For every frame with complete plate-solve data, overrides whatever the
                 // star-based prefetch alignment computed earlier with an exact transform.
                 host.applyWCSAlignment()
+                // Opt-in background ASTAP solve for orientation + fields (6.11.0, in memory only)
+                host.startPlateSolveOnLoadIfEnabled()
 
                 // Fetch community baseline for cold-start calibration (async, non-blocking)
                 if let fp = host.currentSetupFingerprint {

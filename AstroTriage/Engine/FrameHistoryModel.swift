@@ -677,15 +677,31 @@ class FrameHistoryModel: ObservableObject {
     }()
 
     /// Normalize filter name for chart display — group variants under canonical names.
-    /// L/LE/Lext/Lextr/Lcle/Lenh/Lqua → "L", H/Ha → "Ha", etc.
+    /// L/Lum/L-Pro/Clear → "L", H/Ha → "Ha", O3 → "OIII", L-eXtreme/Extr → "Lextr",
+    /// L-eNhance → "Lenh", L-Ultimate → "Lult", other dual-band → "Duo", quad-band → "Quad".
+    ///
+    /// Dual- and multi-band filters are NOT luminance (6.11.0). Until then "EXTR"/"LEXTR"/
+    /// "LENHANCE" sat in the luminance list: an L-eXtreme passes Ha + OIII only, so its frames
+    /// carry a fraction of a true L frame's signal — 460 Extr frames hid behind 40 real L frames
+    /// in Filter Totals, and the L trend lines in Frame History were dragged to narrowband
+    /// levels. The three brand families stay distinct because their bandwidths differ by 3×.
     static func normalizeFilterForChart(_ raw: String) -> String {
         let upper = raw.uppercased().trimmingCharacters(in: .whitespaces)
-        // Luminance variants — L-Enhance, L-Extreme, L-Pro, etc. all → "L"
-        let luminanceVariants = ["L", "LE", "LEXT", "LEXTR", "LCLE", "LENH", "LQUA", "LBOO",
-                                  "LENHANCE", "LEXTREME", "LPRO", "LUMA", "LUM", "EXTR"]
-        if luminanceVariants.contains(upper) { return "L" }
+            .replacingOccurrences(of: "-", with: "")
+            .replacingOccurrences(of: "_", with: "")
+            .replacingOccurrences(of: " ", with: "")
+        // Luminance, clear and broadband light-pollution filters → "L"
+        if ["L", "LUM", "LUMA", "LUMI", "LUMINANCE", "CLEAR", "LCLE", "LPRO", "LBOO", "LBOOST",
+            "UVIR", "UVIRCUT", "IRCUT"].contains(upper) { return "L" }
+        // Dual-band (Ha + OIII) families
+        if ["LEXTR", "LEXT", "LEXTREME", "EXTR", "EXTREME"].contains(upper) { return "Lextr" }
+        if ["LENH", "LENHANCE", "LE", "ENH", "ENHANCE"].contains(upper) { return "Lenh" }
+        if ["LULT", "LULTIMATE", "ULTIMATE"].contains(upper) { return "Lult" }
+        if ["DUO", "DUOBAND", "DUALBAND", "DUAL", "DUONB", "ALPT", "NBZ", "NBZII"].contains(upper) { return "Duo" }
+        // Quad-band
+        if upper.contains("QUAD") || upper == "LQUA" { return "Quad" }
         // Ha variants
-        if ["H", "HA", "HALPHA", "H-ALPHA"].contains(upper) { return "Ha" }
+        if ["H", "HA", "HALPHA"].contains(upper) { return "Ha" }
         // OIII variants
         if ["O", "OIII", "O3"].contains(upper) { return "OIII" }
         // SII variants
@@ -693,24 +709,24 @@ class FrameHistoryModel: ObservableObject {
         // Standard broadband
         if ["R", "G", "B"].contains(upper) { return upper }
         // Infrared
-        if ["IR", "IRPASS", "IR-PASS", "IRCUT"].contains(upper) { return "IR" }
-        // Quad-band (dual narrowband) — keep distinct
-        if upper.contains("QUAD") || upper.contains("DUOBAND") { return "Quad" }
+        if ["IR", "IRPASS"].contains(upper) { return "IR" }
         // Unknown / special — group minor variants
-        if upper == "NOFILTER" || upper == "NONE" || upper == "NO FILTER" { return "NoFilter" }
+        if upper == "NOFILTER" || upper == "NONE" { return "NoFilter" }
         if upper == "FILTER1" || upper == "?" || upper.isEmpty { return "?" }
         // Pass through others (Hbeta, NII, Spec, etc.)
         return raw
     }
 
-    /// Canonical filter sort order: L R G B Ha OIII SII HBeta NII, then others alphabetically.
+    /// Canonical filter sort order: L R G B Ha OIII SII HBeta NII, dual/multi-band, then others.
     /// Standard astrophotography convention: broadband first (LRGB), then narrowband (HOS).
     static func filterSortOrder(_ filter: String) -> Int {
         let order: [String: Int] = [
             "L": 0, "R": 1, "G": 2, "B": 3,
             "Ha": 4, "OIII": 5, "SII": 6,
             "HBeta": 7, "HB": 7, "NII": 8,
-            "IR": 9, "Quad": 10, "NoFilter": 11, "?": 12
+            // Dual/multi-band after the pure narrowband filters they combine
+            "Lextr": 9, "Lenh": 10, "Lult": 11, "Duo": 12, "Quad": 13,
+            "IR": 14, "NoFilter": 15, "?": 16
         ]
         return order[filter] ?? order[normalizeFilterForChart(filter)] ?? 50
     }

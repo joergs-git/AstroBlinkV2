@@ -43,6 +43,10 @@ struct AstroBlinkV2App: App {
             andEventID: AEEventID(kAEGetURL))
     }
 
+    /// Mirror of AppSettings.Key.plateSolveOnLoad so the menu checkmark refreshes; the value
+    /// itself lives in AppSettings (UserDefaults + iCloud mirror) like every other setting.
+    @State private var plateSolveOnLoad: Bool = AppSettings.loadBool(for: .plateSolveOnLoad) ?? false
+
     var body: some Scene {
         WindowGroup {
             ContentView()
@@ -187,6 +191,16 @@ struct AstroBlinkV2App: App {
                     NotificationCenter.default.post(name: .plateSolveFrames, object: nil)
                 }
                 .keyboardShortcut("p", modifiers: [.command, .shift])
+                // Opt-in background solve after every session load (6.11.0). In memory only:
+                // it fixes display orientation (meridian flips the headers do not describe)
+                // and the sky fields; saving still goes through the command above.
+                Toggle("Plate-Solve on Load (Orientation Only)", isOn: Binding(
+                    get: { plateSolveOnLoad },
+                    set: { enabled in
+                        plateSolveOnLoad = enabled
+                        AppSettings.saveBool(enabled, for: .plateSolveOnLoad)
+                    }
+                ))
             }
 
             // Advanced menu (safety net for Frame History Database)

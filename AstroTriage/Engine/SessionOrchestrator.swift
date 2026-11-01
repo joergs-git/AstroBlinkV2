@@ -159,6 +159,7 @@ protocol SessionHost: AnyObject, Sendable {
     func detectMeridianFlip()
     func applyWCSAlignment()
     func recomputeFieldGroups()
+    func startPlateSolveOnLoadIfEnabled()
     func updateMeridianRotation()
     func checkForMixedDimensions()
     func applySortByColumnOrder(_ columnIdentifiers: [String])
