@@ -777,10 +777,17 @@ final class QualityEstimatorTests: XCTestCase {
         // Luminance → 1.0
         XCTAssertEqual(QualityEstimator.filterTrailingMultiplier(for: "L"), 1.0)
 
+        // Dual-/multi-band → 0.3 (v42: an L-eXtreme frame is a nebula frame, not an unknown filter)
+        for name in ["L-eXtreme", "Extr", "Lextr", "L-eNhance", "L-Ultimate", "Duo", "L-Quad"] {
+            XCTAssertEqual(QualityEstimator.filterTrailingMultiplier(for: name), 0.3, name)
+        }
+        // Raw aliases classify inside the multiplier, so the headless CLI agrees with the app (v42)
+        XCTAssertEqual(QualityEstimator.filterTrailingMultiplier(for: "H"), 0.3)
+        XCTAssertEqual(QualityEstimator.filterTrailingMultiplier(for: "O3"), 0.3)
+
         // Unknown → 0.7
         XCTAssertEqual(QualityEstimator.filterTrailingMultiplier(for: ""), 0.7)
         XCTAssertEqual(QualityEstimator.filterTrailingMultiplier(for: "Unknown"), 0.7)
-        XCTAssertEqual(QualityEstimator.filterTrailingMultiplier(for: "L-eXtreme"), 0.7)
     }
 
     /// Narrowband frame with mild trailing (0.35) should NOT be garbage.

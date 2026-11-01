@@ -95,48 +95,10 @@ class ColorCombineEngine: ObservableObject {
 
     // MARK: - Filter Alias Mapping
 
-    // Maps common filter name variants to canonical names.
-    // NINA, SGP, Voyager, ASIAIR all use different naming conventions.
-    nonisolated private static let filterAliases: [String: String] = [
-        // Ha (hydrogen-alpha)
-        "h": "Ha", "ha": "Ha", "h-alpha": "Ha", "halpha": "Ha", "hα": "Ha", "h_alpha": "Ha",
-        "ha_7nm": "Ha", "ha_3nm": "Ha", "ha_12nm": "Ha",
-        "hii": "Ha", "h2": "Ha",
-        // OIII (oxygen-III)
-        "o": "OIII", "o3": "OIII", "oiii": "OIII",
-        "oiii_7nm": "OIII", "oiii_3nm": "OIII", "oiii_12nm": "OIII",
-        "o_iii": "OIII", "o-iii": "OIII",
-        // SII (sulfur-II)
-        "s": "SII", "s2": "SII", "sii": "SII",
-        "sii_7nm": "SII", "sii_3nm": "SII", "sii_12nm": "SII",
-        "s_ii": "SII", "s-ii": "SII",
-        // Hbeta
-        "hbeta": "Hbeta", "hb": "Hbeta", "h-beta": "Hbeta",
-        // NII
-        "nii": "NII", "n2": "NII", "n_ii": "NII",
-        // Broadband
-        "l": "L", "lum": "L", "luminance": "L", "clear": "L", "lumi": "L",
-        "r": "R", "red": "R",
-        "g": "G", "green": "G",
-        "b": "B", "blue": "B",
-    ]
-
+    /// Canonical channel name for a raw filter name. The alias table lives in FilterClasses
+    /// (6.11.1), shared with the scoring engine and the headless CLI.
     nonisolated static func canonicalFilterName(_ raw: String) -> String {
-        let trimmed = raw.trimmingCharacters(in: .whitespaces)
-        let key = trimmed.lowercased()
-
-        // Direct match
-        if let canonical = filterAliases[key] { return canonical }
-
-        // Try stripping trailing bandwidth (e.g., "OIII 7nm" → "oiii", "Ha_3nm" → "ha")
-        let stripped = key
-            .replacingOccurrences(of: #"\s*\d+\s*nm$"#, with: "", options: .regularExpression)
-            .replacingOccurrences(of: #"_\d+nm$"#, with: "", options: .regularExpression)
-            .trimmingCharacters(in: .whitespaces)
-        if let canonical = filterAliases[stripped] { return canonical }
-
-        // Fallback: return original trimmed name
-        return trimmed
+        FilterClasses.canonicalName(raw)
     }
 
     // MARK: - Preset Definitions

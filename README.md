@@ -14,7 +14,21 @@ Nice side effect: Finally you have a native XISF and FITS Quicklook for macOS. (
 
 ---
 
-## What's New in v6.11.0 (Build 118)
+## What's New in v6.11.1 (Build 119)
+
+**Dual-band filters score as narrowband (algorithm v42).** An L-eXtreme, L-eNhance, L-Ultimate,
+Duo or Quad frame is a nebula frame with Ha + OIII stars, yet the filter-aware trailing penalty
+treated it as an "unknown" filter and penalised mild trailing more than twice as hard as on an Ha
+frame of the same night. One shared filter table now serves scoring, the session overview, the
+Frame History charts and Color Combine. On the 464-frame calibration set nothing is lost: false
+alarms unchanged, the L-eXtreme case catches one more bad frame and flags six others more decisively.
+
+Also fixed: the headless scoring rig had scored "H", "O" and "S" frames as unknown filters, so its
+narrowband numbers were stricter than the app's.
+
+---
+
+## Previously in v6.11.0 (Build 118)
 
 **Plate-Solve on Load fixes the frames that blink upside down.** A header WCS is only as fresh as
 the capture software's last solve — ASIAIR copies that solve into every following frame, so right

@@ -4,6 +4,24 @@ All notable changes to AstroBlink & AIsaac will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [6.11.1] — unreleased
+
+### Changed
+
+- **Dual-band filters score as narrowband (algorithm v42).** An L-eXtreme, L-eNhance,
+  L-Ultimate, Duo or Quad frame is a nebula frame with Ha + OIII stars, yet the filter-aware
+  trailing penalty treated it as an "unknown" filter (× 0.7 instead of the narrowband × 0.3).
+  The classification now lives in one shared table (`FilterClasses`) used by scoring, the
+  session overview, the Frame History charts and Color Combine, so a filter cannot be one
+  thing in a chart and another in the score. GOLDENSET1 (464 frames, headless rig): false alarms unchanged at 18 of 203 good frames; catch 170 → 169 of 250 bad frames. The L-eXtreme case gains one catch (11 → 12 of 24) and six of its bad frames move from borderline to trash with no new false alarm. The two single-frame losses are in H and OIII cases where the rig only now applies the narrowband leniency the app has always applied (see Fixed) — not an app-side change.
+
+### Fixed
+
+- **The headless scoring CLI classified "H", "O" and "S" frames as unknown filters.** Its stub
+  of the filter alias table mapped names to themselves, so the rig applied the × 0.7 trailing
+  multiplier where the app applied × 0.3 — every GOLDENSET1 number for those cases since the
+  tuning rig was introduced carried this. The CLI now uses the same shared table as the app.
+
 ## [6.11.0] — 2026-11-01
 
 ### Added

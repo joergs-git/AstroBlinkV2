@@ -762,7 +762,8 @@ struct AIsaacContextBuilder {
         468mm → 0.52, 620mm → 0.45, 904mm → 0.30, 2455mm → 0.23. \
         R5 fires when ecc > 2× baseline (excessRatio > 1.0). R6 uses consensus-weighted score. \
         R5/R6 thresholds use severity-dependent multiplier. R6a is filter-independent (absolute ceiling).
-        - Trailing penalty: severity-dependent. Base: Narrowband × 0.3, RGB × 0.6, L × 1.0. \
+        - Trailing penalty: severity-dependent. Base: Narrowband × 0.3 (since v42 also dual-/multi-band: L-eXtreme, \
+        L-eNhance, L-Ultimate, Duo, Quad — a nebula frame is a nebula frame), RGB × 0.6, L × 1.0, unknown × 0.7. \
         Escalates via baseMult + (1-baseMult) × trailingScore² — mild narrowband trailing stays \
         reduced, severe trailing approaches full luminance penalty. Luminance × 1.0 — full strictness, this is the sharpness \
         channel. Unknown filters × 0.7. SSWEIGHT penalty also scales with this multiplier.
@@ -774,6 +775,10 @@ struct AIsaacContextBuilder {
         - Frames meeting learned baseline locked as KEEP (blue lock icon) — z-scores can't override.
 
         ALGORITHM VERSION HISTORY (recent — kAlgorithmVersion is stored on every Frame History record):
+        - v42 (v6.11.1, 2026-11-01): dual-/multi-band filters score as narrowband (trailing × 0.3 instead of the \
+        × 0.7 'unknown' default); one shared filter table for app, charts and the headless CLI — the CLI had scored \
+        "H"/"O"/"S" as unknown. GOLDENSET1: false alarms 18→18, catch 170→169 (the L-eXtreme case +1 catch and six bad frames deeper in trash; \
+        the two H/OIII single-frame moves are the rig catching up with the app).
         - v41 (v6.8.0, 2026-09-09): hot pixels are not stars — two-axis extent gate on unbinned pixels inside \
         the detection kernel; dark rule keyed on the flat pedestal alone. Calibration set: bad frames caught \
         147→158, good frames wrongly flagged unchanged at 4, frames reporting > 10,000 stars 30→0.

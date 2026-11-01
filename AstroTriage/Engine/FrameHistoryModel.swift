@@ -59,7 +59,7 @@ class FrameHistoryModel: ObservableObject {
         case .all:
             return metricsFrameData
         case .narrowband:
-            return metricsFrameData.filter { QualityEstimator.narrowbandCanonical.contains($0.filter) }
+            return metricsFrameData.filter { FilterClasses.isNarrowbandLike($0.filter) }
         case .broadband:
             let broad = Set(["L", "R", "G", "B"])
             return metricsFrameData.filter { broad.contains($0.filter) }
@@ -693,13 +693,8 @@ class FrameHistoryModel: ObservableObject {
         // Luminance, clear and broadband light-pollution filters → "L"
         if ["L", "LUM", "LUMA", "LUMI", "LUMINANCE", "CLEAR", "LCLE", "LPRO", "LBOO", "LBOOST",
             "UVIR", "UVIRCUT", "IRCUT"].contains(upper) { return "L" }
-        // Dual-band (Ha + OIII) families
-        if ["LEXTR", "LEXT", "LEXTREME", "EXTR", "EXTREME"].contains(upper) { return "Lextr" }
-        if ["LENH", "LENHANCE", "LE", "ENH", "ENHANCE"].contains(upper) { return "Lenh" }
-        if ["LULT", "LULTIMATE", "ULTIMATE"].contains(upper) { return "Lult" }
-        if ["DUO", "DUOBAND", "DUALBAND", "DUAL", "DUONB", "ALPT", "NBZ", "NBZII"].contains(upper) { return "Duo" }
-        // Quad-band
-        if upper.contains("QUAD") || upper == "LQUA" { return "Quad" }
+        // Dual- and multi-band families — the table lives in FilterClasses, shared with scoring
+        if let dual = FilterClasses.dualBandClass(upper) { return dual }
         // Ha variants
         if ["H", "HA", "HALPHA"].contains(upper) { return "Ha" }
         // OIII variants

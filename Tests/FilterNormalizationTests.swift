@@ -50,6 +50,22 @@ final class FilterNormalizationTests: XCTestCase {
         XCTAssertEqual(sorted, ["L", "Ha", "OIII", "Lextr", "Lenh", "Quad", "IR"])
     }
 
+    /// Scoring, charts and Color Combine share one table (6.11.1): what the chart calls Lextr,
+    /// the scorer treats as narrowband, and an "H" alias canonicalizes the same way everywhere.
+    func testScoringClassesAgreeWithDisplayClasses() {
+        XCTAssertEqual(FilterClasses.canonicalName("H"), "Ha")
+        XCTAssertEqual(FilterClasses.canonicalName("OIII 7nm"), "OIII")
+        XCTAssertEqual(FilterClasses.canonicalName("Extr"), "Extr", "no alias → passes through")
+        XCTAssertEqual(ColorCombineEngine.canonicalFilterName("S2"), "SII")
+        XCTAssertTrue(FilterClasses.isNarrowbandLike("Extr"))
+        XCTAssertTrue(FilterClasses.isNarrowbandLike("H"))
+        XCTAssertTrue(FilterClasses.isNarrowbandLike("L-Quad"))
+        XCTAssertFalse(FilterClasses.isNarrowbandLike("L-Pro"))
+        XCTAssertFalse(FilterClasses.isNarrowbandLike("R"))
+        XCTAssertEqual(FilterClasses.dualBandClass("Lextr"), "Lextr")
+        XCTAssertNil(FilterClasses.dualBandClass("Ha"))
+    }
+
     /// The session that reported it: Extr must get its own row, L keeps only the true L frames.
     func testFilterTotalsRegression() {
         let frames: [(filter: String, count: Int)] = [("Extr", 460), ("L", 40), ("H", 320)]

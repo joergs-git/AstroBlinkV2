@@ -290,16 +290,20 @@ struct QualityEstimator {
     static let broadbandCanonical: Set<String> = ["L", "R", "G", "B"]
 
     // Filter categories for trailing penalty scaling.
-    // Narrowband: slight trailing barely affects diffuse emission — very lenient.
+    // Narrowband — including dual-/multi-band such as L-eXtreme since v42: slight trailing
+    //   barely affects diffuse emission — very lenient.
     // RGB: star color matters, moderate resolution needs.
     // Luminance: the sharpness channel — full strictness.
-    static let narrowbandCanonical: Set<String> = ["Ha", "OIII", "SII", "Hbeta", "NII"]
+    // The classification table lives in FilterClasses (shared with the headless CLI).
+    static var narrowbandCanonical: Set<String> { FilterClasses.narrowbandCanonical }
     private static let rgbCanonical: Set<String> = ["R", "G", "B"]
 
     /// Filter-aware trailing penalty multiplier (base value).
-    /// Returns 0.3 for narrowband, 0.6 for RGB, 1.0 for luminance, 0.7 for unknown/exotic.
+    /// Returns 0.3 for narrowband and dual-/multi-band, 0.6 for RGB, 1.0 for luminance,
+    /// 0.7 for unknown/exotic. Accepts raw names too ("H", "L-eXtreme") — classification
+    /// happens inside, so app and CLI cannot drift apart on an alias.
     static func filterTrailingMultiplier(for canonical: String) -> Double {
-        if narrowbandCanonical.contains(canonical) { return 0.3 }
+        if FilterClasses.isNarrowbandLike(canonical) { return 0.3 }
         if rgbCanonical.contains(canonical)        { return 0.6 }
         if canonical == "L"                         { return 1.0 }
         return 0.7  // Unknown or exotic filters — conservative default
@@ -438,7 +442,7 @@ struct QualityEstimator {
             let groupEntries = indices.map { entries[$0] }
 
             let rawFilter = groupEntries.first?.filter ?? ""
-            let canonical = ColorCombineEngine.canonicalFilterName(rawFilter)
+            let canonical = FilterClasses.canonicalName(rawFilter)
             // Broadband (L/R/G/B): star count is reliable → weight 1.2
             // Everything else (narrowband, dual/tri-band, unknown filters): star count
             // varies with detection threshold → weight 0.5
@@ -995,7 +999,7 @@ struct QualityEstimator {
                     // Relax threshold when bright moon is close and filter is broadband
                     if let moonIll = entry.moonIllumination, moonIll > 0.4,
                        let moonDist = entry.moonDistance, moonDist < 60,
-                       broadbandCanonical.contains(ColorCombineEngine.canonicalFilterName(entry.filter ?? "")) {
+                       broadbandCanonical.contains(FilterClasses.canonicalName(entry.filter ?? "")) {
                         // Closer moon + brighter = more background expected
                         // Scale: 50% moon at 60° = +20%, full moon at 10° = +100%
                         let moonFactor = moonIll * (1.0 - moonDist / 90.0)
