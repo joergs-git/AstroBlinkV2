@@ -26,7 +26,9 @@ final class FrameHistoryDatabase {
 /// Minimal stand-in for the filter-name canonicalizer. Identity mapping is sufficient because
 /// it is only used inside the (inactive) historical baseline grouping.
 enum ColorCombineEngine {
-    static func canonicalFilterName(_ raw: String) -> String { raw }
+    // Delegates to the shared table: an identity stub here scored "H" as an UNKNOWN filter in
+    // the rig while the app scored it as Ha (parity bug, fixed 6.11.1 / algorithm v42).
+    static func canonicalFilterName(_ raw: String) -> String { FilterClasses.canonicalName(raw) }
 }
 
 /// No-op stand-in for the Supabase-backed community-floor service. QualityEstimator only calls

@@ -12,6 +12,70 @@ Records with `algorithmVersion < kAlgorithmVersion` are candidates for re-analys
 
 ---
 
+## Version 42 — Dual-band filters are narrowband; one filter table for app and rig (2026-11-01)
+
+**User request (2026-11-01): "Extr must be rated as narrowband with a duo bandwidth. Logical."**
+
+### What was wrong
+
+`QualityEstimator.filterTrailingMultiplier` knew five narrowband names (Ha, OIII, SII, Hbeta,
+NII). Everything else that was not L/R/G/B fell into the "unknown / exotic" default of × 0.7.
+An Optolong L-eXtreme ("Extr", "Lextr"), L-eNhance, L-Ultimate, Antlia ALP-T, IDAS NBZ or an
+L-Quad is a nebula filter: it passes two (or four) emission lines, its stars are Ha + OIII
+stars, and its science target is diffuse emission — exactly the physics behind the narrowband
+leniency (slight trailing barely affects diffuse emission; 300-600 s exposures are expensive).
+Those frames were penalised for trailing more than twice as hard as an Ha frame of the same
+night. The star-count weight was already right (0.5 for everything non-broadband).
+
+A second defect surfaced while measuring: `Sources/AstroScoreCLI/CLIStubs.swift` stubbed
+`ColorCombineEngine.canonicalFilterName` as the identity, so the headless rig never mapped
+"H" → Ha, "O" → OIII, "S" → SII. GOLDENSET1 names its filters exactly like that. The rig has
+therefore scored every narrowband case with the × 0.7 "unknown" multiplier while the app used
+× 0.3 — the third rig/app parity bug (after `c825482` and `fc05188`).
+
+### The fix
+
+- `Engine/FilterClasses.swift` (GUI-free, in the CLI source closure) is the one home of the
+  alias table (moved from ColorCombineEngine), the narrowband set, the dual-/multi-band
+  classes (`Lextr`, `Lenh`, `Lult`, `Duo`, `Quad`) and `isNarrowbandLike(_:)`.
+- `filterTrailingMultiplier` returns 0.3 for anything `isNarrowbandLike`; it classifies the
+  name itself, so a raw alias ("H", "L-eXtreme") can no longer be scored differently by two
+  code paths. `QualityEstimator` canonicalises through `FilterClasses` directly.
+- ColorCombineEngine, the CLI stub, `FrameHistoryModel.normalizeFilterForChart`, the Metrics
+  "Narrowband" scope and the navigation fallback ("same filter class") all delegate to it.
+
+### Measured on GOLDENSET1 (464 frames, 17 scored cases)
+
+Baseline = `main` CLI with the identity stub (narrowband cases scored × 0.7 in the rig, × 0.3 in the
+app); v42 = shared table (rig = app) + dual-band as narrowband.
+
+| | baseline | v42 |
+|---|---|---|
+| good frames wrongly flagged (false alarms) | 18 / 203 (8.9%) | **18 / 203 (8.9%)** |
+| bad frames caught | 170 / 250 (68.0%) | 169 / 250 (67.6%) |
+
+Per case, only three of 17 moved:
+
+| case | false alarms | catch | what moved |
+|---|---|---|---|
+| ZWO-AM5_450mm_EXTR_NGC4477_60s (the dual-band case) | 1/3 → 1/3 | 11/24 → **12/24** | 6 bad frames borderline → trash, 1 bad good → borderline, 1 bad excellent → good; 1 good frame good → excellent |
+| RASA_600mm_H_IC1805_300s | 5/55 → 5/55 | 81/118 → 80/118 | 1 bad frame (trailing 0.50, z −0.52 → −0.49) borderline → good |
+| RASA_600mm_O_NGC7635_300s | 0/0 | 5/10 → 4/10 | 1 bad frame (trailing 0.46) borderline → good |
+
+The two H/OIII losses are the rig catching up with the app: those frames were always scored with the
+narrowband multiplier in the app. For the app the net effect of v42 is the EXTR row — more decisive
+on the dual-band case, nothing lost elsewhere. Run-to-run GPU variance on this set is ±1-2 frames
+at tier boundaries, so the single-frame moves are within noise; the six borderline → trash moves
+are not.
+
+### Not changed
+
+Star-count weight (0.5 for non-broadband) and `broadbandCanonical` (L/R/G/B) are untouched.
+Garbage rules key on `filterTrailingMultiplier` only through the trailing paths. Community
+baselines, Frame History records and SSWEIGHT exports made before v42 keep their stored values.
+
+---
+
 ## Version 41 — Sensor defects are not stars: two-axis extent gate on unbinned data (2026-09-09)
 
 **User request: "Isolated hot pixels without neighbours must never be counted as stars."

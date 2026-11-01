@@ -911,11 +911,11 @@ class TriageViewModel: ObservableObject {
         // Never NB↔BB (Ha vs L looks completely different).
         // Always same setup (FL) — never compare RASA to RC12.
         if !isAcceptable(best) {
-            let selectedIsNarrowband = QualityEstimator.narrowbandCanonical.contains(selectedCanonical)
+            let selectedIsNarrowband = FilterClasses.isNarrowbandLike(selectedCanonical)
             let sameClass = images.filter { img in
                 let t = img.canonicalTarget ?? TargetCatalog.canonicalName(img.target ?? "")
                 let f = ColorCombineEngine.canonicalFilterName((img.filter ?? "").uppercased().trimmingCharacters(in: .whitespaces))
-                let isNB = QualityEstimator.narrowbandCanonical.contains(f)
+                let isNB = FilterClasses.isNarrowbandLike(f)
                 let fl = img.focalLength.map { Int(($0 / 50).rounded()) * 50 } ?? 0
                 return t == targetKey && fl == flKey && img.url != entry.url && isNB == selectedIsNarrowband
             }
