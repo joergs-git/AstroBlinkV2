@@ -212,6 +212,7 @@ extension SessionOrchestrator {
                     // correctly, so the CLI caught these frames and the app did not.
                     host.images[idx].computedStarCount = metrics.measuredStarCount > 0 ? metrics.totalStarCount : nil
                     host.images[idx].computedEccentricity = metrics.medianEccentricity
+                    host.images[idx].applyPSFDiagnostics(metrics)
                     host.images[idx].psfFluxSum = metrics.psfFluxSum
                     host.images[idx].psfMeanFlux = metrics.psfMeanFlux
                     host.images[idx].starChainFraction = metrics.starChainFraction
@@ -553,6 +554,7 @@ extension SessionOrchestrator {
                     // correctly, so the CLI caught these frames and the app did not.
                     host.images[idx].computedStarCount = metrics.measuredStarCount > 0 ? metrics.totalStarCount : nil
                     host.images[idx].computedEccentricity = metrics.medianEccentricity
+                    host.images[idx].applyPSFDiagnostics(metrics)
                     host.images[idx].psfFluxSum = metrics.psfFluxSum
                     host.images[idx].psfMeanFlux = metrics.psfMeanFlux
                     host.images[idx].starChainFraction = metrics.starChainFraction

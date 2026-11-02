@@ -126,6 +126,54 @@ struct STFCalculator {
     // to exclude edge effects (vignetting, dithering, optical aberrations)
     private static let noiseCropFraction: Float = 0.70
 
+    // Pick the channel with the strongest star signal for HFR / FWHM / detection.
+    //
+    // Lives here (not in PrefetchCache) because the headless scoring rig must pick the
+    // channel exactly as the app does: STFCalculator is in the AstroScoreCLI source closure,
+    // PrefetchCache is not (rig/app parity, 2026-11-02).
+    //
+    // Hardcoding green (channel 1) was correct for broadband OSC frames, where
+    // RGGB sees roughly equal stellar continuum across all three channels and
+    // green wins by virtue of being the most-sampled colour. It is wrong for
+    // narrowband OSC (Lextr / L-eXtreme / Optolong / SHO duo-band): those
+    // filters pass Ha at 656 nm (deep red) plus a narrow OIII band at ~500 nm,
+    // so stellar continuum lands almost entirely in the red channel and the
+    // green channel sees only OIII-band photons. The 60 brightest unsaturated
+    // green-channel stars are then too faint to fit cleanly, every frame
+    // collapses to the all-zero partial-metrics path, and the UI shows "!"
+    // for every HFR/FWHM cell.
+    //
+    // The pick uses a simple count of bright pixels (> half of full range) on
+    // a 5 % subsample per channel — it is filter-agnostic, runs in ~5 ms total
+    // for 25 MP, needs no extra metadata, and tracks where the star signal
+    // actually went rather than where we expected it to be.
+    static func bestMeasurementChannel(of image: DecodedImage) -> Int {
+        guard image.channelCount > 1 else { return 0 }
+        let w = image.width, h = image.height
+        let planeSize = w * h
+        let ptr = image.buffer.contents().bindMemory(
+            to: UInt16.self, capacity: planeSize * image.channelCount
+        )
+        let stride = 20  // 5 % subsample
+        let threshold: UInt16 = 32768  // half of full UInt16 range
+        var bestChannel = 0
+        var bestCount = -1
+        for ch in 0..<image.channelCount {
+            let chOff = ch * planeSize
+            var count = 0
+            var i = 0
+            while i < planeSize {
+                if ptr[chOff + i] > threshold { count += 1 }
+                i += stride
+            }
+            if count > bestCount {
+                bestCount = count
+                bestChannel = ch
+            }
+        }
+        return bestChannel
+    }
+
     static func measureNoise(from image: DecodedImage) -> NoiseStats {
         let ptr = image.buffer.contents().bindMemory(
             to: UInt16.self,

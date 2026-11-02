@@ -276,6 +276,13 @@ degrees apart, the names were right and the frames are two targets. The **Field*
 shows the same grouping in the file list; right-click → *Select All Frames of Field F2* selects one
 field for stacking.
 
+Since 6.11.2 the position compared is the **image center projected through the plate solve**, not
+CRVAL. CRVAL is only the sky position of the WCS reference pixel (CRPIX), and ASIAIR puts that pixel
+anywhere in the frame — on one 85 mm session the centers of 391 frames agreed to 0.04° while their
+CRVALs scattered 1.4°, so consecutive frames of one pointing landed in F1 and F2, were trashed as
+"target shifted off sensor", and blinked with a slight relative rotation under Auto Rotate. All of
+that came from the same reading of CRVAL; a camera rotation between frames never splits a field.
+
 **Q: Some frames blink upside down even with Auto Rotate on. Why, and what helps?**
 Auto Rotate trusts a frame's header WCS first. That WCS is only as fresh as the capture software's
 last plate solve — ASIAIR copies it into every following frame, so right after a meridian flip the

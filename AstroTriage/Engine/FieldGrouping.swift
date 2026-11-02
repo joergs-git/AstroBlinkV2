@@ -9,6 +9,10 @@
 // 60% and stack fine, yet were refused) and MORE than the whole field of an RC12 (0.85° wide —
 // two frames 0.9° apart share nothing, yet passed). The physical question is "do the frames
 // overlap enough for the star matcher", and that scales with the field.
+//
+// 6.11.2: a frame's position is its IMAGE CENTER projected through the WCS (WCSProjection), not
+// CRVAL. CRVAL is the sky position of the reference pixel, and ASIAIR places that pixel anywhere
+// in the frame — one stable pointing produced CRVALs 1.7° apart and split into F1/F2.
 
 import Foundation
 
@@ -88,7 +92,7 @@ struct StackFieldCheck {
 enum FieldGrouping {
     /// Two frames may be offset by this fraction of the larger field edge and still count as the
     /// same field: 0.6 leaves at least 40% overlap along that axis for the star matcher.
-    static let overlapOffsetFraction = 0.6
+    static let overlapOffsetFraction = WCSProjection.sameFieldOffsetFraction
     /// Used when the field of view is unknown (no FOCALLEN / XPIXSZ): the pre-6.10.0 fixed limit.
     static let fallbackToleranceDegrees = 1.0
 
@@ -127,21 +131,16 @@ enum FieldGrouping {
             .compactMap { Double($0) }
     }
 
-    /// Great-circle separation in degrees. Haversine: stable for tiny angles, correct across the
-    /// 0h/24h RA wrap and near the poles — a plain |ΔRA| read 359° for a field straddling 0h.
+    /// Great-circle separation in degrees (haversine; see WCSProjection).
     static func angularSeparation(ra1: Double, dec1: Double, ra2: Double, dec2: Double) -> Double {
-        let toRad = Double.pi / 180
-        let dLat = (dec2 - dec1) * toRad
-        let dLon = (ra2 - ra1) * toRad
-        let a = sin(dLat / 2) * sin(dLat / 2)
-              + cos(dec1 * toRad) * cos(dec2 * toRad) * sin(dLon / 2) * sin(dLon / 2)
-        return 2 * atan2(sqrt(a), sqrt(max(0, 1 - a))) / toRad
+        WCSProjection.angularSeparation(ra1: ra1, dec1: dec1, ra2: ra2, dec2: dec2)
     }
 
-    /// The frame's sky center: the plate solve first (CRVAL1/2 — or, on load, the RA/DEC mount
-    /// position header), the OBJCTRA/OBJCTDEC catalog position of the named object as fallback.
+    /// The frame's sky center: the image center projected through the plate solve when the frame
+    /// has one (falling back to CRVAL — or, on load, the RA/DEC mount position header — without
+    /// a full WCS), the OBJCTRA/OBJCTDEC catalog position of the named object as last resort.
     static func skyCenter(of entry: ImageEntry) -> (ra: Double, dec: Double)? {
-        if let ra = entry.solvedRA, let dec = entry.solvedDec { return (ra, dec) }
+        if let center = WCSProjection.frameCenter(of: entry) { return center }
         guard let raText = entry.objctRA, let decText = entry.objctDec,
               let ra = parseRA(raText), let dec = parseDec(decText) else { return nil }
         return (ra, dec)

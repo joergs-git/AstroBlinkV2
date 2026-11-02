@@ -5,7 +5,14 @@
 // wrong (a misidentified field, a stale solve copied from a different night, a rotator moved
 // between solve and capture). Both answers matter, so both are reported.
 //
-// v6.9.0
+// Compared at a COMMON PIXEL, not CRVAL against CRVAL (6.11.2): CRVAL is the sky position of
+// the reference pixel, which ASIAIR places anywhere in the frame while ASTAP puts it at the
+// center. Two correct solutions of one exposure then differ in CRVAL by degrees and in CD
+// rotation by ΔRA·sin(Dec) — 1.7° and 3.3° on one real pair — and every re-solve looked like
+// a disagreement. Projecting the fresh solution's reference pixel through the stored one asks
+// the right question: do the two describe the same sky at the same place on the sensor?
+//
+// v6.9.0, v6.11.2
 
 import Foundation
 
@@ -41,8 +48,12 @@ struct PlateSolveComparison: Equatable {
 
     /// Compare a fresh solution against the WCS a frame already carried.
     init(existing: WCSSolution, fresh: WCSSolution) {
+        // Where does the stored solution put the pixel the fresh solution calls its reference
+        // point? For the same sky, exactly at fresh.crval — whatever either CRPIX is.
+        let stored = TangentPlaneWCS(solution: existing)
+        let storedAtFreshReference = stored.sky(atPixelX: fresh.crpix1, y: fresh.crpix2)
         centreOffsetArcmin = TargetIdentifier.angularSeparationArcmin(
-            ra1: existing.crval1, dec1: existing.crval2,
+            ra1: storedAtFreshReference.ra, dec1: storedAtFreshReference.dec,
             ra2: fresh.crval1, dec2: fresh.crval2
         )
 
@@ -50,10 +61,15 @@ struct PlateSolveComparison: Equatable {
         let newScale = fresh.arcsecPerPixel
         scaleDifferencePercent = oldScale > 0 ? (newScale - oldScale) / oldScale * 100.0 : 0
 
-        rotationDifferenceDegrees = Self.rotationDelta(
-            Self.rotationDegrees(of: existing),
-            Self.rotationDegrees(of: fresh)
-        )
+        // Field rotation at that same pixel under both solutions. The CD-matrix angle is the
+        // rotation at each solution's OWN reference pixel; for reference pixels at different
+        // RA those differ by meridian convergence although the sky is the same.
+        let latest = TangentPlaneWCS(solution: fresh)
+        let storedNorth = stored.northAngle(atPixelX: fresh.crpix1, y: fresh.crpix2)
+            ?? Self.rotationDegrees(of: existing)
+        let freshNorth = latest.northAngle(atPixelX: fresh.crpix1, y: fresh.crpix2)
+            ?? Self.rotationDegrees(of: fresh)
+        rotationDifferenceDegrees = Self.rotationDelta(storedNorth, freshNorth)
     }
 
     /// Field rotation implied by a CD matrix, in degrees. Matches how `MetadataExtractor`
@@ -77,20 +93,24 @@ extension WCSSolution {
 
     /// Reconstruct the solution a frame already carries, or nil when it has no usable WCS.
     ///
-    /// Requires the full CD matrix and both reference values — a partial WCS cannot be
-    /// compared meaningfully, and treating it as zero would fabricate a disagreement.
+    /// Requires the full CD matrix, both reference values AND the reference pixel — the
+    /// comparison projects through the stored solution, and a partial WCS cannot be compared
+    /// meaningfully; treating a missing value as zero would fabricate a disagreement.
     init?(existingOn entry: ImageEntry) {
-        guard let crval1 = entry.solvedRA, let crval2 = entry.solvedDec,
-              let cd11 = entry.wcsCD11, let cd12 = entry.wcsCD12,
-              let cd21 = entry.wcsCD21, let cd22 = entry.wcsCD22
-        else { return nil }
-
+        guard let wcs = TangentPlaneWCS(entry: entry) else { return nil }
         self.init(
-            crval1: crval1, crval2: crval2,
-            // CRPIX is not needed for any comparison; fall back to 0 when absent.
-            crpix1: entry.wcsCRPIX1 ?? 0, crpix2: entry.wcsCRPIX2 ?? 0,
-            cd11: cd11, cd12: cd12, cd21: cd21, cd22: cd22,
+            crval1: wcs.crval1, crval2: wcs.crval2,
+            crpix1: wcs.crpix1, crpix2: wcs.crpix2,
+            cd11: wcs.cd11, cd12: wcs.cd12, cd21: wcs.cd21, cd22: wcs.cd22,
             crota2: entry.wcsRotation
         )
+    }
+}
+
+extension TangentPlaneWCS {
+    /// The tangent plane of a solver result.
+    init(solution s: WCSSolution) {
+        self.init(crval1: s.crval1, crval2: s.crval2, crpix1: s.crpix1, crpix2: s.crpix2,
+                  cd11: s.cd11, cd12: s.cd12, cd21: s.cd21, cd22: s.cd22)
     }
 }

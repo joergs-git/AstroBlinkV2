@@ -195,3 +195,24 @@ final class FieldGroupingTests: XCTestCase {
         XCTAssertTrue(FieldGrouping.checkStackability(entries).isSingleField)
     }
 }
+
+// MARK: - Reference pixel placement (6.11.2)
+
+extension FieldGroupingTests {
+
+    /// ASIAIR puts CRPIX anywhere in the frame, so one stable pointing produced CRVALs 1.7° apart
+    /// — right at the 1.73° tolerance of this field — and the C 9 session split into F1/F2
+    /// frame by frame. The position must be the image center, which agrees to 4 arcseconds.
+    func testScatteredReferencePixelsOfOnePointingAreOneField() {
+        let entries = (0..<8).map { i in
+            WCSProjectionTests.entry("c9_\(i)", i % 2 == 0 ? WCSProjectionTests.solutionA
+                                                           : WCSProjectionTests.solutionB)
+        }
+        let result = FieldGrouping.group(entries)
+        XCTAssertEqual(result.fields.count, 1, "one pointing, one field — whatever the reference pixel")
+        XCTAssertEqual(result.assignments.compactMap { $0 }, Array(repeating: 1, count: 8))
+        let center = result.fields[0]
+        XCTAssertEqual(center.centerRA, 344.2287, accuracy: 0.002)
+        XCTAssertEqual(center.centerDec, 62.6210, accuracy: 0.002)
+    }
+}

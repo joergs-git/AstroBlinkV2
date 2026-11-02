@@ -4,6 +4,36 @@ All notable changes to AstroBlink & AIsaac will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [6.11.2] — 2026-11-02
+
+### Fixed
+
+- **One pointing, one field: the WCS reference pixel is not the frame center (algorithm v43,
+  part 1).** CRVAL is the sky position of CRPIX, and ASIAIR places that pixel anywhere in the
+  frame — on one 85 mm session the image centers of 391 frames agreed to 0.04° while their CRVALs
+  scattered 1.4°. Everything that read CRVAL as "where the frame points" went wrong at once: the
+  Field column split one pointing into F1/F2 frame by frame, 88 frames were trashed as "target
+  shifted off sensor", Auto Rotate blinked them with up to 3.4° of spurious rotation and 103 px of
+  offset (the CD matrix of a tangent plane 3.8° east is rotated by the meridian convergence — not
+  the camera), and every re-solve "disagreed" with the header by that amount. All four now project
+  the image center through each solution's own tangent plane (`WCSProjection`); the decentered rule
+  now asks whether the group's center still lies on the frame's sensor, per axis (a 40% offset is
+  the same image; was a fixed 30% of the field). NINA / ASTAP solutions
+  (reference pixel at the center) are unaffected. Exactly neutral on the 464-frame calibration set.
+- **H-alpha OSC frames are no longer "noise peaks, not real stars (dome/cap)" (algorithm v43,
+  part 2).** 60 s H-alpha through an OSC at gain 100 on an f/5.5 refractor puts the sky a few ADU
+  above the offset, so its background scatter equals a dome-closed dark's — and the dark rule
+  trashed 337 of 392 frames of one session and 85 of 115 of another with 1600–4600 measured stars
+  each. A flat background now counts as a dark only without a stellar population: at least 20
+  PSF-shaped stars per megapixel whose Gaussian-fit residual is below 0.17 (real darks: 2–4
+  warm-pixel clusters per megapixel at residual 0.23–0.28) mark a faint sky. On the calibration
+  set all 62 darks stay caught, false alarms 21 → 19 of 203; 8 of 250 bad frames that had been
+  caught only by this wrong reason (mild trailing the rules do not see) are now reported as missed.
+- **The headless scoring rig measured OSC frames on the raw Bayer mosaic and knew no optics.** It
+  neither debayered nor read focal length, pixel size or CRVAL, so its numbers for ASIAIR OSC
+  cases differed from the app's (3–7× fewer stars, "no signal" on frames with 3400 stars, no
+  decentered rule). Fixed; GOLDENSET1 reference numbers re-based in `ALGORITHM_CHANGELOG.md`.
+
 ## [6.11.1] — 2026-11-01
 
 ### Changed

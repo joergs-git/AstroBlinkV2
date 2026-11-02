@@ -14,7 +14,31 @@ Nice side effect: Finally you have a native XISF and FITS Quicklook for macOS. (
 
 ---
 
-## What's New in v6.11.1 (Build 119)
+## What's New in v6.11.2 (Build 120)
+
+**A camera rotation never splits a field — and neither does ASIAIR's wandering WCS reference
+pixel.** CRVAL is the sky position of the reference pixel CRPIX, not of the frame, and ASIAIR puts
+that pixel anywhere: on one 85 mm session the image centers of 391 frames agreed to 0.04° while
+their CRVALs scattered 1.4°. The Field column split one pointing into F1/F2, 88 frames were trashed
+as "target shifted off sensor", Auto Rotate blinked them with up to 3.4° of false rotation and
+103 px of offset, and every re-solve "disagreed" with the header. All four now project the image
+center through each solution's own tangent plane (algorithm v43); a frame is "shifted off sensor"
+only when the group's center no longer lies on its sensor. NINA / ASTAP solutions are
+unaffected; the calibration set does not move by a single frame.
+
+**H-alpha on an OSC is not a closed dome.** Short narrowband OSC exposures at low gain have a sky
+fainter than the read noise, so their background scatter equals a dark's — and the dark rule
+trashed 337 of 392 frames of one session with 3400 measured stars each. A flat background is now a
+dark only without a stellar population (≥ 20 PSF-shaped stars per megapixel with a clean Gaussian
+fit; real darks measure 2–4 warm-pixel clusters per megapixel). All 62 calibration darks stay
+caught.
+
+Also fixed: the headless scoring rig had measured OSC frames without debayering and without focal
+length or pixel size; its calibration numbers are re-based.
+
+---
+
+## Previously in v6.11.1 (Build 119)
 
 **Dual-band filters score as narrowband (algorithm v42).** An L-eXtreme, L-eNhance, L-Ultimate,
 Duo or Quad frame is a nebula frame with Ha + OIII stars, yet the filter-aware trailing penalty

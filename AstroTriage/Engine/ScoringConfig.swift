@@ -44,6 +44,18 @@ struct ScoringConfig: Codable, Equatable {
     var minPlausibleSeeingArcsec: Double
     var minPlausibleFWHMPixels: Double
 
+    // Dark/dome/cap exemption (algo v43): a frame whose background scatter sits at the read-noise
+    // floor ("flat pedestal") is NOT a dark when it carries at least this many PSF-shaped
+    // detections per megapixel. Darks keep 2–4 warm-pixel clusters per megapixel after the v41
+    // extent gate (ASI6200 at -10 °C); a 60 s H-alpha OSC frame whose sky is below the read
+    // noise carries 54–146 real stars per megapixel.
+    var pedestalSkyStarsPerMegapixel: Double
+    // ...and those detections must be PSF-shaped: median scale-free residual of the circular
+    // Gaussian fit below this. Warm-pixel clusters on darks fit at 0.23–0.28, real stars —
+    // trailed ones included — at 0.02–0.12. Guards the exemption against a hot sensor whose
+    // cluster count alone could pass the density floor.
+    var pedestalSkyMaxFitResidual: Double
+
     /// The canonical defaults — MUST equal the `static let` values in QualityEstimator.swift.
     /// Using this config yields byte-identical scoring to the pre-externalization build.
     static let `default` = ScoringConfig(
@@ -55,7 +67,9 @@ struct ScoringConfig: Codable, Equatable {
         absoluteTrailingCeilingScore: 0.60,
         absoluteTrailingCeilingConsensus: 0.5,
         minPlausibleSeeingArcsec: 1.0,
-        minPlausibleFWHMPixels: 1.2
+        minPlausibleFWHMPixels: 1.2,
+        pedestalSkyStarsPerMegapixel: 20,
+        pedestalSkyMaxFitResidual: 0.17
     )
 
     // MARK: - Partial-override JSON decoding
@@ -72,7 +86,9 @@ struct ScoringConfig: Codable, Equatable {
          absoluteTrailingCeilingScore: Double,
          absoluteTrailingCeilingConsensus: Double,
          minPlausibleSeeingArcsec: Double,
-         minPlausibleFWHMPixels: Double) {
+         minPlausibleFWHMPixels: Double,
+         pedestalSkyStarsPerMegapixel: Double,
+         pedestalSkyMaxFitResidual: Double) {
         self.thresholdExcellent = thresholdExcellent
         self.thresholdGood = thresholdGood
         self.thresholdBorderline = thresholdBorderline
@@ -82,6 +98,8 @@ struct ScoringConfig: Codable, Equatable {
         self.absoluteTrailingCeilingConsensus = absoluteTrailingCeilingConsensus
         self.minPlausibleSeeingArcsec = minPlausibleSeeingArcsec
         self.minPlausibleFWHMPixels = minPlausibleFWHMPixels
+        self.pedestalSkyStarsPerMegapixel = pedestalSkyStarsPerMegapixel
+        self.pedestalSkyMaxFitResidual = pedestalSkyMaxFitResidual
     }
 
     init(from decoder: Decoder) throws {
@@ -96,6 +114,8 @@ struct ScoringConfig: Codable, Equatable {
         absoluteTrailingCeilingConsensus = try c.decodeIfPresent(Double.self, forKey: .absoluteTrailingCeilingConsensus) ?? d.absoluteTrailingCeilingConsensus
         minPlausibleSeeingArcsec = try c.decodeIfPresent(Double.self, forKey: .minPlausibleSeeingArcsec) ?? d.minPlausibleSeeingArcsec
         minPlausibleFWHMPixels = try c.decodeIfPresent(Double.self, forKey: .minPlausibleFWHMPixels) ?? d.minPlausibleFWHMPixels
+        pedestalSkyStarsPerMegapixel = try c.decodeIfPresent(Double.self, forKey: .pedestalSkyStarsPerMegapixel) ?? d.pedestalSkyStarsPerMegapixel
+        pedestalSkyMaxFitResidual = try c.decodeIfPresent(Double.self, forKey: .pedestalSkyMaxFitResidual) ?? d.pedestalSkyMaxFitResidual
     }
 
     // MARK: - Load / dump

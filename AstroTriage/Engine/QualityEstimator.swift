@@ -283,6 +283,33 @@ struct QualityEstimator {
     // the per-setup learned corridor.
     static let darkFrameMADCeiling: Double = 0.0001
 
+    // A flat pedestal says the SKY is below the read noise — not that there is no sky (algo v43).
+    // 60 s H-alpha through an ASI2600MC at gain 100 on an f/5.5 refractor puts the sky ~8 ADU
+    // above the offset; its background MAD (0.000068) is byte-identical to the dome-closed darks
+    // that calibrated darkFrameMADCeiling, and 337 of 392 frames of one session — 3400 measured
+    // stars each, nebula plainly visible — were "dome/cap". The two differ in their stellar
+    // population: the real frames carry 1400–3800 PSF-shaped detections (54–146 per megapixel),
+    // the darks 131–256 warm-pixel clusters (2–4 per megapixel, ASI6200MM at -10 °C) that
+    // survive the v41 extent gate. Per megapixel because the defect count and — for one sensor —
+    // the star count both scale with the pixel count. 20 sits 5× above the warmest dark measured
+    // and 3× below the faintest real frame (63 per megapixel, IC 5070 H).
+    // Second signature, because a hotter or noisier sensor carries more clusters: the detections
+    // must be PSF-SHAPED. The median scale-free residual of the circular Gaussian fit
+    // (sqrt(chi²)/amplitude, `relResidualCirc`) is 0.23–0.28 on every dark measured and
+    // 0.02–0.12 on every real pedestal frame, trailed ones included — warm-pixel clusters are
+    // not Gaussians. Both are ScoringConfig knobs. The durable fix remains the per-setup
+    // learned corridor.
+    static let pedestalSkyStarsPerMegapixel: Double = 20
+    static let pedestalSkyMaxFitResidual: Double = 0.17
+
+    // Rule 1b fallback (algo v43) for frames without a full WCS: the frame's center may be this
+    // fraction of the larger field edge from the group's center before the frame counts as
+    // "shifted off sensor". 0.5 is the user's criterion read along the long axis — "even a 40%
+    // offset is the same image as long as the center still lies in the other frame" — and
+    // replaces the 0.3 that had no stated physical meaning. Frames WITH a full WCS get the exact
+    // per-axis test instead (the group center projected onto this sensor must land inside it).
+    static let decenteredCenterOffsetFraction: Double = 0.5
+
     // Broadband filters where star count is a reliable quality indicator.
     // Everything else — narrowband (Ha, OIII, SII...), dual-band (L-eXtreme, L-Ultimate),
     // tri-band (L-Quadband, NBZ), or unknown — gets reduced star weight (0.5).
@@ -532,6 +559,25 @@ struct QualityEstimator {
                 return min(10000, max(5000, scaled))
             }()
 
+            // Does this frame carry a stellar population — enough PSF-shaped detections per
+            // megapixel — so that a flat pedestal means "faint sky", not "no sky"? Reads the
+            // MEASURED count, a measured FWHM inside the physical corridor (a failed fit or a
+            // header value proves nothing) and, when the GPU fit ran, the fit residual. See
+            // pedestalSkyStarsPerMegapixel / pedestalSkyMaxFitResidual.
+            func hasStellarPopulation(_ i: Int) -> Bool {
+                let entry = groupEntries[i]
+                guard let stars = entry.computedStarCount, stars > 0,
+                      measuredOrNil(entry.computedFWHM,
+                                    floor: physicalFWHMFloorPixels(for: entry, config: config)) != nil,
+                      let width = entry.width, let height = entry.height, width > 0, height > 0
+                else { return false }
+                if let residual = entry.relResidualCirc, residual > config.pedestalSkyMaxFitResidual {
+                    return false   // many detections, but they are not star-shaped
+                }
+                let megapixels = Double(width) * Double(height) / 1_000_000
+                return Double(stars) >= config.pedestalSkyStarsPerMegapixel * megapixels
+            }
+
             for (i, entry) in groupEntries.enumerated() {
                 // A frame with no sky has one of TWO signatures, and neither subsumes the other:
                 //  (1) flat pedestal — an offset background with essentially no scatter
@@ -541,10 +587,13 @@ struct QualityEstimator {
                 //  (2) near-zero level with ordinary read noise (median ≈ MAD ≈ 0.001).
                 //      Its MAD is perfectly normal, so the structure test alone misses it.
                 // Accept either.
+                // A pedestal with a stellar population is a faint sky, not a dark (algo v43).
                 let noStructure = (entry.noiseMAD.map(Double.init) ?? .infinity) < darkFrameMADCeiling
+                    && !hasStellarPopulation(i)
                 let noMeasurableSignal = !(snrValues[i].map { $0 > 5.0 } ?? false)
                 let noSkySignal = noStructure || noMeasurableSignal
-                // A flat pedestal IS a dark frame — no star count required (algo v41).
+                // A flat pedestal IS a dark frame — no star count required (algo v41) — unless it
+                // carries a stellar population (algo v43, see pedestalSkyStarsPerMegapixel).
                 //
                 // Until v40 this branch only fired when the star detector had measured
                 // nothing at all; otherwise the frame had to reach Path A/B below, which
@@ -651,10 +700,18 @@ struct QualityEstimator {
             let bgMAD = medianAbsoluteDeviation(cleanBgValues, median: bgMedian)
                 .map { max($0, (bgMedian ?? 0) * backgroundMADFloorFactor) }
 
-            // Plate-solved center coordinates for pointing offset detection
-            // Compute group median RA/Dec and FOV (degrees) for decentered-target check
-            let solvedRAs: [Double] = groupEntries.compactMap { $0.solvedRA }
-            let solvedDecs: [Double] = groupEntries.compactMap { $0.solvedDec }
+            // Sky position of each frame's IMAGE CENTER for the decentered-target check (Rule 1b),
+            // plus the group median and the field of view (degrees).
+            //
+            // Algo v43: read through WCSProjection.frameCenter, never CRVAL directly. CRVAL is the
+            // sky position of the reference pixel CRPIX, and ASIAIR places that pixel anywhere in
+            // the frame: on one 85 mm session the true centers of 391 frames agreed to 0.04° while
+            // their CRVALs scattered 1.4° — 139 frames were trashed as "target shifted off sensor"
+            // for a mount that never moved. For NINA/ASTAP solutions (CRPIX at the center) the
+            // projected center IS CRVAL, so nothing changes for them.
+            let frameCenters: [(ra: Double, dec: Double)?] = groupEntries.map { WCSProjection.frameCenter(of: $0) }
+            let solvedRAs: [Double] = frameCenters.compactMap { $0?.ra }
+            let solvedDecs: [Double] = frameCenters.compactMap { $0?.dec }
             let medianSolvedRA: Double? = solvedRAs.count >= 3 ? solvedRAs.sorted()[solvedRAs.count / 2] : nil
             let medianSolvedDec: Double? = solvedDecs.count >= 3 ? solvedDecs.sorted()[solvedDecs.count / 2] : nil
             // FOV in degrees: use first entry with pixel size + focal length + image dimensions
@@ -758,6 +815,7 @@ struct QualityEstimator {
                     // spatial structure but a huge SNR, a near-zero frame has ordinary scatter
                     // but no SNR. Either one means "no sky".
                     let noStructure = (entry.noiseMAD.map(Double.init) ?? .infinity) < darkFrameMADCeiling
+                        && !hasStellarPopulation(localIdx)
                     let noSkySignal = noStructure || !(snr.map { $0 > 5.0 } ?? false)
 
                     if stars >= 10000 && noSkySignal {
@@ -768,12 +826,15 @@ struct QualityEstimator {
                     }
                 }
                 // (c) Flat pedestal — the background carries no spatial structure at all
-                // (algo v41). Independent of any star count: see the pre-pass for why the
-                // count-keyed paths above stopped seeing RASA dome-closed frames once the
-                // star detector no longer counts single hot pixels. Same reason text as the
-                // count paths — for the user it is the same verdict (dome/cap), and the
-                // reason string is stored in Frame History, so no new enum case.
+                // (algo v41). Independent of any star count THRESHOLD: see the pre-pass for why
+                // the count-keyed paths above stopped seeing RASA dome-closed frames once the
+                // star detector no longer counts single hot pixels. Not independent of a
+                // stellar POPULATION (algo v43): a sky fainter than the read noise has the same
+                // pedestal and thousands of real stars. Same reason text as the count paths —
+                // for the user it is the same verdict (dome/cap), and the reason string is
+                // stored in Frame History, so no new enum case.
                 if (entry.noiseMAD.map(Double.init) ?? .infinity) < darkFrameMADCeiling,
+                   !hasStellarPopulation(localIdx),
                    !garbageReasons.contains(.noisePeaks) {
                     garbageReasons.append(.noisePeaks)
                 }
@@ -831,15 +892,35 @@ struct QualityEstimator {
                     }
                 }
 
-                // Rule 1b: Decentered target — plate-solved center offset > 30% of FOV.
-                // Runs independently of star count: a frame can be both "low stars" AND "decentered".
-                if let ra = entry.solvedRA, let dec = entry.solvedDec,
-                   let medRA = medianSolvedRA, let medDec = medianSolvedDec,
-                   let fov = fovDeg, fov > 0 {
-                    let dRA = (ra - medRA) * cos(medDec * .pi / 180.0)
-                    let dDec = dec - medDec
-                    let separation = (dRA * dRA + dDec * dDec).squareRoot()
-                    if separation > fov * 0.3 {
+                // Rule 1b: Decentered target — the group's field center no longer lies on this
+                // frame's sensor. Runs independently of star count: a frame can be both "low stars"
+                // AND "decentered".
+                //
+                // Criterion (algo v43, the user's words): "even a 40% offset is still the same
+                // image as long as the center still exists in the other frame". With a full WCS
+                // the group's median center is projected onto THIS frame's pixel grid and must
+                // land inside [1, W] × [1, H] — per axis, so a shift along the short edge is judged
+                // against the short edge. Without a full WCS (CRVAL / RA-DEC only) the fallback is
+                // a great-circle offset of at most decenteredCenterOffsetFraction × the larger
+                // field edge (was 0.3 of the field from the median CRVAL).
+                if let center = frameCenters[localIdx],
+                   let medRA = medianSolvedRA, let medDec = medianSolvedDec {
+                    let offSensor: Bool
+                    if let wcs = TangentPlaneWCS(entry: entry),
+                       let width = entry.width, let height = entry.height, width > 0, height > 0 {
+                        if let p = wcs.pixel(ofRA: medRA, dec: medDec) {
+                            offSensor = p.x < 1 || p.x > Double(width) || p.y < 1 || p.y > Double(height)
+                        } else {
+                            offSensor = true   // the group center is behind this frame's tangent plane
+                        }
+                    } else if let fov = fovDeg, fov > 0 {
+                        let separation = WCSProjection.angularSeparation(ra1: center.ra, dec1: center.dec,
+                                                                         ra2: medRA, dec2: medDec)
+                        offSensor = separation > fov * decenteredCenterOffsetFraction
+                    } else {
+                        offSensor = false
+                    }
+                    if offSensor {
                         garbageReasons.append(.decenteredTarget)
                     }
                 }

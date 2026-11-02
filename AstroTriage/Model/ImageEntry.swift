@@ -168,6 +168,21 @@ struct ImageEntry: Identifiable, Hashable {
     var wcsCD22: Double?               // CD matrix element (2,2) — deg per pixel
     var twilightPhase: TwilightPhase?  // Sun position classification at capture time
 
+    /// Copy the PSF-fit diagnostics of a star measurement — the same eight fields on every
+    /// measurement path (prefetch pipeline, priority re-measure, archive scanner, headless rig).
+    /// The dark-rule exemption (algo v43) reads `relResidualCirc`; until 6.11.2 only the rig
+    /// set these, so the app and the rig disagreed about what a frame "measured".
+    mutating func applyPSFDiagnostics(_ m: StarMetrics) {
+        momentEccentricity = m.medianMomentEcc
+        fitEccentricity = m.medianFitEcc
+        momentPreferredFraction = m.momentPreferredFraction
+        fitAcceptedFraction = m.fitAcceptedFraction
+        ellipticalChi2 = m.medianEllipticalChi2
+        circularChi2 = m.medianCircularChi2
+        relResidualEllip = m.medianRelResidualEllip
+        relResidualCirc = m.medianRelResidualCirc
+    }
+
     // Trailing analysis (computed by TrailingAnalyzer after star metrics)
     var trailingScore: Double?         // 0 = no trailing, 1 = severe trailing (consensus-weighted, FL-adaptive)
     var trailingPA: Double?            // Position angle of trailing direction (degrees, 0-180)

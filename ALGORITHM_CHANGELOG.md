@@ -12,6 +12,136 @@ Records with `algorithmVersion < kAlgorithmVersion` are candidates for re-analys
 
 ---
 
+## Version 43 — The frame's position is its image center; a flat pedestal is a dark only without stars (2026-11-02)
+
+**User reports (2026-11-02), one ASIAIR session (85 mm / 468 mm, ASI2600MC, 60 s H-alpha, "C 9",
+392 frames):** (1) "consecutive frames land in F1 and F2 although only a slight rotation is visible;
+a rotation must never make a separate object", and (2) "with H-alpha on an OSC the detection says no
+stars, only noise peaks — that is simply wrong", confirmed on a second session ("IC 5070", 115
+frames). Both were measured on the original files before anything was changed.
+
+### Part 1 — CRVAL is the sky position of the reference pixel, not of the frame
+
+**What was wrong.** Four consumers read `CRVAL1/2` as "where the frame points": the Field column,
+Rule 1b (decentered target), Auto Rotate's WCS transform and the re-solve comparison. CRVAL is the
+sky position of the reference pixel `CRPIX1/2`. NINA, ASTAP and PixInsight put that pixel at the
+image center, so the shortcut was invisible on the data these features were built with. ZWO ASIAIR
+(astrometry.net-style SIP solutions) puts it anywhere in the frame: on this session the true image
+centers of 391 solved frames agreed to **0.037°** (0.024° p90) while their CRVALs scattered up to
+**1.44°** (1.27° p90) — two consecutive frames one minute apart, camera untouched, carried CRVALs
+1.71° apart. The field tolerance for this optic is 0.6 × 2.88° = 1.73°, so the Field column
+split one pointing into F1 (252) / F2 (139) frame by frame; Rule 1b (offset > 30% of the field from
+the median CRVAL) flagged 88 frames "target shifted off sensor (mount recenter)" for a mount that
+never moved; Auto Rotate composed the CD matrices directly and shifted by the planar CRVAL
+difference — but the CD matrix of a tangent plane 3.8° further east in RA at Dec +63° is rotated
+against the reference by ΔRA·sin δ = 3.4° (meridian convergence), so frames blinked with a spurious
+relative rotation of up to 3.4° and **17 px median / 92 px p90 / 103 px maximum** offset at the image
+center although they were pixel-identical to 2 px. That is the "slight rotation" of the report.
+The re-solve comparison compared CRVAL to CRVAL and CD rotation to CD rotation and reported the same
+1.7° / 3.4° as a disagreement on every ASIAIR frame.
+
+**The fix.** `Engine/WCSProjection.swift` (GUI-free, in the CLI source closure): `TangentPlaneWCS`
+with the exact gnomonic inverse (`sky(atPixelX:y:)`), forward (`pixel(ofRA:dec:)`) and the local
+north direction (`northAngle(atPixelX:y:)`), plus `WCSProjection.frameCenter(of:)` — the image
+center projected through the solution, CRVAL only without a full WCS. Verified against astropy on
+all 391 files: 0.0000" without SIP, ≤ 9.8" with the SIP terms the helper ignores.
+- Field column / stacking gate: `FieldGrouping.skyCenter` reads `frameCenter`.
+- Rule 1b: centers via `frameCenter`; with a full WCS the group's median center is projected
+  onto the frame's own pixel grid and must land inside the sensor — per axis, the user's
+  criterion ("even a 40% offset is the same image as long as the center still lies in the other
+  frame"). Without a full WCS: great-circle offset ≤ 0.5 × the larger field edge
+  (`decenteredCenterOffsetFraction`, was 0.3 of the field from the median CRVAL).
+- Auto Rotate: `DisplayAligner.transformFromWCS` linearises the exact composition frame → sky →
+  reference at the frame's image center from three mapped points (center + 1000 px in x and y).
+  Exact at the center; corner residual median 0.36 px, max 6 px on this 2.9° field (was 17–103 px
+  at the center). The reference frame is now the one nearest the median image center.
+- Re-solve comparison: the stored solution is evaluated at the fresh solution's reference pixel
+  (common pixel), rotation = local north angle there under both solutions. The two real headers:
+  0.08' and 0.03° (were 103' and 3.3°). `WCSSolution(existingOn:)` now requires CRPIX.
+
+**Measured — GOLDENSET1 (464 frames, 17 scored cases), rig with the parity fixes below:** exactly
+neutral — 0 tier changes, 0 reason changes (no golden-set frame has an off-center reference pixel
+far enough to matter). C 9: "target shifted off sensor" 88 → 0; the Field column shows one field.
+
+### Part 2 — A flat pedestal with a stellar population is a faint sky, not a dark
+
+**What was wrong.** Since v41 a background MAD below `darkFrameMADCeiling` (0.0001 ≈ 6.5 ADU) was a
+dark on its own (pre-pass `noStructure` and Rule 0b(c)). The v36 comment had written down the
+risk: "an absolute photometric threshold … could be wrong again for a sensor or exposure regime
+quieter than anything measured so far." That regime is 60 s H-alpha through an ASI2600MC at gain
+100 on an f/5.5 refractor: the sky sits ~8 ADU above the offset pedestal, so the background MAD is
+**0.000068 — byte-identical to the RASA dome-closed darks** that calibrated the ceiling (same
+camera family, offset 50, read noise). The MAD describes the background; a sky fainter than the
+read noise is flat too. Result in the app: 337 of 392 C 9 frames and 85 of 115 IC 5070 frames
+"noise peaks, not real stars (dome/cap)" with 1600–4600 measured stars each and the nebula plainly
+visible. Conservative auto-mark would have pre-deleted them.
+
+**The fix.** `hasStellarPopulation`: a pedestal frame is NOT a dark when it carries a measured star
+count of at least `pedestalSkyStarsPerMegapixel` (20) per megapixel of sensor, its measured FWHM
+lies inside the physical corridor (a failed fit proves nothing), and — when the GPU fit ran — the
+median scale-free residual of the circular Gaussian fit (`relResidualCirc`) is below
+`pedestalSkyMaxFitResidual` (0.17): the detections must be PSF-shaped. Applied to the pre-pass
+`noStructure`, Rule 0b(a)/(b)'s `noStructure` and Rule 0b(c). Both limits are ScoringConfig knobs.
+
+Why those two numbers (every pedestal frame of the three data sets, parity rig):
+
+| population | frames | measured stars | stars / megapixel | fit residual | ecc |
+|---|---|---|---|---|---|
+| GOLDENSET1 darks (ASI6200MM, −10 °C, 61 MP) | 63 | 131–256 | **2.1–4.2** | **0.23–0.28** | 0.69–0.83 |
+| GOLDENSET1 real frames on a pedestal (ASIAIR OSC, 26 MP) | 23 | 2051–3356 | 79–129 | 0.034–0.10 | 0.12–0.47 |
+| C 9 (ASI2600MC, 0 °C, 26 MP) | 337 | 1862–4640 | **71–145** | 0.019–0.12 | 0.32–0.88 |
+| IC 5070 (same camera) | 85 | 1645–3311 | **63–91** | 0.048–0.065 | 0.23–0.41 |
+
+The density floor sits 5× above the warmest dark and 3× below the faintest real frame; the residual
+limit 1.4× from either side. The residual is the physical backstop: warm-pixel clusters are not
+Gaussians, however many a hot sensor produces. Per megapixel because the defect count and — for one
+sensor — the star count both scale with the pixel count.
+
+**Measured — GOLDENSET1, parity rig, v42 logic → v43:**
+
+| | parity rig (= app before) | v43 |
+|---|---|---|
+| darks flagged dome/cap | 62 / 62 scorable (1 dark sits in a 4-frame unscored group) | **62 / 62** |
+| good frames wrongly flagged (false alarms) | 21 / 203 (10.3%) | **19 / 203 (9.4%)** |
+| bad frames caught | 168 / 250 (67.2%) | 160 / 250 (64.0%) |
+
+Every change is in the two ASIAIR OSC cases: `ZWO-AM5_450mm_EXTR_NGC4477_180s` loses both false
+alarms (2/12 → 0/12); `ZWO-AM5_450mm_EXTR_NGC4477_60s` catch by token: trail 16/16 → 9/16, cloud
+2/8 → 1/8. Those 18 frames had "dome/cap" as their ONLY reason — the pedestal rule, not a trailing
+or cloud rule, had caught them; their measured eccentricity (0.12–0.47) sits below the 468 mm
+baseline (0.52), so the trailing rules see round stars. An accidental catch is not a catch (lesson
+2026-09-09); the frames are now reported honestly as uncaught and belong to the open borderline /
+mild-trailing work. **C 9:** dome/cap 337 → 0, trash 347 → 87 (38 trailing, the rest z-score).
+**IC 5070:** dome/cap 85 → 0, trash 85 → 0 (21 excellent, 84 good, 10 borderline).
+
+### Scoring rig corrections (no algorithm change; reference numbers re-based)
+
+Found while measuring, all three rig/app parity gaps (no. 4–6 after `c825482`, `fc05188`, v42):
+- `ScoringRunner.buildEntry` measured on the raw CFA mosaic — no debayer, no per-frame channel
+  pick. On an H-alpha OSC frame the v41 extent gate then rejects every checkerboard "star": the rig
+  reported "no signal" on 99 C 9 frames the app measured 3400 stars on, and half the app's count on
+  the rest. It now debayers when BAYERPAT is known and picks the channel exactly like PrefetchCache
+  (`bestMeasurementChannel` moved to STFCalculator, inside the CLI closure).
+- `MetadataExtractor` — the rig's only header path — never set `focalLength`, `pixelSizeMicrons`
+  or `solvedRA/Dec`, so every FL-dependent rule (apertures, seeing floor, trailing baseline, dark
+  star threshold, Rule 1b) ran as "optics unknown" in the rig and Rule 1b never ran at all.
+
+Old rig → parity rig, same v42 logic: false alarms 18 → 21, catch 169 → 168, 29 tier moves, all in
+the five `ZWO-AM5_450mm_*` (ASIAIR OSC) cases, whose median star counts rise 3–7× (e.g. EXTR 60 s
+386 → 2731). The v42 entry's numbers (18 / 169) were measured with the old rig; the GOLDENSET1
+reference from here on is **false alarms 21/203, catch 168/250 at v42 logic** and 19/203, 160/250 at
+v43. Parity check used: frame 0008 of C 9 measures 3411 stars / FWHM 5.34 / HFR 2.58 / SNR 114.7
+in the app Inspector and in the rig.
+
+### Not changed
+
+`darkFrameMADCeiling` (0.0001), Rule 0 (no PSF), Rule 1, the trailing rules, all tier cutoffs.
+Frame History records, community baselines and SSWEIGHT exports made before v43 keep their stored
+values; records of ASIAIR OSC narrowband sessions scored by v41/v42 may carry the spurious
+"dome/cap" and "shifted off sensor" reasons and are candidates for re-analysis.
+
+---
+
 ## Version 42 — Dual-band filters are narrowband; one filter table for app and rig (2026-11-01)
 
 **User request (2026-11-01): "Extr must be rated as narrowband with a duo bandwidth. Logical."**
