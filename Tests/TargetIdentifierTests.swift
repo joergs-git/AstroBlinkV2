@@ -202,3 +202,41 @@ final class PlateSolveComparisonTests: XCTestCase {
         XCTAssertEqual(existing.arcsecPerPixel, 1.66, accuracy: 0.05)
     }
 }
+
+// MARK: - Comparing solutions with different reference pixels (6.11.2)
+
+extension TargetIdentifierTests {
+
+    /// An ASIAIR header (reference pixel lower left) re-solved by ASTAP (reference pixel upper
+    /// right here, normally the center): same sky, CRVALs 1.7° apart, CD rotations 3.3° apart.
+    /// Compared at a common pixel the two agree to 0.08' and 0.03°.
+    func testReferencePixelPlacementIsNotADisagreement() {
+        let a = WCSProjectionTests.solutionA, b = WCSProjectionTests.solutionB
+        let existing = WCSSolution(crval1: a.crval1, crval2: a.crval2, crpix1: a.crpix1, crpix2: a.crpix2,
+                                   cd11: a.cd11, cd12: a.cd12, cd21: a.cd21, cd22: a.cd22, crota2: nil)
+        let fresh = WCSSolution(crval1: b.crval1, crval2: b.crval2, crpix1: b.crpix1, crpix2: b.crpix2,
+                                cd11: b.cd11, cd12: b.cd12, cd21: b.cd21, cd22: b.cd22, crota2: nil)
+        let c = PlateSolveComparison(existing: existing, fresh: fresh)
+        XCTAssertLessThan(c.centreOffsetArcmin, 0.2, c.summary)
+        XCTAssertLessThan(c.rotationDifferenceDegrees, 0.1, c.summary)
+        XCTAssertFalse(c.isSignificant, "the same sky described twice must confirm, not alarm: \(c.summary)")
+    }
+
+    func testAGenuinelyDifferentPointingStillDisagrees() {
+        let a = WCSProjectionTests.solutionA
+        let existing = WCSSolution(crval1: a.crval1, crval2: a.crval2, crpix1: a.crpix1, crpix2: a.crpix2,
+                                   cd11: a.cd11, cd12: a.cd12, cd21: a.cd21, cd22: a.cd22, crota2: nil)
+        // Same reference pixel, sky 0.5° further north: a real 30' disagreement.
+        let fresh = WCSSolution(crval1: a.crval1, crval2: a.crval2 + 0.5, crpix1: a.crpix1, crpix2: a.crpix2,
+                                cd11: a.cd11, cd12: a.cd12, cd21: a.cd21, cd22: a.cd22, crota2: nil)
+        let c = PlateSolveComparison(existing: existing, fresh: fresh)
+        XCTAssertEqual(c.centreOffsetArcmin, 30, accuracy: 0.1)
+        XCTAssertTrue(c.isSignificant)
+    }
+
+    func testAnEntryWithoutAReferencePixelCarriesNoComparableSolution() {
+        var entry = WCSProjectionTests.entry("partial", WCSProjectionTests.solutionA)
+        entry.wcsCRPIX1 = nil
+        XCTAssertNil(WCSSolution(existingOn: entry), "a WCS without CRPIX cannot be projected, so it cannot be compared")
+    }
+}

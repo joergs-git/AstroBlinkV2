@@ -590,9 +590,12 @@ struct AIsaacContextBuilder {
           (signal exception: SNR > 5 AND a MEASURED star count > 100) → "no signal detected"
           * R0b Dark frame / dome closed / lens cap → "noise peaks, not real stars (dome/cap)". Three paths, \
           any one suffices: (a) FLAT PEDESTAL — the background carries no spatial structure at all \
-          (noise MAD < 0.0001, i.e. under ~6.5 ADU of 65535; real sky always varies more than that — \
-          the quietest good frame ever measured sits at 0.000114, dark frames at 0.000068) — this is the \
-          physical signature and needs NO star count (v41); (b) stars ≥ 10,000 on a background with no sky \
+          (noise MAD < 0.0001, i.e. under ~6.5 ADU of 65535; dark frames sit at 0.000068) AND the frame \
+          carries NO stellar population (v43): a sky fainter than the read noise — 60 s H-alpha through an OSC \
+          at gain 100 on an f/5.5 refractor — has the same pedestal but 1400–3800 PSF-shaped stars. The frame is \
+          a faint sky, not a dark, when it has ≥ 20 measured stars per megapixel (darks: 2–4 warm-pixel \
+          clusters per megapixel) whose circular Gaussian fit residual is < 0.17 (darks 0.23–0.28, real stars \
+          0.02–0.12) and a plausible measured FWHM; (b) stars ≥ 10,000 on a background with no sky \
           signal (no structure OR SNR ≤ 5); (c) stars ≥ FL-scaled threshold (7500 at 1000 mm, scaled by \
           1/FL², clamped 5000-10000) AND background level < 0.002 AND no sky signal. Dark frames are removed \
           from the group statistics BEFORE medians are computed, so they cannot poison the other frames.
@@ -600,7 +603,11 @@ struct AIsaacContextBuilder {
           < 25% (broadband) / 15% (narrowband) of the group median; (c) P90 floor — count < 15% (broadband) \
           / 9% (narrowband) of the group's 90th-percentile count, which catches clouded frames in bimodal \
           groups → "zero/near-zero stars". Narrowband floors are lower because stars are incidental there (v38).
-          * R1b Decentered target: plate-solved center offset > 30% of FOV → "target shifted off sensor"
+          * R1b Decentered target: the frame's IMAGE CENTER (projected through the plate-solved WCS — CRVAL is only the \
+          sky position of the reference pixel CRPIX, which ASIAIR places anywhere in the frame) is so far off that \
+          the group's median center no longer lies on this frame's sensor (projected per axis through the frame's WCS; \
+          fallback without a full WCS: > 50% of the larger field edge) → "target shifted off sensor". A 40% offset is \
+          the same image (v43; before v43 CRVAL itself and 30% of the field).
           * R2 Low SNR: SNR < 50% of group median → "SNR catastrophically low"
           * R3 High FWHM: FWHM > 2× median → "severe defocus/tracking"
           * R4 High HFR: HFR > 2× median → "severe defocus"
@@ -775,6 +782,14 @@ struct AIsaacContextBuilder {
         - Frames meeting learned baseline locked as KEEP (blue lock icon) — z-scores can't override.
 
         ALGORITHM VERSION HISTORY (recent — kAlgorithmVersion is stored on every Frame History record):
+        - v43 (v6.11.2, 2026-11-02): (1) the frame's sky position is its IMAGE CENTER projected through the WCS, \
+        not CRVAL (the sky at the reference pixel, which ASIAIR places anywhere): Rule 1b, the Field column, Auto \
+        Rotate's WCS alignment and the re-solve comparison all read it; Rule 1b asks whether the group center still \
+        lies on the frame's sensor, per axis (fallback 50% of the larger edge; was 30%). (2) A flat pedestal is a dark only without a stellar population \
+        (≥ 20 PSF-shaped stars per megapixel with fit residual < 0.17 = faint sky). GOLDENSET1: all 63 darks still \
+        caught; real-frame false "dome/cap" flags removed on the ASIAIR OSC cases; the WCS part is exactly neutral. \
+        Also: the headless scoring rig now debayers OSC frames, picks the measurement channel, reads focal length, \
+        pixel size and CRVAL like the app — four more rig/app parity gaps closed; reference numbers re-based.
         - v42 (v6.11.1, 2026-11-01): dual-/multi-band filters score as narrowband (trailing × 0.3 instead of the \
         × 0.7 'unknown' default); one shared filter table for app, charts and the headless CLI — the CLI had scored \
         "H"/"O"/"S" as unknown. GOLDENSET1: false alarms 18→18, catch 170→169 (the L-eXtreme case +1 catch and six bad frames deeper in trash; \
@@ -826,7 +841,8 @@ struct AIsaacContextBuilder {
         - Quality column icons: full green = excellent, half-green = good, orange gradient (4 sub-levels) = borderline, \
         red X = garbage, blue "?" = uncertain (small group, ambiguous quality). Blue lock badge = calibration-locked KEEP.
         - Hover quality icon for tooltip: per-metric z-scores, SNR contribution %, human-readable reason, KEEP/DELETE advice.
-        - Field column (6.10.0): "F1"/"F2"… badge = the sky field a frame points at (plate-solved center, else OBJCTRA/OBJCTDEC). \
+        - Field column (6.10.0): "F1"/"F2"… badge = the sky field a frame points at (image center projected through \
+        the plate solve — since 6.11.2; CRVAL before, which split ASIAIR sessions whose reference pixel wanders — else OBJCTRA/OBJCTDEC). \
         F1 = the field with the most frames. Frames share a field while their centers are within 60% of the larger field edge \
         (≥40% overlap). Blank when the whole session is one field. Right-click → "Select All Frames of Field Fn". \
         LightspeedStacker uses the same grouping: a mixed selection shows the fields with counts, names and separation and \
@@ -899,7 +915,12 @@ struct AIsaacContextBuilder {
         - Window → Plate Solve Frames… (Cmd+Shift+P), or right-click a selection in the file list.         Runs on the highlighted frames, or the whole session when nothing is highlighted.
         - Requires ASTAP plus one of its star databases, installed by the user. Both are free; their         licences prevent bundling them (ASTAP is GPL-3, the database folder carries non-commercial data).         macOS blocks the database folder (usually /usr/local/opt/astap) until the user grants access ONCE;         the grant is remembered and is inherited by the ASTAP process AstroBlink starts.
         - ~0.3 s per frame, because AstroBlink passes the field size it already knows from FOCALLEN and         XPIXSZ, plus the mount position from RA/DEC. Works with FITS and XISF — ASTAP cannot read XISF,         so those frames are decoded by AstroBlink and handed over as a temporary image. ASTAP never sees         the user's originals and never writes to them.
-        - Writes standard WCS keywords: CRVAL1/2, CRPIX1/2, CD1_1..CD2_2, CTYPE1/2, CROTA2. This is what         Auto Rotate uses to pixel-lock frames, and what decentered-target checks need.
+        - Writes standard WCS keywords: CRVAL1/2, CRPIX1/2, CD1_1..CD2_2, CTYPE1/2, CROTA2. This is what Auto Rotate \
+        uses to pixel-lock frames, and what decentered-target checks need. Since 6.11.2 every consumer treats each \
+        solution as its own tangent plane (CRVAL is the sky at CRPIX, not the frame center): Auto Rotate projects \
+        the image center exactly, the re-solve comparison compares at a common pixel, Field column + Rule 1b use the \
+        image center. Before, ASIAIR headers (reference pixel anywhere) blinked with up to 3° of spurious rotation \
+        and ~100 px offset, split one pointing into F1/F2 and trashed frames as "shifted off sensor".
         - Window → "Plate-Solve on Load (Orientation Only)" (6.11.0, OFF by default): background ASTAP solve of every frame \
         after loading, IN MEMORY only (nothing written). Fixes Auto Rotate on frames whose header WCS was copied from before a \
         meridian flip (ASIAIR copies its last solve into following frames) and feeds the Field column. Cached per file name+size.
@@ -933,8 +954,11 @@ struct AIsaacContextBuilder {
         detection stage instead.
 
         DOME/DARK FRAME DETECTION (see Rule 0b for the exact paths):
-        - The decisive signature is the FLAT PEDESTAL: background noise MAD < 0.0001 means the frame has no \
-        spatial structure — no stars, no gradient, no nebulosity. Real sky always varies more than that.
+        - The decisive signature is the FLAT PEDESTAL: background noise MAD < 0.0001 means the BACKGROUND has no \
+        spatial structure. Since v43 that alone is not a dark: a sky fainter than the read noise (short narrowband \
+        OSC exposures at low gain) has the same pedestal, so the verdict also requires the ABSENCE of a stellar \
+        population (< 20 PSF-shaped stars per megapixel, or fit residual ≥ 0.17). Before v43 entire H-alpha OSC \
+        sessions (337 of 392 frames of one, 85 of 115 of another) were "dome/cap" with 3400 measured stars each.
         - Why SNR cannot be used as a "has signal" test here: SNR = background median ÷ background MAD, so \
         a flat dark frame with an offset pedestal has the HIGHEST SNR in the session (113 vs ~20 for good \
         frames on the RASA). Before v33 that inverted guard let entire dome-closed nights score "good".

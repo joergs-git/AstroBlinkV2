@@ -210,6 +210,36 @@ struct MetadataExtractor {
             entry.wcsRotation = atan2(-v12, v11) * 180.0 / .pi
         }
 
+        // Optics: focal length (mm) and pixel size (µm) give arcsec/pixel, which drives the
+        // star-measurement apertures, the seeing plausibility floor, the trailing baseline,
+        // the FL-scaled dark star threshold and the field of view of Rule 1b. The app reads
+        // these in SessionOrchestrator+Headers / ArchiveScanner; this extractor — the headless
+        // rig's only header path — never did, so the CLI scored every golden-set frame as
+        // "optics unknown" (rig/app parity, 2026-11-02). Same fallbacks as ArchiveScanner.
+        if let fl = headers["FOCALLEN"] ?? headers["FOCAL"], let val = Double(fl), val > 0 {
+            entry.focalLength = val
+        }
+        if let px = headers["XPIXSZ"] ?? headers["PIXSIZE1"], let val = Double(px), val > 0 {
+            entry.pixelSizeMicrons = val
+        }
+
+        // Plate-solved reference coordinates: CRVAL1/2 (primary), RA/DEC target header as
+        // fallback — the same precedence as SessionOrchestrator+Headers. Without these the
+        // headless rig never ran Rule 1b (decentered target) while the app did (rig/app
+        // parity, 2026-11-02). NOTE: CRVAL is the sky position of the reference pixel CRPIX,
+        // which the capture software may place anywhere in the frame — read the frame's sky
+        // CENTER through WCSProjection.frameCenter(of:), never from these fields directly.
+        if let ra = headers["CRVAL1"], let val = Double(ra) {
+            entry.solvedRA = val
+        } else if entry.solvedRA == nil, let ra = headers["RA"], let val = Double(ra) {
+            entry.solvedRA = val
+        }
+        if let dec = headers["CRVAL2"], let val = Double(dec) {
+            entry.solvedDec = val
+        } else if entry.solvedDec == nil, let dec = headers["DEC"], let val = Double(dec) {
+            entry.solvedDec = val
+        }
+
         // Full WCS plate-solve data for CD-matrix based display alignment.
         // Takes priority over star matching in DisplayAligner — exact, filter-independent,
         // ~100x faster. Every ASIAir-captured frame has this data.

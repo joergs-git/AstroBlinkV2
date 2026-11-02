@@ -669,8 +669,10 @@ final class QualityEstimatorTests: XCTestCase {
 
     // MARK: - Rule 1: Decentered Target Detection
 
-    /// Rule 1: Low star count with plate-solved offset > 30% FOV → decenteredTarget reason.
-    /// Simulates M82 scenario: mount recenter shifts target off sensor.
+    /// Rule 1b: Low star count with the frame center offset so far that the group's center no
+    /// longer lies on the sensor (fallback without a WCS: > 50% of the larger field edge since
+    /// algo v43, 30% before) → decenteredTarget reason. Simulates M82 scenario: mount recenter
+    /// shifts target off sensor.
     func testDecenteredTarget_LowStarsWithOffset() {
         // RC12 + ASI6200MM: FL=2455mm, pixel=3.76µm, sensor 9576×6388
         // FOV ≈ 9576 * 3.76µm / 2455mm * (180/π) ≈ 0.84°
@@ -682,7 +684,8 @@ final class QualityEstimatorTests: XCTestCase {
             e.noiseMedian = 0.05
             entries.append(e)
         }
-        // Frame with target shifted ~0.5° in Dec (>30% of 0.84° FOV) and low stars
+        // Frame with target shifted 0.5° in Dec (59% of the 0.84° FOV: its center lies outside
+        // the other frames) and low stars.
         // Using Dec offset avoids cos(Dec) scaling that reduces RA offsets at high declination
         var shifted = makeEntry(index: 99, fwhm: 3.5, hfr: 2.0, starCount: 68, noiseMAD: 0.01,
                                 focalLength: 2455.0, solvedRA: 148.93, solvedDec: 69.44 + 0.5,
@@ -2196,3 +2199,161 @@ final class QualityEstimatorTests: XCTestCase {
         }
     }
 }
+
+// MARK: - Rule 1b reads the image center, not CRVAL (algo v43)
+
+extension QualityEstimatorTests {
+
+    /// The C 9 regression: ASIAIR places the reference pixel anywhere, so CRVAL scattered 1.4°
+    /// around a pointing stable to 0.04° and Rule 1b trashed 139 of 391 frames as "target shifted
+    /// off sensor". With the center projected through the WCS none of them is decentered.
+    func testDecenteredTarget_IgnoresReferencePixelScatter() {
+        var entries: [ImageEntry] = []
+        for i in 0..<24 {
+            var e = WCSProjectionTests.entry("c9_\(i)", i % 2 == 0 ? WCSProjectionTests.solutionA
+                                                                     : WCSProjectionTests.solutionB)
+            e.filter = "H"
+            e.target = "C 9"
+            e.exposure = 60
+            e.fwhm = 3.5
+            e.hfr = 1.3
+            e.starCount = 1500
+            e.noiseMAD = 0.001
+            e.noiseMedian = 0.05
+            entries.append(e)
+        }
+        let scores = QualityEstimator.computeScores(for: entries)
+        XCTAssertEqual(scores.count, 24)
+        for e in entries {
+            XCTAssertFalse(scores[e.url]?.garbageReasons.contains(.decenteredTarget) == true,
+                           "\(e.filename): CRVAL 1.7° apart, image centers 4\" apart — not decentered")
+        }
+    }
+
+    /// A frame that IS shifted (the group center falls off its sensor) is caught when the shift
+    /// is expressed through the WCS rather than through CRVAL alone.
+    func testDecenteredTarget_RealShiftThroughTheWCSIsCaught() {
+        var entries: [ImageEntry] = []
+        for i in 0..<24 {
+            var e = WCSProjectionTests.entry("steady_\(i)", WCSProjectionTests.solutionA)
+            e.filter = "H"; e.target = "C 9"; e.exposure = 60
+            e.fwhm = 3.5; e.hfr = 1.3; e.starCount = 1500; e.noiseMAD = 0.001; e.noiseMedian = 0.05
+            entries.append(e)
+        }
+        // Same solution, but the reference pixel moved 2.0° of field towards -y: the image
+        // center is now 2.0 × 1.657"/px × 4300 px ≈ 1.98° north of the others (69% of 2.88°).
+        var shifted = WCSProjectionTests.entry("shifted", WCSProjectionTests.solutionA)
+        shifted.wcsCRPIX2 = WCSProjectionTests.solutionA.crpix2 - 4300
+        shifted.filter = "H"; shifted.target = "C 9"; shifted.exposure = 60
+        shifted.fwhm = 3.5; shifted.hfr = 1.3; shifted.starCount = 1500; shifted.noiseMAD = 0.001; shifted.noiseMedian = 0.05
+        entries.append(shifted)
+        let scores = QualityEstimator.computeScores(for: entries)
+        XCTAssertTrue(scores[shifted.url]?.garbageReasons.contains(.decenteredTarget) == true,
+                      "a center 1.98° off on a 2.88° field is off the field")
+    }
+}
+
+// MARK: - Rule 0b: a flat pedestal with a stellar population is faint sky, not a dark (algo v43)
+
+extension QualityEstimatorTests {
+
+    /// ASI2600MC (26 MP) frame fixture at the read-noise floor: background MAD 0.000068 — the
+    /// value of the dome-closed darks that calibrated darkFrameMADCeiling.
+    private func pedestalFrame(index: Int, stars: Int, residual: Double?, fwhm: Double = 4.3) -> ImageEntry {
+        var e = makeEntry(index: index, filter: "H", target: "C 9", exposure: 60,
+                          noiseMAD: 0.000068, noiseMedian: 0.00778,
+                          computedFWHM: fwhm, computedHFR: fwhm * 0.42, computedStarCount: stars,
+                          focalLength: 468, width: 6248, height: 4176, pixelSizeMicrons: 3.76)
+        e.relResidualCirc = residual
+        return e
+    }
+
+    /// The C 9 / IC 5070 case: 60 s H-alpha OSC, sky below the read noise, 3400 real stars.
+    func testPedestalWithStellarPopulationIsNotADark() {
+        let entries = (0..<12).map { pedestalFrame(index: $0, stars: 3400 + $0 * 10, residual: 0.06) }
+        let scores = QualityEstimator.computeScores(for: entries)
+        for e in entries {
+            let reasons = scores[e.url]?.garbageReasons ?? []
+            XCTAssertFalse(reasons.contains(.noisePeaks), "\(e.filename): 130 stars/MP is a sky, not a dome: \(reasons)")
+            XCTAssertFalse(reasons.contains(.noData), "\(e.filename): \(reasons)")
+        }
+    }
+
+    /// The RASA dome-closed night: same pedestal, 131–256 warm-pixel clusters that do not fit a PSF.
+    func testPedestalWithoutStellarPopulationStaysADark() {
+        var entries = (0..<12).map { pedestalFrame(index: $0, stars: 3400, residual: 0.06) }
+        let dark = pedestalFrame(index: 99, stars: 180, residual: 0.25, fwhm: 5.2)
+        entries.append(dark)
+        let scores = QualityEstimator.computeScores(for: entries)
+        XCTAssertTrue(scores[dark.url]?.garbageReasons.contains(.noisePeaks) == true,
+                      "3 clusters/MP with residual 0.25: dome/cap — \(scores[dark.url]?.garbageReasons ?? [])")
+    }
+
+    /// A hot sensor may push the cluster count above the density floor; the shape test still holds.
+    func testPedestalWithManyNonStellarDetectionsStaysADark() {
+        var entries = (0..<12).map { pedestalFrame(index: $0, stars: 3400, residual: 0.06) }
+        let hot = pedestalFrame(index: 99, stars: 900, residual: 0.26, fwhm: 5.0)
+        entries.append(hot)
+        let scores = QualityEstimator.computeScores(for: entries)
+        XCTAssertTrue(scores[hot.url]?.garbageReasons.contains(.noisePeaks) == true,
+                      "34 detections/MP but residual 0.26 — not stars: \(scores[hot.url]?.garbageReasons ?? [])")
+    }
+
+    /// An all-dark group (62 of 64 on the calibration night) must still be recognised as such.
+    func testAllDarkGroupIsStillAllDark() {
+        let entries = (0..<12).map { pedestalFrame(index: $0, stars: 150 + $0, residual: 0.24, fwhm: 5.2) }
+        let scores = QualityEstimator.computeScores(for: entries)
+        for e in entries {
+            XCTAssertTrue(scores[e.url]?.garbageReasons.contains(.noisePeaks) == true, e.filename)
+        }
+    }
+}
+
+// MARK: - Rule 1b per-axis criterion and v43 boundaries
+
+extension QualityEstimatorTests {
+
+    private func c9Frame(_ name: String, crpix2Shift: Double = 0) -> ImageEntry {
+        var e = WCSProjectionTests.entry(name, WCSProjectionTests.solutionA)
+        e.wcsCRPIX2 = WCSProjectionTests.solutionA.crpix2 - crpix2Shift
+        e.filter = "H"; e.target = "C 9"; e.exposure = 60
+        e.fwhm = 3.5; e.hfr = 1.3; e.starCount = 1500; e.noiseMAD = 0.001; e.noiseMedian = 0.05
+        return e
+    }
+
+    /// "Even a 40% offset is still the same image as long as the center still lies in the other
+    /// frame" — along the SHORT sensor edge (4176 px): 40% stays, 60% is off the sensor.
+    func testDecenteredTarget_JudgedPerSensorAxis() {
+        var entries = (0..<24).map { c9Frame("steady_\($0)") }
+        let forty = c9Frame("forty", crpix2Shift: 0.40 * 4176)
+        let sixty = c9Frame("sixty", crpix2Shift: 0.60 * 4176)
+        entries.append(forty); entries.append(sixty)
+        let scores = QualityEstimator.computeScores(for: entries)
+        XCTAssertFalse(scores[forty.url]?.garbageReasons.contains(.decenteredTarget) == true,
+                       "40% of the short edge: the group center is still on this sensor")
+        XCTAssertTrue(scores[sixty.url]?.garbageReasons.contains(.decenteredTarget) == true,
+                      "60% of the short edge (= 40% of the long edge): the group center is off this sensor")
+    }
+
+    /// The pedestal exemption needs a plausible PSF: a 1.1 px "FWHM" (below the 1.2 px sampling
+    /// floor) is a failed fit, so even 3400 detections leave the frame a dark.
+    func testPedestalExemptionNeedsAPlausibleFWHM() {
+        var entries = (0..<12).map { pedestalFrame(index: $0, stars: 3400, residual: 0.06) }
+        let bogus = pedestalFrame(index: 99, stars: 3400, residual: 0.06, fwhm: 1.1)
+        entries.append(bogus)
+        let scores = QualityEstimator.computeScores(for: entries)
+        XCTAssertTrue(scores[bogus.url]?.garbageReasons.contains(.noisePeaks) == true)
+    }
+
+    /// `ScoringConfig.default` must stay byte-identical to the static lets, and a partial JSON
+    /// without the v43 keys must decode to them.
+    func testScoringConfigDefaultsMatchTheEstimatorAndSurvivePartialJSON() throws {
+        XCTAssertEqual(ScoringConfig.default.pedestalSkyStarsPerMegapixel, QualityEstimator.pedestalSkyStarsPerMegapixel)
+        XCTAssertEqual(ScoringConfig.default.pedestalSkyMaxFitResidual, QualityEstimator.pedestalSkyMaxFitResidual)
+        let partial = try JSONDecoder().decode(ScoringConfig.self, from: Data("{ \"thresholdGood\": -0.7 }".utf8))
+        XCTAssertEqual(partial.thresholdGood, -0.7)
+        XCTAssertEqual(partial.pedestalSkyStarsPerMegapixel, 20)
+        XCTAssertEqual(partial.pedestalSkyMaxFitResidual, 0.17)
+    }
+}
+

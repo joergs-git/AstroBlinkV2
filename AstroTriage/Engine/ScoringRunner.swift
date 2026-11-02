@@ -33,12 +33,28 @@ enum ScoringRunner {
         entry.height = decoded.height
         entry.channelCount = decoded.channelCount
 
-        let noise = STFCalculator.measureNoise(from: decoded)
+        // Measurement image: ALWAYS debayered when BAYERPAT is known — exactly what the app
+        // does in PrefetchCache, independent of the display toggle. On the raw CFA mosaic a
+        // star is a checkerboard of lit and dark pixels, and the v41 two-axis extent gate in
+        // the detector then rejects it as a sensor defect: an H-alpha OSC frame measured
+        // "no stars / no signal" in this rig while the app counted 3400 stars on it, and the
+        // remaining OSC frames came out with half the app's star count (rig/app parity bug
+        // no. 5, found on the user's C 9 session, 2026-11-02).
+        let measurementImage: DecodedImage
+        if decoded.channelCount == 1, let pattern = entry.bayerPattern, !pattern.isEmpty,
+           let debayered = previewGenerator.debayer(image: decoded, pattern: pattern) {
+            measurementImage = debayered
+        } else {
+            measurementImage = decoded
+        }
+
+        let noise = STFCalculator.measureNoise(from: measurementImage)
         entry.noiseMedian = noise.median
         entry.noiseMAD = noise.normalizedMAD
 
-        let channel = decoded.channelCount == 3 ? 1 : 0
-        let stars = previewGenerator.detectStarsFromImage(decoded, channel: channel)
+        // Per-frame channel pick, shared with PrefetchCache (narrowband OSC → red, broadband → green).
+        let channel = STFCalculator.bestMeasurementChannel(of: measurementImage)
+        let stars = previewGenerator.detectStarsFromImage(measurementImage, channel: channel)
         let totalStarCount = previewGenerator.lastTotalStarCount
         if !stars.isEmpty,
            // MUST mirror the app's call in PrefetchCache: passing `generator` enables GPU
@@ -46,7 +62,7 @@ enum ScoringRunner {
            // enables the plate-scale-aware apertures. Without them this rig measured with a
            // DIFFERENT pipeline than the app — CPU linearized FWHM and pure image moments —
            // so anything tuned against it was tuned against the wrong measurements.
-           let m = StarMetricsCalculator.measure(stars: stars, fullResImage: decoded,
+           let m = StarMetricsCalculator.measure(stars: stars, fullResImage: measurementImage,
                                                  channel: channel, totalStarCount: totalStarCount,
                                                  generator: previewGenerator,
                                                  arcsecPerPixel: entry.arcsecPerPixel) {
@@ -56,14 +72,7 @@ enum ScoringRunner {
             entry.computedEccentricity = m.medianEccentricity
             entry.starDetails = m.starDetails
             entry.starChainFraction = m.starChainFraction
-            entry.momentEccentricity = m.medianMomentEcc
-            entry.fitEccentricity = m.medianFitEcc
-            entry.momentPreferredFraction = m.momentPreferredFraction
-            entry.fitAcceptedFraction = m.fitAcceptedFraction
-            entry.ellipticalChi2 = m.medianEllipticalChi2
-            entry.circularChi2 = m.medianCircularChi2
-            entry.relResidualEllip = m.medianRelResidualEllip
-            entry.relResidualCirc = m.medianRelResidualCirc
+            entry.applyPSFDiagnostics(m)
             if let t = TrailingAnalyzer.analyze(starDetails: m.starDetails,
                                                 focalLength: entry.focalLength,
                                                 pixelSizeMicrons: entry.pixelSizeMicrons) {

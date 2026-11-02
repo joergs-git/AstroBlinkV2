@@ -1832,15 +1832,17 @@ class TriageViewModel: ObservableObject {
     /// Runs on the main actor after header enrichment completes, when CRVAL/CRPIX/CD matrix
     /// values are finally populated on every ImageEntry.
     ///
-    /// The math is direct matrix algebra (CD_ref⁻¹ × CD_frame for rotation/scale, plus CRVAL
-    /// offsets scaled by cos(dec) for translation) and takes microseconds per frame. Overrides
-    /// any star-matching-based transform computed earlier in the prefetch pipeline because
-    /// the WCS-based transform is mathematically exact while star matching is heuristic.
+    /// The math composes the two gnomonic tangent planes exactly and linearises the result at
+    /// the frame's image center (`DisplayAligner.transformFromWCS`, 6.11.2) — microseconds per
+    /// frame. Overrides any star-matching-based transform computed earlier in the prefetch
+    /// pipeline because the WCS-based transform is exact while star matching is heuristic.
     ///
-    /// Smart reference selection: picks the frame closest to the median CRVAL across all
-    /// frames in the target group. This means the reference represents the typical pointing,
+    /// Smart reference selection: picks the frame whose image center is closest to the median
+    /// pointing of the target group. This means the reference represents the typical pointing,
     /// not whichever frame happened to be first in the array — outliers (e.g. a frame where
     /// the mount lost center) won't accidentally become the reference everyone else aligns to.
+    /// The pointing is the projected image center, not CRVAL: ASIAIR places the WCS reference
+    /// pixel anywhere in the frame, so CRVAL alone scatters by more than a degree on one pointing.
     ///
     /// Frames without WCS retain their prefetch-computed star-matching transform (or nil).
     func applyWCSAlignment() {
@@ -1860,21 +1862,24 @@ class TriageViewModel: ObservableObject {
         for (targetKey, entries) in targetEntries {
             guard !entries.isEmpty else { continue }
 
-            // Smart reference selection: find the frame closest to the median CRVAL.
-            // Median is robust against outliers (a frame where the mount lost center
-            // by 50% won't drag the median much, so the chosen reference stays in the
+            // Smart reference selection: find the frame whose image center is closest to the
+            // median pointing. Median is robust against outliers (a frame where the mount lost
+            // center by 50% won't drag the median much, so the chosen reference stays in the
             // bulk of the pointing distribution).
-            let sortedRA  = entries.map { $0.wcs.crval1 }.sorted()
-            let sortedDec = entries.map { $0.wcs.crval2 }.sorted()
+            let centers: [(ra: Double, dec: Double)] = entries.map {
+                WCSProjection.frameCenter(of: images[$0.idx]) ?? (ra: $0.wcs.crval1, dec: $0.wcs.crval2)
+            }
+            let sortedRA  = centers.map(\.ra).sorted()
+            let sortedDec = centers.map(\.dec).sorted()
             let medianRA  = sortedRA[sortedRA.count / 2]
             let medianDec = sortedDec[sortedDec.count / 2]
 
             var refIdx = entries[0].idx
             var refWCS = entries[0].wcs
             var bestDistSq = Double.infinity
-            for entry in entries {
-                let dx = entry.wcs.crval1 - medianRA
-                let dy = entry.wcs.crval2 - medianDec
+            for (entry, center) in zip(entries, centers) {
+                let dx = (center.ra - medianRA) * cos(medianDec * .pi / 180)
+                let dy = center.dec - medianDec
                 let distSq = dx * dx + dy * dy
                 if distSq < bestDistSq {
                     bestDistSq = distSq
@@ -4179,6 +4184,7 @@ class TriageViewModel: ObservableObject {
                         // is hot-pixel noise and suppresses the no-signal verdict.
                         self.images[idx].computedStarCount = metrics.measuredStarCount > 0 ? metrics.totalStarCount : nil
                         self.images[idx].computedEccentricity = metrics.medianEccentricity
+                        self.images[idx].applyPSFDiagnostics(metrics)
                         if !metrics.starDetails.isEmpty {
                             self.images[idx].starDetails = metrics.starDetails
                         }

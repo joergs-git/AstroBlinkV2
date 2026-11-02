@@ -437,6 +437,7 @@ class ArchiveScanner: ObservableObject {
                 // SessionOrchestrator+Prefetch for why the raw detector count must not be used.
                 entry.computedStarCount = metrics.measuredStarCount > 0 ? metrics.totalStarCount : nil
                 entry.computedEccentricity = metrics.medianEccentricity
+                entry.applyPSFDiagnostics(metrics)
                 entry.starChainFraction = metrics.starChainFraction
                 entry.psfFluxSum = metrics.psfFluxSum > 0 ? metrics.psfFluxSum : nil
 

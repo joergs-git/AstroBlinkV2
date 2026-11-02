@@ -187,53 +187,75 @@ final class DisplayAligner: @unchecked Sendable {
         let cd12: Double
         let cd21: Double
         let cd22: Double
+        /// Frame dimensions when known: the transform is then anchored at the image center,
+        /// where the eye looks while blinking; otherwise at the reference pixel.
+        var width: Int? = nil
+        var height: Int? = nil
+
+        var tangentPlane: TangentPlaneWCS {
+            TangentPlaneWCS(crval1: crval1, crval2: crval2, crpix1: crpix1, crpix2: crpix2,
+                            cd11: cd11, cd12: cd12, cd21: cd21, cd22: cd22)
+        }
     }
 
-    /// Compute an exact frame-to-reference affine transform from WCS plate-solve data.
+    /// Pixel distance of the two probe points used to linearise the frame → reference map.
+    /// The map is smooth, so any lever of a few hundred to a few thousand pixels gives the
+    /// same derivative; 1000 keeps the probes well inside any sensor.
+    private static let wcsLinearisationStep = 1000.0
+
+    /// Compute a frame-to-reference affine transform from WCS plate-solve data.
     ///
-    /// For a pixel `p_frame = (x, y)` in the frame, the sky position is
-    ///     sky = crval_frame + CD_frame × (p_frame - crpix_frame)
-    /// and the same sky point in reference coordinates is
-    ///     p_ref = crpix_ref + CD_ref⁻¹ × (sky - crval_ref)
-    /// Composing gives:
-    ///     p_ref = crpix_ref + CD_ref⁻¹ × (crval_frame - crval_ref + CD_frame × (p_frame - crpix_frame))
-    /// which is a pure affine transform on `p_frame`.
+    /// Each solution is its own gnomonic tangent plane: a frame pixel goes to the sky through
+    /// the frame's WCS (`TangentPlaneWCS.sky`) and back to pixels through the reference's
+    /// (`pixel`). That composed map is not affine, so it is linearised at an anchor — the frame's
+    /// image center when the dimensions are known, else its reference pixel — from three exactly
+    /// mapped points: the anchor and two probes one `wcsLinearisationStep` away in x and in y.
+    /// The result is exact at the anchor and within a few pixels in the corners of a 3° field.
     ///
-    /// Because CD is in degrees/pixel, CRVAL differences must be in degrees. We also
-    /// scale the RA difference by cos(dec) to correct for the spherical projection
-    /// distortion — this keeps the alignment accurate for large RA offsets far from
-    /// the celestial equator.
+    /// The previous form composed the CD matrices directly (M = CD_ref⁻¹ × CD_frame) and shifted
+    /// by the planar CRVAL difference scaled with cos(Dec). Both steps assume the two solutions
+    /// share one tangent point. They do for NINA/ASTAP solutions (CRPIX at the center, a dither
+    /// apart), but not for ASIAIR headers, whose reference pixel lands anywhere in the frame:
+    /// the two tangent points are then degrees apart, the CD matrices differ by the meridian
+    /// convergence ΔRA·sin(Dec) (3.4° at Dec +63° for a 3.8° RA difference), and the frames
+    /// blinked with a visible relative rotation and up to 103 px of offset at the image center
+    /// although their pointing was identical to 2 px.
     ///
-    /// Returns a transform in frame → reference pixel space, or nil if the CD matrix
-    /// is singular or the inputs are invalid.
+    /// Returns a transform in frame → reference pixel space, or nil if either CD matrix is
+    /// singular, a probe falls behind the reference tangent plane, or the implied scale ratio is
+    /// not that of the same camera.
     static func transformFromWCS(frame: WCSData, reference: WCSData) -> AffineTransform2D? {
-        // Invert reference CD matrix
-        let detRef = reference.cd11 * reference.cd22 - reference.cd12 * reference.cd21
-        guard Swift.abs(detRef) > 1e-12 else { return nil }
-        let invRef11 =  reference.cd22 / detRef
-        let invRef12 = -reference.cd12 / detRef
-        let invRef21 = -reference.cd21 / detRef
-        let invRef22 =  reference.cd11 / detRef
+        let framePlane = frame.tangentPlane
+        let referencePlane = reference.tangentPlane
 
-        // M = CD_ref⁻¹ × CD_frame  (2×2 matrix product)
-        let m11 = invRef11 * frame.cd11 + invRef12 * frame.cd21
-        let m12 = invRef11 * frame.cd12 + invRef12 * frame.cd22
-        let m21 = invRef21 * frame.cd11 + invRef22 * frame.cd21
-        let m22 = invRef21 * frame.cd12 + invRef22 * frame.cd22
+        // Anchor: image center when known (exact there), else the frame's reference pixel.
+        let anchorX: Double
+        let anchorY: Double
+        if let width = frame.width, let height = frame.height, width > 0, height > 0 {
+            anchorX = (Double(width) + 1) / 2
+            anchorY = (Double(height) + 1) / 2
+        } else {
+            anchorX = frame.crpix1
+            anchorY = frame.crpix2
+        }
 
-        // Sky offset between frames, scaled by cos(reference.dec) for RA spherical correction
-        let cosDec = cos(reference.crval2 * .pi / 180.0)
-        let dRA  = (frame.crval1 - reference.crval1) * cosDec
-        let dDec =  frame.crval2 - reference.crval2
+        func mapToReference(_ x: Double, _ y: Double) -> (x: Double, y: Double)? {
+            let sky = framePlane.sky(atPixelX: x, y: y)
+            return referencePlane.pixel(ofRA: sky.ra, dec: sky.dec)
+        }
+        let step = wcsLinearisationStep
+        guard let q0 = mapToReference(anchorX, anchorY),
+              let qx = mapToReference(anchorX + step, anchorY),
+              let qy = mapToReference(anchorX, anchorY + step)
+        else { return nil }
 
-        // Pixel offset contribution from sky difference: CD_ref⁻¹ × (dRA, dDec)
-        let skyOffsetX = invRef11 * dRA + invRef12 * dDec
-        let skyOffsetY = invRef21 * dRA + invRef22 * dDec
-
-        // Affine form: p_ref = M × (p_frame - crpix_frame) + crpix_ref + skyOffset
-        //            = M × p_frame + (crpix_ref + skyOffset - M × crpix_frame)
-        let tx = reference.crpix1 + skyOffsetX - (m11 * frame.crpix1 + m12 * frame.crpix2)
-        let ty = reference.crpix2 + skyOffsetY - (m21 * frame.crpix1 + m22 * frame.crpix2)
+        // Secant derivatives of the composed map: p_ref = M × p_frame + t.
+        let m11 = (qx.x - q0.x) / step   // ∂x_ref/∂x_frame
+        let m21 = (qx.y - q0.y) / step   // ∂y_ref/∂x_frame
+        let m12 = (qy.x - q0.x) / step   // ∂x_ref/∂y_frame
+        let m22 = (qy.y - q0.y) / step   // ∂y_ref/∂y_frame
+        let tx = q0.x - (m11 * anchorX + m12 * anchorY)
+        let ty = q0.y - (m21 * anchorX + m22 * anchorY)
 
         let transform = AffineTransform2D(
             a:  Float(m11), b: Float(m12), tx: Float(tx),
