@@ -142,6 +142,20 @@ values; records of ASIAIR OSC narrowband sessions scored by v41/v42 may carry th
 
 ---
 
+### GOLDENSET1 composition after this release (2026-11-02 evening)
+
+The two sessions of the reports were copied into the set as eight UNCURATED cases (507 frames, every
+frame in `good/` because the user has not culled them; manifest `golden_export_20261102_221649.json`
+records `labelSource` and the v43 tier/reasons per frame): `ZWO-AM5_468mm_{EXTR,H,L}_C9_60s`,
+`ZWO-AM5_468mm_{EXTR,L}_C9_180s`, `ZWO-AM5_468mm_{EXTR,H,L}_IC5070_60s`. The set is now 971 frames /
+25 cases. The 17 curated cases are unchanged by the addition (false alarms 19/203, catch 160/250 at
+v43 — each case scores on its own). In the new cases v43 flags no dome/cap and no decentered frame;
+it trashes 91 of the 392 C 9 frames (38 for trailing, the rest by z-score) and none of IC 5070.
+**Those 91 need the user's eyes (Golden Set ▸ labels in-app) before they count as anything** —
+until then the headline numbers are reported for the 17 curated cases only.
+
+---
+
 ## Version 42 — Dual-band filters are narrowband; one filter table for app and rig (2026-11-01)
 
 **User request (2026-11-01): "Extr must be rated as narrowband with a duo bandwidth. Logical."**
