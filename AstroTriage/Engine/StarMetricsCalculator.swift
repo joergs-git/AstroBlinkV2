@@ -98,6 +98,15 @@ enum StarMetricsCalculator {
     private static let streakAxisRatioThreshold: Double = 0.12
     // Fixed aperture for quick pre-filter shape check (before FWHM-adaptive aperture is known)
     private static let preFilterAperture: Float = 5.0
+    // Radius of the point-source concentration test in computeShape, in units of the frame's
+    // own median FWHM (never below the historical 5 px). See the use site.
+    private static let concentrationApertureFWHMMultiplier: Float = 1.25
+    private static let minConcentrationAperture = 5
+    // Median FWHM (px) from which computeShape treats a low concentration ratio as a possibly
+    // bloated star (PE arc) and runs the gradient rescue instead of rejecting it outright.
+    // Below it the concentration aperture scales with the star size; from it on the legacy
+    // 5 px test + gradient rescue stays in charge. See the use site.
+    private static let gradientRescueMinFWHM: Double = 8.0
     // How deep the RESCUE pass may scan past the top-60 when those yielded too few measurable
     // shapes. Only reached on frames where the normal pass failed, so this is not a per-frame
     // cost. See the use site.
@@ -1188,9 +1197,35 @@ enum StarMetricsCalculator {
         // Concentration check: verify this is a compact point source, not diffuse nebulosity.
         // Compare peak brightness to average within the aperture — stars are concentrated,
         // nebulosity is flat. A real star's peak should be at least 3x the aperture average.
+        //
+        // The aperture is measured in units of the frame's OWN star size (v44). A fixed 5 px
+        // radius means 2" on an RC at 0.4"/px and 10" on a short refractor: for a Gaussian the
+        // ratio "peak / mean inside R" depends only on R/FWHM and drops below 2.0 as soon as
+        // FWHM exceeds R/0.76, i.e. 6.6 px for R = 5. Every real star of an oversampled frame
+        // in ordinary seeing (3" at 0.395"/px = 7.6 px) was therefore discarded as "nebulosity",
+        // while the gradient rescue below only opens at FWHM >= 8 px. In that dead band the
+        // only candidates that still passed were noise peaks on the steep halo flanks and fine
+        // diffraction rays of saturated stars, which measure eccentricity ~0.75 pointing at
+        // the bright star. Measured on a live RC12 Pleiades session (L/R/G/B, 232 frames):
+        // 35 frames, ALL with FWHM 7.2-7.9 px, were flagged "star trailing/elongation"; on the
+        // reported frame 2 of 105 real stars passed at R = 5 against 57 of 57 halo detections,
+        // and 57 of the 60 measured "stars" sat within 4 saturated radii of five bright stars.
+        // At R = 1.25 x FWHM a point source gives ~4.4 at ANY sampling (105 of 105 real stars
+        // pass, median 4.3), and the same halo detections fall to a median of 1.8.
+        //
+        // Scope, deliberately narrow:
+        //  - FWHM below 4.4 px: the scaled radius is <= 5 px, the frame is measured as before.
+        //  - FWHM from gradientRescueMinFWHM on: unchanged as well. Scaling there was measured
+        //    and rejected — over a 12 px aperture the "mean of positive pixels" is mostly noise,
+        //    so diffuse non-stars pass too and dilute the direction consensus (a confirmed
+        //    tracking-hop frame of the M82 regression case fell from trailing 0.73 to 0.35).
+        //    The 5 px test + gradient rescue is what that regime was calibrated with.
         var apertureSum: Float = 0
         var apertureCount: Float = 0
-        let checkR = min(fitR, 5)
+        let scaledCheckR = medianFWHM < gradientRescueMinFWHM
+            ? Int((concentrationApertureFWHMMultiplier * Float(medianFWHM)).rounded())
+            : 0
+        let checkR = min(fitR, max(minConcentrationAperture, scaledCheckR))
         for dy in -checkR...checkR {
             for dx in -checkR...checkR {
                 let distSq = Float(dx * dx + dy * dy)
@@ -1218,7 +1253,7 @@ enum StarMetricsCalculator {
                 // produces FWHM 3-7px even in bad conditions. Nebula filaments (IC443,
                 // NGC7000 H-alpha) have sharp edges with high gradients that would pass
                 // the gradient check — the FWHM guard prevents this.
-                guard medianFWHM >= 8.0 else { return nil }
+                guard medianFWHM >= gradientRescueMinFWHM else { return nil }
 
                 // Floor: ratio < 1.3 is definitively not a point source — reject immediately
                 guard peakValue / avgInAperture >= 1.3 else { return nil }

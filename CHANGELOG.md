@@ -4,6 +4,34 @@ All notable changes to AstroBlink & AIsaac will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [6.11.3] — 2026-11-06
+
+### Fixed
+
+- **Round stars next to bright stars are no longer "star trailing" (algorithm v44).** On a long
+  focal length in ordinary seeing — 3" on an RC at 0.4"/px is 7.6 px — frames of a field with
+  bright stars (the Pleiades) were trashed for "star trailing/elongation" although their stars were
+  round, while the frame a minute earlier was fine. The shape measurement tells a star from
+  nebulosity by how concentrated it is, and it tested that inside a fixed 5 px radius: every star
+  broader than 6.6 px FWHM failed and was discarded as nebulosity, and the rescue for bloated stars
+  only opens at 8 px. In between, the measurement was refilled with the only things that still
+  passed — noise peaks on the halo flanks and the fine diffraction rays of saturated stars, which
+  measure as strongly elongated. On the reported frame 57 of the 60 measured "stars" sat in the
+  halos of five bright stars. The test now uses a radius of 1.25 × the frame's own star size for
+  frames below 8 px. On the reported two-night session the false trailing flags drop from 36 to 3
+  of 244 frames and Good + Excellent rise from 135 to 193. On the 971-frame calibration set every
+  defect type is caught exactly as before and good frames below Good drop 19 → 16; three
+  good-labelled RC frames with genuinely oval stars (eccentricity 0.55–0.59, one common direction)
+  now cross the absolute trailing limit and one crosses back — a calibration question of the
+  long-focal-length limits that this release does not touch. Frames with stars narrower than
+  4.4 px or from 8 px on are measured exactly as before.
+
+### Added
+
+- **`AstroScoreCLI --stars-csv`** (headless scoring rig): one row per measured star — position,
+  eccentricity, position angle, axis ratio — i.e. the sample behind eccentricity and the trailing
+  score. Plotting it over the frame is what showed the sample sitting in the halos.
+
 ## [6.11.2] — 2026-11-02
 
 ### Fixed

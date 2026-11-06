@@ -12,6 +12,135 @@ Records with `algorithmVersion < kAlgorithmVersion` are candidates for re-analys
 
 ---
 
+## Version 44 — The concentration test is measured in units of the frame's own star size (2026-11-06)
+
+**User report (2026-11-05), live RC12 session (1964 mm, ASI6200MM, 0.395"/px, L/R/G/B 180 s,
+"NGC 1432" = the Pleiades):** frame L #0018 is trashed for "star trailing/elongation" although its
+stars are round; "the big stars produce long spikes through the RC, and in between many small rays —
+those are taken for star trails". Measured on the original files before anything was changed.
+
+### What was wrong
+
+`StarMetricsCalculator.computeShape` rejects diffuse nebulosity with a concentration test: the peak
+must be at least 2.0 × the mean of the positive pixels inside an aperture. That aperture was a
+**fixed 5 px radius**. For a Gaussian the ratio depends only on radius / FWHM: it falls below 2.0
+as soon as FWHM exceeds R / 0.76 = **6.6 px**. A 5 px radius is 2" on this RC and 10" on a 468 mm
+refractor — a threshold on a quantity without physical meaning, the same family as v33–v36.
+
+The existing escape for bloated stars (gradient rescue for PE arcs) only opens at median FWHM ≥ 8 px.
+Between 6.6 and 8 px there was a **dead band**: every real star was discarded as "nebulosity". The
+brightness-ordered top-60 pass then yielded fewer than 12 shapes, the v40 rescue pass scanned up to
+600 further candidates — and the only ones that still passed the test were noise peaks on the steep
+halo flanks and fine diffraction rays of saturated stars (a slope is "concentrated" on a 5 px scale).
+Those measure eccentricity 0.6–0.9 pointing at the bright star.
+
+Measured on the reported frame (FWHM 7.87 px = 3.1", NINA header 3.15"):
+- 57 of the 60 measured "stars" sit 2.7–4.1 saturated radii from five saturated Pleiads; their
+  median eccentricity is 0.75, the position angle is radial (median 7° off the direction to the
+  bright star), and their amplitude is 0.1–0.6 × the halo pedestal they sit on. The three real stars
+  in the sample measure 0.37–0.45. A crop mosaic of the sample shows halo flanks and rays, no stars.
+- Emulating the test on 105 clean, unsaturated field stars: **2 of 105 pass at R = 5 px**
+  (median ratio 1.78) against **57 of 57 halo detections** (2.26). At R = 10 px (1.25 × FWHM)
+  105 of 105 real stars pass (median 4.33, p10 3.74) and the halo detections fall to 1.81.
+- Direction consensus was 12 %, so Rule 6a never applied; Rule 5 (eccentricity above 2 × the FL
+  baseline, 0.51 at 1964 mm, no consensus requirement) produced the garbage reason.
+
+Session (244 frames, two nights): **36 frames flagged "star trailing/elongation", 35 of them with
+FWHM 7.23–7.94 px and eccentricity 0.56–0.76** at a direction consensus of 0.10–0.53 — the band,
+exactly; the unflagged frames measured a median of 0.40. How many halo candidates reach the sample
+depends on the seeing of the individual frame (0–57 of 60 on eight consecutive frames), which is
+why neighbours flipped between good and trash.
+
+### The fix
+
+The concentration aperture is `max(5 px, round(1.25 × median FWHM))`, capped at the shape aperture,
+**for frames below the gradient-rescue threshold (median FWHM < 8 px)**. At 1.25 × FWHM a point
+source gives a ratio of ~4.4 at any sampling. Frames with FWHM < 4.4 px keep the 5 px radius and
+are measured exactly as before; frames from 8 px on keep the 5 px test + gradient rescue. The 8 px
+literal is now the named constant `gradientRescueMinFWHM`, shared by both sites.
+
+Scaling at ALL star sizes was measured first and rejected: over a 12 px aperture the "mean of the
+positive pixels" is dominated by noise, so diffuse non-stars pass too and dilute the direction
+consensus. On the M82 tracking-hop regression case (2423 mm, FWHM 9.6 px) a confirmed hop frame fell
+from trailing 0.73 / consensus 0.77 to 0.35 / 0.59 and lost its garbage reason (mini-set catch
+25 → 23). With the scope limited to the dead band that frame measures bit-identically.
+
+### Results
+
+**Reported session** (same 244 frames, v43 → v44): "star trailing/elongation" 36 → 3; frames with any
+defect reason 44 → 11; good + excellent 135 → 193; trash 61 → 27. All 35 band frames are cleared
+(31 good, 3 excellent, 1 borderline; eccentricity now 0.34–0.51, median 0.39, measured on real
+stars — median direction consensus 0.81). The 119 frames with FWHM ≥ 8 px measure bit-identically. Remaining three:
+L #0001 (first frame of night 1, flagged before as well: ecc 0.51, consensus 0.84) and two frames
+of night 2 that were borderline and are now flagged by Rule 5 at eccentricity 0.526 / 0.531 with
+trailingZ 1.005 / 1.053 — see "Known edge" below.
+
+**GOLDENSET1** (971 frames / 25 cases; headline numbers on the 17 curated cases):
+
+| | v43 | v44 |
+|---|---|---|
+| curated good frames below Good | 19 / 203 | **16 / 203** |
+| … of those with a defect reason (Conservative) | 4 | **6** |
+| catch, all tiers | 160 / 250 | 160 / 250 |
+| cloud / dark / defocus / gradient / lowsnr / trail | 51 / 62 / 2 / 20 / 1 / 24 | identical |
+| uncurated C 9 + IC 5070 below Good / with reason | 133 / 39 | 133 / 39 |
+
+9 of 971 tiers change, all in RC12 cases with FWHM 6.2–8.1 px; RASA and the 450/468 mm cases are
+untouched. Five good frames are promoted (two uncertain, two borderline, one trash → good).
+**Three good-labelled frames gain a "star trailing/elongation" reason, one loses it** — all four sit
+on the absolute trailing ceiling of Rule 6a (0.60): B_NGC6960 #0002 0.56 → 0.64, H_NGC2237 #0019
+0.57 → 0.61, H_NGC6888 #0121 0.21 → 0.68 (its consensus rose 0.57 → 0.90 once real stars were
+measured; it was trash by ranking before), H_NGC6960 #0000 0.60 → 0.55. Their eccentricity is
+0.55–0.59 with 90–100 % direction consensus: genuinely oval stars (axis ratio ~0.82) that the user
+accepts on this scope. All four Conservative false positives of v43 were of this kind (RC12 H-alpha
+frames in the band, trailing 0.60–0.72, consensus 0.75–1.0); v44 has six (five H-alpha, one B;
+eccentricity 0.55–0.67, trailing 0.61–0.85, consensus 0.86–0.93). On complete star samples the two
+NGC 6888 frames that were flagged before measure MORE oval than v43 reported (0.61 → 0.67,
+0.56 → 0.63), not less.
+
+**Golden mini-set** (104 frames): false alarms 12 → 12, catch 25 → 24. The one move is a hop frame
+without a defect reason in either version (ecc 0.71, consensus 0.47, measured bit-identically): it
+was borderline only through the session-sanity flag "trailing far above session norm", and that
+norm rose because the good frames of the case — FWHM 6.4–7.1 px, partly in the dead band — now
+report their real trailing score (0.18–0.38 at 50–100 % consensus instead of 0.00 from an
+incomplete sample). One good frame of that case (FWHM 7.69 px) had measured eccentricity 0.69 from the same
+halo mechanism and now measures 0.37.
+
+**Tests:** `Tests/OversampledStarShapeTests.swift` — synthetic frame with round Gaussian stars of
+FWHM 7.3 px next to a saturated star with a power-law halo and thin rays. Negative control with the
+scaling disabled reproduces the report: eccentricity 0.82, 0 % of the sample on a real star,
+trailing score 0.38. With the fix: round, ≥ 90 % of the sample on real stars. Targeted suites
+(ScoringRegression 9, ScoringValidation 53, QualityEstimator 83, HotPixelRejection 3,
+GoldenMiniSet with its known strict expected failure on the hop case) green — 151 tests.
+
+### Known edge (not changed here)
+
+With complete star samples the RC12 at 1964 mm measures a typical eccentricity of 0.37–0.47 with
+70–100 % direction consensus on good frames (every RC12 case of GOLDENSET1 and both nights of the
+reported session), against an FL baseline of 0.255. The elongation rules therefore have a thin
+margin on this scope: Rule 5 fires for luminance at eccentricity 0.51 (2 × baseline — at 468 mm the
+same rule cannot fire at all, its threshold is 1.04), Rule 6a at eccentricity ~0.55 with consensus.
+The two newly flagged session frames (0.526 / 0.531) have good-tier neighbours at 0.48–0.51. That
+is a calibration question of the long-focal-length baseline / the relative form of Rule 5, to be
+decided on labelled data — the per-setup learned corridor already on the list — not a measurement
+defect.
+
+### Rig
+
+`AstroScoreCLI --stars-csv <path>` writes one row per measured star (position, eccentricity, PA,
+axis ratio): the shape sample behind eccentricity / trailingScore / consensus. Plotting it over the
+frame is what showed the sample sitting in the halos; a frame-level number cannot.
+
+### Not changed
+
+Detection, the saturation and crowding filters, the gradient rescue, apertures for HFR / FWHM /
+moments, TrailingAnalyzer, every rule and threshold in QualityEstimator. Frame History records of
+oversampled broadband sessions (median FWHM 6.6–8 px) scored before v44 may carry a spurious
+"star trailing/elongation" reason and an eccentricity of 0.7–0.76; they are candidates for
+re-analysis.
+
+---
+
 ## Version 43 — The frame's position is its image center; a flat pedestal is a dark only without stars (2026-11-02)
 
 **User reports (2026-11-02), one ASIAIR session (85 mm / 468 mm, ASI2600MC, 60 s H-alpha, "C 9",
