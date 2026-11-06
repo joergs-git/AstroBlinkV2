@@ -49,6 +49,17 @@ Usually not. Research shows that including softer-but-round frames barely affect
 **Q: What is "trailing consensus"?**
 When a mount has tracking errors, all stars trail in the same direction. SmartCull measures the position angle of each star's elongation and checks if they agree. >50% agreement = tracking error. Random directions = normal optical aberration (not penalized).
 
+**Q: Frames with round stars were flagged "star trailing/elongation" in a field with bright stars. Why?**
+Before 6.11.3 this hit long focal lengths in ordinary seeing — stars 6.6 to 8 px wide, e.g. 3" on an
+RC at 0.4"/px. The shape measurement tells a star from nebulosity by how concentrated it is, and it
+tested that inside a fixed 5 px radius: stars that broad failed and were discarded, and the
+measurement was refilled with noise peaks on the halo flanks and the fine diffraction rays of
+saturated stars (Pleiades, any field with a few very bright stars). Those measure as strongly
+elongated — eccentricity around 0.75 with a LOW direction consensus, and the frame a minute earlier
+could be fine. Since 6.11.3 (algorithm v44) the radius follows the frame's own star size. In the
+Compare window (C key) the star circles show which stars were measured: if they cluster around a
+bright star instead of spreading over the field, the measurement is not describing your stars.
+
 **Q: Why are narrowband frames less penalized for trailing?**
 Narrowband filters (Ha, OIII, SII) capture diffuse nebula emission. The science target doesn't depend on point-source star sharpness, and narrowband PSFs are already naturally bloated from chromatic effects. Long narrowband exposures (300-600s) are expensive — clear narrowband nights are rare. Slight tracking drift within the seeing disk barely affects the final stack quality. SmartCull applies a 0.3× trailing weight multiplier for narrowband, 0.6× for RGB, and full 1.0× for luminance (the sharpness channel). This prevents wasting precious integration time on frames with barely visible elongation.
 

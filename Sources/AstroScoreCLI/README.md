@@ -20,7 +20,7 @@ The compiled `default.metallib` sits next to the binary and is loaded automatica
 ## Usage
 
 ```
-AstroScoreCLI --data-root <folder> [--csv <out.csv>] [--config <config.json>] [--report]
+AstroScoreCLI --data-root <folder> [--csv <out.csv>] [--stars-csv <stars.csv>] [--config <config.json>] [--report]
 AstroScoreCLI --dump-config          # print the default threshold JSON (template for --config)
 ```
 
@@ -31,6 +31,10 @@ AstroScoreCLI --dump-config          # print the default threshold JSON (templat
   garbage reasons, recommendation).
 - `--config` — **partial** JSON override: set only the knobs you want to tune; the rest stay at
   their defaults. Missing file keys never change behavior.
+- `--stars-csv` — one row per MEASURED star (case, filename, x, y, eccentricity, PA, axis ratio, HFR,
+  FWHM): the shape sample behind eccentricity / trailingScore / consensus. Plot the positions over the
+  frame before trusting any detector or selection change — a frame-level number cannot show that the
+  measured "stars" all sit in the halo of one bright star (algorithm v44).
 - `--report` — agreement report (human label vs assigned tier: catch rate / false-alarm rate).
 
 ## Golden-set layout

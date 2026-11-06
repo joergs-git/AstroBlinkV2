@@ -7,7 +7,7 @@
 // and prints an agreement report (confusion matrix of human label vs assigned tier).
 //
 // Usage:
-//   AstroScoreCLI --data-root <folder> [--csv <out.csv>] [--config <config.json>] [--report]
+//   AstroScoreCLI --data-root <folder> [--csv <out.csv>] [--stars-csv <stars.csv>] [--config <config.json>] [--report]
 //
 // Phase 0 changes NO thresholds; --config is accepted but the default reproduces today's
 // scoring exactly. Threshold externalization is wired in a later step.
@@ -21,6 +21,7 @@ struct Args {
     var dataRoot: String?
     var csvPath: String?
     var configPath: String?
+    var starsCSVPath: String?
     var report = false
 }
 
@@ -32,6 +33,7 @@ func parseArgs() -> Args {
         case "--data-root": a.dataRoot = it.next()
         case "--csv":       a.csvPath = it.next()
         case "--config":    a.configPath = it.next()
+        case "--stars-csv": a.starsCSVPath = it.next()
         case "--report":    a.report = true
         case "--dump-config":
             print(ScoringConfig.default.jsonString()); exit(0)
@@ -50,11 +52,13 @@ func printUsage() {
     AstroScoreCLI — headless scoring driver
 
     Usage:
-      AstroScoreCLI --data-root <folder> [--csv <out.csv>] [--config <config.json>] [--report]
+      AstroScoreCLI --data-root <folder> [--csv <out.csv>] [--stars-csv <stars.csv>] [--config <config.json>] [--report]
 
     --data-root  Golden-set root (<CASE>/good + <CASE>/PRE-DELETE) or a flat folder of frames.
     --csv        Write per-frame results to this CSV path.
     --config     Scoring-config JSON override (partial: only the keys you set; rest = default).
+    --stars-csv  Write one row per MEASURED star (position, eccentricity, PA, axis ratio) — the
+                 sample the trailing analysis runs on. Use it to see WHERE the shape stars sit.
     --report     Print an agreement report (label vs tier confusion matrix) to stdout.
     --dump-config  Print the default scoring-config JSON (template for --config) and exit.
     """)
@@ -197,6 +201,32 @@ if let csvPath = args.csvPath {
         print("Wrote CSV: \(csvPath)  (\(result.outcomes.count) rows)")
     } catch {
         FileHandle.standardError.write("error writing CSV: \(error)\n".data(using: .utf8)!)
+        exit(1)
+    }
+}
+
+// Per-star dump: the shape sample behind eccentricity / trailingScore / consensus. A frame-level
+// number cannot show that the measured "stars" all sit in the halo of one bright star; their
+// positions can (plot them over the frame before trusting any detector or selection change).
+if let starsPath = args.starsCSVPath {
+    var csv = "case,filename,x,y,eccentricity,positionAngle,axisRatio,hfr,fwhm\n"
+    func f(_ v: Double?) -> String { v.map { String(format: "%.4f", $0) } ?? "" }
+    func esc(_ s: String) -> String { s.contains(",") ? "\"\(s)\"" : s }
+    var rows = 0
+    for o in result.outcomes {
+        for d in o.entry.starDetails ?? [] {
+            csv += [esc(o.caseID), esc(o.entry.filename),
+                    String(format: "%.2f", Double(d.x)), String(format: "%.2f", Double(d.y)),
+                    f(d.eccentricity), f(d.positionAngle), f(d.axisRatio), f(d.hfr), f(d.fwhm)]
+                .joined(separator: ",") + "\n"
+            rows += 1
+        }
+    }
+    do {
+        try csv.write(toFile: starsPath, atomically: true, encoding: .utf8)
+        print("Wrote stars CSV: \(starsPath)  (\(rows) rows)")
+    } catch {
+        FileHandle.standardError.write("error writing stars CSV: \(error)\n".data(using: .utf8)!)
         exit(1)
     }
 }

@@ -782,6 +782,17 @@ struct AIsaacContextBuilder {
         - Frames meeting learned baseline locked as KEEP (blue lock icon) — z-scores can't override.
 
         ALGORITHM VERSION HISTORY (recent — kAlgorithmVersion is stored on every Frame History record):
+        - v44 (v6.11.3, 2026-11-06): the point-source test of the shape measurement uses an aperture of 1.25 × the frame's \
+        own median FWHM (never below 5 px) for frames with FWHM < 8 px, instead of a fixed 5 px. With the fixed \
+        radius every real star broader than 6.6 px FWHM failed the test ("nebulosity") while the rescue for bloated \
+        stars only opens at 8 px; in that band — ordinary 3" seeing on a long focal length at ~0.4"/px — the shape \
+        sample was refilled with noise peaks on the halo flanks and diffraction rays of saturated stars, which \
+        measure eccentricity ~0.75. Symptom before v44: frames with FWHM 6.6–8 px in a field with bright stars \
+        (Pleiades) flagged "star trailing/elongation" at eccentricity 0.7–0.76 with LOW direction consensus, \
+        neighbours of the same minute unflagged. Reported session: such flags 36 → 3 of 244 frames. GOLDENSET1: \
+        catch unchanged for every defect type, good frames below Good 19 → 16; three good-labelled RC12 frames \
+        with truly oval stars (eccentricity 0.55–0.59, consensus ≥ 0.9) crossed the Rule 6a ceiling, one crossed back. \
+        Frames below 4.4 px or from 8 px FWHM measure exactly as before.
         - v43 (v6.11.2, 2026-11-02): (1) the frame's sky position is its IMAGE CENTER projected through the WCS, \
         not CRVAL (the sky at the reference pixel, which ASIAIR places anywhere): Rule 1b, the Field column, Auto \
         Rotate's WCS alignment and the re-solve comparison all read it; Rule 1b asks whether the group center still \
