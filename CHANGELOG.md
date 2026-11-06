@@ -4,6 +4,26 @@ All notable changes to AstroBlink & AIsaac will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [6.11.4] — 2026-11-06
+
+### Changed
+
+- **The "#" column shows a running frame number again.** Since 5.6.0 the first column showed the
+  hash-based frame ID (`#A3-4821`) — stable across sessions, but it reads as a random number and
+  cannot be followed down the list. It now shows the running number of the loaded session, four
+  digits (`0001`, `0002`, …), assigned in order of capture time when the session is loaded. The
+  number is fixed until the session is loaded again: sorting, filtering, PRE-DELETE, undo and
+  renames do not change it. It is deliberately not the number from the filename, which restarts
+  per filter and per night. AIsaac refers to frames by the same number (`#0052`). The hash ID
+  stays what identifies a file across sessions — in the Frame History database and in exports —
+  it just is no longer what the list shows.
+
+### Fixed
+
+- **Batch Rename kept the row but lost its frame number.** A renamed frame was rebuilt from its
+  new filename and dropped its session number, so the "#" column fell back to the number in the
+  filename. The session number now survives a rename.
+
 ## [6.11.3] — 2026-11-06
 
 ### Fixed

@@ -14,7 +14,16 @@ Nice side effect: Finally you have a native XISF and FITS Quicklook for macOS. (
 
 ---
 
-## What's New in v6.11.3 (Build 121)
+## What's New in v6.11.4 (Build 122)
+
+**The "#" column shows a running frame number again.** Instead of the hash-based frame ID
+(`#A3-4821`), the first column shows the running number of the loaded session — four digits,
+`0001`, `0002`, … in order of capture time. It is fixed until the session is loaded again
+(sorting, filtering, PRE-DELETE, undo and renames keep it), and AIsaac refers to frames by the
+same number. The hash ID still identifies a file across sessions in the Frame History database
+and in exports.
+
+**Since 6.11.3:**
 
 **Round stars next to bright stars are no longer "star trailing".** On a long focal length in
 ordinary seeing — 3" on an RC at 0.4"/px is 7.6 px — frames of a field with bright stars (the

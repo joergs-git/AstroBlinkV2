@@ -116,7 +116,7 @@ struct AIsaacSessionContext {
 
     struct FrameMetric {
         let index: Int
-        let shortId: String     // Hash-based ID visible in # column (e.g. "4A-7566")
+        let displayNumber: String  // Running session number exactly as the # column shows it ("0052")
         let filename: String
         let filter: String
         let exposure: Double

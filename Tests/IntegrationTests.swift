@@ -412,4 +412,32 @@ final class IntegrationTests: XCTestCase {
         entry.date = date
         return entry
     }
+
+    // =========================================================================
+    // "#" column (6.11.4): the running session number is fixed while a session is loaded
+    // =========================================================================
+    /// Batch Rename rebuilds the entry from the new filename. The session number must
+    /// survive that — and must not be replaced by the frame number in the new filename.
+    func testSessionNumberSurvivesBatchRename() async {
+        let vm = await TriageViewModel()
+        let oldURL = URL(fileURLWithPath: "/tmp/2026-11-04_M45_23-19-17_RC12_CAM_LIGHT_L_180.00s_#0018__bin1x1.xisf")
+        let newURL = URL(fileURLWithPath: "/tmp/2026-11-04_M45_23-19-17_RC12_CAM_LIGHT_Lum_180.00s_#0018__bin1x1.xisf")
+        let otherURL = URL(fileURLWithPath: "/tmp/2026-11-04_M45_23-22-40_RC12_CAM_LIGHT_L_180.00s_#0019__bin1x1.xisf")
+
+        await MainActor.run {
+            vm.images = [ImageEntry(url: oldURL), ImageEntry(url: otherURL)]
+            vm.assignSessionIndices()
+            XCTAssertEqual(vm.images.map(\.sessionIndex), [1, 2])
+
+            let result = BatchResult(succeeded: 1, failed: [],
+                                     backupDirectory: URL(fileURLWithPath: "/tmp/_batch_backup_test_does_not_exist"),
+                                     affectedURLs: [oldURL: newURL])
+            vm.applyBatchResult(result)
+
+            XCTAssertEqual(vm.images[0].url, newURL, "entry should point at the renamed file")
+            XCTAssertEqual(vm.images[0].sessionIndex, 1, "session number changed during the session")
+            XCTAssertEqual(ColumnDefinition.value(for: "frameNumber", from: vm.images[0]), "0001")
+            XCTAssertEqual(vm.images[1].sessionIndex, 2)
+        }
+    }
 }

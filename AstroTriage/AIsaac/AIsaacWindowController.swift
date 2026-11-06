@@ -398,7 +398,7 @@ class AIsaacWindowController: NSWindowController {
 
             return AIsaacSessionContext.FrameMetric(
                 index: img.sessionIndex,  // use stable session index, not current sort position
-                shortId: img.shortId ?? "\(img.sessionIndex)",
+                displayNumber: img.sessionNumberLabel ?? "\(img.sessionIndex)",
                 filename: img.filename,
                 filter: img.filter ?? "?",
                 exposure: img.exposure ?? 0,

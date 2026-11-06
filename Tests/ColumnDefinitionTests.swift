@@ -207,4 +207,42 @@ final class ColumnDefinitionTests: XCTestCase {
         entry.qualityBreakdown = nil
         XCTAssertNil(ColumnDefinition.numericValue(for: "quality", from: entry))
     }
+
+    // MARK: - "#" column: running session number (6.11.4)
+
+    /// The "#" column shows the running session number, four digits — not the hash-based
+    /// short ID (which stays the cross-session identity) and not the number in the filename
+    /// (which restarts per filter and per night).
+    func testFrameNumberColumnShowsFourDigitSessionNumber() {
+        var entry = ImageEntry(url: URL(fileURLWithPath: "/tmp/test.xisf"))
+        entry.sessionIndex = 52
+        entry.frameNumber = 18
+        entry.fileHash = "a34821ffee00"
+        XCTAssertEqual(ColumnDefinition.value(for: "frameNumber", from: entry), "0052")
+        XCTAssertEqual(ColumnDefinition.numericValue(for: "frameNumber", from: entry), 52)
+        XCTAssertEqual(entry.sessionNumberLabel, "0052")
+        // The hash ID is still available in the background.
+        XCTAssertNotNil(entry.shortId)
+    }
+
+    func testFrameNumberColumnWidensFromTenThousandFrames() {
+        var entry = ImageEntry(url: URL(fileURLWithPath: "/tmp/test.xisf"))
+        entry.sessionIndex = 1
+        XCTAssertEqual(ColumnDefinition.value(for: "frameNumber", from: entry), "0001")
+        entry.sessionIndex = 9999
+        XCTAssertEqual(ColumnDefinition.value(for: "frameNumber", from: entry), "9999")
+        entry.sessionIndex = 12345
+        XCTAssertEqual(ColumnDefinition.value(for: "frameNumber", from: entry), "12345")
+    }
+
+    /// Without an assigned session number (entry built outside a loaded session) the column
+    /// falls back to the filename's frame number, unpadded as before.
+    func testFrameNumberColumnFallsBackToFilenameNumber() {
+        var entry = ImageEntry(url: URL(fileURLWithPath: "/tmp/test.xisf"))
+        entry.frameNumber = 16
+        XCTAssertNil(entry.sessionNumberLabel)
+        XCTAssertEqual(ColumnDefinition.value(for: "frameNumber", from: entry), "16")
+        entry.frameNumber = nil
+        XCTAssertEqual(ColumnDefinition.value(for: "frameNumber", from: entry), "")
+    }
 }
