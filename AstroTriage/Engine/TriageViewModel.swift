@@ -4302,7 +4302,11 @@ class TriageViewModel: ObservableObject {
         // Update URLs for renamed files
         for i in images.indices {
             if let newURL = result.affectedURLs[images[i].url] {
+                // The entry is rebuilt from the new filename, but its running session number
+                // must survive: the "#" column may not change while a session stays loaded.
+                let keptSessionIndex = images[i].sessionIndex
                 images[i] = ImageEntry(url: newURL, subfolder: images[i].subfolder)
+                images[i].sessionIndex = keptSessionIndex
                 // Re-parse filename tokens for the new name
                 let tokens = NINAFilenameParser.parse(newURL.lastPathComponent)
                 images[i].date = tokens.date

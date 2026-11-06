@@ -93,8 +93,19 @@ struct ImageEntry: Identifiable, Hashable {
     // URL used for decoding: points to local cache for network files, same as url for local
     var decodingURL: URL
 
-    // Session index — unique 1-based position in the loaded session (used by AIsaac and # column)
+    // Session index — unique 1-based running number of the frame in the loaded session, assigned
+    // once per load in chronological order (`TriageViewModel.assignSessionIndices`). It never
+    // changes while the session stays loaded: sorting, filtering, PRE-DELETE, undo and renames
+    // keep it. Shown in the "#" column and used by AIsaac to refer to a frame.
     var sessionIndex: Int = 0
+
+    /// The session number as the user sees it: zero-padded to four digits ("0052"), wider only
+    /// when a session holds 10 000 frames or more. nil before a number has been assigned.
+    /// The file-hash `shortId` stays the cross-session identity (Frame History DB, exports);
+    /// it is no longer what the file list shows (6.11.4).
+    var sessionNumberLabel: String? {
+        sessionIndex > 0 ? String(format: "%04d", sessionIndex) : nil
+    }
 
     // Parsed metadata (from filename, headers, or CSV)
     var frameNumber: Int?

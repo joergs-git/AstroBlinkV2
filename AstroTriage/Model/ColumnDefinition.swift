@@ -114,9 +114,11 @@ struct ColumnDefinition {
     static func value(for columnId: String, from entry: ImageEntry) -> String {
         switch columnId {
         case "frameNumber":
-            // Show shortId from file hash when available, fall back to session index
-            if let sid = entry.shortId { return "#\(sid)" }
-            return entry.sessionIndex > 0 ? String(entry.sessionIndex) : (entry.frameNumber.map { String($0) } ?? "")
+            // Running session number, four digits ("0052"). Until 6.11.3 this showed the
+            // hash-based short ID ("#A3-4821"), which is stable across sessions but reads as
+            // random; the number in the filename is no alternative because it restarts per
+            // filter and per night. Fallback (no session loaded): the filename's frame number.
+            return entry.sessionNumberLabel ?? (entry.frameNumber.map { String($0) } ?? "")
         case "filter":      return entry.filter ?? ""
         case "quality":     return ""  // Icon cell; handled separately in FileListView
         case "qualityFeedback": return ""  // Icon cell; handled separately in FileListView
@@ -291,7 +293,7 @@ struct ColumnDefinition {
         case "gain":
             return "Camera gain setting.\nFrom GAIN header keyword.\nHigher gain = more sensitivity but more read noise."
         case "frameNumber":
-            return "Unique frame ID derived from file content hash.\nFormat: #XX-NNNN — deterministic, same file always gets same ID.\nFalls back to session index if hash not yet computed."
+            return "Running frame number of the loaded session (0001, 0002, … in order of capture time).\nUnique within the session and fixed until the session is loaded again — sorting, filtering,\nPRE-DELETE and undo do not change it. AIsaac uses this number when it refers to a frame.\nNot the number in the filename, which restarts per filter and per night."
         case "filename":
             return "Full filename including NINA tokens.\nDouble-click column header to auto-resize width."
         case "moonPhase":

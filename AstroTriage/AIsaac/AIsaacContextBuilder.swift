@@ -99,7 +99,9 @@ struct AIsaacContextBuilder {
 
         // Current frame identification — the user is looking at this frame right now
         if let idx = currentFrameIndex, let name = currentFrameFilename {
-            parts.append("CURRENTLY DISPLAYED FRAME: #\(idx) (\(name)). The thumbnail image you see IS this frame. When the user says \"this image\" or \"this frame\", they mean #\(idx). You know this frame's # — never ask the user which frame they're looking at.")
+            // Same four-digit form as the # column of the file list.
+            let number = String(format: "%04d", idx)
+            parts.append("CURRENTLY DISPLAYED FRAME: #\(number) (\(name)). The thumbnail image you see IS this frame. When the user says \"this image\" or \"this frame\", they mean #\(number). You know this frame's # — never ask the user which frame they're looking at.")
         }
 
         // User equipment profile (learned from previous sessions — always available)
@@ -1045,7 +1047,10 @@ struct AIsaacContextBuilder {
         FRAME HISTORY DATABASE:
         - Persistent SQLite database storing per-frame quality metrics across ALL sessions ever loaded.
         - UPSERT by SHA256 file hash (first 64KB) — same file always gets same record, even after rename.
-        - Global Frame IDs: #XX-NNNN format (deterministic, rename-proof).
+        - Global frame IDs (XX-NNNN, derived from the file hash; deterministic, rename-proof) identify a file \
+        across sessions inside this database and in exports. They are NOT shown in the file list: since 6.11.4 \
+        the # column shows the running session number (0001, 0002, … by capture time, fixed until the session \
+        is loaded again; up to 6.11.3 it showed the hash ID as #XX-NNNN).
         - Stores: FWHM, HFR, star count, eccentricity, noise, trailing, quality tier, z-scores, \
         moon data, Bortle class, equipment info, observing night, filter, exposure.
         - Cross-session scoring: historicalZScore and historicalPercentile compared against ≥30 frames.
@@ -1246,7 +1251,7 @@ struct AIsaacContextBuilder {
         }
 
         var lines: [String] = ["PER-FRAME DATA (use for deep analysis):"]
-        lines.append("The 'id' column shows the hash-based short ID visible in the # column (e.g. '4A-7566'). ALWAYS use this ID when referencing specific frames in text. For app commands, use the session index in the 'idx' column.")
+        lines.append("The 'id' column is the frame number exactly as the # column of the file list shows it (e.g. '0052'): a running number assigned when the session is loaded, in order of capture time, fixed until the session is loaded again. ALWAYS write frames as #0052 when referencing them in text — never the number from the filename, which restarts per filter and per night. For app commands, use the same number as a plain integer ('idx' column).")
         // 'verdict' column carries the literal reason a frame was demoted: Stage 1 hard
         // garbage rules (e.g. "no signal detected", "star trailing/elongation") OR the
         // Stage 1.5/1.5b/4 reasoning text (e.g. "Session sanity: star count far below
@@ -1294,7 +1299,7 @@ struct AIsaacContextBuilder {
             let flags = flagList.joined(separator: "+")
             func clean(_ v: String?) -> String { (v ?? "").replacingOccurrences(of: "|", with: "/") }
 
-            lines.append("\(f.shortId)|\(f.index)|\(f.filename)|\(f.filter)|\(Int(f.exposure))|\(object)|\(night)|\(f.tier)|\(z)|\(zs(f.starsZ))|\(zs(f.fwhmZ))|\(zs(f.hfrZ))|\(zs(f.noiseZ))|\(zs(f.trailingZ))|\(zs(f.psfFluxZ))|\(fwhm)|\(hfr)|\(stars)|\(snr)|\(noise)|\(ecc)|\(trail)|\(cons)|\(chain)|\(moonPct)|\(moonDist)|\(marked)|\(flags)|\(verdict)|\(clean(f.sanityReasons))|\(clean(f.historicalReasons))|\(clean(f.recommendation))|\(twilight)")
+            lines.append("\(f.displayNumber)|\(f.index)|\(f.filename)|\(f.filter)|\(Int(f.exposure))|\(object)|\(night)|\(f.tier)|\(z)|\(zs(f.starsZ))|\(zs(f.fwhmZ))|\(zs(f.hfrZ))|\(zs(f.noiseZ))|\(zs(f.trailingZ))|\(zs(f.psfFluxZ))|\(fwhm)|\(hfr)|\(stars)|\(snr)|\(noise)|\(ecc)|\(trail)|\(cons)|\(chain)|\(moonPct)|\(moonDist)|\(marked)|\(flags)|\(verdict)|\(clean(f.sanityReasons))|\(clean(f.historicalReasons))|\(clean(f.recommendation))|\(twilight)")
         }
 
         if truncated {
