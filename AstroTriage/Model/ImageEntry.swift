@@ -217,6 +217,12 @@ struct ImageEntry: Identifiable, Hashable {
     // header enrichment and after an in-app plate solve. Nil = no coordinates. Session-transient.
     var fieldIndex: Int?
 
+    // Object the in-app plate solve identified at the frame center (catalog canonical name, e.g.
+    // "NGC6888"), set by the interactive solve whether or not it is saved. Names the subfolder
+    // when a field is split off the session (6.12.0). Session-transient; the header's OBJECT
+    // value is what `target` carries.
+    var identifiedObject: String?
+
     // Star-based visual alignment transform (frame pixels → reference pixels).
     // Computed in the prefetch pipeline against the per-target reference frame.
     // Nil = not yet computed or alignment failed (display falls back to header flip).
@@ -379,12 +385,19 @@ struct ImageEntry: Identifiable, Hashable {
         hasher.combine(id)
     }
 
-    /// Returns a copy of this entry relocated to a new on-disk URL after a filter rename.
-    /// A rename changes only the file path and the filter token in the name — the pixel data is
-    /// identical — so we preserve every measured/computed metric, alignment, fingerprint and user
-    /// state (`var copy = self` copies them all) and update only what the rename actually touched:
-    /// the URL, the local decode cache pointer (only if it pointed at the old file), and `filter`.
-    func relocated(to newURL: URL, newFilter: String) -> ImageEntry {
+    /// Returns a copy of this entry relocated to a new on-disk URL after a rename or a move.
+    /// Neither touches the pixel data, so every measured/computed metric, alignment, fingerprint,
+    /// user state and the running session number survive (`var copy = self` copies them all);
+    /// only what the operation changed is updated: the URL, the local decode cache pointer (only
+    /// if it pointed at the old file) and, when given, the filter (Change Filter), the target
+    /// (plate-solve OBJECT write, 6.12.0) and the subfolder (move into a subfolder, 6.12.0).
+    /// `markModified` is the "header/name edited in this session" flag; a plain move into a
+    /// subfolder leaves the file itself untouched and passes false.
+    func relocated(to newURL: URL,
+                   newFilter: String? = nil,
+                   newTarget: String? = nil,
+                   newSubfolder: String? = nil,
+                   markModified: Bool = true) -> ImageEntry {
         var copy = self
         // If decodingURL still pointed at the original file (local case) follow it to the new name.
         // For network sessions decodingURL points at a separate local cache of the same pixels —
@@ -393,8 +406,10 @@ struct ImageEntry: Identifiable, Hashable {
             copy.decodingURL = newURL
         }
         copy.url = newURL
-        copy.filter = newFilter
-        copy.batchModified = true
+        if let newFilter { copy.filter = newFilter }
+        if let newTarget { copy.target = newTarget }
+        if let newSubfolder { copy.subfolder = newSubfolder }
+        if markModified { copy.batchModified = true }
         return copy
     }
 }

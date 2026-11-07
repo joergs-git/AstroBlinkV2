@@ -178,12 +178,29 @@ Works with FITS and XISF. ASTAP itself cannot read XISF, so those frames are dec
 AstroBlink and handed over as a temporary image — ASTAP never sees your originals, and
 nothing is written to them unless you choose to save after the run.
 
+Saving always starts with a backup copy of each file. With **Also name the object in OBJECT**
+ticked, the identified object goes into OBJECT — since 6.12.0 also when the header already says
+something else (the save bar tells you beforehand: `3 frames currently say "M45" → NGC6888`).
+**Rename files: replace … with …** renames the files of the frames whose identified object is NOT
+the one the search text names, so frames that really are M45 keep their names while the NGC 6888
+frames labelled M45 are renamed. **Undo This Save** restores everything from the backup folder.
+
 **Q: What does "differs from stored WCS" mean in the plate solve results?**
 That frame already carried a plate solve, and re-solving it produced a different answer. The
 table shows how different: centre offset in arcminutes, plate scale in percent, rotation in
 degrees. Small numbers are ordinary solver noise; a large centre offset means the stored WCS
 points somewhere the frame is not — typically a solve copied from another night, or one that
 locked onto the wrong field.
+
+**Q: A few frames of a second object ended up in my session folder. How do I move them out?**
+Select the session (⌘A) and right-click → **Move N Frames of Field F2 into Subfolder "NGC6888"…**
+(6.12.0). The field with the most selected frames stays where it is; every other field moves
+into a subfolder next to its files, named after the object plate solving identified for it (else
+the field's own OBJECT name when it differs, else `Field-F2`). A confirmation lists each field,
+count and folder first. It is a plain move — no backup, no file is rewritten — and ⌘Z moves them
+back. The frames stay in the session; only the Subfolder column changes. The item appears only
+when the selection really spans two or more sky fields, so plate-solve the session first if the
+Field column is still blank.
 
 **Q: The result table warns that FOCALLEN is off. Is my telescope wrong?**
 No — the header is. A plate solve measures the true angular size of a pixel, which gives the

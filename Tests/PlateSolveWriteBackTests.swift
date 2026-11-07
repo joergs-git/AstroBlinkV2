@@ -5,6 +5,7 @@
 // pixel data must be untouched, and a failure must restore the file from its backup.
 //
 // v6.9.0
+// v6.12.0 — OBJECT replacement, A→B filename replacement, pre-save preview.
 
 import XCTest
 @testable import AstroTriage
@@ -44,14 +45,41 @@ final class PlateSolveWriteBackTests: XCTestCase {
         return copy
     }
 
-    private func report(for url: URL) -> PlateSolveReport {
+    private func report(for url: URL, identification: TargetIdentification? = nil) -> PlateSolveReport {
+        var report = PlateSolveReport()
+        report.solved = [solvedFrame(for: url, identification: identification)]
+        return report
+    }
+
+    /// One solved frame; `target` stands in for the header-enriched OBJECT the preview reads.
+    private func solvedFrame(for url: URL,
+                             identification: TargetIdentification? = nil,
+                             target: String? = nil) -> SolvedFrame {
         var entry = ImageEntry(url: url)
         entry.focalLength = 2455
         entry.pixelSizeMicrons = 3.76
-        var report = PlateSolveReport()
-        report.solved = [SolvedFrame(entry: entry, solution: solution(),
-                                     previous: nil, identification: nil)]
-        return report
+        entry.target = target
+        return SolvedFrame(entry: entry, solution: solution(), previous: nil, identification: identification)
+    }
+
+    /// Catalogue identification for the OBJECT / rename tests.
+    private func identification(_ canonicalName: String) throws -> TargetIdentification {
+        let target = try XCTUnwrap(DeepSkyTargetDatabase.lookup(canonicalName),
+                                   "\(canonicalName) missing from the catalogue")
+        return TargetIdentification(target: target, separationArcmin: 1.0, centreInsideObject: true)
+    }
+
+    /// A copy of the FITS test frame under `name`, with OBJECT set to `object` through the same
+    /// writer the save uses (the fixture frame carries no object name of its own).
+    private func fitsFrame(named name: String, object: String?) throws -> URL {
+        let source = try testFrame(named: "Light_Orion_300.0s_Bin1_2600MC_gain100_20240227-205213_-20.0C_0008.fit")
+        let url = work.appendingPathComponent(name)
+        try FileManager.default.moveItem(at: source, to: url)
+        if let object {
+            XCTAssertNil(BatchOperations.writeHeaders(url: url, values: [("OBJECT", object)]))
+            XCTAssertEqual(BatchOperations.readHeaderValue(url: url, keyword: "OBJECT"), object)
+        }
+        return url
     }
 
     /// Every keyword the solver writes must be readable afterwards, with the value intact.
@@ -71,6 +99,149 @@ final class PlateSolveWriteBackTests: XCTestCase {
                                "\(keyword) changed value", file: file, line: line)
             }
         }
+    }
+
+    // MARK: - OBJECT and filename (6.12.0)
+
+    /// Until 6.11.4 a differing OBJECT was never touched: the user's five NGC 6888 frames stayed
+    /// labelled M45 after a save that reported success. With the backup copy as the safety net
+    /// the identified name now replaces it — and the report says so.
+    func testDifferentObjectIsReplacedWhenNamingIsOn() throws {
+        let frame = try fitsFrame(named: "Light_M45_0001.fit", object: "M45")
+        var r = report(for: frame, identification: try identification("NGC6888"))
+        PlateSolveEngine().writeBack(&r, sessionRoot: work,
+                                     options: PlateSolveWriteOptions(scope: .all, writeObjectName: true))
+
+        XCTAssertEqual(r.written, 1, "\(r.writeFailures)")
+        XCTAssertEqual(r.objectNamesWritten, 1)
+        XCTAssertEqual(r.objectNamesReplaced.count, 1)
+        XCTAssertEqual(r.objectNamesReplaced.first?.existing, "M45")
+        XCTAssertEqual(BatchOperations.readHeaderValue(url: frame, keyword: "OBJECT"), "NGC6888")
+        XCTAssertEqual(r.objectWritten[r.solved[0].entry.id], "NGC6888")
+        XCTAssertEqual(r.solved[0].entry.target, "NGC6888", "the report's own entry adopts the written name")
+        XCTAssertEqual(r.affectedURLs[frame], frame, "header-only write records an identity mapping for undo")
+        // The original name is one copy away.
+        let backup = try XCTUnwrap(r.backupDirectory).appendingPathComponent(frame.lastPathComponent)
+        XCTAssertEqual(BatchOperations.readHeaderValue(url: backup, keyword: "OBJECT"), "M45")
+        assertKeywordsSurvived(in: frame)
+    }
+
+    func testObjectUntouchedWhenNamingIsOff() throws {
+        let frame = try fitsFrame(named: "Light_M45_0002.fit", object: "M45")
+        var r = report(for: frame, identification: try identification("NGC6888"))
+        PlateSolveEngine().writeBack(&r, sessionRoot: work,
+                                     options: PlateSolveWriteOptions(scope: .all, writeObjectName: false))
+        XCTAssertEqual(r.written, 1, "\(r.writeFailures)")
+        XCTAssertEqual(r.objectNamesWritten, 0)
+        XCTAssertTrue(r.objectNamesReplaced.isEmpty)
+        XCTAssertTrue(r.objectWritten.isEmpty)
+        XCTAssertEqual(BatchOperations.readHeaderValue(url: frame, keyword: "OBJECT"), "M45")
+    }
+
+    func testMatchingObjectIsNotCountedAsReplaced() throws {
+        let frame = try fitsFrame(named: "Light_NGC6888_0003.fit", object: "ngc6888")
+        var r = report(for: frame, identification: try identification("NGC6888"))
+        PlateSolveEngine().writeBack(&r, sessionRoot: work)
+        XCTAssertEqual(r.written, 1, "\(r.writeFailures)")
+        XCTAssertEqual(r.objectNamesWritten, 0, "an OBJECT that already names the object is left alone")
+        XCTAssertTrue(r.objectNamesReplaced.isEmpty)
+        XCTAssertEqual(BatchOperations.readHeaderValue(url: frame, keyword: "OBJECT"), "ngc6888")
+    }
+
+    /// Two frames both named M45 in the file: the real M45 frame keeps its name, the NGC 6888
+    /// frame is renamed — the rename follows the IDENTIFIED object, not the text alone.
+    func testRenameAppliesOnlyToFramesOfAnotherObject() throws {
+        let m45 = try fitsFrame(named: "Light_M45_300s_0010.fit", object: "M45")
+        let crescent = try fitsFrame(named: "Light_M45_300s_0011.fit", object: "M45")
+        var r = PlateSolveReport()
+        r.solved = [solvedFrame(for: m45, identification: try identification("M45")),
+                    solvedFrame(for: crescent, identification: try identification("NGC6888"))]
+        var options = PlateSolveWriteOptions(scope: .all, writeObjectName: true)
+        options.rename = FilenameReplacement(search: "M45", replacement: "NGC6888")
+        PlateSolveEngine().writeBack(&r, sessionRoot: work, options: options)
+
+        XCTAssertEqual(r.written, 2, "\(r.writeFailures)")
+        XCTAssertEqual(r.renamed, 1)
+        let renamed = work.appendingPathComponent("Light_NGC6888_300s_0011.fit")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: renamed.path), "NGC 6888 frame not renamed")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: crescent.path), "old name still present")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: m45.path), "the real M45 frame must keep its name")
+        XCTAssertEqual(r.affectedURLs[m45], m45)
+        XCTAssertEqual(r.affectedURLs[crescent], renamed)
+        XCTAssertEqual(BatchOperations.readHeaderValue(url: renamed, keyword: "OBJECT"), "NGC6888")
+        XCTAssertEqual(BatchOperations.readHeaderValue(url: m45, keyword: "OBJECT"), "M45")
+        XCTAssertEqual(r.solved[1].entry.url, renamed, "the report's entry follows the renamed file")
+        XCTAssertEqual(r.objectNamesReplaced.count, 1)
+        // The backup holds the original under its ORIGINAL name — that is what undo restores.
+        let backup = try XCTUnwrap(r.backupDirectory)
+        XCTAssertTrue(FileManager.default.fileExists(
+            atPath: backup.appendingPathComponent(crescent.lastPathComponent).path))
+        assertKeywordsSurvived(in: renamed)
+    }
+
+    func testRenameRefusesAnExistingTargetAndRestoresTheFrame() throws {
+        let crescent = try fitsFrame(named: "Light_M45_300s_0020.fit", object: "M45")
+        let before = try Data(contentsOf: crescent)
+        let blocker = work.appendingPathComponent("Light_NGC6888_300s_0020.fit")
+        try Data("not a FITS file".utf8).write(to: blocker)
+        var r = report(for: crescent, identification: try identification("NGC6888"))
+        var options = PlateSolveWriteOptions(scope: .all, writeObjectName: true)
+        options.rename = FilenameReplacement(search: "M45", replacement: "NGC6888")
+        PlateSolveEngine().writeBack(&r, sessionRoot: work, options: options)
+
+        XCTAssertEqual(r.written, 0)
+        XCTAssertEqual(r.renamed, 0)
+        XCTAssertEqual(r.writeFailures.count, 1)
+        XCTAssertTrue(r.writeFailures.first?.reason.contains("already exists") == true,
+                      r.writeFailures.first?.reason ?? "no failure recorded")
+        XCTAssertEqual(try Data(contentsOf: blocker), Data("not a FITS file".utf8),
+                       "the existing file must not be overwritten")
+        // Restored from backup byte for byte: the OBJECT write before the refused rename is gone too.
+        XCTAssertEqual(try Data(contentsOf: crescent), before)
+    }
+
+    func testRenameRulesFollowTheIdentifiedObject() throws {
+        let url = work.appendingPathComponent("Light_M45_300s_0030.fit")   // need not exist
+        let crescent = solvedFrame(for: url, identification: try identification("NGC6888"))
+        let pleiades = solvedFrame(for: url, identification: try identification("M45"))
+        let unknown = solvedFrame(for: url, identification: nil)
+        let m45ToCrescent = FilenameReplacement(search: "M45", replacement: "NGC6888")
+
+        XCTAssertEqual(PlateSolveEngine.renamedFilename(for: crescent, replacement: m45ToCrescent),
+                       "Light_NGC6888_300s_0030.fit")
+        XCTAssertNil(PlateSolveEngine.renamedFilename(for: pleiades, replacement: m45ToCrescent),
+                     "a frame that IS M45 keeps its name")
+        XCTAssertNil(PlateSolveEngine.renamedFilename(
+                        for: pleiades, replacement: FilenameReplacement(search: "M 45", replacement: "X")),
+                     "the catalogue spelling of the search text is recognised too")
+        XCTAssertNil(PlateSolveEngine.renamedFilename(for: unknown, replacement: m45ToCrescent),
+                     "no identification → no rename")
+        XCTAssertNil(PlateSolveEngine.renamedFilename(
+                        for: crescent, replacement: FilenameReplacement(search: "IC1805", replacement: "X")),
+                     "search text absent from the name")
+        XCTAssertNil(PlateSolveEngine.renamedFilename(
+                        for: crescent, replacement: FilenameReplacement(search: "", replacement: "X")),
+                     "an empty search text matches nothing — never everything")
+        XCTAssertFalse(FilenameReplacement(search: "M45", replacement: "a/b").isUsable,
+                       "a path separator would turn the rename into a move")
+    }
+
+    func testPreviewCountsTheObjectsTheSaveWouldChange() throws {
+        let url = work.appendingPathComponent("Light_M45_300s_0040.fit")   // need not exist
+        var r = PlateSolveReport()
+        r.solved = [solvedFrame(for: url, identification: try identification("M45"), target: "M45"),
+                    solvedFrame(for: url, identification: try identification("NGC6888"), target: "M45"),
+                    solvedFrame(for: url, identification: try identification("NGC6888"), target: "M45"),
+                    solvedFrame(for: url, identification: try identification("NGC6888"), target: nil)]
+        let changes = r.objectChanges(in: .all)
+        XCTAssertEqual(changes.count, 3, "the real M45 frame is no change; the empty OBJECT is one")
+        let pair = try XCTUnwrap(PlateSolveReport.dominantPair(of: changes))
+        XCTAssertEqual(pair.existing, "M45")
+        XCTAssertEqual(pair.new, "NGC6888")
+        XCTAssertEqual(pair.count, 2, "frames with an empty OBJECT have nothing to replace")
+        XCTAssertEqual(r.renamePreview(in: .all,
+                                       replacement: FilenameReplacement(search: "M45", replacement: "NGC6888")).count,
+                       3, "every NGC 6888 frame named M45 is renamed, the M45 frame is not")
     }
 
     // MARK: - FITS
@@ -283,10 +454,13 @@ final class PlateSolveWriteBackTests: XCTestCase {
                      "the backup already contains the written value")
     }
 
-    func testObjectNameIsWrittenOnlyWhereEmptyAndNeverOverwrites() throws {
+    /// The identification found at the solved centre lands in OBJECT — into an empty keyword, and
+    /// since 6.12.0 also over a different existing name (reported as replaced). Only a header that
+    /// already carries the identified name is left alone.
+    func testObjectNameIsWrittenWhereEmptyOrDifferent() throws {
         let frame = try testFrame(named: "Light_Orion_300.0s_Bin1_2600MC_gain100_20240227-205213_-20.0C_0008.fit")
         let existing = BatchOperations.readHeaderValue(url: frame, keyword: "OBJECT")?
-            .trimmingCharacters(in: CharacterSet(charactersIn: "' "))
+            .trimmingCharacters(in: CharacterSet(charactersIn: "' ")) ?? ""
 
         var entry = ImageEntry(url: frame)
         entry.focalLength = 467
@@ -299,19 +473,19 @@ final class PlateSolveWriteBackTests: XCTestCase {
             identification: TargetIdentifier.identify(raDeg: 83.84, decDeg: -5.35,
                                                       fieldRadiusArcmin: 90)
         )]
-        PlateSolveEngine().writeBack(&r, sessionRoot: work, writeObjectName: true)
+        PlateSolveEngine().writeBack(&r, sessionRoot: work,
+                                     options: PlateSolveWriteOptions(scope: .all, writeObjectName: true))
 
         let after = BatchOperations.readHeaderValue(url: frame, keyword: "OBJECT")?
             .trimmingCharacters(in: CharacterSet(charactersIn: "' "))
+        XCTAssertEqual(after, "M42")
 
-        if let existing, !existing.isEmpty, existing.caseInsensitiveCompare("M42") != .orderedSame {
-            // The user's own naming wins, and the discrepancy is reported instead.
-            XCTAssertEqual(after, existing, "an existing OBJECT was overwritten")
-            XCTAssertEqual(r.objectNamesKept.count, 1)
-            XCTAssertEqual(r.objectNamesWritten, 0)
+        if existing.caseInsensitiveCompare("M42") == .orderedSame {
+            XCTAssertEqual(r.objectNamesWritten, 0, "a header that already names the object is left alone")
         } else {
-            XCTAssertEqual(after, "M42")
             XCTAssertEqual(r.objectNamesWritten, 1)
+            XCTAssertEqual(r.objectNamesReplaced.count, existing.isEmpty ? 0 : 1,
+                           "a different existing name is reported as replaced, an empty one is not")
         }
     }
 }

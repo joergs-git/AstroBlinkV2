@@ -859,11 +859,19 @@ struct AIsaacContextBuilder {
         F1 = the field with the most frames. Frames share a field while their centers are within 60% of the larger field edge \
         (≥40% overlap). Blank when the whole session is one field. Right-click → "Select All Frames of Field Fn". \
         LightspeedStacker uses the same grouping: a mixed selection shows the fields with counts, names and separation and \
-        offers "Stack Anyway" (aligns what overlaps the largest field, skips the rest). Two names in ONE field stack without a dialog.
+        offers "Stack Anyway" (aligns what overlaps the largest field, skips the rest). Two names in ONE field stack without a dialog. \
+        Right-click a selection spanning several fields → "Move N Frames of Field F2 into Subfolder …" (6.12.0): the field with \
+        the most SELECTED frames stays, every other field moves into a subfolder next to its files named after the object the \
+        plate solve identified (else its OBJECT name, else Field-F2); plain move, no backup, Cmd+Z moves them back, the frames stay in the session.
+        - Plate Solve Frames… (Window menu / right-click; 6.9.0): ASTAP solves the selection or session; saving writes WCS keywords \
+        after a mandatory backup copy. "Also name the object in OBJECT" writes the identified object — since 6.12.0 also over a \
+        DIFFERENT existing name (the save bar previews the count and pair); "Rename files: replace A with B" renames only the frames \
+        whose identified object is not the one A names; "Undo This Save" restores from the backup folder.
         - Filter bar (top): type text to filter by filename. Filter syntax: "filter:Ha", "q:trash", "fwhm:>4", \
         "stars:<500", "snr:<20", "trail:>0.5", "rating:>0", "file:NGC". Combine with spaces.
 
         IMAGE VIEWER:
+        - Full filename of the shown frame bottom-left (6.12.0), small and dim, truncated in the middle; hidden with the overlay toggle.
         - Scroll to zoom (trackpad or mouse wheel). +/- keys also zoom. Cmd+/Cmd-: 25% step zoom.
         - Cmd+0: fit to view. Cmd+1: 100% actual pixels. Cmd+2: 200%. Double-click: fit to view.
         - Option+drag: pan image (hand tool). Scroll wheel also pans when zoomed in.

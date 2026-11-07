@@ -216,3 +216,90 @@ extension FieldGroupingTests {
         XCTAssertEqual(center.centerDec, 62.6210, accuracy: 0.002)
     }
 }
+
+// MARK: - Move other fields into subfolders (6.12.0)
+
+extension FieldGroupingTests {
+
+    /// A frame already assigned to a sky field, the way the file list holds it.
+    private func fieldFrame(_ name: String, field: Int?, target: String? = nil,
+                            identified: String? = nil) -> ImageEntry {
+        var entry = ImageEntry(url: URL(fileURLWithPath: "/tmp/session/\(name).fit"))
+        entry.fieldIndex = field
+        entry.target = target
+        entry.identifiedObject = identified
+        return entry
+    }
+
+    /// The user's night: 30 frames of M45, five the mount had already slewed to NGC 6888.
+    func testMajorityStaysMinorityMovesNamedAfterTheIdentifiedObject() throws {
+        var selection = (0..<30).map { fieldFrame("m45_\($0)", field: 1, target: "M45", identified: "M45") }
+        selection += (0..<5).map { fieldFrame("x_\($0)", field: 2, target: "M45", identified: "NGC6888") }
+        selection.append(fieldFrame("nocoords", field: nil, target: "M45"))
+
+        let plan = try XCTUnwrap(FieldGrouping.subfolderMovePlan(for: selection))
+        XCTAssertEqual(plan.stayingField, 1)
+        XCTAssertEqual(plan.stayingCount, 30)
+        XCTAssertEqual(plan.groups.count, 1)
+        XCTAssertEqual(plan.groups[0].fieldIndex, 2)
+        XCTAssertEqual(plan.groups[0].entries.count, 5)
+        XCTAssertEqual(plan.groups[0].folderName, "NGC6888", "the identified object names the folder")
+        XCTAssertEqual(plan.movingCount, 5)
+        XCTAssertEqual(plan.withoutCoordinates, 1, "a frame without coordinates stays and is counted")
+    }
+
+    func testTheSelectionDecidesWhichFieldStaysNotTheSession() throws {
+        // F1 is the session's largest field, but the user highlighted mostly F2 frames.
+        let selection = (0..<2).map { fieldFrame("a\($0)", field: 1, target: "M45") }
+                      + (0..<6).map { fieldFrame("b\($0)", field: 2, target: "NGC6888") }
+        let plan = try XCTUnwrap(FieldGrouping.subfolderMovePlan(for: selection))
+        XCTAssertEqual(plan.stayingField, 2)
+        XCTAssertEqual(plan.groups.map(\.fieldIndex), [1])
+        XCTAssertEqual(plan.groups[0].folderName, "M45", "no identification → the field's own OBJECT name")
+    }
+
+    func testTieKeepsTheLowerFieldIndex() throws {
+        let selection = (0..<3).map { fieldFrame("a\($0)", field: 1) } + (0..<3).map { fieldFrame("b\($0)", field: 2) }
+        let plan = try XCTUnwrap(FieldGrouping.subfolderMovePlan(for: selection))
+        XCTAssertEqual(plan.stayingField, 1)
+        XCTAssertEqual(plan.groups[0].folderName, "Field-F2", "no name at all → the field index")
+    }
+
+    func testNamesSharedWithTheStayingFieldDoNotNameTheFolder() throws {
+        // Both fields say M45 (the mislabelled case before any OBJECT fix) and nothing was identified.
+        let shared = (0..<4).map { fieldFrame("a\($0)", field: 1, target: "M45") }
+                   + (0..<2).map { fieldFrame("b\($0)", field: 2, target: "m45") }
+        XCTAssertEqual(try XCTUnwrap(FieldGrouping.subfolderMovePlan(for: shared)).groups[0].folderName, "Field-F2")
+
+        // Two panels of one nebula: the identification matches the staying field → fall through.
+        let panels = (0..<4).map { fieldFrame("p1_\($0)", field: 1, target: "NGC7000 P1", identified: "NGC7000") }
+                   + (0..<3).map { fieldFrame("p2_\($0)", field: 2, target: "NGC7000 P2", identified: "NGC7000") }
+        XCTAssertEqual(try XCTUnwrap(FieldGrouping.subfolderMovePlan(for: panels)).groups[0].folderName, "NGC7000 P2",
+                       "the shared identification is skipped, the panel's own OBJECT name is not")
+    }
+
+    func testThreeFieldsGiveOneGroupPerMinorityField() throws {
+        let selection = (0..<5).map { fieldFrame("a\($0)", field: 1, identified: "M45") }
+                      + (0..<2).map { fieldFrame("b\($0)", field: 2, identified: "NGC6888") }
+                      + [fieldFrame("c0", field: 3, identified: "IC1318")]
+        let plan = try XCTUnwrap(FieldGrouping.subfolderMovePlan(for: selection))
+        XCTAssertEqual(plan.groups.map(\.fieldIndex), [2, 3])
+        XCTAssertEqual(plan.groups.map(\.folderName), ["NGC6888", "IC1318"])
+        XCTAssertEqual(plan.movingCount, 3)
+    }
+
+    func testSingleFieldSelectionHasNoPlan() {
+        let selection = (0..<4).map { fieldFrame("a\($0)", field: 1) } + [fieldFrame("n", field: nil)]
+        XCTAssertNil(FieldGrouping.subfolderMovePlan(for: selection))
+        XCTAssertNil(FieldGrouping.subfolderMovePlan(for: []))
+    }
+
+    func testFolderNamesAreFileSystemSafe() {
+        XCTAssertEqual(FieldGrouping.sanitizedFolderName("SH2-157 / Panel: 2"), "SH2-157 - Panel- 2")
+        XCTAssertNil(FieldGrouping.sanitizedFolderName("  "))
+        XCTAssertNil(FieldGrouping.sanitizedFolderName(".."))
+        let odd = [fieldFrame("a", field: 1), fieldFrame("b", field: 2, target: ".")]
+        XCTAssertEqual(FieldGrouping.subfolderMovePlan(for: odd)?.groups[0].folderName, "Field-F2",
+                       "an unusable name falls back to the field index")
+    }
+}

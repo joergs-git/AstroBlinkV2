@@ -175,8 +175,10 @@ struct SessionScanner {
         }
     }
 
-    // Calculate relative subfolder from root (e.g. "Ha/" or "OIII/subdir/")
-    private static func relativeSubfolder(fileURL: URL, rootURL: URL) -> String {
+    // Calculate relative subfolder from root (e.g. "Ha" or "OIII/subdir"). Also used by the
+    // view model when a loaded frame moves into a subfolder (6.12.0), so the Subfolder column
+    // shows the same text a fresh scan would produce.
+    static func relativeSubfolder(fileURL: URL, rootURL: URL) -> String {
         let filePath = fileURL.deletingLastPathComponent().path
         let rootPath = rootURL.path
 

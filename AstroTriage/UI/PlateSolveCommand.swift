@@ -183,7 +183,7 @@ enum PlateSolveCommand {
                 }
                 return found
             },
-            onSave: canSave ? { scope, writeObjectName in
+            onSave: canSave ? { options in
                 guard let root = viewModel.ensureWritableSessionRoot() else {
                     alert("Cannot write to the session folder",
                           "Nothing was saved. The solutions still apply to this session.")
@@ -192,18 +192,22 @@ enum PlateSolveCommand {
                 viewModel.statusMessage = "Writing WCS into files…"
                 PlateSolveProgressWindowController.shared.show(total: 0, onCancel: {})
                 PlateSolveProgressWindowController.shared.showWriting()
-                // Off the main thread: writeBack copies, writes and verifies every file.
+                // Off the main thread: writeBack copies, writes, verifies and renames every file.
                 var updated = report
                 await Task.detached(priority: .userInitiated) {
-                    engine.writeBack(&updated,
-                                     sessionRoot: root,
-                                     scope: scope,
-                                     writeObjectName: writeObjectName)
+                    engine.writeBack(&updated, sessionRoot: root, options: options)
                 }.value
                 PlateSolveProgressWindowController.shared.dismiss()
-                viewModel.statusMessage = updated.headline
+                // Follow renamed files, adopt the written OBJECT names, make the save undoable.
+                viewModel.applyPlateSolveWriteBack(updated)
+                viewModel.statusMessage = updated.written > 0
+                    ? "Saved \(updated.written) plate solve(s)"
+                      + (updated.renamed > 0 ? ", renamed \(updated.renamed) file(s)" : "")
+                      + " — undo in the result window"
+                    : updated.headline
                 return updated
-            } : nil
+            } : nil,
+            onUndo: canSave ? { backup in viewModel.undoPlateSolveWriteBack(backupDirectory: backup) } : nil
         )
     }
 

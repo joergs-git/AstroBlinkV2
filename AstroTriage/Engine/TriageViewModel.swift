@@ -3344,7 +3344,7 @@ class TriageViewModel: ObservableObject {
 
     /// Tells the user when a move batch did not fully succeed. Modal on purpose: the status
     /// bar line alone let "0 moved, N failed" pass as a successful delete.
-    private func reportFailedMoves(_ result: MarkedMoveResult, destinationName: String) {
+    private func reportFailedMoves(_ result: MarkedMoveResult, destinationName: String, stillMarked: Bool = true) {
         guard result.failedCount > 0 else { return }
         let total = result.movedCount + result.failedCount
         let alert = NSAlert()
@@ -3352,7 +3352,8 @@ class TriageViewModel: ObservableObject {
             ? "No files were moved to \(destinationName)"
             : "\(result.failedCount) of \(total) files could not be moved to \(destinationName)"
         alert.informativeText = (result.firstError ?? "Unknown error")
-            + "\n\nThe files that failed are still in the list and still marked — nothing was moved or lost. "
+            + "\n\nThe files that failed are still in the list" + (stillMarked ? " and still marked" : "")
+            + " — nothing was moved or lost. "
             + "Check write access to the session folder (reopen it with \u{2318}O to re-grant access) and try again."
         alert.alertStyle = .warning
         alert.addButton(withTitle: "OK")
@@ -3569,6 +3570,12 @@ class TriageViewModel: ObservableObject {
         for undo in sorted {
             do {
                 try fm.moveItem(at: undo.preDeleteURL, to: undo.originalURL)
+                // A subfolder split (6.12.0) leaves the frame in the list: follow it back
+                // instead of inserting a second row.
+                if relocateLoadedEntry(from: undo.preDeleteURL, to: undo.originalURL) {
+                    restoredCount += 1
+                    continue
+                }
                 // Re-insert entry at original position (clamped to current size)
                 var restored = undo.entry
                 restored.isMarkedForDeletion = false
@@ -3656,6 +3663,112 @@ class TriageViewModel: ObservableObject {
             statusMessage = "Moved \(result.movedCount) file(s) to \"\(destName)\" — Undo available"
         }
         reportFailedMoves(result, destinationName: "\"\(destName)\"")
+    }
+
+    // MARK: - Move Other Fields into Subfolders (6.12.0)
+
+    /// Splits a mixed-field selection: the field with the most selected frames stays where it is,
+    /// every other field moves into a subfolder NEXT TO its files, named after the object the
+    /// plate solve identified (else the field's OBJECT name, else "Field-F2"). A plain move with
+    /// ⌘Z undo — no backup, no file is rewritten. The frames stay in the session (the scanner
+    /// recurses into subfolders), so their rows, metrics, scores and session numbers are kept;
+    /// only URL and Subfolder change. Main thread: confirms with an alert and may prompt for
+    /// folder access.
+    @MainActor
+    func moveOtherFieldsToSubfolders(_ selection: [ImageEntry]) {
+        guard let plan = FieldGrouping.subfolderMovePlan(for: selection) else {
+            statusMessage = "The selection is a single sky field — nothing to split off"
+            return
+        }
+        // Reconstructed multi-folder roots carry no write scope (the 6.5.2 NAS case); the same
+        // rescue every other write command uses.
+        guard ensureWritableSessionRoot(
+            message: "Grant write access to the session folder so the frames of the other field(s) can be moved into subfolders"
+        ) != nil else {
+            statusMessage = "Move cancelled — no write access to the session folder"
+            return
+        }
+
+        let alert = NSAlert()
+        if plan.groups.count == 1, let group = plan.groups.first {
+            alert.messageText = "Move \(group.entries.count) frame(s) of field F\(group.fieldIndex) into a subfolder?"
+        } else {
+            alert.messageText = "Move \(plan.movingCount) frames of \(plan.groups.count) other fields into subfolders?"
+        }
+        var lines: [String] = []
+        for group in plan.groups {
+            let parents = Set(group.entries.map { $0.url.deletingLastPathComponent().lastPathComponent })
+            let location = parents.count == 1 ? "\(parents.first ?? "")/" : "next to each file: "
+            lines.append("F\(group.fieldIndex) — \(group.entries.count) frame(s) → \(location)\(group.folderName)/")
+        }
+        lines.append("")
+        lines.append("The \(plan.stayingCount) frame(s) of F\(plan.stayingField) stay where they are.")
+        if plan.withoutCoordinates > 0 {
+            lines.append("\(plan.withoutCoordinates) selected frame(s) without coordinates stay too.")
+        }
+        lines.append("The moved frames remain in this session. Undo with \u{2318}Z.")
+        alert.informativeText = lines.joined(separator: "\n")
+        alert.alertStyle = .informational
+        alert.addButton(withTitle: "Move")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+
+        let fm = FileManager.default
+        var combined = MarkedMoveResult()
+        for group in plan.groups {
+            // Frames of one field may sit in different folders (multi-folder session): one
+            // subfolder per parent, each next to its files.
+            let byParent = Dictionary(grouping: group.entries) { $0.url.deletingLastPathComponent() }
+            for (parent, frames) in byParent {
+                let dest = parent.appendingPathComponent(group.folderName, isDirectory: true)
+                do {
+                    try fm.createDirectory(at: dest, withIntermediateDirectories: true)
+                } catch {
+                    combined.failedCount += frames.count
+                    if combined.firstError == nil {
+                        combined.firstError = "could not create \"\(group.folderName)\": \(error.localizedDescription)"
+                    }
+                    continue
+                }
+                let result = Self.moveFrames(rowsForMove(frames), into: dest)
+                combined.undoEntries += result.undoEntries
+                combined.failedCount += result.failedCount
+                if combined.firstError == nil { combined.firstError = result.firstError }
+            }
+        }
+
+        // Follow the moved frames in the list (no removal — they are still in the session) and
+        // push ONE ⌘Z batch for the whole split.
+        for undo in combined.undoEntries {
+            relocateLoadedEntry(from: undo.originalURL, to: undo.preDeleteURL)
+        }
+        if !combined.undoEntries.isEmpty {
+            preDeleteUndoStack.append(combined.undoEntries)
+        }
+        needsTableRefresh = true
+
+        let folders = plan.groups.map { "\"\($0.folderName)\"" }.joined(separator: ", ")
+        if combined.failedCount > 0 {
+            statusMessage = combined.movedCount == 0
+                ? "No frames moved into \(folders) — \(combined.failedCount) failed"
+                : "Moved \(combined.movedCount) frame(s) into \(folders) (\(combined.failedCount) failed) — Undo with \u{2318}Z"
+        } else {
+            statusMessage = "Moved \(combined.movedCount) frame(s) into \(folders) — Undo with \u{2318}Z"
+        }
+        reportFailedMoves(combined, destinationName: "the subfolder(s)", stillMarked: false)
+    }
+
+    /// Follows a loaded entry to the place its file moved to — URL, Subfolder column and the
+    /// prefetch preview (pixels unchanged). Returns false when no loaded entry sits at `oldURL`
+    /// (the PRE-DELETE undo case, where the frame has to be re-inserted instead).
+    @discardableResult
+    private func relocateLoadedEntry(from oldURL: URL, to newURL: URL) -> Bool {
+        guard let index = images.firstIndex(where: { $0.url == oldURL }) else { return false }
+        let subfolder = sessionRootURL.map { SessionScanner.relativeSubfolder(fileURL: newURL, rootURL: $0) }
+            ?? newURL.deletingLastPathComponent().lastPathComponent
+        images[index] = images[index].relocated(to: newURL, newSubfolder: subfolder, markModified: false)
+        prefetchCache?.migrateCacheEntry(from: oldURL, to: newURL)
+        return true
     }
 
     // MARK: - Global Quarantine (Q key)
@@ -4351,14 +4464,7 @@ class TriageViewModel: ObservableObject {
         ))
 
         // Recompute quality scores (filter/exposure may have changed)
-        let batchScores = QualityEstimator.computeScores(
-            for: images,
-            calibrationDB: CalibrationDatabase.shared,
-            fingerprint: currentSetupFingerprint
-        )
-        for i in images.indices {
-            images[i].qualityBreakdown = batchScores[images[i].url]
-        }
+        rescoreLoadedSession()
 
         statusMessage = "Batch: \(result.succeeded) files modified — reload folder to apply header changes"
         needsTableRefresh = true
@@ -4392,6 +4498,54 @@ class TriageViewModel: ObservableObject {
         ))
 
         // Filter drives GroupKey, so regroup + rescore. Metrics are intact, so this is valid.
+        rescoreLoadedSession()
+
+        statusMessage = "Filter changed: \(result.succeeded) file(s) → \(newFilter)"
+        needsTableRefresh = true
+    }
+
+    /// Apply a plate-solve save (6.12.0): follow renamed files to their new URL (metrics intact —
+    /// the pixels did not change), adopt the OBJECT name that was written (it drives GroupKey,
+    /// hence the rescore), and make the save undoable like a Change Filter batch via the shared
+    /// stack. Identity entries in `affectedURLs` (header-only writes) are what lets the shared
+    /// `BatchOperations.undo` restore them by full path, subfolder-safe.
+    func applyPlateSolveWriteBack(_ report: PlateSolveReport) {
+        guard !report.affectedURLs.isEmpty, let backup = report.backupDirectory else { return }
+        for i in images.indices {
+            let oldURL = images[i].url
+            let newURL = report.affectedURLs[oldURL]
+            let newTarget = report.objectWritten[images[i].id]
+            guard newURL != nil || newTarget != nil else { continue }
+            images[i] = images[i].relocated(to: newURL ?? oldURL, newTarget: newTarget)
+            if let newURL, newURL != oldURL {
+                // Pixels unchanged → the pre-stretched preview is still valid; follow it.
+                prefetchCache?.migrateCacheEntry(from: oldURL, to: newURL)
+            }
+        }
+
+        // `failed` is not consulted by undo; the report keeps the per-file reasons itself.
+        let result = BatchResult(succeeded: report.written, failed: [],
+                                 backupDirectory: backup, affectedURLs: report.affectedURLs)
+        batchUndoStack.append(BatchUndoEntry(backupDirectory: backup, result: result, timestamp: Date()))
+
+        // OBJECT drives GroupKey, so regroup + rescore; the measured metrics are intact.
+        if !report.objectWritten.isEmpty { rescoreLoadedSession() }
+        needsTableRefresh = true
+    }
+
+    /// Undo the plate-solve save whose backup folder is `backupDirectory` — but only while it is
+    /// still the LAST batch edit. Popping an older entry would restore the wrong files; in that
+    /// case the backup folder stays for a manual restore and the caller tells the user.
+    @discardableResult
+    func undoPlateSolveWriteBack(backupDirectory: URL) -> Bool {
+        guard batchUndoStack.last?.backupDirectory == backupDirectory else { return false }
+        undoBatchRename()
+        return true
+    }
+
+    /// Rescore the loaded session after a batch edit changed grouping inputs (filter, OBJECT,
+    /// exposure). Shared by Batch Rename, Change Filter and the plate-solve save.
+    private func rescoreLoadedSession() {
         let batchScores = QualityEstimator.computeScores(
             for: images,
             calibrationDB: CalibrationDatabase.shared,
@@ -4400,9 +4554,6 @@ class TriageViewModel: ObservableObject {
         for i in images.indices {
             images[i].qualityBreakdown = batchScores[images[i].url]
         }
-
-        statusMessage = "Filter changed: \(result.succeeded) file(s) → \(newFilter)"
-        needsTableRefresh = true
     }
 
     func undoBatchRename() {
@@ -4451,8 +4602,17 @@ class TriageViewModel: ObservableObject {
         PlateSolveCache.shared.store(report.solved)
 
         var solutions: [ImageEntry.ID: WCSSolution] = [:]
-        for frame in report.solved { solutions[frame.entry.id] = frame.solution }
+        var identified: [ImageEntry.ID: String] = [:]
+        for frame in report.solved {
+            solutions[frame.entry.id] = frame.solution
+            identified[frame.entry.id] = frame.identification?.headerValue
+        }
         applyWCSSolutions(solutions)
+        // Remember what the solve identified (6.12.0): it names the subfolder when a field is
+        // split off, whether or not the user saves the solve into the files.
+        for index in images.indices {
+            if let name = identified[images[index].id] { images[index].identifiedObject = name }
+        }
         statusMessage = report.headline
     }
 

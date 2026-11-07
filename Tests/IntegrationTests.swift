@@ -440,4 +440,38 @@ final class IntegrationTests: XCTestCase {
             XCTAssertEqual(vm.images[1].sessionIndex, 2)
         }
     }
+
+    // =========================================================================
+    // relocated(to:) (6.12.0): a rename or move keeps everything it did not touch
+    // =========================================================================
+    func testRelocatedKeepsMetricsAndChangesOnlyWhatWasAsked() {
+        var entry = ImageEntry(url: URL(fileURLWithPath: "/tmp/Light_M45_300s_0001.fit"))
+        entry.filter = "L"
+        entry.target = "M45"
+        entry.sessionIndex = 7
+        entry.computedFWHM = 3.2
+        entry.fieldIndex = 2
+
+        // Plate-solve save: new name + written OBJECT.
+        let renamed = entry.relocated(to: URL(fileURLWithPath: "/tmp/Light_NGC6888_300s_0001.fit"),
+                                      newTarget: "NGC6888")
+        XCTAssertEqual(renamed.filename, "Light_NGC6888_300s_0001.fit")
+        XCTAssertEqual(renamed.target, "NGC6888")
+        XCTAssertEqual(renamed.filter, "L")
+        XCTAssertEqual(renamed.sessionIndex, 7, "the running session number must survive a rename")
+        XCTAssertEqual(renamed.computedFWHM, 3.2)
+        XCTAssertEqual(renamed.fieldIndex, 2)
+        XCTAssertEqual(renamed.id, entry.id)
+        XCTAssertEqual(renamed.subfolder, "")
+        XCTAssertTrue(renamed.batchModified)
+
+        // Subfolder split: same name, new folder, nothing in the file changed.
+        let moved = entry.relocated(to: URL(fileURLWithPath: "/tmp/NGC6888/Light_M45_300s_0001.fit"),
+                                    newSubfolder: "NGC6888", markModified: false)
+        XCTAssertEqual(moved.subfolder, "NGC6888")
+        XCTAssertEqual(moved.target, "M45")
+        XCTAssertEqual(moved.filter, "L")
+        XCTAssertEqual(moved.sessionIndex, 7)
+        XCTAssertFalse(moved.batchModified, "a plain move is not a header edit")
+    }
 }

@@ -4,6 +4,48 @@ All notable changes to AstroBlink & AIsaac will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [6.12.0] — 2026-11-07
+
+### Changed
+
+- **Plate solving now really names the object.** "Also name the object in OBJECT" used to fill in
+  OBJECT only when it was empty; a frame that already carried a different name kept it, and the
+  result window said so in a single grey line. On a night where the mount had moved on to
+  NGC 6888 while the second camera still wrote M45 into every file, the five mislabelled frames
+  stayed mislabelled after a save that reported success. Since every save begins with a backup
+  copy of each file, the rule had no job left: a differing OBJECT is now replaced by the identified
+  name. The save bar says beforehand how many frames change and shows the dominant pair
+  (`3 frames currently say "M45" → NGC6888`); the saved state lists every replacement; the backup
+  folder keeps the originals.
+
+### Added
+
+- **Rename files along with the plate solve.** The save bar gained "Rename files: replace … with
+  …", prefilled with the OBJECT pair it found (`M45` → `NGC6888`) and editable, because a filename
+  can be anything. The replacement applies to the frames whose identified object is NOT the one
+  the search text names — the thirty real M45 frames keep their names, the five NGC 6888 frames
+  named M45 are renamed — and it works whether or not OBJECT changes in the same save, so a rename
+  forgotten the first time still works on a second run. Plain text, every occurrence; an existing
+  target name is never overwritten; any failure restores that frame from its backup and the rest
+  of the batch continues. The file list follows the new names with every metric, score and session
+  number intact.
+- **Undo a plate-solve save.** The saved state offers "Undo This Save": every written or renamed
+  file is restored from the save's backup folder and the session reloads. Refused, with the reason,
+  when another batch edit has happened since — the backup folder stays for a manual restore.
+- **Full filename in the viewer.** Session filenames run past a hundred characters and no column
+  shows them whole. The frame's own black margin now does: bottom-left, small and dim, truncated in
+  the middle when the window is narrow so both the leading object/filter and the trailing frame
+  number survive. Follows the overlay toggle, so one key hides every readout; click-drag zoom still
+  starts anywhere on it.
+- **Move the other sky fields into subfolders.** Select the session (⌘A), right-click → "Move N
+  Frames of Field F2 into Subfolder "NGC6888"…". The field with the most selected frames stays
+  where it is; every other field moves into a subfolder next to its files, named after the object
+  plate solving identified for it (else the field's own OBJECT name when it differs, else
+  `Field-F2`). A confirmation lists each field, count and folder first. It is a plain move — no
+  backup, no file rewritten — and ⌘Z moves them back. The frames remain in the session with their
+  rows, metrics, scores and numbers; only the Subfolder column changes. Saves collecting the frames
+  the mount had already slewed away from by hand in Finder.
+
 ## [6.11.4] — 2026-11-06
 
 ### Changed
