@@ -943,6 +943,26 @@ extension FileListView {
                 menu.addItem(fieldItem)
             }
 
+            // Split a mixed-field selection (6.12.0): the field with the most selected frames
+            // stays, the others move into a subfolder named after their object — the frames the
+            // mount had already slewed away from, without collecting them by hand in Finder.
+            // Offered only when the rows the item would act on really span two or more fields.
+            if viewModel.fieldSummaries.count > 1,
+               let plan = FieldGrouping.subfolderMovePlan(for: targetEntries(clickedRow: clickedRow)) {
+                let title: String
+                if plan.groups.count == 1, let group = plan.groups.first {
+                    let n = group.entries.count
+                    title = "Move \(n) Frame\(n == 1 ? "" : "s") of Field F\(group.fieldIndex) into Subfolder \"\(group.folderName)\"…"
+                } else {
+                    title = "Move \(plan.movingCount) Frames of \(plan.groups.count) Other Fields into Subfolders…"
+                }
+                let splitItem = NSMenuItem(title: title,
+                                           action: #selector(moveOtherFieldsFromMenu(_:)), keyEquivalent: "")
+                splitItem.target = self
+                splitItem.tag = clickedRow
+                menu.addItem(splitItem)
+            }
+
             menu.addItem(NSMenuItem.separator())
 
             // Mark/Unmark option
@@ -1096,17 +1116,29 @@ extension FileListView {
             return selected.contains(clickedRow) ? selected : IndexSet(integer: clickedRow)
         }
 
-        @objc private func plateSolveFromMenu(_ sender: NSMenuItem) {
-            let rows = plateSolveTargetRows(clickedRow: sender.tag)
-            // Resolve against the DISPLAYED list — row indices are view indices, and the list
-            // may be filtered (hide-marked, show-only-marked, text filter).
-            let entries = rows.compactMap { row -> ImageEntry? in
+        /// The entries behind `plateSolveTargetRows`, resolved against the DISPLAYED list — row
+        /// indices are view indices, and the list may be filtered (hide-marked, show-only-marked,
+        /// text filter).
+        private func targetEntries(clickedRow: Int) -> [ImageEntry] {
+            plateSolveTargetRows(clickedRow: clickedRow).compactMap { row -> ImageEntry? in
                 row < displayedImages.count ? displayedImages[row] : nil
             }
+        }
+
+        @objc private func plateSolveFromMenu(_ sender: NSMenuItem) {
+            let entries = targetEntries(clickedRow: sender.tag)
             guard !entries.isEmpty else { return }
             Task { @MainActor in
                 PlateSolveCommand.runInteractive(viewModel: viewModel, entries: entries)
             }
+        }
+
+        /// Context-menu action (6.12.0): move the frames of the minority field(s) in the selection
+        /// into subfolders named after their object. The view model confirms before moving.
+        @objc private func moveOtherFieldsFromMenu(_ sender: NSMenuItem) {
+            let entries = targetEntries(clickedRow: sender.tag)
+            guard !entries.isEmpty else { return }
+            Task { @MainActor in viewModel.moveOtherFieldsToSubfolders(entries) }
         }
 
         @objc private func setGoldenLabelFromMenu(_ sender: NSMenuItem) {
@@ -1212,7 +1244,7 @@ extension FileListView {
                     tip += String(format: "\n%.2f° from field 1", summary.separationFromFirst)
                 }
                 tip += "\nFrames of one field overlap enough to align in LightspeedStacker."
-                tip += "\nRight-click → Select All Frames of Field F\(index)."
+                tip += "\nRight-click → Select All Frames of Field F\(index), or move the other fields into subfolders."
                 cellView.toolTip = tip
             }
             return cellView

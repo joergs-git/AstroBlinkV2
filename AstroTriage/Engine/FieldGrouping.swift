@@ -13,6 +13,8 @@
 // 6.11.2: a frame's position is its IMAGE CENTER projected through the WCS (WCSProjection), not
 // CRVAL. CRVAL is the sky position of the reference pixel, and ASIAIR places that pixel anywhere
 // in the frame — one stable pointing produced CRVALs 1.7° apart and split into F1/F2.
+//
+// 6.12.0: `subfolderMovePlan` — which frames of a mixed-field selection move into which subfolder.
 
 import Foundation
 
@@ -87,6 +89,25 @@ struct StackFieldCheck {
             + "and no coordinates to check whether the fields overlap.\n\n"
             + "“Stack Anyway” aligns whatever overlaps the first frame and skips the rest."
     }
+}
+
+/// The plan for "Move Other Fields into Subfolders" (6.12.0): the field that stays and, for every
+/// other field in the selection, the folder name and the frames that go there.
+struct SubfolderMovePlan {
+    struct Group {
+        let fieldIndex: Int
+        let folderName: String
+        let entries: [ImageEntry]
+    }
+    /// Index of the field with the most selected frames — it stays where it is.
+    let stayingField: Int
+    let stayingCount: Int
+    /// The other fields, by field index.
+    let groups: [Group]
+    /// Selected frames without coordinates: they stay too.
+    let withoutCoordinates: Int
+
+    var movingCount: Int { groups.reduce(0) { $0 + $1.entries.count } }
 }
 
 enum FieldGrouping {
@@ -305,6 +326,78 @@ enum FieldGrouping {
                                fieldSize: tolerance.fieldSize,
                                namesWithoutCoordinates: names,
                                leadingEntryIndex: leading)
+    }
+
+    // MARK: - Subfolder split (6.12.0)
+
+    /// Builds the plan for a selection, or nil when it spans fewer than two sky fields. The field
+    /// with the most frames IN THE SELECTION stays (tie → lower index); every other field moves.
+    /// Folder name, in order: the object the plate solve identified for that field's frames (most
+    /// frequent), then the field's own OBJECT name(s) — both only when they differ from the
+    /// staying field's names, so two panels of one nebula do not get a folder named after the
+    /// nebula — else "Field-F<n>".
+    static func subfolderMovePlan(for entries: [ImageEntry]) -> SubfolderMovePlan? {
+        var byField: [Int: [ImageEntry]] = [:]
+        var withoutCoordinates = 0
+        for entry in entries {
+            if let field = entry.fieldIndex {
+                byField[field, default: []].append(entry)
+            } else {
+                withoutCoordinates += 1
+            }
+        }
+        guard byField.count >= 2 else { return nil }
+
+        guard let staying = byField.min(by: { a, b in
+            a.value.count != b.value.count ? a.value.count > b.value.count : a.key < b.key
+        })?.key else { return nil }
+        let stayingFrames = byField[staying] ?? []
+        var stayingNames = Set(stayingFrames.compactMap(targetName(of:)).map { $0.lowercased() })
+        stayingNames.formUnion(stayingFrames.compactMap(\.identifiedObject).map { $0.lowercased() })
+
+        let groups = byField.keys.sorted().filter { $0 != staying }.map { field -> SubfolderMovePlan.Group in
+            let members = byField[field] ?? []
+            return SubfolderMovePlan.Group(fieldIndex: field,
+                                           folderName: subfolderName(for: members, fieldIndex: field,
+                                                                     excluding: stayingNames),
+                                           entries: members)
+        }
+        return SubfolderMovePlan(stayingField: staying, stayingCount: stayingFrames.count,
+                                 groups: groups, withoutCoordinates: withoutCoordinates)
+    }
+
+    /// See `subfolderMovePlan`. `excluding` holds the staying field's names, lower-cased.
+    static func subfolderName(for members: [ImageEntry], fieldIndex: Int, excluding: Set<String>) -> String {
+        let fallback = "Field-F\(fieldIndex)"
+        let identified = members.compactMap(\.identifiedObject).filter { !excluding.contains($0.lowercased()) }
+        if let name = mostFrequent(identified) { return sanitizedFolderName(name) ?? fallback }
+        let own = members.compactMap(targetName(of:)).filter { !excluding.contains($0.lowercased()) }
+        if let name = mostFrequent(own) { return sanitizedFolderName(name) ?? fallback }
+        return fallback
+    }
+
+    /// A folder name the file system accepts: path separators and colons become dashes; nil when
+    /// nothing usable is left.
+    static func sanitizedFolderName(_ raw: String) -> String? {
+        let cleaned = raw
+            .replacingOccurrences(of: "/", with: "-")
+            .replacingOccurrences(of: ":", with: "-")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return cleaned.isEmpty || cleaned == "." || cleaned == ".." ? nil : cleaned
+    }
+
+    /// Most frequent value, case-insensitively; ties go to the alphabetically first.
+    private static func mostFrequent(_ values: [String]) -> String? {
+        var counts: [String: (name: String, count: Int)] = [:]
+        for value in values {
+            var tally = counts[value.lowercased()] ?? (name: value, count: 0)
+            tally.count += 1
+            counts[value.lowercased()] = tally
+        }
+        return counts.values.min { a, b in
+            a.count != b.count ? a.count > b.count
+                : a.name.localizedCaseInsensitiveCompare(b.name) == .orderedAscending
+        }?.name
     }
 
     // MARK: - Helpers

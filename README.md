@@ -14,7 +14,31 @@ Nice side effect: Finally you have a native XISF and FITS Quicklook for macOS. (
 
 ---
 
-## What's New in v6.11.4 (Build 122)
+## What's New in v6.12.0 (Build 123)
+
+**Plate solving now really names the object — and can rename the files.** "Also name the object
+in OBJECT" used to fill in OBJECT only when it was empty; a frame that already carried a different
+name kept it. On a night where the mount had moved on to NGC 6888 while the second camera still
+wrote M45 into every file, the five mislabelled frames stayed mislabelled after a save that
+reported success. Since every save begins with a backup copy, a differing OBJECT is now replaced
+by the identified name; the save bar says beforehand how many frames change (`3 frames currently
+say "M45" → NGC6888`). New next to it: **Rename files: replace … with …**, prefilled with that
+pair — applied only to frames whose identified object is NOT the one the search text names, so
+the thirty real M45 frames keep their names and the five NGC 6888 frames are renamed. The file
+list follows with every metric, score and session number intact, and **Undo This Save** restores
+everything from the backup folder.
+
+**Move the other sky fields into subfolders.** ⌘A, right-click → "Move 5 Frames of Field F2 into
+Subfolder "NGC6888"…". The field with the most selected frames stays; every other field moves into
+a subfolder next to its files, named after the object plate solving identified for it. A plain
+move with ⌘Z undo; the frames stay in the session, only the Subfolder column changes.
+
+**Full filename in the viewer.** Bottom-left of the image, small and dim, truncated in the middle
+when the window is narrow. Follows the overlay toggle.
+
+---
+
+## Previously in v6.11.4 (Build 122)
 
 **The "#" column shows a running frame number again.** Instead of the hash-based frame ID
 (`#A3-4821`), the first column shows the running number of the loaded session — four digits,

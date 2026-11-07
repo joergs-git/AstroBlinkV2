@@ -153,8 +153,21 @@ struct HelpContentView: View {
                            + "spec sheet rather than measured.")
                 featureRow("Saving",
                            "Nothing is written until you choose, after the run: all frames, only the "
-                           + "changed ones, or none. A backup folder is always created first, and an "
-                           + "OBJECT name you already have is never overwritten.")
+                           + "changed ones, or none. A backup folder is always created first. With "
+                           + "\"Also name the object in OBJECT\" the identified object goes into OBJECT — "
+                           + "since 6.12.0 also when the header already says something else; the save bar "
+                           + "tells you beforehand how many frames change. \"Undo This Save\" restores "
+                           + "everything from the backup folder.")
+                featureRow("Renaming files",
+                           "\"Rename files: replace … with …\" in the save bar, prefilled with the OBJECT "
+                           + "pair found (M45 → NGC6888). Applies only to frames whose identified object is "
+                           + "NOT the one the search text names, so frames that really are M45 keep their "
+                           + "names. An existing target name is never overwritten.")
+                featureRow("Other fields into subfolders",
+                           "Select the session, right-click → \"Move N Frames of Field F2 into Subfolder…\". "
+                           + "The field with the most selected frames stays; the others move into a subfolder "
+                           + "next to their files, named after the identified object. A plain move, "
+                           + "Cmd+Z moves them back; the frames stay in the session.")
 
                 Divider()
 
@@ -168,6 +181,7 @@ struct HelpContentView: View {
                 featureRow("Trackpad pinch", "Zoom in/out")
                 featureRow("Scroll wheel", "Pan when zoomed in")
                 featureRow("Zoom overlay", "Bottom-right corner shows true pixel zoom %")
+                featureRow("Filename readout", "Bottom-left corner shows the full filename, truncated in the middle when the window is narrow. Hidden with the overlay toggle.")
 
                 Divider()
 

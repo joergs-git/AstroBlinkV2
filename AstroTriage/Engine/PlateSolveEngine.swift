@@ -11,6 +11,9 @@
 //
 // v6.9.0 — first increment: FITS only. XISF frames are reported as skipped; they need a
 // temporary FITS export, which follows next.
+//
+// v6.12.0 — a save may REPLACE a differing OBJECT (the backup copy is what makes that safe) and
+// rename the files by a user-given A→B replacement; every touched file is recorded for undo.
 
 import Foundation
 
@@ -50,8 +53,18 @@ struct PlateSolveReport {
     var failed: [(entry: ImageEntry, reason: String)] = []
     var written: Int = 0
     var objectNamesWritten: Int = 0
-    /// Frames whose OBJECT keyword was left alone because it already said something else.
-    var objectNamesKept: [(filename: String, existing: String, identified: String)] = []
+    /// Frames whose OBJECT said something else and was replaced by the identified name. Until
+    /// 6.11.4 the existing name always won; since 6.12.0 the user's choice wins, because the
+    /// backup copy taken before every write is the safety net the old rule stood in for.
+    var objectNamesReplaced: [(filename: String, existing: String, identified: String)] = []
+    /// Files renamed by the A→B filename replacement (6.12.0).
+    var renamed: Int = 0
+    /// Every file this save touched: URL before → URL after (identical for a header-only
+    /// write). Feeds the entry relocation in the view model and the shared batch undo stack.
+    var affectedURLs: [URL: URL] = [:]
+    /// The OBJECT value written per frame, so the view model can adopt it as the entry's
+    /// target without re-reading headers.
+    var objectWritten: [ImageEntry.ID: String] = [:]
     var writeFailures: [(filename: String, reason: String)] = []
     var backupDirectory: URL?
     var duration: TimeInterval = 0
@@ -113,6 +126,104 @@ enum PlateSolveSaveScope {
         switch self {
         case .all:         return report.solved
         case .changedOnly: return report.changedFrames
+        }
+    }
+}
+
+// MARK: - Write options (6.12.0)
+
+/// "Replace A with B in the filename" — plain text, case-sensitive, every occurrence.
+struct FilenameReplacement: Equatable {
+    var search: String
+    var replacement: String
+
+    /// A rename needs something to look for, must change the name, and may not introduce a path
+    /// separator (that would be a move, not a rename) or a colon (Finder shows it as a slash). An
+    /// empty search string would match everywhere — the classic `"".replace` footgun.
+    var isUsable: Bool {
+        !search.isEmpty && search != replacement
+            && !replacement.contains("/") && !replacement.contains(":")
+    }
+}
+
+/// What a save writes: which frames, whether the identified object goes into OBJECT, and an
+/// optional filename replacement. Decided in the result window, after the run.
+struct PlateSolveWriteOptions {
+    var scope: PlateSolveSaveScope = .all
+    var writeObjectName: Bool = true
+    var rename: FilenameReplacement?
+
+    /// The frames this save touches. `.changedOnly` means "something in the FILE changes": no WCS
+    /// yet, a solve that disagrees with the stored one — or, with the options on, an OBJECT that
+    /// would be replaced or a filename the replacement would change. Without that, a session of
+    /// confirmed re-solves offered "Save Changed (0)" while five frames still needed their object
+    /// name, and "Save All" would have rewritten 94 files for those five.
+    func frames(in report: PlateSolveReport) -> [SolvedFrame] {
+        switch scope {
+        case .all:
+            return report.solved
+        case .changedOnly:
+            let wcsChanged = Set(report.changedFrames.map { $0.entry.id })
+            let objectChanged = writeObjectName
+                ? Set(report.objectChanges(in: .all).map { $0.frame.entry.id }) : Set()
+            return report.solved.filter { frame in
+                wcsChanged.contains(frame.entry.id)
+                    || objectChanged.contains(frame.entry.id)
+                    || (rename.map { PlateSolveEngine.renamedFilename(for: frame, replacement: $0) != nil } ?? false)
+            }
+        }
+    }
+}
+
+// MARK: - Pre-save preview (6.12.0)
+
+extension PlateSolveReport {
+    /// One frame whose OBJECT the save would set: the value the entry carries now (from the
+    /// header, else the filename) and the identified name that replaces it.
+    struct ObjectChange {
+        let frame: SolvedFrame
+        let existing: String
+        let new: String
+    }
+
+    /// An existing → new pair and how many frames share it.
+    struct ObjectPair {
+        let existing: String
+        let new: String
+        var count: Int
+    }
+
+    /// Frames in `scope` whose OBJECT would be written. Uses the header-enriched entry value and
+    /// no file access — the write itself re-reads the header, so this is the preview the save
+    /// bar shows, not the decision.
+    func objectChanges(in scope: PlateSolveSaveScope) -> [ObjectChange] {
+        scope.frames(in: self).compactMap { frame in
+            guard let identification = frame.identification else { return nil }
+            let existing = (frame.entry.target ?? "").trimmingCharacters(in: .whitespaces)
+            guard !PlateSolveEngine.namesSameObject(existing, identification.headerValue) else { return nil }
+            return ObjectChange(frame: frame, existing: existing, new: identification.headerValue)
+        }
+    }
+
+    /// The most frequent existing → new pair among `changes` (frames with an empty OBJECT have
+    /// nothing to replace and are left out): the preview's example and the prefill of the rename
+    /// fields. Ties go to the alphabetically first pair.
+    static func dominantPair(of changes: [ObjectChange]) -> ObjectPair? {
+        var pairs: [String: ObjectPair] = [:]
+        for change in changes where !change.existing.isEmpty {
+            let key = change.existing.lowercased() + "→" + change.new.lowercased()
+            pairs[key, default: ObjectPair(existing: change.existing, new: change.new, count: 0)].count += 1
+        }
+        return pairs.values.max { a, b in
+            a.count != b.count ? a.count < b.count : (a.existing + a.new) > (b.existing + b.new)
+        }
+    }
+
+    /// Frames in `scope` the A→B replacement would rename, with their new names.
+    func renamePreview(in scope: PlateSolveSaveScope,
+                       replacement: FilenameReplacement) -> [(frame: SolvedFrame, newName: String)] {
+        scope.frames(in: self).compactMap { frame in
+            PlateSolveEngine.renamedFilename(for: frame, replacement: replacement).map { (frame, $0) }
         }
     }
 }
@@ -268,21 +379,27 @@ final class PlateSolveEngine {
     /// `TriageViewModel.ensureWritableSessionRoot()` (reconstructed common-ancestor URLs
     /// carry no security scope — that is the NAS bug fixed in 6.5.2).
     ///
-    /// - Parameter writeObjectName: also write the identified object into OBJECT. An OBJECT
-    ///   that already says something different is NEVER overwritten — the user's or NINA's
-    ///   own naming wins, and the discrepancy is reported instead.
+    /// - Parameter options: which frames, whether to name the object in OBJECT, and an optional
+    ///   filename replacement. OBJECT is written whenever the header does not already carry the
+    ///   identified name — a DIFFERENT existing name is replaced (6.12.0; the backup copy is what
+    ///   makes that safe, and every replacement is listed in the report). The rename applies only
+    ///   to frames `renamedFilename(for:replacement:)` accepts, after the header write has
+    ///   verified, under the Change Filter contract: an existing target is never overwritten and
+    ///   any failure restores the frame from its backup.
     func writeBack(_ report: inout PlateSolveReport,
                    sessionRoot: URL,
-                   scope: PlateSolveSaveScope = .all,
-                   writeObjectName: Bool = false) {
-        let frames = scope.frames(in: report)
+                   options: PlateSolveWriteOptions = PlateSolveWriteOptions()) {
+        let frames = options.frames(in: report)
         guard !frames.isEmpty else { return }
 
         // Reset the write tallies: the report is handed back to the result window, which may
         // offer another attempt, and stale counts would read as a bigger success than it was.
         report.written = 0
         report.objectNamesWritten = 0
-        report.objectNamesKept.removeAll()
+        report.objectNamesReplaced.removeAll()
+        report.renamed = 0
+        report.affectedURLs.removeAll()
+        report.objectWritten.removeAll()
         report.writeFailures.removeAll()
 
         let timestamp = ISO8601DateFormatter().string(from: Date())
@@ -297,13 +414,22 @@ final class PlateSolveEngine {
             return
         }
         report.backupDirectory = backupDir
+        // Frames whose file moved during this save, so the report's own entries can follow.
+        var relocations: [ImageEntry.ID: URL] = [:]
 
         for frame in frames {
             let url = frame.entry.url
             let backupURL = backupDir.appendingPathComponent(frame.entry.filename)
 
+            // The backup folder is flat and keyed by filename. A second frame with the same name
+            // (possible once fields live in subfolders) must not overwrite the first one's backup —
+            // undo and failure-restore would then put the wrong content back. It is skipped instead.
+            guard !fm.fileExists(atPath: backupURL.path) else {
+                report.writeFailures.append((filename: frame.entry.filename,
+                                             reason: "another frame with the same name was already backed up in this save — not written"))
+                continue
+            }
             do {
-                if fm.fileExists(atPath: backupURL.path) { try fm.removeItem(at: backupURL) }
                 try fm.copyItem(at: url, to: backupURL)
             } catch {
                 report.writeFailures.append((filename: frame.entry.filename,
@@ -313,19 +439,19 @@ final class PlateSolveEngine {
 
             var pairs = Self.keywords(for: frame.solution)
 
-            // OBJECT is only ever filled in, never overwritten.
-            var writesObject = false
-            if writeObjectName, let identification = frame.identification {
+            // OBJECT: written when the header does not already carry the identified name. A
+            // DIFFERENT existing name is replaced — the backup copy taken above is the safety
+            // net. Until 6.11.4 the old name always won, which left five NGC 6888 frames
+            // labelled M45 after a save that reported it had named the object.
+            var objectValue: String?
+            var replacedExisting: String?
+            if options.writeObjectName, let identification = frame.identification {
                 let existing = BatchOperations.readHeaderValue(url: url, keyword: "OBJECT")?
-                    .trimmingCharacters(in: .whitespaces)
-                if let existing, !existing.isEmpty,
-                   existing.caseInsensitiveCompare(identification.headerValue) != .orderedSame {
-                    report.objectNamesKept.append((filename: frame.entry.filename,
-                                                   existing: existing,
-                                                   identified: identification.displayName))
-                } else if existing?.isEmpty ?? true {
+                    .trimmingCharacters(in: .whitespaces) ?? ""
+                if !Self.namesSameObject(existing, identification.headerValue) {
                     pairs.append(("OBJECT", identification.headerValue))
-                    writesObject = true
+                    objectValue = identification.headerValue
+                    if !existing.isEmpty { replacedExisting = existing }
                 }
             }
 
@@ -347,15 +473,96 @@ final class PlateSolveEngine {
                 }
             }
 
+            // Rename only after the header write verified, so a frame is never left half done.
+            // A failed move leaves the file at `url`, which the restore below covers.
+            var finalURL = url
+            if failure == nil, let replacement = options.rename,
+               let newName = Self.renamedFilename(for: frame, replacement: replacement) {
+                let target = url.deletingLastPathComponent().appendingPathComponent(newName)
+                // On a case-insensitive volume a case-only rename (m45 → M45) "exists" already — it
+                // is the file itself, and the move performs the case change.
+                if fm.fileExists(atPath: target.path),
+                   target.path.caseInsensitiveCompare(url.path) != .orderedSame {
+                    failure = "rename target already exists: \(newName)"
+                } else {
+                    do {
+                        try fm.moveItem(at: url, to: target)
+                        finalURL = target
+                    } catch {
+                        failure = "rename failed: \(error.localizedDescription)"
+                    }
+                }
+            }
+
             if let failure {
                 try? fm.removeItem(at: url)
                 try? fm.copyItem(at: backupURL, to: url)
                 report.writeFailures.append((filename: frame.entry.filename, reason: failure))
             } else {
                 report.written += 1
-                if writesObject { report.objectNamesWritten += 1 }
+                report.affectedURLs[url] = finalURL
+                if finalURL != url {
+                    report.renamed += 1
+                    relocations[frame.entry.id] = finalURL
+                }
+                if let objectValue, let identification = frame.identification {
+                    report.objectNamesWritten += 1
+                    report.objectWritten[frame.entry.id] = objectValue
+                    if let replacedExisting {
+                        report.objectNamesReplaced.append((filename: frame.entry.filename,
+                                                           existing: replacedExisting,
+                                                           identified: identification.displayName))
+                    }
+                }
             }
         }
+
+        // Let the report's own frames follow what is now on disk, so the result table and a
+        // later preview see the current names.
+        if !relocations.isEmpty || !report.objectWritten.isEmpty {
+            report.solved = report.solved.map { frame in
+                let newURL = relocations[frame.entry.id]
+                let newTarget = report.objectWritten[frame.entry.id]
+                guard newURL != nil || newTarget != nil else { return frame }
+                return SolvedFrame(entry: frame.entry.relocated(to: newURL ?? frame.entry.url,
+                                                                newTarget: newTarget),
+                                   solution: frame.solution,
+                                   previous: frame.previous,
+                                   identification: frame.identification)
+            }
+        }
+    }
+
+    /// Do two names mean the same catalogue object? "M 45", "m45" and "M45" do — the OBJECT value
+    /// a capture program writes and the catalogue's canonical spelling rarely agree character for
+    /// character, and treating them as different objects would "replace" 89 correct headers and
+    /// prefill the rename with M 45 → M45.
+    static func namesSameObject(_ a: String, _ b: String) -> Bool {
+        let a = a.trimmingCharacters(in: .whitespaces)
+        let b = b.trimmingCharacters(in: .whitespaces)
+        guard !a.isEmpty, !b.isEmpty else { return false }
+        if a.caseInsensitiveCompare(b) == .orderedSame { return true }
+        return TargetCatalog.canonicalName(a).caseInsensitiveCompare(TargetCatalog.canonicalName(b)) == .orderedSame
+    }
+
+    /// The filename a frame gets from the A→B replacement, or nil when the rename does not apply
+    /// to it: no identification, A absent from the name, a name that would not change — or the
+    /// frame actually IS the object A names (by `TargetCatalog.canonicalName`), so a folder of
+    /// 30 real M45 frames plus 5 frames of NGC 6888 mislabelled "M45" renames only the five.
+    /// Independent of whether OBJECT changes in this save: a rename forgotten the first time
+    /// still works on the second run, when the header is already correct.
+    static func renamedFilename(for frame: SolvedFrame, replacement: FilenameReplacement) -> String? {
+        guard replacement.isUsable, let identification = frame.identification else { return nil }
+        if namesSameObject(replacement.search, identification.headerValue) { return nil }
+        // Base name only: the extension is not part of the name the user means, and a replacement
+        // must not turn ".fits" into ".fit". The result may not hide the file or carry a colon.
+        let ext = frame.entry.url.pathExtension
+        let name = frame.entry.filename
+        let base = ext.isEmpty ? name : String(name.dropLast(ext.count + 1))
+        guard base.contains(replacement.search) else { return nil }
+        let newBase = base.replacingOccurrences(of: replacement.search, with: replacement.replacement)
+        guard newBase != base, !newBase.isEmpty, !newBase.hasPrefix("."), !newBase.contains(":") else { return nil }
+        return ext.isEmpty ? newBase : newBase + "." + ext
     }
 
     /// The keywords a solved frame gains, in the exact spelling `MetadataExtractor` reads.

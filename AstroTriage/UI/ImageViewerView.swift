@@ -1,4 +1,4 @@
-// v3.2.0
+// v3.2.0 · 6.12.0: full filename readout bottom-left
 import SwiftUI
 import MetalKit
 
@@ -53,6 +53,32 @@ struct ImageViewerView: NSViewRepresentable {
             label.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -8),
         ])
         mtkView.zoomLabel = label
+
+        // Full filename (bottom-left, 6.12.0). Session filenames run to 100+ characters and no
+        // column shows them whole; the frame's own black margin has the room. Small and dim so
+        // it reads when wanted and recedes otherwise; truncated in the middle when the viewer is
+        // narrow (both the leading target/filter and the trailing frame number survive); never
+        // wider than the gap to the zoom label. Mouse-transparent like the overlay so click-drag
+        // zoom still starts anywhere.
+        let filenameLabel = PassThroughLabel(labelWithString: "")
+        filenameLabel.font = NSFont.monospacedSystemFont(ofSize: 10, weight: .medium)
+        filenameLabel.textColor = NSColor.white.withAlphaComponent(0.55)
+        filenameLabel.isBezeled = false
+        filenameLabel.isEditable = false
+        filenameLabel.isSelectable = false
+        filenameLabel.drawsBackground = false
+        filenameLabel.lineBreakMode = .byTruncatingMiddle
+        filenameLabel.maximumNumberOfLines = 1
+        filenameLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        filenameLabel.translatesAutoresizingMaskIntoConstraints = false
+        filenameLabel.isHidden = !viewModel.showViewerOverlay
+        container.addSubview(filenameLabel)
+        NSLayoutConstraint.activate([
+            filenameLabel.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 12),
+            filenameLabel.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -8),
+            filenameLabel.trailingAnchor.constraint(lessThanOrEqualTo: label.leadingAnchor, constant: -12),
+        ])
+        context.coordinator.filenameLabel = filenameLabel
 
         // ── Floating viewer overlay (top-left) ──
         // Filter letter (very large, semi-transparent) → time (medium) → mini-map.
@@ -111,6 +137,13 @@ struct ImageViewerView: NSViewRepresentable {
             entry: viewModel.selectedImage,
             renderer: renderer
         )
+
+        // Full filename of the selected frame (6.12.0); shares the overlay's visibility toggle.
+        if let filenameLabel = context.coordinator.filenameLabel {
+            let name = viewModel.selectedImage?.filename ?? ""
+            if filenameLabel.stringValue != name { filenameLabel.stringValue = name }
+            filenameLabel.isHidden = !viewModel.showViewerOverlay || name.isEmpty
+        }
     }
 
     func makeCoordinator() -> Coordinator {
@@ -120,7 +153,15 @@ struct ImageViewerView: NSViewRepresentable {
     class Coordinator {
         weak var mtkView: ZoomableMTKView?
         weak var overlay: ViewerOverlayContainer?
+        weak var filenameLabel: PassThroughLabel?
     }
+}
+
+/// A label that lets every mouse event fall through to the view beneath it — the viewer's
+/// filename readout sits on the MTKView, where click-drag zoom and Option-drag pan must keep
+/// working wherever the user starts them. (6.12.0)
+final class PassThroughLabel: NSTextField {
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
 
 // MARK: - Floating viewer overlay (top-left)

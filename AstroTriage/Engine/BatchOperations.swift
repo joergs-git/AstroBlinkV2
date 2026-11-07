@@ -243,10 +243,15 @@ struct BatchOperations {
 
         // Reverse renamed files first
         for (originalURL, newURL) in entry.result.affectedURLs {
+            // The file must still be where the batch left it. If it has since been moved (PRE-DELETE,
+            // a subfolder split) or renamed again, copying the backup to the original path would
+            // create a SECOND copy of the frame — leave it alone and keep the backup (6.12.0).
+            guard fm.fileExists(atPath: newURL.path) else {
+                errors.append("\(newURL.lastPathComponent) is no longer where the batch left it — not restored, backup kept")
+                continue
+            }
             do {
-                if fm.fileExists(atPath: newURL.path) {
-                    try fm.removeItem(at: newURL)
-                }
+                try fm.removeItem(at: newURL)
                 let backupURL = entry.backupDirectory.appendingPathComponent(originalURL.lastPathComponent)
                 if fm.fileExists(atPath: backupURL.path) {
                     try fm.copyItem(at: backupURL, to: originalURL)

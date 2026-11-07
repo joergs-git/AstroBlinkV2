@@ -17,6 +17,8 @@
 // NSHostingView + isRestorable=false — see the NSHostingView intrinsic-size pitfall).
 //
 // v6.9.0
+// v6.12.0 — the save bar previews the OBJECT names it will replace, offers an A→B filename
+// replacement, and can undo the save from its backup folder.
 
 import SwiftUI
 import AppKit
@@ -121,13 +123,18 @@ final class PlateSolveResultWindowController {
 
     /// - Parameters:
     ///   - onSelectFrame: jump to a frame in the main file list; false when it is gone.
-    ///   - onSave: perform the write-back and hand back the updated report. Nil disables the
-    ///     save controls (nothing writable, e.g. an unwritable session root).
+    ///   - onSave: perform the write-back with the chosen options and hand back the updated
+    ///     report. Nil disables the save controls (nothing writable, e.g. an unwritable session
+    ///     root).
+    ///   - onUndo: restore the files of the LAST save from its backup folder (6.12.0). Receives
+    ///     that save's backup directory so the view model can refuse when another batch edit has
+    ///     happened since; returns whether it undid.
     @MainActor
     func show(report: PlateSolveReport,
               unsupportedCount: Int,
               onSelectFrame: @escaping (ImageEntry.ID) -> Bool,
-              onSave: ((PlateSolveSaveScope, Bool) async -> PlateSolveReport)?) {
+              onSave: ((PlateSolveWriteOptions) async -> PlateSolveReport)?,
+              onUndo: ((URL) -> Bool)? = nil) {
 
         // A FLEXIBLE frame, not the hard `.frame(width:height:)` the settings windows use.
         // Those are fixed-size panels; this one is a table the user needs to resize. The cap
@@ -144,7 +151,8 @@ final class PlateSolveResultWindowController {
         let rootView = PlateSolveResultView(report: report,
                                             unsupportedCount: unsupportedCount,
                                             onSelectFrame: onSelectFrame,
-                                            onSave: onSave)
+                                            onSave: onSave,
+                                            onUndo: onUndo)
             .frame(minWidth: 640, maxWidth: .infinity,
                    minHeight: 320, maxHeight: .infinity)
 
@@ -218,24 +226,39 @@ private struct PlateSolveResultView: View {
 
     let unsupportedCount: Int
     let onSelectFrame: (ImageEntry.ID) -> Bool
-    let onSave: ((PlateSolveSaveScope, Bool) async -> PlateSolveReport)?
+    let onSave: ((PlateSolveWriteOptions) async -> PlateSolveReport)?
+    let onUndo: ((URL) -> Bool)?
 
     @State private var model: Model
     @State private var copied = false
     @State private var selectedRowID: UUID?
     @State private var missingFrameName: String?
     @State private var writeObjectName = true
+    // Filename replacement (6.12.0): off by default, prefilled with the dominant "existing →
+    // identified" OBJECT pair so the common case is one tick.
+    @State private var renameFiles = false
+    @State private var renameSearch: String
+    @State private var renameReplacement: String
     @State private var isSaving = false
     @State private var didSave = false
+    @State private var undoState: UndoState = .available
+    @FocusState private var tableFocused: Bool
+
+    private enum UndoState { case available, done, refused }
 
     init(report: PlateSolveReport,
          unsupportedCount: Int,
          onSelectFrame: @escaping (ImageEntry.ID) -> Bool,
-         onSave: ((PlateSolveSaveScope, Bool) async -> PlateSolveReport)?) {
+         onSave: ((PlateSolveWriteOptions) async -> PlateSolveReport)?,
+         onUndo: ((URL) -> Bool)?) {
         self.unsupportedCount = unsupportedCount
         self.onSelectFrame = onSelectFrame
         self.onSave = onSave
+        self.onUndo = onUndo
         _model = State(initialValue: Model(report))
+        let pair = PlateSolveReport.dominantPair(of: report.objectChanges(in: .all))
+        _renameSearch = State(initialValue: pair?.existing ?? "")
+        _renameReplacement = State(initialValue: pair?.new ?? "")
     }
 
     private var report: PlateSolveReport { model.report }
@@ -317,17 +340,46 @@ private struct PlateSolveResultView: View {
     /// Header and rows share ONE scroll view so they cannot drift apart horizontally; the
     /// header is pinned so it stays visible while scrolling down.
     private var table: some View {
-        ScrollView([.horizontal, .vertical]) {
-            LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
-                Section {
-                    ForEach(Array(model.rows.enumerated()), id: \.element.id) { index, row in
-                        rowView(row, index: index)
+        ScrollViewReader { proxy in
+            ScrollView([.horizontal, .vertical]) {
+                LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
+                    Section {
+                        ForEach(Array(model.rows.enumerated()), id: \.element.id) { index, row in
+                            rowView(row, index: index).id(row.id)
+                        }
+                    } header: {
+                        tableHeader
                     }
-                } header: {
-                    tableHeader
                 }
             }
+            // Arrow keys walk the list the way clicking does (6.12.0): the window exists to step
+            // through outliers and look at each one, and reaching for the mouse per row defeats it.
+            .focusable()
+            .focused($tableFocused)
+            .focusEffectDisabled()
+            .onMoveCommand { direction in
+                switch direction {
+                case .up:   moveSelection(by: -1, proxy: proxy)
+                case .down: moveSelection(by: 1, proxy: proxy)
+                default:    break
+                }
+            }
+            .onAppear { tableFocused = true }
         }
+    }
+
+    /// Step the highlighted row, show that frame in the main window and keep the row in view.
+    private func moveSelection(by delta: Int, proxy: ScrollViewProxy) {
+        let rows = model.rows
+        guard !rows.isEmpty else { return }
+        let next: Int
+        if let current = rows.firstIndex(where: { $0.id == selectedRowID }) {
+            next = min(max(current + delta, 0), rows.count - 1)
+        } else {
+            next = delta > 0 ? 0 : rows.count - 1
+        }
+        jump(to: rows[next])
+        withAnimation(nil) { proxy.scrollTo(rows[next].id) }
     }
 
     private var tableHeader: some View {
@@ -388,6 +440,7 @@ private struct PlateSolveResultView: View {
     /// floating — the point is to walk down the list of outliers and look at each one.
     private func jump(to row: PlateSolveResultRow) {
         selectedRowID = row.id
+        tableFocused = true
         missingFrameName = onSelectFrame(row.entryID) ? nil : row.filename
     }
 
@@ -446,8 +499,10 @@ private struct PlateSolveResultView: View {
         }
     }
 
-    private func saveControls(_ save: @escaping (PlateSolveSaveScope, Bool) async -> PlateSolveReport) -> some View {
-        let changed = report.changedFrames.count
+    private func saveControls(_ save: @escaping (PlateSolveWriteOptions) async -> PlateSolveReport) -> some View {
+        // Counted with the options as they stand: an OBJECT to replace or a file to rename is a
+        // change too, so a session of confirmed re-solves still offers the five frames that need it.
+        let changed = currentOptions(scope: .changedOnly).frames(in: report).count
         return VStack(alignment: .leading, spacing: 6) {
             Text("Save into the files? Without saving, these solutions are lost when the "
                  + "session is reloaded. A backup folder is always created first.")
@@ -455,11 +510,45 @@ private struct PlateSolveResultView: View {
                 .foregroundColor(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
-            HStack(spacing: 10) {
-                Toggle("Also name the object in OBJECT", isOn: $writeObjectName)
+            Toggle("Also name the object in OBJECT", isOn: $writeObjectName)
+                .font(.system(size: 10, design: .monospaced))
+                .toggleStyle(.checkbox)
+            if writeObjectName {
+                Text(objectPreviewText)
+                    .font(.system(size: 9, design: .monospaced))
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.leading, 18)
+            }
+
+            // Filename replacement (6.12.0). Applies to the frames whose identified object is
+            // NOT the one the search text names — see PlateSolveEngine.renamedFilename.
+            HStack(spacing: 6) {
+                Toggle("Rename the files of the other object(s): replace", isOn: $renameFiles)
                     .font(.system(size: 10, design: .monospaced))
                     .toggleStyle(.checkbox)
+                TextField("text in the filename", text: $renameSearch)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(size: 10, design: .monospaced))
+                    .frame(width: 140)
+                    .disabled(!renameFiles)
+                Text("with")
+                    .font(.system(size: 10, design: .monospaced))
+                TextField("replacement", text: $renameReplacement)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(size: 10, design: .monospaced))
+                    .frame(width: 160)
+                    .disabled(!renameFiles)
+            }
+            if renameFiles {
+                Text(renamePreviewText)
+                    .font(.system(size: 9, design: .monospaced))
+                    .foregroundColor(renamePreviewIsEmpty ? .orange : .secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.leading, 18)
+            }
 
+            HStack(spacing: 10) {
                 Spacer()
 
                 if isSaving {
@@ -477,8 +566,8 @@ private struct PlateSolveResultView: View {
                 // Nothing changed → nothing to write; the button would rewrite files for no gain.
                 .disabled(isSaving || changed == 0)
                 .help(changed == 0
-                      ? "Every solved frame confirmed the WCS it already had — nothing would change."
-                      : "Write only the frames that had no WCS or whose solve disagrees with it")
+                      ? "Every solved frame confirmed the WCS it already had and keeps its OBJECT and name — nothing would change."
+                      : "Write only the frames where something changes: no WCS yet, a solve that disagrees with the stored one, an OBJECT to replace, or a filename to rename")
 
                 Button("Don't Save") { didSave = true }
                     .disabled(isSaving)
@@ -488,11 +577,66 @@ private struct PlateSolveResultView: View {
         .padding(.vertical, 10)
     }
 
+    /// What the OBJECT toggle will do, counted on the entries' current names (6.12.0).
+    private var objectPreviewText: String {
+        let changes = report.objectChanges(in: .all)
+        guard !changes.isEmpty else {
+            return "Every solved frame with an identified object already carries that name in OBJECT."
+        }
+        let replacing = changes.filter { !$0.existing.isEmpty }.count
+        var text = "\(changes.count) frame(s) get OBJECT set"
+        if replacing > 0, let pair = PlateSolveReport.dominantPair(of: changes) {
+            text += " — \(replacing) currently say something else, e.g. \"\(pair.existing)\" → \(pair.new)"
+            if replacing > pair.count { text += " (\(pair.count) of them)" }
+        }
+        return text + ". The backup folder keeps the originals."
+    }
+
+    private var currentReplacement: FilenameReplacement {
+        FilenameReplacement(search: renameSearch, replacement: renameReplacement)
+    }
+
+    private var renamePreviewIsEmpty: Bool {
+        report.renamePreview(in: .all, replacement: currentReplacement).isEmpty
+    }
+
+    private var renamePreviewText: String {
+        let replacement = currentReplacement
+        guard replacement.isUsable else {
+            return renameSearch.isEmpty ? "Enter the text to replace." : "Nothing would change."
+        }
+        let preview = report.renamePreview(in: .all, replacement: replacement)
+        guard let first = preview.first else {
+            return "No file to rename: no solved frame of ANOTHER object has \"\(renameSearch)\" in its name "
+                 + "(frames that really are that object keep their name)."
+        }
+        // Say WHICH frames, not just how many: the rename is decided by the identified object, not
+        // by a selection, and that is the part a first-time user cannot guess from two text fields.
+        let renamedObjects = Set(preview.compactMap { $0.frame.identification?.displayName })
+            .sorted().joined(separator: ", ")
+        let kept = report.solved.filter { frame in
+            frame.identification.map { PlateSolveEngine.namesSameObject(renameSearch, $0.headerValue) } ?? false
+        }
+        var text = "Renames \(preview.count) file(s) — the frames identified as \(renamedObjects)."
+        if let keptObject = kept.first?.identification?.displayName {
+            text += " The \(kept.count) frame(s) of \(keptObject) keep their name."
+        }
+        return text + " E.g. \(first.frame.entry.filename) → \(first.newName)"
+    }
+
+    /// The write options as the controls stand right now.
+    private func currentOptions(scope: PlateSolveSaveScope) -> PlateSolveWriteOptions {
+        var options = PlateSolveWriteOptions(scope: scope, writeObjectName: writeObjectName)
+        if renameFiles, currentReplacement.isUsable { options.rename = currentReplacement }
+        return options
+    }
+
     private func perform(_ scope: PlateSolveSaveScope,
-                         _ save: @escaping (PlateSolveSaveScope, Bool) async -> PlateSolveReport) {
+                         _ save: @escaping (PlateSolveWriteOptions) async -> PlateSolveReport) {
         isSaving = true
+        let options = currentOptions(scope: scope)
         Task {
-            let updated = await save(scope, writeObjectName)
+            let updated = await save(options)
             await MainActor.run {
                 model = Model(updated)
                 isSaving = false
@@ -501,12 +645,17 @@ private struct PlateSolveResultView: View {
         }
     }
 
+    private var savedHeadline: String {
+        var parts = ["Wrote WCS into \(report.written) file(s)"]
+        if report.objectNamesWritten > 0 { parts.append("named the object in \(report.objectNamesWritten)") }
+        if report.renamed > 0 { parts.append("renamed \(report.renamed)") }
+        return parts.joined(separator: ", ") + "."
+    }
+
     private var savedState: some View {
         VStack(alignment: .leading, spacing: 3) {
             if report.written > 0 {
-                Text("Wrote WCS into \(report.written) file(s)"
-                     + (report.objectNamesWritten > 0
-                        ? ", named the object in \(report.objectNamesWritten)." : "."))
+                Text(savedHeadline)
                     .font(.system(size: 10, weight: .bold, design: .monospaced))
                     .foregroundColor(.green)
             } else if didSave {
@@ -522,13 +671,39 @@ private struct PlateSolveResultView: View {
                     .lineLimit(1)
                     .truncationMode(.middle)
             }
-            if !report.objectNamesKept.isEmpty {
-                Text("\(report.objectNamesKept.count) file(s) kept their existing OBJECT "
-                     + "(e.g. \"\(report.objectNamesKept[0].existing)\" vs identified "
-                     + "\(report.objectNamesKept[0].identified)) — existing names are never overwritten.")
+            if let first = report.objectNamesReplaced.first {
+                Text("\(report.objectNamesReplaced.count) file(s) had a different OBJECT replaced "
+                     + "(e.g. \"\(first.existing)\" → \(first.identified)); the originals are in the backup folder.")
                     .font(.system(size: 9, design: .monospaced))
                     .foregroundColor(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+            }
+            if report.renamed > 0 {
+                Text("Renamed \(report.renamed) file(s) — the file list follows the new names.")
+                    .font(.system(size: 9, design: .monospaced))
+                    .foregroundColor(.secondary)
+            }
+            if let onUndo, let backup = report.backupDirectory, report.written > 0 {
+                HStack(spacing: 8) {
+                    switch undoState {
+                    case .available:
+                        Button("Undo This Save") {
+                            undoState = onUndo(backup) ? .done : .refused
+                        }
+                        Text("Restores every written file from the backup folder and reloads the session.")
+                            .font(.system(size: 9, design: .monospaced))
+                            .foregroundColor(.secondary)
+                    case .done:
+                        Text("Undone — the files are back as they were before this save.")
+                            .font(.system(size: 9, design: .monospaced))
+                            .foregroundColor(.secondary)
+                    case .refused:
+                        Text("Not undone: another batch edit happened since. Restore from the backup folder by hand.")
+                            .font(.system(size: 9, design: .monospaced))
+                            .foregroundColor(.orange)
+                    }
+                }
+                .padding(.top, 2)
             }
             if !report.writeFailures.isEmpty {
                 Text("\(report.writeFailures.count) file(s) could not be written and were "
@@ -647,6 +822,8 @@ enum PlateSolveResultBuilder {
         if !report.disagreements.isEmpty { lines.append("Disagree with existing solve: \(report.disagreements.count)") }
         if report.written > 0 { lines.append("WCS written into files: \(report.written)") }
         if report.objectNamesWritten > 0 { lines.append("OBJECT named in files: \(report.objectNamesWritten)") }
+        if !report.objectNamesReplaced.isEmpty { lines.append("OBJECT replaced: \(report.objectNamesReplaced.count)") }
+        if report.renamed > 0 { lines.append("Files renamed: \(report.renamed)") }
         if let backup = report.backupDirectory { lines.append("Backup: \(backup.path)") }
         if unsupportedCount > 0 { lines.append("Skipped, unsupported format: \(unsupportedCount)") }
         lines.append("")

@@ -440,4 +440,72 @@ final class IntegrationTests: XCTestCase {
             XCTAssertEqual(vm.images[1].sessionIndex, 2)
         }
     }
+
+    // =========================================================================
+    // relocated(to:) (6.12.0): a rename or move keeps everything it did not touch
+    // =========================================================================
+    func testRelocatedKeepsMetricsAndChangesOnlyWhatWasAsked() {
+        var entry = ImageEntry(url: URL(fileURLWithPath: "/tmp/Light_M45_300s_0001.fit"))
+        entry.filter = "L"
+        entry.target = "M45"
+        entry.sessionIndex = 7
+        entry.computedFWHM = 3.2
+        entry.fieldIndex = 2
+
+        // Plate-solve save: new name + written OBJECT.
+        let renamed = entry.relocated(to: URL(fileURLWithPath: "/tmp/Light_NGC6888_300s_0001.fit"),
+                                      newTarget: "NGC6888")
+        XCTAssertEqual(renamed.filename, "Light_NGC6888_300s_0001.fit")
+        XCTAssertEqual(renamed.target, "NGC6888")
+        XCTAssertEqual(renamed.filter, "L")
+        XCTAssertEqual(renamed.sessionIndex, 7, "the running session number must survive a rename")
+        XCTAssertEqual(renamed.computedFWHM, 3.2)
+        XCTAssertEqual(renamed.fieldIndex, 2)
+        XCTAssertEqual(renamed.id, entry.id)
+        XCTAssertEqual(renamed.subfolder, "")
+        XCTAssertTrue(renamed.batchModified)
+
+        // Subfolder split: same name, new folder, nothing in the file changed.
+        let moved = entry.relocated(to: URL(fileURLWithPath: "/tmp/NGC6888/Light_M45_300s_0001.fit"),
+                                    newSubfolder: "NGC6888", markModified: false)
+        XCTAssertEqual(moved.subfolder, "NGC6888")
+        XCTAssertEqual(moved.target, "M45")
+        XCTAssertEqual(moved.filter, "L")
+        XCTAssertEqual(moved.sessionIndex, 7)
+        XCTAssertFalse(moved.batchModified, "a plain move is not a header edit")
+    }
+
+    /// A subfolder split's ⌘Z entries must follow a later plate-solve rename, and ⌘Z must then
+    /// restore the LOCATION only — the new name stays.
+    func testMoveUndoEntriesFollowAPlateSolveRename() async {
+        let vm = await TriageViewModel()
+        let root = URL(fileURLWithPath: "/tmp/session")
+        let original = root.appendingPathComponent("Light_M45_0001.fit")
+        let parked = root.appendingPathComponent("NGC6888/Light_M45_0001.fit")
+        let renamed = root.appendingPathComponent("NGC6888/Light_NGC6888_0001.fit")
+
+        await MainActor.run {
+            var entry = ImageEntry(url: parked, subfolder: "NGC6888")
+            entry.sessionIndex = 3
+            vm.images = [entry]
+            vm.preDeleteUndoStack = [[TriageViewModel.PreDeleteUndoEntry(
+                originalURL: original, preDeleteURL: parked, entry: entry, originalIndex: 0)]]
+
+            var report = PlateSolveReport()
+            report.backupDirectory = root.appendingPathComponent("_platesolve_backup_test")
+            report.affectedURLs = [parked: renamed]
+            report.objectWritten = [entry.id: "NGC6888"]
+            vm.applyPlateSolveWriteBack(report)
+
+            XCTAssertEqual(vm.images[0].url, renamed)
+            XCTAssertEqual(vm.images[0].target, "NGC6888")
+            XCTAssertEqual(vm.images[0].sessionIndex, 3, "session number changed during the session")
+            XCTAssertEqual(vm.preDeleteUndoStack.last?.first?.preDeleteURL, renamed,
+                           "⌘Z must look for the file under its new name")
+            XCTAssertEqual(vm.preDeleteUndoStack.last?.first?.originalURL,
+                           root.appendingPathComponent("Light_NGC6888_0001.fit"),
+                           "⌘Z restores the location, not the old name")
+            XCTAssertEqual(vm.batchUndoStack.last?.backupDirectory, report.backupDirectory)
+        }
+    }
 }
