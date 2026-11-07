@@ -3562,6 +3562,7 @@ class TriageViewModel: ObservableObject {
 
         let fm = FileManager.default
         var restoredCount = 0
+        var failedCount = 0
         var restoredHashes: [String] = []
 
         // Sort by original index so they get re-inserted in the right order
@@ -3584,7 +3585,9 @@ class TriageViewModel: ObservableObject {
                 restoredCount += 1
                 if let hash = undo.entry.fileHash { restoredHashes.append(hash) }
             } catch {
-                // File may have been manually moved/deleted — skip
+                // Moved or renamed since, by hand or by a batch that did not know this entry: count
+                // it so the status line says so instead of the undo vanishing silently.
+                failedCount += 1
             }
         }
 
@@ -3607,10 +3610,11 @@ class TriageViewModel: ObservableObject {
         sessionOverviewModel.updateStats(from: images)
         recomputeSNRRetention()
         let remaining = preDeleteUndoStack.count
+        let notFound = failedCount > 0 ? " (\(failedCount) not found — moved or renamed since)" : ""
         if remaining > 0 {
-            statusMessage = "Restored \(restoredCount) files — \(remaining) more undo(s) available"
+            statusMessage = "Restored \(restoredCount) files\(notFound) — \(remaining) more undo(s) available"
         } else {
-            statusMessage = "Restored \(restoredCount) files — undo stack empty"
+            statusMessage = "Restored \(restoredCount) files\(notFound) — undo stack empty"
         }
     }
 
@@ -4490,6 +4494,8 @@ class TriageViewModel: ObservableObject {
             }
         }
 
+        followRenamesInMoveUndoStack(result.affectedURLs)
+
         // Store undo entry (shares the batch undo stack → undoBatchRename() restores it).
         batchUndoStack.append(BatchUndoEntry(
             backupDirectory: result.backupDirectory,
@@ -4523,6 +4529,8 @@ class TriageViewModel: ObservableObject {
             }
         }
 
+        followRenamesInMoveUndoStack(report.affectedURLs)
+
         // `failed` is not consulted by undo; the report keeps the per-file reasons itself.
         let result = BatchResult(succeeded: report.written, failed: [],
                                  backupDirectory: backup, affectedURLs: report.affectedURLs)
@@ -4541,6 +4549,40 @@ class TriageViewModel: ObservableObject {
         guard batchUndoStack.last?.backupDirectory == backupDirectory else { return false }
         undoBatchRename()
         return true
+    }
+
+    /// The report with each solved frame's entry replaced by the LIVE one of the loaded session
+    /// (matched by stable id): a save after a rename, Change Filter or subfolder split then writes
+    /// to the file where it is now instead of failing on its solve-time path. Frames no longer
+    /// loaded keep their snapshot and fail safely in the write ("backup failed").
+    func withLiveEntries(_ report: PlateSolveReport) -> PlateSolveReport {
+        var byID: [ImageEntry.ID: ImageEntry] = [:]
+        for entry in images { byID[entry.id] = entry }
+        var live = report
+        live.solved = report.solved.map { frame in
+            guard let current = byID[frame.entry.id] else { return frame }
+            return SolvedFrame(entry: current, solution: frame.solution,
+                               previous: frame.previous, identification: frame.identification)
+        }
+        return live
+    }
+
+    /// A rename batch (Change Filter, plate-solve save) changes the names the ⌘Z move stack points
+    /// at: a frame that was moved into a subfolder and then renamed would otherwise be "not found"
+    /// on ⌘Z and the undo would vanish silently. Follow the rename on both ends — the current
+    /// location AND the place to restore to — so ⌘Z restores the LOCATION and keeps the new name.
+    private func followRenamesInMoveUndoStack(_ affectedURLs: [URL: URL]) {
+        let renames = affectedURLs.filter { $0.key != $0.value }
+        guard !renames.isEmpty else { return }
+        for batch in preDeleteUndoStack.indices {
+            preDeleteUndoStack[batch] = preDeleteUndoStack[batch].map { undo in
+                guard let moved = renames[undo.preDeleteURL] else { return undo }
+                let restoreTo = undo.originalURL.deletingLastPathComponent()
+                    .appendingPathComponent(moved.lastPathComponent)
+                return PreDeleteUndoEntry(originalURL: restoreTo, preDeleteURL: moved,
+                                          entry: undo.entry, originalIndex: undo.originalIndex)
+            }
+        }
     }
 
     /// Rescore the loaded session after a batch edit changed grouping inputs (filter, OBJECT,

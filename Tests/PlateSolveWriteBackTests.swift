@@ -224,6 +224,85 @@ final class PlateSolveWriteBackTests: XCTestCase {
                      "an empty search text matches nothing — never everything")
         XCTAssertFalse(FilenameReplacement(search: "M45", replacement: "a/b").isUsable,
                        "a path separator would turn the rename into a move")
+        XCTAssertFalse(FilenameReplacement(search: "M45", replacement: "a:b").isUsable,
+                       "Finder shows a colon as a slash")
+        XCTAssertNil(PlateSolveEngine.renamedFilename(
+                        for: crescent, replacement: FilenameReplacement(search: "fit", replacement: "fits")),
+                     "the extension is not part of the name")
+        let dotted = solvedFrame(for: work.appendingPathComponent("M45.0030.fit"),
+                                 identification: try identification("NGC6888"))
+        XCTAssertNil(PlateSolveEngine.renamedFilename(
+                        for: dotted, replacement: FilenameReplacement(search: "M45", replacement: "")),
+                     "a name may not start with a dot")
+    }
+
+    /// Save → the user PRE-DELETEs the frame → "Undo This Save": the backup must NOT be copied to
+    /// the old path, or the same frame would exist twice.
+    func testUndoSkipsAFrameMovedSinceTheSave() throws {
+        let crescent = try fitsFrame(named: "Light_M45_300s_0060.fit", object: "M45")
+        var r = report(for: crescent, identification: try identification("NGC6888"))
+        var options = PlateSolveWriteOptions(scope: .all, writeObjectName: true)
+        options.rename = FilenameReplacement(search: "M45", replacement: "NGC6888")
+        PlateSolveEngine().writeBack(&r, sessionRoot: work, options: options)
+        XCTAssertEqual(r.renamed, 1, "\(r.writeFailures)")
+        let renamed = work.appendingPathComponent("Light_NGC6888_300s_0060.fit")
+
+        let preDelete = work.appendingPathComponent("PRE-DELETE", isDirectory: true)
+        try FileManager.default.createDirectory(at: preDelete, withIntermediateDirectories: true)
+        let parked = preDelete.appendingPathComponent(renamed.lastPathComponent)
+        try FileManager.default.moveItem(at: renamed, to: parked)
+
+        let backup = try XCTUnwrap(r.backupDirectory)
+        let undo = BatchUndoEntry(backupDirectory: backup,
+                                  result: BatchResult(succeeded: 1, failed: [],
+                                                      backupDirectory: backup, affectedURLs: r.affectedURLs),
+                                  timestamp: Date())
+        let outcome = BatchOperations.undo(entry: undo)
+        XCTAssertEqual(outcome.restored, 0)
+        XCTAssertEqual(outcome.errors.count, 1, "\(outcome.errors)")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: crescent.path),
+                       "undo must not create a second copy of a frame that was moved since")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: parked.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: backup.path),
+                      "the backup stays when anything could not be restored")
+    }
+
+    /// The backup folder is flat: a second frame with the same name must not overwrite the first
+    /// frame's backup — it is skipped and reported instead.
+    func testSecondFrameWithTheSameNameIsNotWrittenOverTheFirstBackup() throws {
+        let a = try fitsFrame(named: "Light_0070.fit", object: "M45")
+        let sub = work.appendingPathComponent("NGC6888", isDirectory: true)
+        try FileManager.default.createDirectory(at: sub, withIntermediateDirectories: true)
+        let bSource = try fitsFrame(named: "Light_0070_tmp.fit", object: "NGC6888")
+        let b = sub.appendingPathComponent("Light_0070.fit")
+        try FileManager.default.moveItem(at: bSource, to: b)
+
+        var r = PlateSolveReport()
+        r.solved = [solvedFrame(for: a, identification: try identification("M45")),
+                    solvedFrame(for: b, identification: try identification("NGC6888"))]
+        PlateSolveEngine().writeBack(&r, sessionRoot: work)
+
+        XCTAssertEqual(r.written, 1)
+        XCTAssertEqual(r.writeFailures.count, 1)
+        XCTAssertTrue(r.writeFailures.first?.reason.contains("same name") == true,
+                      r.writeFailures.first?.reason ?? "no failure recorded")
+        let backup = try XCTUnwrap(r.backupDirectory).appendingPathComponent("Light_0070.fit")
+        XCTAssertEqual(BatchOperations.readHeaderValue(url: backup, keyword: "OBJECT"), "M45",
+                       "the first frame's backup is intact")
+        XCTAssertEqual(BatchOperations.readHeaderValue(url: b, keyword: "OBJECT"), "NGC6888",
+                       "the skipped frame is untouched")
+    }
+
+    func testCaseOnlyRenameWorks() throws {
+        let frame = try fitsFrame(named: "Light_m45_300s_0080.fit", object: "m45")
+        var r = report(for: frame, identification: try identification("NGC6888"))
+        var options = PlateSolveWriteOptions(scope: .all, writeObjectName: false)
+        options.rename = FilenameReplacement(search: "m45", replacement: "M45")
+        PlateSolveEngine().writeBack(&r, sessionRoot: work, options: options)
+        XCTAssertEqual(r.written, 1, "\(r.writeFailures)")
+        XCTAssertEqual(r.renamed, 1)
+        let names = try FileManager.default.contentsOfDirectory(atPath: work.path)
+        XCTAssertTrue(names.contains("Light_M45_300s_0080.fit"), "\(names)")
     }
 
     func testPreviewCountsTheObjectsTheSaveWouldChange() throws {

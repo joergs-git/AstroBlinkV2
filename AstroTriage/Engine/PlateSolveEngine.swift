@@ -138,10 +138,11 @@ struct FilenameReplacement: Equatable {
     var replacement: String
 
     /// A rename needs something to look for, must change the name, and may not introduce a path
-    /// separator (that would be a move, not a rename). An empty search string would match
-    /// everywhere — the classic `"".replace` footgun.
+    /// separator (that would be a move, not a rename) or a colon (Finder shows it as a slash). An
+    /// empty search string would match everywhere — the classic `"".replace` footgun.
     var isUsable: Bool {
-        !search.isEmpty && search != replacement && !replacement.contains("/")
+        !search.isEmpty && search != replacement
+            && !replacement.contains("/") && !replacement.contains(":")
     }
 }
 
@@ -399,8 +400,15 @@ final class PlateSolveEngine {
             let url = frame.entry.url
             let backupURL = backupDir.appendingPathComponent(frame.entry.filename)
 
+            // The backup folder is flat and keyed by filename. A second frame with the same name
+            // (possible once fields live in subfolders) must not overwrite the first one's backup —
+            // undo and failure-restore would then put the wrong content back. It is skipped instead.
+            guard !fm.fileExists(atPath: backupURL.path) else {
+                report.writeFailures.append((filename: frame.entry.filename,
+                                             reason: "another frame with the same name was already backed up in this save — not written"))
+                continue
+            }
             do {
-                if fm.fileExists(atPath: backupURL.path) { try fm.removeItem(at: backupURL) }
                 try fm.copyItem(at: url, to: backupURL)
             } catch {
                 report.writeFailures.append((filename: frame.entry.filename,
@@ -450,7 +458,10 @@ final class PlateSolveEngine {
             if failure == nil, let replacement = options.rename,
                let newName = Self.renamedFilename(for: frame, replacement: replacement) {
                 let target = url.deletingLastPathComponent().appendingPathComponent(newName)
-                if fm.fileExists(atPath: target.path) {
+                // On a case-insensitive volume a case-only rename (m45 → M45) "exists" already — it
+                // is the file itself, and the move performs the case change.
+                if fm.fileExists(atPath: target.path),
+                   target.path.caseInsensitiveCompare(url.path) != .orderedSame {
                     failure = "rename target already exists: \(newName)"
                 } else {
                     do {
@@ -515,10 +526,15 @@ final class PlateSolveEngine {
             || TargetCatalog.canonicalName(searched).caseInsensitiveCompare(identified) == .orderedSame {
             return nil
         }
+        // Base name only: the extension is not part of the name the user means, and a replacement
+        // must not turn ".fits" into ".fit". The result may not hide the file or carry a colon.
+        let ext = frame.entry.url.pathExtension
         let name = frame.entry.filename
-        guard name.contains(replacement.search) else { return nil }
-        let renamed = name.replacingOccurrences(of: replacement.search, with: replacement.replacement)
-        return renamed == name ? nil : renamed
+        let base = ext.isEmpty ? name : String(name.dropLast(ext.count + 1))
+        guard base.contains(replacement.search) else { return nil }
+        let newBase = base.replacingOccurrences(of: replacement.search, with: replacement.replacement)
+        guard newBase != base, !newBase.isEmpty, !newBase.hasPrefix("."), !newBase.contains(":") else { return nil }
+        return ext.isEmpty ? newBase : newBase + "." + ext
     }
 
     /// The keywords a solved frame gains, in the exact spelling `MetadataExtractor` reads.

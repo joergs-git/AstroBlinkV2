@@ -193,7 +193,10 @@ enum PlateSolveCommand {
                 PlateSolveProgressWindowController.shared.show(total: 0, onCancel: {})
                 PlateSolveProgressWindowController.shared.showWriting()
                 // Off the main thread: writeBack copies, writes, verifies and renames every file.
-                var updated = report
+                // Entries are refreshed from the loaded session first: a rename, Change Filter or
+                // subfolder split between solving and saving must not make every frame fail with
+                // "backup failed" on its solve-time path.
+                var updated = viewModel.withLiveEntries(report)
                 await Task.detached(priority: .userInitiated) {
                     engine.writeBack(&updated, sessionRoot: root, options: options)
                 }.value

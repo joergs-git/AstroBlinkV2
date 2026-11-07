@@ -474,4 +474,38 @@ final class IntegrationTests: XCTestCase {
         XCTAssertEqual(moved.sessionIndex, 7)
         XCTAssertFalse(moved.batchModified, "a plain move is not a header edit")
     }
+
+    /// A subfolder split's ⌘Z entries must follow a later plate-solve rename, and ⌘Z must then
+    /// restore the LOCATION only — the new name stays.
+    func testMoveUndoEntriesFollowAPlateSolveRename() async {
+        let vm = await TriageViewModel()
+        let root = URL(fileURLWithPath: "/tmp/session")
+        let original = root.appendingPathComponent("Light_M45_0001.fit")
+        let parked = root.appendingPathComponent("NGC6888/Light_M45_0001.fit")
+        let renamed = root.appendingPathComponent("NGC6888/Light_NGC6888_0001.fit")
+
+        await MainActor.run {
+            var entry = ImageEntry(url: parked, subfolder: "NGC6888")
+            entry.sessionIndex = 3
+            vm.images = [entry]
+            vm.preDeleteUndoStack = [[TriageViewModel.PreDeleteUndoEntry(
+                originalURL: original, preDeleteURL: parked, entry: entry, originalIndex: 0)]]
+
+            var report = PlateSolveReport()
+            report.backupDirectory = root.appendingPathComponent("_platesolve_backup_test")
+            report.affectedURLs = [parked: renamed]
+            report.objectWritten = [entry.id: "NGC6888"]
+            vm.applyPlateSolveWriteBack(report)
+
+            XCTAssertEqual(vm.images[0].url, renamed)
+            XCTAssertEqual(vm.images[0].target, "NGC6888")
+            XCTAssertEqual(vm.images[0].sessionIndex, 3, "session number changed during the session")
+            XCTAssertEqual(vm.preDeleteUndoStack.last?.first?.preDeleteURL, renamed,
+                           "⌘Z must look for the file under its new name")
+            XCTAssertEqual(vm.preDeleteUndoStack.last?.first?.originalURL,
+                           root.appendingPathComponent("Light_NGC6888_0001.fit"),
+                           "⌘Z restores the location, not the old name")
+            XCTAssertEqual(vm.batchUndoStack.last?.backupDirectory, report.backupDirectory)
+        }
+    }
 }

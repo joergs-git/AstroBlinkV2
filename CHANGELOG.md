@@ -31,7 +31,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   number intact.
 - **Undo a plate-solve save.** The saved state offers "Undo This Save": every written or renamed
   file is restored from the save's backup folder and the session reloads. Refused, with the reason,
-  when another batch edit has happened since — the backup folder stays for a manual restore.
+  when another batch edit has happened since — the backup folder stays for a manual restore. A frame
+  that was moved after the save (PRE-DELETE, a subfolder split) is left where it is rather than
+  restored to its old path as a second copy; the ⌘Z entries of a subfolder split follow a later
+  rename, so ⌘Z still finds the files and restores their location under the new name.
 - **Full filename in the viewer.** Session filenames run past a hundred characters and no column
   shows them whole. The frame's own black margin now does: bottom-left, small and dim, truncated in
   the middle when the window is narrow so both the leading object/filter and the trailing frame
