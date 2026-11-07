@@ -140,12 +140,49 @@ final class PlateSolveWriteBackTests: XCTestCase {
 
     func testMatchingObjectIsNotCountedAsReplaced() throws {
         let frame = try fitsFrame(named: "Light_NGC6888_0003.fit", object: "ngc6888")
-        var r = report(for: frame, identification: try identification("NGC6888"))
+        // The capture program's spelling ("M 45") and the catalogue's ("M45") are the same object.
+        let spaced = try fitsFrame(named: "Light_M45_0004.fit", object: "M 45")
+        var r = PlateSolveReport()
+        r.solved = [solvedFrame(for: frame, identification: try identification("NGC6888")),
+                    solvedFrame(for: spaced, identification: try identification("M45"))]
         PlateSolveEngine().writeBack(&r, sessionRoot: work)
-        XCTAssertEqual(r.written, 1, "\(r.writeFailures)")
+        XCTAssertEqual(r.written, 2, "\(r.writeFailures)")
         XCTAssertEqual(r.objectNamesWritten, 0, "an OBJECT that already names the object is left alone")
         XCTAssertTrue(r.objectNamesReplaced.isEmpty)
         XCTAssertEqual(BatchOperations.readHeaderValue(url: frame, keyword: "OBJECT"), "ngc6888")
+        XCTAssertEqual(BatchOperations.readHeaderValue(url: spaced, keyword: "OBJECT"), "M 45")
+    }
+
+    func testNamesSameObjectFollowsTheCatalogueSpelling() {
+        XCTAssertTrue(PlateSolveEngine.namesSameObject("M 45", "M45"))
+        XCTAssertTrue(PlateSolveEngine.namesSameObject("m45", "M45"))
+        XCTAssertTrue(PlateSolveEngine.namesSameObject("NGC 6888", "NGC6888"))
+        XCTAssertFalse(PlateSolveEngine.namesSameObject("M45", "NGC6888"))
+        XCTAssertFalse(PlateSolveEngine.namesSameObject("", "M45"))
+    }
+
+    /// "Save Changed" counts an OBJECT replacement and a rename as changes: a session whose
+    /// re-solves all confirmed the stored WCS still has frames whose FILE changes.
+    func testSaveChangedIncludesObjectAndRenameChanges() throws {
+        let url = work.appendingPathComponent("Light_M45_300s_0090.fit")   // need not exist
+        func confirmed(_ identification: TargetIdentification, target: String) -> SolvedFrame {
+            var entry = ImageEntry(url: url)
+            entry.target = target
+            return SolvedFrame(entry: entry, solution: solution(), previous: solution(),
+                               identification: identification)
+        }
+        var r = PlateSolveReport()
+        r.solved = [confirmed(try identification("M45"), target: "M 45"),
+                    confirmed(try identification("NGC6888"), target: "M 45")]
+        XCTAssertEqual(r.changedFrames.count, 0, "both re-solves confirmed the stored WCS")
+
+        XCTAssertEqual(PlateSolveWriteOptions(scope: .all).frames(in: r).count, 2)
+        XCTAssertEqual(PlateSolveWriteOptions(scope: .changedOnly, writeObjectName: true).frames(in: r).count, 1,
+                       "only the NGC 6888 frame gets a new OBJECT")
+        XCTAssertEqual(PlateSolveWriteOptions(scope: .changedOnly, writeObjectName: false).frames(in: r).count, 0)
+        var renaming = PlateSolveWriteOptions(scope: .changedOnly, writeObjectName: false)
+        renaming.rename = FilenameReplacement(search: "M45", replacement: "NGC6888")
+        XCTAssertEqual(renaming.frames(in: r).count, 1, "the rename alone makes the NGC 6888 frame a change")
     }
 
     /// Two frames both named M45 in the file: the real M45 frame keeps its name, the NGC 6888
@@ -311,16 +348,18 @@ final class PlateSolveWriteBackTests: XCTestCase {
         r.solved = [solvedFrame(for: url, identification: try identification("M45"), target: "M45"),
                     solvedFrame(for: url, identification: try identification("NGC6888"), target: "M45"),
                     solvedFrame(for: url, identification: try identification("NGC6888"), target: "M45"),
-                    solvedFrame(for: url, identification: try identification("NGC6888"), target: nil)]
+                    solvedFrame(for: url, identification: try identification("NGC6888"), target: nil),
+                    solvedFrame(for: url, identification: try identification("M45"), target: "M 45"),
+                    solvedFrame(for: url, identification: try identification("NGC6888"), target: "M 45")]
         let changes = r.objectChanges(in: .all)
-        XCTAssertEqual(changes.count, 3, "the real M45 frame is no change; the empty OBJECT is one")
+        XCTAssertEqual(changes.count, 4, "the M45 frames (spelled M45 or M 45) are no change; the empty OBJECT is one")
         let pair = try XCTUnwrap(PlateSolveReport.dominantPair(of: changes))
         XCTAssertEqual(pair.existing, "M45")
         XCTAssertEqual(pair.new, "NGC6888")
         XCTAssertEqual(pair.count, 2, "frames with an empty OBJECT have nothing to replace")
         XCTAssertEqual(r.renamePreview(in: .all,
                                        replacement: FilenameReplacement(search: "M45", replacement: "NGC6888")).count,
-                       3, "every NGC 6888 frame named M45 is renamed, the M45 frame is not")
+                       4, "every NGC 6888 frame named M45 is renamed, the M45 frames are not")
     }
 
     // MARK: - FITS

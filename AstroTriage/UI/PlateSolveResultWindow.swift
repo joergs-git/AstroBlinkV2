@@ -242,6 +242,7 @@ private struct PlateSolveResultView: View {
     @State private var isSaving = false
     @State private var didSave = false
     @State private var undoState: UndoState = .available
+    @FocusState private var tableFocused: Bool
 
     private enum UndoState { case available, done, refused }
 
@@ -339,17 +340,46 @@ private struct PlateSolveResultView: View {
     /// Header and rows share ONE scroll view so they cannot drift apart horizontally; the
     /// header is pinned so it stays visible while scrolling down.
     private var table: some View {
-        ScrollView([.horizontal, .vertical]) {
-            LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
-                Section {
-                    ForEach(Array(model.rows.enumerated()), id: \.element.id) { index, row in
-                        rowView(row, index: index)
+        ScrollViewReader { proxy in
+            ScrollView([.horizontal, .vertical]) {
+                LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
+                    Section {
+                        ForEach(Array(model.rows.enumerated()), id: \.element.id) { index, row in
+                            rowView(row, index: index).id(row.id)
+                        }
+                    } header: {
+                        tableHeader
                     }
-                } header: {
-                    tableHeader
                 }
             }
+            // Arrow keys walk the list the way clicking does (6.12.0): the window exists to step
+            // through outliers and look at each one, and reaching for the mouse per row defeats it.
+            .focusable()
+            .focused($tableFocused)
+            .focusEffectDisabled()
+            .onMoveCommand { direction in
+                switch direction {
+                case .up:   moveSelection(by: -1, proxy: proxy)
+                case .down: moveSelection(by: 1, proxy: proxy)
+                default:    break
+                }
+            }
+            .onAppear { tableFocused = true }
         }
+    }
+
+    /// Step the highlighted row, show that frame in the main window and keep the row in view.
+    private func moveSelection(by delta: Int, proxy: ScrollViewProxy) {
+        let rows = model.rows
+        guard !rows.isEmpty else { return }
+        let next: Int
+        if let current = rows.firstIndex(where: { $0.id == selectedRowID }) {
+            next = min(max(current + delta, 0), rows.count - 1)
+        } else {
+            next = delta > 0 ? 0 : rows.count - 1
+        }
+        jump(to: rows[next])
+        withAnimation(nil) { proxy.scrollTo(rows[next].id) }
     }
 
     private var tableHeader: some View {
@@ -410,6 +440,7 @@ private struct PlateSolveResultView: View {
     /// floating — the point is to walk down the list of outliers and look at each one.
     private func jump(to row: PlateSolveResultRow) {
         selectedRowID = row.id
+        tableFocused = true
         missingFrameName = onSelectFrame(row.entryID) ? nil : row.filename
     }
 
@@ -469,7 +500,9 @@ private struct PlateSolveResultView: View {
     }
 
     private func saveControls(_ save: @escaping (PlateSolveWriteOptions) async -> PlateSolveReport) -> some View {
-        let changed = report.changedFrames.count
+        // Counted with the options as they stand: an OBJECT to replace or a file to rename is a
+        // change too, so a session of confirmed re-solves still offers the five frames that need it.
+        let changed = currentOptions(scope: .changedOnly).frames(in: report).count
         return VStack(alignment: .leading, spacing: 6) {
             Text("Save into the files? Without saving, these solutions are lost when the "
                  + "session is reloaded. A backup folder is always created first.")
@@ -491,7 +524,7 @@ private struct PlateSolveResultView: View {
             // Filename replacement (6.12.0). Applies to the frames whose identified object is
             // NOT the one the search text names — see PlateSolveEngine.renamedFilename.
             HStack(spacing: 6) {
-                Toggle("Rename files: replace", isOn: $renameFiles)
+                Toggle("Rename the files of the other object(s): replace", isOn: $renameFiles)
                     .font(.system(size: 10, design: .monospaced))
                     .toggleStyle(.checkbox)
                 TextField("text in the filename", text: $renameSearch)
@@ -533,8 +566,8 @@ private struct PlateSolveResultView: View {
                 // Nothing changed → nothing to write; the button would rewrite files for no gain.
                 .disabled(isSaving || changed == 0)
                 .help(changed == 0
-                      ? "Every solved frame confirmed the WCS it already had — nothing would change."
-                      : "Write only the frames that had no WCS or whose solve disagrees with it")
+                      ? "Every solved frame confirmed the WCS it already had and keeps its OBJECT and name — nothing would change."
+                      : "Write only the frames where something changes: no WCS yet, a solve that disagrees with the stored one, an OBJECT to replace, or a filename to rename")
 
                 Button("Don't Save") { didSave = true }
                     .disabled(isSaving)
@@ -577,14 +610,31 @@ private struct PlateSolveResultView: View {
             return "No file to rename: no solved frame of ANOTHER object has \"\(renameSearch)\" in its name "
                  + "(frames that really are that object keep their name)."
         }
-        return "Renames \(preview.count) file(s), e.g. \(first.frame.entry.filename) → \(first.newName)"
+        // Say WHICH frames, not just how many: the rename is decided by the identified object, not
+        // by a selection, and that is the part a first-time user cannot guess from two text fields.
+        let renamedObjects = Set(preview.compactMap { $0.frame.identification?.displayName })
+            .sorted().joined(separator: ", ")
+        let kept = report.solved.filter { frame in
+            frame.identification.map { PlateSolveEngine.namesSameObject(renameSearch, $0.headerValue) } ?? false
+        }
+        var text = "Renames \(preview.count) file(s) — the frames identified as \(renamedObjects)."
+        if let keptObject = kept.first?.identification?.displayName {
+            text += " The \(kept.count) frame(s) of \(keptObject) keep their name."
+        }
+        return text + " E.g. \(first.frame.entry.filename) → \(first.newName)"
+    }
+
+    /// The write options as the controls stand right now.
+    private func currentOptions(scope: PlateSolveSaveScope) -> PlateSolveWriteOptions {
+        var options = PlateSolveWriteOptions(scope: scope, writeObjectName: writeObjectName)
+        if renameFiles, currentReplacement.isUsable { options.rename = currentReplacement }
+        return options
     }
 
     private func perform(_ scope: PlateSolveSaveScope,
                          _ save: @escaping (PlateSolveWriteOptions) async -> PlateSolveReport) {
         isSaving = true
-        var options = PlateSolveWriteOptions(scope: scope, writeObjectName: writeObjectName)
-        if renameFiles, currentReplacement.isUsable { options.rename = currentReplacement }
+        let options = currentOptions(scope: scope)
         Task {
             let updated = await save(options)
             await MainActor.run {

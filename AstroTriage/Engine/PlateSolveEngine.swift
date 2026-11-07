@@ -152,6 +152,27 @@ struct PlateSolveWriteOptions {
     var scope: PlateSolveSaveScope = .all
     var writeObjectName: Bool = true
     var rename: FilenameReplacement?
+
+    /// The frames this save touches. `.changedOnly` means "something in the FILE changes": no WCS
+    /// yet, a solve that disagrees with the stored one — or, with the options on, an OBJECT that
+    /// would be replaced or a filename the replacement would change. Without that, a session of
+    /// confirmed re-solves offered "Save Changed (0)" while five frames still needed their object
+    /// name, and "Save All" would have rewritten 94 files for those five.
+    func frames(in report: PlateSolveReport) -> [SolvedFrame] {
+        switch scope {
+        case .all:
+            return report.solved
+        case .changedOnly:
+            let wcsChanged = Set(report.changedFrames.map { $0.entry.id })
+            let objectChanged = writeObjectName
+                ? Set(report.objectChanges(in: .all).map { $0.frame.entry.id }) : Set()
+            return report.solved.filter { frame in
+                wcsChanged.contains(frame.entry.id)
+                    || objectChanged.contains(frame.entry.id)
+                    || (rename.map { PlateSolveEngine.renamedFilename(for: frame, replacement: $0) != nil } ?? false)
+            }
+        }
+    }
 }
 
 // MARK: - Pre-save preview (6.12.0)
@@ -179,7 +200,7 @@ extension PlateSolveReport {
         scope.frames(in: self).compactMap { frame in
             guard let identification = frame.identification else { return nil }
             let existing = (frame.entry.target ?? "").trimmingCharacters(in: .whitespaces)
-            guard existing.caseInsensitiveCompare(identification.headerValue) != .orderedSame else { return nil }
+            guard !PlateSolveEngine.namesSameObject(existing, identification.headerValue) else { return nil }
             return ObjectChange(frame: frame, existing: existing, new: identification.headerValue)
         }
     }
@@ -368,7 +389,7 @@ final class PlateSolveEngine {
     func writeBack(_ report: inout PlateSolveReport,
                    sessionRoot: URL,
                    options: PlateSolveWriteOptions = PlateSolveWriteOptions()) {
-        let frames = options.scope.frames(in: report)
+        let frames = options.frames(in: report)
         guard !frames.isEmpty else { return }
 
         // Reset the write tallies: the report is handed back to the result window, which may
@@ -427,7 +448,7 @@ final class PlateSolveEngine {
             if options.writeObjectName, let identification = frame.identification {
                 let existing = BatchOperations.readHeaderValue(url: url, keyword: "OBJECT")?
                     .trimmingCharacters(in: .whitespaces) ?? ""
-                if existing.caseInsensitiveCompare(identification.headerValue) != .orderedSame {
+                if !Self.namesSameObject(existing, identification.headerValue) {
                     pairs.append(("OBJECT", identification.headerValue))
                     objectValue = identification.headerValue
                     if !existing.isEmpty { replacedExisting = existing }
@@ -512,6 +533,18 @@ final class PlateSolveEngine {
         }
     }
 
+    /// Do two names mean the same catalogue object? "M 45", "m45" and "M45" do — the OBJECT value
+    /// a capture program writes and the catalogue's canonical spelling rarely agree character for
+    /// character, and treating them as different objects would "replace" 89 correct headers and
+    /// prefill the rename with M 45 → M45.
+    static func namesSameObject(_ a: String, _ b: String) -> Bool {
+        let a = a.trimmingCharacters(in: .whitespaces)
+        let b = b.trimmingCharacters(in: .whitespaces)
+        guard !a.isEmpty, !b.isEmpty else { return false }
+        if a.caseInsensitiveCompare(b) == .orderedSame { return true }
+        return TargetCatalog.canonicalName(a).caseInsensitiveCompare(TargetCatalog.canonicalName(b)) == .orderedSame
+    }
+
     /// The filename a frame gets from the A→B replacement, or nil when the rename does not apply
     /// to it: no identification, A absent from the name, a name that would not change — or the
     /// frame actually IS the object A names (by `TargetCatalog.canonicalName`), so a folder of
@@ -520,12 +553,7 @@ final class PlateSolveEngine {
     /// still works on the second run, when the header is already correct.
     static func renamedFilename(for frame: SolvedFrame, replacement: FilenameReplacement) -> String? {
         guard replacement.isUsable, let identification = frame.identification else { return nil }
-        let identified = identification.headerValue
-        let searched = replacement.search.trimmingCharacters(in: .whitespaces)
-        if searched.caseInsensitiveCompare(identified) == .orderedSame
-            || TargetCatalog.canonicalName(searched).caseInsensitiveCompare(identified) == .orderedSame {
-            return nil
-        }
+        if namesSameObject(replacement.search, identification.headerValue) { return nil }
         // Base name only: the extension is not part of the name the user means, and a replacement
         // must not turn ".fits" into ".fit". The result may not hide the file or carry a colon.
         let ext = frame.entry.url.pathExtension

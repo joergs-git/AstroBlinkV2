@@ -16,7 +16,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   copy of each file, the rule had no job left: a differing OBJECT is now replaced by the identified
   name. The save bar says beforehand how many frames change and shows the dominant pair
   (`3 frames currently say "M45" → NGC6888`); the saved state lists every replacement; the backup
-  folder keeps the originals.
+  folder keeps the originals. A header that spells the same object differently (`M 45` where the
+  catalogue says `M45`) is the same object and is left alone. "Save Changed" now counts an OBJECT
+  replacement or a rename as a change, so a session whose re-solves all confirmed the stored WCS
+  still offers exactly the frames that need their object name instead of "Save Changed (0)".
 
 ### Added
 
@@ -40,6 +43,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
   the middle when the window is narrow so both the leading object/filter and the trailing frame
   number survive. Follows the overlay toggle, so one key hides every readout; click-drag zoom still
   starts anywhere on it.
+- **Arrow keys in the plate-solve results.** ↑/↓ step through the result table and show each
+  frame in the main window, the way clicking a row does.
 - **Move the other sky fields into subfolders.** Select the session (⌘A), right-click → "Move N
   Frames of Field F2 into Subfolder "NGC6888"…". The field with the most selected frames stays
   where it is; every other field moves into a subfolder next to its files, named after the object
