@@ -16,10 +16,13 @@ Nice side effect: Finally you have a native XISF and FITS Quicklook for macOS. (
 
 ## What's New in v6.12.3 (Build 126)
 
-**The Quality Overview reads at a glance.** Three wide bars per filter and night — noise, sky
-background, SNR — with the value in small digits behind each, and one colour rule for all of them:
-green is good, yellow is medium, red is bad. Each row is compared with the other nights of the
-same filter, so a red bar points at the night that was far worse than that filter's best.
+**The Quality Overview reads at a glance.** Two wide bars per filter and night — noise and sky
+background — with the value in small digits behind each, and one colour rule: green is good,
+yellow is medium, red is bad. Each row is compared with the other nights of the same filter, so a
+red bar points at the night that was far worse than that filter's best. And a brighter sky alone
+is no longer "abnormal background" (algorithm v46): the verdict now needs twice the group's
+background or a star count below 80 % of the group's — on the reporting session 19 frames with
+full star counts come back, all real cloud frames stay marked.
 
 ## What's New in v6.12.2 (Build 125)
 

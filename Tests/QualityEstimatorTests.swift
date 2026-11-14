@@ -1863,6 +1863,49 @@ final class QualityEstimatorTests: XCTestCase {
             "R7: narrowband filter must not be relaxed by moon presence (NB is largely moon-immune). Got: \(bd.garbageReasons)")
     }
 
+    // MARK: - Algorithm v46 — a brighter sky alone is not a defect
+
+    /// Group as in the R7 tests (background ≈ 0.05, tiny scatter → MAD floor 2 %).
+    private func backgroundGroup(extra: ImageEntry) -> [ImageEntry] {
+        var entries: [ImageEntry] = (0..<24).map { i in
+            makeEntry(index: i, fwhm: 3.0, hfr: 2.0, starCount: 500,
+                      noiseMAD: 0.005, noiseMedian: 0.05 + Float(i % 5) * 0.0001)
+        }
+        entries.append(extra)
+        return entries
+    }
+
+    /// Real case (RC12, Pleiades, B filter): the first frames of a night sat 19–33 % above the
+    /// group background with star counts at or above the median — a low object, not a cloud.
+    func testV46_ModeratelyBrighterSkyWithAllStarsIsNotGarbage() {
+        let bright = makeEntry(index: 99, fwhm: 3.0, hfr: 2.0, starCount: 520,
+                               noiseMAD: 0.005, noiseMedian: 0.065)   // +30 %, 15 floor-MADs
+        let scores = QualityEstimator.computeScores(for: backgroundGroup(extra: bright))
+        guard let bd = scores[bright.url] else { return XCTFail("Missing score") }
+        XCTAssertFalse(bd.garbageReasons.contains(.backgroundAnomaly),
+            "A 30 % brighter sky with a full star count is not a defect. Got: \(bd.garbageReasons)")
+    }
+
+    /// The same background excess WITH lost transparency is a cloud.
+    func testV46_ModeratelyBrighterSkyWithLostStarsIsGarbage() {
+        let hazy = makeEntry(index: 99, fwhm: 3.0, hfr: 2.0, starCount: 300,
+                             noiseMAD: 0.005, noiseMedian: 0.065)     // +30 %, stars at 60 %
+        let scores = QualityEstimator.computeScores(for: backgroundGroup(extra: hazy))
+        guard let bd = scores[hazy.url] else { return XCTFail("Missing score") }
+        XCTAssertTrue(bd.garbageReasons.contains(.backgroundAnomaly),
+            "Brighter sky + star count at 60 % of the group = cloud/haze. Got: \(bd.garbageReasons)")
+    }
+
+    /// From twice the group background on, the excess is a defect whatever the star count.
+    func testV46_DoubledBackgroundIsGarbageEvenWithAllStars() {
+        let washed = makeEntry(index: 99, fwhm: 3.0, hfr: 2.0, starCount: 520,
+                               noiseMAD: 0.005, noiseMedian: 0.11)
+        let scores = QualityEstimator.computeScores(for: backgroundGroup(extra: washed))
+        guard let bd = scores[washed.url] else { return XCTFail("Missing score") }
+        XCTAssertTrue(bd.garbageReasons.contains(.backgroundAnomaly),
+            "2.2 × the group background must stay a background anomaly. Got: \(bd.garbageReasons)")
+    }
+
     // MARK: - isLockedKeep — Absolute Quality Floor (Patch 3)
     //
     // CalibrationDatabase.meetsAbsoluteFloor() returns true only when:

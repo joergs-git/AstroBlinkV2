@@ -12,6 +12,74 @@ Records with `algorithmVersion < kAlgorithmVersion` are candidates for re-analys
 
 ---
 
+## Version 46 — A brighter sky alone is not a defect (2026-11-14)
+
+**User report (2026-11-14), same RC12 Pleiades session as v45 (753 frames):** "why is this frame
+marked red — and some others too?" The frames that really are red: the first eight B frames of
+2026-11-13 (21:39–22:37), verdict "abnormal background (clouds/gradient)".
+
+### What was wrong
+
+Rule 8 flags a frame whose background lies more than 5 raw MADs above the group median. Since v37
+the MAD is floored at 2 % of the group's background, so on a stable session the rule fires from
+roughly **+10–20 %** on. The eight frames measure 1015–1132 ADU against a group median of 853
+(+19–33 %), declining smoothly as the object rises; their star counts are 2949–4254 against a
+group median near 3300, FWHM normal. The next frame, at 1008 ADU, is Excellent — a knife-edge of
+7 ADU between Stage 1 garbage and the top tier. Conservative auto-mark would have pre-deleted them.
+
+Measured over the session's 54 background verdicts (ratio to the filter's median background, star
+count relative to the filter's median):
+
+| background ratio | frames | stars / median |
+|---|---|---|
+| 1.0–1.5 | 19 | 1.23–1.57 |
+| 1.5–2.0 | 8 | 1.17 |
+| 2.0–3.0 | 12 | 0.52 |
+| ≥ 3.0 | 15 | 0.10 |
+
+Below 2× the sky is brighter but transparency is intact (more stars, not fewer — moon-free, low
+object or thin sky glow); from 2× on the stars disappear: that is cloud. The rule measured
+"different", not "defective" — the same family as v33–v37.
+
+### The fix
+
+`deviation > threshold` AND ( background ≥ `backgroundAnomalyMinRatio` (2.0) × group median
+OR star count < `backgroundAnomalyStarDropFactor` (0.8) × group median ). Both are ScoringConfig
+knobs. A frame without any star measurement counts as "stars lost" (saturated twilight frames that
+form a group of their own keep the reason); when no frame of the group has a star count the rule
+works exactly as before. Only positive deviations, moon relaxation and MAD floor are unchanged.
+
+### Measured
+
+Session (v45 CLI vs v46 CLI, 753 frames): background verdicts **54 → 35**; no other garbage reason
+changed on any frame. The 19 released frames: background 1.17–1.86× (median 1.31), stars 1.11–1.60×
+the median → 17 Good, 2 Excellent, none picked up by session sanity. The 35 kept: background median
+2.85×, stars median 0.39×. Tiers: trash 111 → 88, borderline 49 → 53, good 507 → 524,
+excellent 86 → 88.
+
+QUALITYCHECKMINI (104 frames): false alarms 12/72 → **11/72** (a good-labelled M82 frame was
+"abnormal background"), catch 24/32 → 24/32; the seven saturated twilight frames keep their
+background reason.
+
+**Not measured:** GOLDENSET1 (user decision for this release series). Direction of any effect:
+fewer background verdicts on frames between 1.1× and 2× the group background whose star count is
+at least 80 % of the group's — by the priority list (gradients/brightness = class C) not a loss.
+
+### Known limits
+
+- A uniform thin haze that brightens the sky by less than 2× and dims stars by less than 20 % is
+  no longer Stage 1 garbage; it remains visible in Sky Bg and in the z-scores (star count/PSF flux).
+- The 2.0 / 0.8 limits come from ONE session plus one mini-set frame. They are knobs; re-derive
+  on GOLDENSET1 before the next change to this rule.
+
+### Tests
+
+`QualityEstimatorTests.testV46_ModeratelyBrighterSkyWithAllStarsIsNotGarbage`,
+`testV46_ModeratelyBrighterSkyWithLostStarsIsGarbage`,
+`testV46_DoubledBackgroundIsGarbageEvenWithAllStars`. Scoring suites: 165 tests green.
+
+---
+
 ## Version 45 — "Far above session norm" is measured against the session, and a soft frame is not Excellent (2026-11-14)
 
 **User report (2026-11-14), live RC12 session (1964 mm, ASI6200MM, 0.395"/px, L/R/G/B 180 s,

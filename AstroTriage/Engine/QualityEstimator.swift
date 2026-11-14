@@ -1088,7 +1088,26 @@ struct QualityEstimator {
                     }
 
                     let deviation = (bg - median) / mad
-                    if deviation > bgThreshold {
+                    // Algo v46: a statistically unusual background is only a DEFECT when it is
+                    // physically large or comes with lost transparency. On a stable session the
+                    // MAD floor is 2% of the level, so "5 MADs" was a sky just 10–20% brighter —
+                    // the first frames of a night on a low object (1015–1132 ADU against a group
+                    // median of 853, star counts ABOVE the median) were Stage 1 garbage with a
+                    // knife-edge to "excellent" at 1008 ADU. Clouds look different: on the same
+                    // session frames at 2–3× the median carry half the stars, above 3× a tenth.
+                    // So require the background to reach `backgroundAnomalyMinRatio` × the group
+                    // median, OR the star count to have dropped below
+                    // `backgroundAnomalyStarDropFactor` × the group median. A frame without any
+                    // star measurement has lost its stars by definition (saturated twilight
+                    // frames in a group of their own: 1.3× the group's one measurable frame);
+                    // when NO frame of the group has a star count the rule works as before v46.
+                    let isLargeExcess = bg >= median * config.backgroundAnomalyMinRatio
+                    let lostStars: Bool = {
+                        guard let s = starsValues[localIdx] else { return true }
+                        guard let sMed = starsMedian, sMed > 0 else { return false }
+                        return s < sMed * config.backgroundAnomalyStarDropFactor
+                    }()
+                    if deviation > bgThreshold && (isLargeExcess || lostStars) {
                         garbageReasons.append(.backgroundAnomaly)
                     }
                 }

@@ -632,7 +632,12 @@ struct AIsaacContextBuilder {
           deviation — a darker sky is better. Since v37 the MAD has a floor of 2% of the group's own \
           background level, because on a stable night most frames report an IDENTICAL background and the \
           division by a collapsed MAD made 3 ADU of 65535 look like tens of MADs. Moon-aware: bright moon \
-          (>40%) within 60° relaxes the threshold for broadband filters; narrowband is not relaxed.
+          (>40%) within 60° relaxes the threshold for broadband filters; narrowband is not relaxed. \
+          Since v46 the MAD test alone is not enough: the background must ALSO reach 2× the group median, \
+          OR the frame's star count must be below 80% of the group median (a frame with no star \
+          measurement counts as below). A sky 20–90% brighter with a full star count — the first frames \
+          of a night on a low object, the moon rising — is NOT a defect any more; it only shows in the \
+          Sky Bg column. Clouds differ: brighter sky AND fewer stars.
           * R9 Tracking hops: star-chain fraction > 0.10 (rising to 0.22 at coarse plate scales ≥ 2.5"/px) \
           AND the elongation must point ONE way: trailingScore > 0.15 with consensus ≥ 0.5, or \
           eccentricity > FL baseline + 0.15 with consensus > 0.5 → "tracking hops (star chains)". \
@@ -794,6 +799,13 @@ struct AIsaacContextBuilder {
         - Frames meeting learned baseline locked as KEEP (blue lock icon) — z-scores can't override.
 
         ALGORITHM VERSION HISTORY (recent — kAlgorithmVersion is stored on every Frame History record):
+        - v46 (v6.12.3, 2026-11-14): R8 "abnormal background" needs a large excess (≥ 2× the group median) or lost \
+        stars (< 80% of the group median) on top of the MAD test. Before, on a stable session (MAD floor 2%) a sky \
+        just 17–33% brighter was Stage 1 garbage with a knife-edge to Excellent 7 ADU lower, although those frames \
+        carried MORE stars than the group median. Reporting session (RC12, Pleiades, 753 frames): background \
+        verdicts 54 → 35, the 19 released frames have background 1.17–1.86× and stars 1.11–1.60× the median and \
+        become Good/Excellent; the 35 kept ones sit at a median of 2.85× with 39% of the stars. No other verdict \
+        changed. Mini regression set: one good frame no longer falsely flagged, catch unchanged.
         - v45 (v6.12.1, 2026-11-14): two ranking corrections, no measurement change. (1) Session sanity: \
         "trailing far above session norm" must also exceed the pool MEDIAN + 0.15 (was: best decile only, \
         which is 0 on most sessions → the median frame was flagged). (2) Excellent guard: zFWHM > 1.0 caps \

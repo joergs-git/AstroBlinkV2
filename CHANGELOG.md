@@ -8,14 +8,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
 ### Changed
 
-- **Quality Overview (Session panel) redrawn: three bars, one colour language.** The table showed
+- **Quality Overview (Session panel) redrawn: two bars, one colour language.** The table showed
   three number columns in scientific notation, three narrow bars and three different colour scales
-  (green/brown/orange, cyan/blue/purple). It now shows one wide bar each for Noise, Background and
-  SNR with the value in small digits behind it (`1.4` under the header `Noise e-3`), and one rule
-  for all three: green is good, yellow is medium, red is bad. Every row is compared with the other
-  nights of the SAME filter — a luminance night is naturally brighter than a blue one — so a red
-  bar means "this night was far worse than this filter's best night" (noise/background more than
-  2× the lowest; SNR below 35 % of the highest). The help window (?) explains the new reading.
+  (green/brown/orange, cyan/blue/purple). It now shows one wide bar each for Noise and Background
+  with the value in small digits behind it (`1.4` under the header `Noise e-3`), and one rule for
+  both: green is good, yellow is medium, red is bad. Every row is compared with the other nights
+  of the SAME filter — a luminance night is naturally brighter than a blue one — so a red bar
+  means "this night was far worse than this filter's best night" (more than 2× its lowest value).
+  The SNR bar is gone: the SNR of a single sub is background ÷ noise, and a bright, smooth sky
+  raises it — the clouded night showed the best SNR of the session. The help window (?) explains
+  the new reading.
+- **A brighter sky alone is no longer "abnormal background" (algorithm v46).** The rule fired from
+  about 10–20 % above the group's background on a stable session: the first frames of a night on a
+  low object (1015–1132 ADU against 853) were marked as defects with full star counts, one step
+  away from an Excellent neighbour. A background verdict now also needs the sky to reach twice the
+  group's level or the star count to drop below 80 % of the group's — a cloud brightens the sky
+  AND takes the stars. On the reporting session 19 of 54 background verdicts are lifted (those
+  frames carry 11–60 % MORE stars than the median); all 35 real cloud frames stay marked.
 
 ## [6.12.2] — 2026-11-14
 

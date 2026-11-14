@@ -22,14 +22,6 @@ final class QualityBarScaleTests: XCTestCase {
         XCTAssertEqual(QualityBarScale.lowerIsBetter(1.5e-2, peers: bkg).fraction, 1.0 / 3.0, accuracy: 1e-3)
     }
 
-    func testHigherIsBetter() {
-        let snr: [Float] = [16, 18, 23, 19, 18, 18]
-        XCTAssertEqual(QualityBarScale.higherIsBetter(23, peers: snr), .init(fraction: 1.0, rating: .good))
-        XCTAssertEqual(QualityBarScale.higherIsBetter(16, peers: snr).rating, .good)    // 70 %
-        XCTAssertEqual(QualityBarScale.higherIsBetter(10, peers: snr).rating, .medium)  // 43 %
-        XCTAssertEqual(QualityBarScale.higherIsBetter(3, peers: snr).rating, .bad)      // 13 %
-    }
-
     func testUniformNightsAreAllGood() {
         let flat: [Float] = [1.4e-3, 1.6e-3, 1.4e-3]
         for v in flat { XCTAssertEqual(QualityBarScale.lowerIsBetter(v, peers: flat).rating, .good) }
@@ -37,7 +29,6 @@ final class QualityBarScaleTests: XCTestCase {
 
     func testMissingValuesDoNotCrashOrDivideByZero() {
         XCTAssertEqual(QualityBarScale.lowerIsBetter(0, peers: [0, 0]).fraction, 0)
-        XCTAssertEqual(QualityBarScale.higherIsBetter(5, peers: []).fraction, 0)
     }
 
     func testLabelsReadAsOneDigitBeforeAndAfterThePoint() {

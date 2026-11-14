@@ -187,17 +187,6 @@ enum QualityBarScale {
         return Bar(fraction: CGFloat(min(1, value / worst)), rating: rating)
     }
 
-    /// SNR: the highest peer is the reference. At least 60% of it = good, at least 35% =
-    /// medium, below = bad.
-    static func higherIsBetter(_ value: Float, peers: [Float]) -> Bar {
-        guard let best = peers.max(), best > 0, value > 0 else {
-            return Bar(fraction: 0, rating: .bad)
-        }
-        let ratio = value / best
-        let rating: Rating = ratio >= 0.6 ? .good : (ratio >= 0.35 ? .medium : .bad)
-        return Bar(fraction: CGFloat(min(1, ratio)), rating: rating)
-    }
-
     /// Power of ten that makes the largest value of a column read as "d.d" (0.0032 → -3).
     static func exponent(forMax maxValue: Float) -> Int {
         guard maxValue > 0 else { return 0 }
@@ -722,11 +711,8 @@ struct SessionOverviewContentView: View {
                                 Text("Bkg " + QualityBarScale.unitLabel(exponent: qualityScales.bkgExp))
                                     .frame(maxWidth: .infinity, alignment: .leading)
                                     .padding(.leading, 8)
-                                Text("SNR")
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .padding(.leading, 8)
                             }
-                            .help("Each row is compared with the other nights of the SAME filter.\nGreen = close to that filter's best night, yellow = clearly worse, red = far worse.\nNoise and Bkg: shorter bar = better. SNR: longer bar = better.")
+                            .help("Each row is compared with the other nights of the SAME filter.\nGreen = close to that filter's best night, yellow = clearly worse, red = far worse.\nShorter bar = better.")
                             .font(.system(size: fs(11), weight: .bold, design: .monospaced))
                             .foregroundColor(.secondary)
                             .padding(.horizontal, 10)
@@ -748,7 +734,6 @@ struct SessionOverviewContentView: View {
                                 let totalCount = model.qualityRows.reduce(0) { $0 + $1.count }
                                 let avgNoise = model.qualityRows.reduce(Float(0)) { $0 + $1.avgNoise } / Float(model.qualityRows.count)
                                 let avgBkg = model.qualityRows.reduce(Float(0)) { $0 + $1.avgBackground } / Float(model.qualityRows.count)
-                                let avgSNR = model.qualityRows.reduce(Float(0)) { $0 + $1.avgSNR } / Float(model.qualityRows.count)
 
                                 HStack(spacing: 0) {
                                     Text("All")
@@ -766,8 +751,6 @@ struct SessionOverviewContentView: View {
                                     Text(QualityBarScale.label(avgNoise, exponent: qualityScales.noiseExp))
                                         .frame(maxWidth: .infinity, alignment: .trailing)
                                     Text(QualityBarScale.label(avgBkg, exponent: qualityScales.bkgExp))
-                                        .frame(maxWidth: .infinity, alignment: .trailing)
-                                    Text(String(format: "%.0f", avgSNR))
                                         .frame(maxWidth: .infinity, alignment: .trailing)
                                 }
                                 .font(.system(size: fs(11), design: .monospaced))
@@ -948,7 +931,6 @@ struct SessionOverviewContentView: View {
         let peers = sameFilter.count >= 2 ? sameFilter : model.qualityRows
         let noise = QualityBarScale.lowerIsBetter(row.avgNoise, peers: peers.map { $0.avgNoise })
         let bkg = QualityBarScale.lowerIsBetter(row.avgBackground, peers: peers.map { $0.avgBackground })
-        let snr = QualityBarScale.higherIsBetter(row.avgSNR, peers: peers.map { $0.avgSNR })
 
         return HStack(spacing: 0) {
             Button(action: {
@@ -977,11 +959,12 @@ struct SessionOverviewContentView: View {
             Text("\(row.count)")
                 .frame(width: 28, alignment: .trailing)
 
-            // Noise (shorter = better), background (shorter = better), SNR (longer = better).
-            // One colour language for all three: green good, yellow medium, red bad.
+            // Noise and background, both "shorter = better", one colour language: green good,
+            // yellow medium, red bad. No SNR bar: SNR here is background ÷ noise, and a bright,
+            // smooth sky (cloud deck, haze) RAISES it — on a clouded night it showed the longest
+            // green bar next to two red ones.
             valueBar(noise, label: QualityBarScale.label(row.avgNoise, exponent: qualityScales.noiseExp))
             valueBar(bkg, label: QualityBarScale.label(row.avgBackground, exponent: qualityScales.bkgExp))
-            valueBar(snr, label: String(format: "%.0f", row.avgSNR))
         }
         .font(.system(size: fs(12), design: .monospaced))
         .padding(.horizontal, 10)
@@ -1136,7 +1119,7 @@ extension NSAttributedString {
         addDim("The picture shows the layout before 6.12.3 (number columns and narrow bars); the bars below replace it.")
         result.append(NSAttributedString(string: "\n", attributes: [.font: bodyFont]))
 
-        addBody("The upper table shows the integration summary grouped by object, filter, and exposure. The lower \"Quality Overview\" table shows noise, sky background and SNR of every filter and night as three bars.")
+        addBody("The upper table shows the integration summary grouped by object, filter, and exposure. The lower \"Quality Overview\" table shows noise and sky background of every filter and night as two bars.")
 
         addHeading("Columns")
         addMono("Fi     Filter name (Ha, OIII, SII, L, R, G, B ...)")
@@ -1144,7 +1127,6 @@ extension NSAttributedString {
         addMono("#      Number of subs measured in this group")
         addMono("Noise  Average noise level       — shorter bar = cleaner image")
         addMono("Bkg    Average sky background    — shorter bar = darker sky")
-        addMono("SNR    Signal-to-noise ratio     — longer bar  = better data")
         addDim("The small number behind each bar is the value itself. Its unit is in the column header: \"Noise e-3\" means the number 1.4 stands for 1.4e-3 (normalized 0–1 pixel scale).")
 
         addHeading("What a row is compared with")
@@ -1152,14 +1134,14 @@ extension NSAttributedString {
 
         addHeading("One colour language")
         addMonoColored("green ", color: .systemGreen)
-        addBody(" close to the filter's best night (noise/background within 1.3× of the lowest, SNR at least 60% of the highest)")
+        addBody(" close to the filter's best night (within 1.3× of the lowest value)")
         addMonoColored("yellow", color: .systemYellow)
-        addBody(" clearly worse (up to 2× the lowest noise/background, SNR 35–60% of the highest)")
+        addBody(" clearly worse (up to 2× the lowest value)")
         addMonoColored("red   ", color: .systemRed)
         addBody(" far worse — look at that night first")
 
         addHeading("Reading it")
-        addBody("A night whose Bkg bar is long and red while its Noise bar is red too was bright: moon, haze, thin cloud or a low object. Watch out for a long green SNR bar on exactly such a night — SNR here is background ÷ noise, and a bright, smooth sky raises it. Background and noise are the honest pair; SNR only confirms them.")
+        addBody("A night whose Bkg bar is long and red while its Noise bar is red too was bright: moon, haze, thin cloud or a low object. There is no SNR bar: the SNR of a single sub is background ÷ noise, and a bright, smooth sky raises it — the clouded night would show the best SNR of the session. The SNR column of the file list is still there for individual frames.")
 
         result.append(NSAttributedString(string: "\n", attributes: [.font: bodyFont]))
         addDim("Tip: Use the search filter in the main file list (e.g. \"snr:<10\") to quickly find and mark your worst subs for deletion.")

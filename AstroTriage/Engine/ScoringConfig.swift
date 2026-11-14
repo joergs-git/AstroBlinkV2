@@ -65,6 +65,12 @@ struct ScoringConfig: Codable, Equatable {
     // than this many robust sigmas WORSE than its group cannot be Excellent, whatever star count
     // and trailing contribute. It stays Good — the guard never moves a frame below Good.
     var excellentMaxSharpnessZ: Double
+    // Rule 8 (algo v46): a background more than the MAD threshold above the group is garbage only
+    // when it reaches this multiple of the group median...
+    var backgroundAnomalyMinRatio: Double
+    // ...or when the frame's star count fell below this fraction of the group median
+    // (a brighter sky WITH lost transparency = cloud/haze).
+    var backgroundAnomalyStarDropFactor: Double
 
     /// The canonical defaults — MUST equal the `static let` values in QualityEstimator.swift.
     /// Using this config yields byte-identical scoring to the pre-externalization build.
@@ -81,7 +87,9 @@ struct ScoringConfig: Codable, Equatable {
         pedestalSkyStarsPerMegapixel: 20,
         pedestalSkyMaxFitResidual: 0.17,
         sessionTrailingMedianMargin: 0.15,
-        excellentMaxSharpnessZ: 1.0
+        excellentMaxSharpnessZ: 1.0,
+        backgroundAnomalyMinRatio: 2.0,
+        backgroundAnomalyStarDropFactor: 0.8
     )
 
     // MARK: - Partial-override JSON decoding
@@ -102,7 +110,9 @@ struct ScoringConfig: Codable, Equatable {
          pedestalSkyStarsPerMegapixel: Double,
          pedestalSkyMaxFitResidual: Double,
          sessionTrailingMedianMargin: Double,
-         excellentMaxSharpnessZ: Double) {
+         excellentMaxSharpnessZ: Double,
+         backgroundAnomalyMinRatio: Double,
+         backgroundAnomalyStarDropFactor: Double) {
         self.thresholdExcellent = thresholdExcellent
         self.thresholdGood = thresholdGood
         self.thresholdBorderline = thresholdBorderline
@@ -116,6 +126,8 @@ struct ScoringConfig: Codable, Equatable {
         self.pedestalSkyMaxFitResidual = pedestalSkyMaxFitResidual
         self.sessionTrailingMedianMargin = sessionTrailingMedianMargin
         self.excellentMaxSharpnessZ = excellentMaxSharpnessZ
+        self.backgroundAnomalyMinRatio = backgroundAnomalyMinRatio
+        self.backgroundAnomalyStarDropFactor = backgroundAnomalyStarDropFactor
     }
 
     init(from decoder: Decoder) throws {
@@ -134,6 +146,8 @@ struct ScoringConfig: Codable, Equatable {
         pedestalSkyMaxFitResidual = try c.decodeIfPresent(Double.self, forKey: .pedestalSkyMaxFitResidual) ?? d.pedestalSkyMaxFitResidual
         sessionTrailingMedianMargin = try c.decodeIfPresent(Double.self, forKey: .sessionTrailingMedianMargin) ?? d.sessionTrailingMedianMargin
         excellentMaxSharpnessZ = try c.decodeIfPresent(Double.self, forKey: .excellentMaxSharpnessZ) ?? d.excellentMaxSharpnessZ
+        backgroundAnomalyMinRatio = try c.decodeIfPresent(Double.self, forKey: .backgroundAnomalyMinRatio) ?? d.backgroundAnomalyMinRatio
+        backgroundAnomalyStarDropFactor = try c.decodeIfPresent(Double.self, forKey: .backgroundAnomalyStarDropFactor) ?? d.backgroundAnomalyStarDropFactor
     }
 
     // MARK: - Load / dump
