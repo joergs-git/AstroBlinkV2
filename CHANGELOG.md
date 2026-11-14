@@ -4,6 +4,17 @@ All notable changes to AstroBlink & AIsaac will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [Unreleased]
+
+### Fixed
+
+- **Compare window: star circles sit on the stars again when the frame is shown rotated.** The
+  circles (C key) are drawn from star positions measured in the file. When Auto Rotate turned a
+  frame by 180° after a meridian flip, the image was rotated but the circles were not, so every
+  circle landed on empty sky at the point-mirrored position. The circles are now mirrored through
+  the image center together with the image. Measurement and scoring were never affected — only the
+  drawing.
+
 ## [6.12.0] — 2026-11-07
 
 ### Changed

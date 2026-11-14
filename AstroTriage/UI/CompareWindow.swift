@@ -427,6 +427,7 @@ struct SyncedZoomableView: NSViewRepresentable {
                 mtkView.setupStarOverlay(stars: starOverlayData)
             }
             mtkView.starOverlay?.consensusPA = consensusPA
+            mtkView.starOverlay?.rotate180 = rotate180
             mtkView.starOverlay?.showOverlay = showStarOverlay
             mtkView.starOverlay?.needsDisplay = true
         } else if mtkView.starOverlay != nil {
@@ -534,6 +535,24 @@ class StarOverlayView: NSView {
     // Consensus PA direction (degrees 0-180) — shown as a large arrow when available
     var consensusPA: Double?
     var showOverlay: Bool = true
+    // True when the panel shows the frame rotated by 180° (Auto Rotate after a meridian
+    // flip). Star positions are measured in FILE coordinates, so they must be mirrored
+    // through the image center to land on the displayed stars. An elongation axis is
+    // unchanged by a 180° rotation, so the PA lines and the consensus arrow stay as is.
+    var rotate180: Bool = false
+
+    /// View position of a star given in normalized file coordinates ([0,1], y = 0 at the
+    /// image top). `center` is the displayed image center in view points, `displayedSize`
+    /// the displayed image size in view points. Pure geometry, shared with the tests.
+    static func viewPosition(normalizedX: CGFloat, normalizedY: CGFloat,
+                             center: CGPoint, displayedSize: CGSize,
+                             rotate180: Bool) -> CGPoint {
+        // File top (y = 0) is the high-Y edge of a non-flipped NSView.
+        var dx = (normalizedX - 0.5) * displayedSize.width
+        var dy = (0.5 - normalizedY) * displayedSize.height
+        if rotate180 { dx = -dx; dy = -dy }
+        return CGPoint(x: center.x + dx, y: center.y + dy)
+    }
 
     // These must be set to match the parent SyncedZoomMTKView's state
     weak var parentMTKView: SyncedZoomMTKView?
@@ -567,10 +586,14 @@ class StarOverlayView: NSView {
         let centerY = viewH / 2 - parent.panOffset.y * bs / drawableRatio
 
         for star in stars {
-            // Convert normalized [0,1] to view coords
-            // star.y=0 is image top → in non-flipped NSView, top = high Y
-            let sx = centerX + (star.x - 0.5) * imgW * effScale
-            let sy = centerY + (0.5 - star.y) * imgH * effScale
+            // Convert normalized [0,1] file coords to view coords (mirrored when the
+            // panel shows the frame rotated by 180°)
+            let pos = Self.viewPosition(
+                normalizedX: star.x, normalizedY: star.y,
+                center: CGPoint(x: centerX, y: centerY),
+                displayedSize: CGSize(width: imgW * effScale, height: imgH * effScale),
+                rotate180: rotate180)
+            let sx = pos.x, sy = pos.y
 
             let circleR = max(7, 12 * effScale)
 
