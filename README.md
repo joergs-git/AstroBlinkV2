@@ -14,6 +14,14 @@ Nice side effect: Finally you have a native XISF and FITS Quicklook for macOS. (
 
 ---
 
+## What's New in v6.12.2 (Build 125)
+
+**The file list no longer shows another frame's row after a re-sort.** When the list re-sorted
+itself (after scoring, or by a header click) a refresh could get lost: the rows kept the frames
+they had shown before while the selection moved with its frame, so the highlighted row carried a
+different frame's values and quality icon than the viewer and the Inspector — an Excellent frame
+could look "marked red". Fixed. Default blink speed is now 0.05 s per frame.
+
 ## What's New in v6.12.1 (Build 124)
 
 **Compare shows the circles on the stars again, and "far above session norm" means it.** When Auto

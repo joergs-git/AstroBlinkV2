@@ -203,7 +203,16 @@ struct FileListView: NSViewRepresentable {
         let newCount = coordinator.displayedImages.count
         let currentCount = tableView.numberOfRows
 
-        if currentCount != newCount || viewModel.needsTableRefresh || nightModeChanged || fontScaleChanged {
+        // Row order the table last rendered vs. the order it should show now. A sort runs one
+        // runloop tick after it was requested (applySortDescriptors defers the mutation), and
+        // the deferred `needsTableRefresh = false` of THIS update could land after the sort had
+        // set the flag — the refresh was lost, every row kept the frame it showed before the
+        // sort, and the selection (which follows the frame) highlighted a row displaying a
+        // different frame's values and quality icon. Comparing the order itself cannot be
+        // lost that way (6.12.2).
+        let orderChanged = coordinator.renderedOrder != coordinator.displayedImages.map(\.id)
+
+        if currentCount != newCount || viewModel.needsTableRefresh || nightModeChanged || fontScaleChanged || orderChanged {
             // Detect initial load (table was empty, now has rows) to grab keyboard focus
             let wasEmpty = currentCount == 0
 
@@ -221,9 +230,23 @@ struct FileListView: NSViewRepresentable {
             if currentCount == newCountRefreshed && !forcesSingle && !nightModeChanged {
                 NSAnimationContext.beginGrouping()
                 NSAnimationContext.current.duration = 0
+                // Reload every row the table has REALISED, not only the visible ones: with
+                // responsive scrolling NSTableView keeps row views for rows above and below
+                // the visible rect. Reloading only the visible rows left those with the
+                // content of the frame that sat there BEFORE a re-sort or a rescore — scrolled
+                // into view they showed another frame's values and quality icon in the row
+                // of the correct selection (6.12.2). Rows without a view are built fresh
+                // from the current snapshot when they appear.
+                var realisedRows = IndexSet()
+                tableView.enumerateAvailableRowViews { _, row in
+                    if row >= 0 && row < newCountRefreshed { realisedRows.insert(row) }
+                }
                 let visibleRange = tableView.rows(in: tableView.visibleRect)
                 if visibleRange.length > 0 {
-                    let visibleRows = IndexSet(integersIn: visibleRange.location..<(visibleRange.location + visibleRange.length))
+                    realisedRows.insert(integersIn: visibleRange.location..<(visibleRange.location + visibleRange.length))
+                }
+                if !realisedRows.isEmpty {
+                    let visibleRows = realisedRows
                     let allColumns = IndexSet(0..<tableView.numberOfColumns)
                     tableView.reloadData(forRowIndexes: visibleRows, columnIndexes: allColumns)
                     // Re-apply selection since reloadData clears it for reloaded rows
@@ -261,6 +284,7 @@ struct FileListView: NSViewRepresentable {
                 }
                 NSAnimationContext.endGrouping()
             }
+            coordinator.renderedOrder = coordinator.displayedImages.map(\.id)
             // Defer flag reset (see comment above on needsForceSingleSelection).
             DispatchQueue.main.async { viewModel.needsTableRefresh = false }
 

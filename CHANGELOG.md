@@ -4,6 +4,23 @@ All notable changes to AstroBlink & AIsaac will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [6.12.2] — 2026-11-14
+
+### Fixed
+
+- **File list rows could show another frame after a re-sort.** A sort runs one tick after it is
+  requested, and the list's "refresh done" bookkeeping of that same moment could land after the
+  sort — the refresh was lost. Every row then kept the frame it had shown before, while the
+  selection (which follows the frame) moved: the highlighted row displayed a different frame's
+  number, time, values and quality icon than the viewer and the Inspector. An Excellent frame
+  could so appear "marked red". The list now compares the row order it rendered with the order it
+  should show and refreshes whenever they differ; a soft refresh also covers rows the table keeps
+  ready just outside the visible area.
+
+### Changed
+
+- **Default blink speed is 0.05 s per frame** (was 0.1 s). The picker still offers 0.05–2 s.
+
 ## [6.12.1] — 2026-11-14
 
 ### Changed

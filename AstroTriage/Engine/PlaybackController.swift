@@ -18,7 +18,7 @@ final class PlaybackController: ObservableObject {
 
     /// Seconds between frame advances. Picked up on the next scheduled fire,
     /// so changing this mid-playback adapts smoothly without restarting.
-    @Published var delaySeconds: Double = 0.1
+    @Published var delaySeconds: Double = 0.05
 
     /// Called when the timer advances to the next frame. The Int is the
     /// owner-provided index into the original array — the controller is

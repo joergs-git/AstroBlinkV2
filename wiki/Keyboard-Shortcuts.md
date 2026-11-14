@@ -36,7 +36,7 @@
 ## Blink Playback
 | Key | Action |
 |-----|--------|
-| Play button | Start auto-blink through visible images (adjustable delay 0.1–2s, default 0.1s) |
+| Play button | Start auto-blink through visible images (adjustable delay 0.05–2s, default 0.05s) |
 | ESC | Stop blink playback |
 | Film icon | Export blink as animated GIF or HEVC .mov (scale, loops, crop to zoom) |
 

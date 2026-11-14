@@ -34,6 +34,10 @@ class ReleaseNotesWindowController {
 // MARK: - Release notes data (shared between view and copy)
 
 private let allReleases: [(version: String, date: String, items: [(ReleaseNotesView.ChangeType, String, String)])] = [
+    ("6.12.2", "November 14, 2026", [
+        (.fixed, "File List Rows Could Show Another Frame After a Re-Sort", "When the list re-sorted itself — after scoring or by a header click — a refresh could get lost: the rows kept the frames they had shown before, while the selection moved with its frame. The highlighted row then carried a different frame's number, time, values and quality icon than the viewer and the Inspector, so an Excellent frame could look \"marked red\". The list now checks the row order it rendered against the order it should show and refreshes whenever they differ."),
+        (.changed, "Default Blink Speed 0.05 s", "Playback starts at 0.05 s per frame instead of 0.1 s. The picker still offers 0.05–2 s."),
+    ]),
     ("6.12.1", "November 14, 2026", [
         (.fixed, "Compare: Star Circles Sit on the Stars Again", "When Auto Rotate turned a frame by 180° after a meridian flip, the Compare window rotated the image but drew the star circles (C key) unrotated — every circle landed on empty sky at the mirrored position. The circles now turn with the image. Measurement and scoring were never affected."),
         (.changed, "\"Trailing Far Above Session Norm\" Now Means It (Algorithm v45)", "The session check compared a frame's trailing score with the best tenth of the session only. That best tenth is almost always 0.00, so on a 753-frame session two thirds of all frames — the median frame included — carried the flag, and any that was also a little soft was trashed next to a near-identical neighbour. The flag now also has to clear the session's median by a margin. On that session 16 frames come back from trash; no defect verdict changed."),

@@ -21,6 +21,9 @@ extension FileListView {
 
         // Snapshot of displayed images and cached URLs, updated from main actor in updateNSView
         var displayedImages: [ImageEntry] = []
+        /// IDs of `displayedImages` in the order the table last rendered them (see
+        /// FileListView.updateNSView — detects a re-sort whose refresh flag was lost).
+        var renderedOrder: [ImageEntry.ID] = []
         var cachedURLs: Set<URL> = []
         var rotatedURLs: Set<URL> = []
 

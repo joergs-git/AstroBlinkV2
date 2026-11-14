@@ -1139,7 +1139,7 @@ struct AIsaacContextBuilder {
         - AIsaac context includes moon data for each frame when available.
 
         BLINK PLAYBACK (v5.10.0):
-        - Play/Stop button in the slider bar with adjustable delay picker (0.1s to 2.0s).
+        - Play/Stop button in the slider bar with adjustable delay picker (0.05s to 2.0s, default 0.05s since 6.12.2).
         - Cycles through all visible (unhidden/filtered) images endlessly like a flipbook.
         - Multi-select: if frames are selected, blinks only those frames.
         - ESC or Stop button to end. Status bar shows "Blink" pill during playback.

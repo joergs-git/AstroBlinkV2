@@ -152,7 +152,7 @@ class TriageViewModel: ObservableObject {
     // TriageViewModel keeps `isPlaying` and `playbackDelay` as @Published mirrors
     // so existing SwiftUI bindings (toolbar Play button, delay slider) keep working.
     @Published var isPlaying: Bool = false
-    @Published var playbackDelay: Double = 0.1 {
+    @Published var playbackDelay: Double = 0.05 {
         didSet { playback.delaySeconds = playbackDelay }
     }
     private let playback = PlaybackController()
