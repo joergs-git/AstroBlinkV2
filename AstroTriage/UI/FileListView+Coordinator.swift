@@ -1043,10 +1043,8 @@ extension FileListView {
                     return t == targetKey && f == filterKey && e == expKey
                 }
 
-                // Find the one with the highest quality z-score (fine-grained, matches TriageViewModel)
-                let best = groupImages.max { a, b in
-                    (a.qualityZScore ?? -100) < (b.qualityZScore ?? -100)
-                }
+                // Best tier first, highest quality z-score inside the tier (matches TriageViewModel)
+                let best = groupImages.max(by: ImageEntry.isWorseCompareReference)
 
                 guard let bestEntry = best, bestEntry.url != entry.url else { return }
 

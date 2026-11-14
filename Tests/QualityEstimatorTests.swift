@@ -1378,6 +1378,77 @@ final class QualityEstimatorTests: XCTestCase {
         }
     }
 
+    // MARK: - Algorithm v45 (2026-11-14)
+
+    /// Session sanity: "trailing far above session norm" must not fire for the pool's TYPICAL
+    /// frame. Real case (RC12, Pleiades, 753 frames): the best decile measured trailing 0.00,
+    /// so the threshold was 0.15 and the median frame (0.25) carried the flag; together with
+    /// the FWHM flag that trashed frames no different from their neighbours.
+    func testV45_trailingFlagNeedsMarginAboveSessionMedian() {
+        let jitter = [-0.10, -0.05, 0.0, 0.05, 0.08, 0.10, 0.12, 0.15, 0.18, 0.20, 0.22, 0.25]
+        // Night A: 8 sharp frames without measurable trailing (they define the best decile).
+        let nightA: [ImageEntry] = (0..<8).map { i in
+            var e = makeEntry(index: i, filter: "L", target: "M82", exposure: 300,
+                              noiseMAD: 0.002, noiseMedian: 0.05,
+                              computedFWHM: 2.0 + jitter[i], computedStarCount: 3000,
+                              computedEccentricity: 0.30, trailingScore: 0.0)
+            e.date = "2026-03-15"; e.time = "22:00:00"
+            return e
+        }
+        // Night B: 12 softer frames (FWHM flag fires). Eleven carry the pool's typical
+        // trailing score 0.25, one is clearly above it (0.55).
+        let nightB: [ImageEntry] = (0..<12).map { i in
+            var e = makeEntry(index: 100 + i, filter: "L", target: "M82", exposure: 300,
+                              noiseMAD: 0.002, noiseMedian: 0.05,
+                              computedFWHM: 3.0 + jitter[i], computedStarCount: 3000,
+                              computedEccentricity: 0.30,
+                              trailingScore: i == 11 ? 0.55 : 0.25)
+            e.date = "2026-03-16"; e.time = "22:00:00"
+            return e
+        }
+        let scores = QualityEstimator.computeScores(for: nightA + nightB)
+
+        for i in 100..<111 {
+            guard let bd = scores[URL(fileURLWithPath: "/tmp/test_\(i).xisf")] else {
+                XCTFail("Missing score for frame \(i)"); continue
+            }
+            XCTAssertFalse(bd.sessionSanityReasons.contains("trailing far above session norm"),
+                "Frame \(i) sits on the pool's median trailing score and must not be flagged")
+            XCTAssertNotEqual(bd.tier, .trash, "Frame \(i): typical trailing + soft FWHM is one flag, not two")
+        }
+        // The frame that really is far above the pool keeps the flag (or is Stage 1 garbage).
+        if let bd = scores[URL(fileURLWithPath: "/tmp/test_111.xisf")] {
+            XCTAssertTrue(bd.sessionSanityReasons.contains("trailing far above session norm")
+                          || !bd.garbageReasons.isEmpty,
+                "A frame 0.30 above the pool median must still be flagged. Tier \(bd.tier), reasons \(bd.sessionSanityReasons)")
+        } else { XCTFail("Missing score for frame 111") }
+    }
+
+    /// Excellent guard: a frame clearly softer than its group is not Excellent, whatever
+    /// star count and noise contribute — and the guard never moves it below Good.
+    func testV45_softFrameCannotBeExcellent() {
+        let jitter = [-0.10, -0.06, -0.03, 0.0, 0.02, 0.04, 0.06, 0.08, 0.10, 0.12, 0.14]
+        var frames: [ImageEntry] = (0..<11).map { i in
+            makeEntry(index: i, filter: "L", target: "M82", exposure: 300,
+                      noiseMAD: 0.0020 + Float(jitter[i]) * 0.001, noiseMedian: 0.05,
+                      computedFWHM: 2.5 + jitter[i], computedStarCount: 3000 + i * 20,
+                      computedEccentricity: 0.30)
+        }
+        // Soft (FWHM far above the group) but with many more stars and much lower noise.
+        frames.append(makeEntry(index: 11, filter: "L", target: "M82", exposure: 300,
+                                noiseMAD: 0.0010, noiseMedian: 0.05,
+                                computedFWHM: 2.95, computedStarCount: 6000,
+                                computedEccentricity: 0.30))
+        let scores = QualityEstimator.computeScores(for: frames)
+        guard let bd = scores[URL(fileURLWithPath: "/tmp/test_11.xisf")] else {
+            return XCTFail("Missing score for the soft frame")
+        }
+        XCTAssertGreaterThan(bd.fwhmZ ?? 0, 1.0, "Fixture: the frame must be clearly softer than its group")
+        XCTAssertGreaterThan(bd.combinedZScore, QualityEstimator.thresholdExcellent,
+                             "Fixture: without the guard this frame would be Excellent")
+        XCTAssertEqual(bd.tier, .good, "A clearly softer frame is capped at Good, never lower")
+    }
+
     /// FINDING-01: Stage 4 rescue preserves sessionSanityReasons on the rescued breakdown.
     /// A frame demoted by Stage 1.5 (sessionSanityReasons populated, garbageReasons empty)
     /// with FWHM within the good-frame 90th percentile gets lifted to .borderline, BUT

@@ -302,6 +302,26 @@ struct ImageEntry: Identifiable, Hashable {
     var qualityTier: QualityTier? { qualityBreakdown?.tier }
     var qualityZScore: Double? { qualityBreakdown?.combinedZScore }
 
+    /// Ordering for the "Best" reference of Compare: the TIER decides first, the combined
+    /// z-score only inside a tier. The z-score alone is not enough — session sanity and the
+    /// Excellent guard change a frame's tier without touching its z-score, so a demoted frame
+    /// could still carry the highest z of its group and be offered as "Best".
+    /// Returns true when `a` is a WORSE reference than `b` (usable with `max(by:)`).
+    static func isWorseCompareReference(_ a: ImageEntry, _ b: ImageEntry) -> Bool {
+        func rank(_ e: ImageEntry) -> Int {
+            switch e.qualityTier {
+            case .excellent: return 3
+            case .good: return 2
+            case .borderline, .uncertain: return 1
+            case .trash: return 0
+            case nil: return -1
+            }
+        }
+        let ra = rank(a), rb = rank(b)
+        if ra != rb { return ra < rb }
+        return (a.qualityZScore ?? -100) < (b.qualityZScore ?? -100)
+    }
+
     // Display helpers: prefer header/filename values, fall back to computed
     var displayHFR: Double? { hfr ?? computedHFR }
     var displayFWHM: Double? { fwhm ?? computedFWHM }

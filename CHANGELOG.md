@@ -4,7 +4,23 @@ All notable changes to AstroBlink & AIsaac will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
-## [Unreleased]
+## [6.12.1] — 2026-11-14
+
+### Changed
+
+- **"Trailing far above session norm" now means it (algorithm v45).** The flag compared a frame's
+  trailing score with the best tenth of the session only. That best tenth is almost always 0.00, so
+  the bar sat at 0.15 — and on a 753-frame RC12 session two thirds of all frames, the median frame
+  included, were "far above session norm". Any of them that was also a little soft was demoted to
+  trash, while a near-identical neighbour was not. The flag now also has to clear the session's
+  typical (median) trailing score by 0.15. On that session the flag drops from 442 to 108 frames and
+  16 frames come back from trash; no defect verdict (dark, cloud, trail, elongation) changed.
+- **A clearly softer frame is no longer "Excellent".** A frame whose FWHM is more than one robust
+  sigma worse than its group is capped at Good, whatever star count and noise contribute. It never
+  drops below Good, so auto-mark is unaffected.
+- **Compare picks its "Best" by tier first.** The reference was the frame with the highest combined
+  z-score, even when that frame had been demoted; now the best tier wins and the z-score decides
+  inside the tier.
 
 ### Fixed
 

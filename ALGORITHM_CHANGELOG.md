@@ -12,6 +12,92 @@ Records with `algorithmVersion < kAlgorithmVersion` are candidates for re-analys
 
 ---
 
+## Version 45 — "Far above session norm" is measured against the session, and a soft frame is not Excellent (2026-11-14)
+
+**User report (2026-11-14), live RC12 session (1964 mm, ASI6200MM, 0.395"/px, L/R/G/B 180 s,
+"NGC 1432", 753 frames, six nights):** Compare shows B #0167 ("REVIEW — FWHM far above session norm,
+trailing far above session norm") next to its "Best" B #0166, and "I cannot see that the right side
+has a worse FWHM". Measured with AstroScoreCLI on the original files before anything was changed.
+
+### What was wrong
+
+The two frames are near-identical: FWHM 9.47 vs 9.70 px (2.5 %), eccentricity 0.37 vs 0.44. Both are
+soft for this session (pool P10 6.85 px, median 7.78 px). They landed in opposite tiers
+(Excellent / Trash) through two ranking defects:
+
+1. **The trailing flag of session sanity was anchored on the best decile alone:**
+   `trail > max(P10 × 2, P10 + 0.15)`. `trailingScore` is 0 whenever the direction consensus is not
+   reached, so the best decile is 0 on practically every session and the threshold collapses to 0.15.
+   On this session the pool measures P10 0.000, **median 0.246**, P75 0.349, P90 0.437:
+   **442 of 667 non-garbage frames (66 %) exceeded the "far above session norm" threshold** — the
+   median frame included. With the 2-flag rule any frame that was also soft (FWHM > 1.3 × P10) was
+   demoted to trash; a neighbour whose consensus happened to stay below the gate (trailing 0.00)
+   was not. The comment in the code said the `+0.15` floor "already mitigates" a low P10 — it does
+   not when the P10 is exactly 0.
+2. **Excellent despite clearly softer stars:** #0166 has zFWHM +1.87 (84th FWHM percentile of the B
+   frames) and was rated Excellent (z 0.94) because star count (z +3) and a trailing score of 0.00
+   (z −3 on a "lower is better" metric) outweighed it. As "Excellent" it was also offered as the
+   reference in Compare.
+
+### The fix
+
+1. `trail > max(P10 × 2, P10 + 0.15, median + sessionTrailingMedianMargin)` with the margin 0.15
+   (ScoringConfig knob). The best-decile terms stay, so nothing is flagged that was not flagged
+   before; the flag is now additionally required to sit clearly above the pool's typical frame.
+2. Excellent guard: a frame whose sharpness z-score (FWHM, HFR as fallback — the same value that
+   enters the combined z) exceeds `excellentMaxSharpnessZ` (1.0, ScoringConfig knob) is capped at
+   Good. Excellent → Good only; the combined z-score is unchanged; never below Good, so auto-mark at
+   every level is unaffected by the guard.
+
+Not a scoring change, same release: Compare's "Best" is chosen by tier first and z-score inside the
+tier (`ImageEntry.isWorseCompareReference`) — session sanity and the guard change the tier without
+touching z, so a demoted frame could still carry the group's highest z.
+
+### Measured
+
+Reporting session (753 frames, baseline CLI built from the untouched tree vs v45 CLI; measurement
+identical, max FWHM drift between runs 0.06 px, trailing 0.000):
+
+| | v44 | v45 |
+|---|---|---|
+| frames above the trailing-flag threshold | 442 / 667 (66 %) | 108 / 667 (16 %) |
+| session-sanity flagged frames | 70 | 36 |
+| trash | 127 | 111 |
+| borderline | 56 | 49 |
+| good | 483 | 507 |
+| excellent | 87 | 86 |
+| Stage 1 garbage verdicts changed | – | 0 |
+
+- The 16 frames released from trash (9 → borderline, 7 → good): FWHM 8.8–11.4 px (median 9.66),
+  trailing score median 0.26 / max 0.36, eccentricity median 0.43 / max 0.48 — soft frames with the
+  session's ordinary trailing score. 25 frames stay session-sanity trash (trailing median 0.44).
+- Excellent → Good: 3 frames (B, FWHM 9.29 / 9.47 / 9.66 px, zFWHM 1.18–1.87).
+- #0166 Excellent → Good, #0167 Trash → Good.
+
+QUALITYCHECKMINI (104 frames, 6 cases): false alarms 12/72 → 12/72, catch 24/32 → 24/32; one bad
+frame (140 mm M81, bad star form) Trash → Borderline — still caught.
+
+**Not measured:** the full GOLDENSET1 (user decision — no complete golden-set run for this change).
+The trailing change can only remove session-sanity flags and the guard only moves Excellent → Good,
+so the direction of any effect there is known: possibly fewer session-sanity catches among frames
+whose trailing score is within 0.15 of their pool's median, no new false alarms.
+
+### Known limits
+
+- A pool in which more than half of the frames are trailed raises its own median and silences the
+  flag. Real trails are Stage 1's job (Rules 5/6a, absolute); session sanity is a relative check.
+- The FWHM flag is still anchored on the best decile alone (1.3 × P10 = 8.9 px here, 14 % above the
+  pool median). It is one flag and cannot demote on its own.
+- A trailing score of 0.00 still earns the full z bonus in the combined score (the consensus gate is
+  a step, not a ramp). The guard removes the visible consequence; the step itself is unchanged.
+
+### Tests
+
+`QualityEstimatorTests.testV45_trailingFlagNeedsMarginAboveSessionMedian`,
+`testV45_softFrameCannotBeExcellent`. Scoring suites: 150 tests green.
+
+---
+
 ## Version 44 — The concentration test is measured in units of the frame's own star size (2026-11-06)
 
 **User report (2026-11-05), live RC12 session (1964 mm, ASI6200MM, 0.395"/px, L/R/G/B 180 s,
