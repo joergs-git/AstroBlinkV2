@@ -14,6 +14,13 @@ Nice side effect: Finally you have a native XISF and FITS Quicklook for macOS. (
 
 ---
 
+## What's New in v6.12.3 (Build 126)
+
+**The Quality Overview reads at a glance.** Three wide bars per filter and night — noise, sky
+background, SNR — with the value in small digits behind each, and one colour rule for all of them:
+green is good, yellow is medium, red is bad. Each row is compared with the other nights of the
+same filter, so a red bar points at the night that was far worse than that filter's best.
+
 ## What's New in v6.12.2 (Build 125)
 
 **The file list no longer shows another frame's row after a re-sort.** When the list re-sorted

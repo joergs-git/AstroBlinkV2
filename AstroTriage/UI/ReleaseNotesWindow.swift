@@ -34,6 +34,9 @@ class ReleaseNotesWindowController {
 // MARK: - Release notes data (shared between view and copy)
 
 private let allReleases: [(version: String, date: String, items: [(ReleaseNotesView.ChangeType, String, String)])] = [
+    ("6.12.3", "November 14, 2026", [
+        (.changed, "Quality Overview: Three Bars, One Colour Language", "The table in the Session panel showed three number columns in scientific notation, three narrow bars and three different colour scales. It now shows one wide bar each for noise, sky background and SNR with the value in small digits behind it, and one rule for all three: green is good, yellow is medium, red is bad. Every row is compared with the other nights of the same filter, so a red bar means that night was far worse than that filter's best night."),
+    ]),
     ("6.12.2", "November 14, 2026", [
         (.fixed, "File List Rows Could Show Another Frame After a Re-Sort", "When the list re-sorted itself — after scoring or by a header click — a refresh could get lost: the rows kept the frames they had shown before, while the selection moved with its frame. The highlighted row then carried a different frame's number, time, values and quality icon than the viewer and the Inspector, so an Excellent frame could look \"marked red\". The list now checks the row order it rendered against the order it should show and refreshes whenever they differ."),
         (.changed, "Default Blink Speed 0.05 s", "Playback starts at 0.05 s per frame instead of 0.1 s. The picker still offers 0.05–2 s."),

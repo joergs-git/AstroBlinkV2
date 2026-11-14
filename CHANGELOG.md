@@ -4,6 +4,19 @@ All notable changes to AstroBlink & AIsaac will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [6.12.3] — 2026-11-14
+
+### Changed
+
+- **Quality Overview (Session panel) redrawn: three bars, one colour language.** The table showed
+  three number columns in scientific notation, three narrow bars and three different colour scales
+  (green/brown/orange, cyan/blue/purple). It now shows one wide bar each for Noise, Background and
+  SNR with the value in small digits behind it (`1.4` under the header `Noise e-3`), and one rule
+  for all three: green is good, yellow is medium, red is bad. Every row is compared with the other
+  nights of the SAME filter — a luminance night is naturally brighter than a blue one — so a red
+  bar means "this night was far worse than this filter's best night" (noise/background more than
+  2× the lowest; SNR below 35 % of the highest). The help window (?) explains the new reading.
+
 ## [6.12.2] — 2026-11-14
 
 ### Fixed
