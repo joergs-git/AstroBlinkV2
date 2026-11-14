@@ -18,7 +18,8 @@ extension QualityEstimator {
     /// Only demotes — never promotes. isLockedKeep and community-locked frames are immune.
     static func sessionSanityCheck(
         entries: [ImageEntry],
-        result: inout [URL: QualityBreakdown]
+        result: inout [URL: QualityBreakdown],
+        config: ScoringConfig = .default
     ) {
         // Build session pools: group by object+exposure (ignoring filter, night, AND focal length).
         // Session sanity deliberately pools across setups: if January RC12 frames at 2455mm are
@@ -138,8 +139,9 @@ extension QualityEstimator {
             // ~2× variation through. P10 metrics (FWHM/Ecc/Trailing) are
             // deliberately NOT clamped — their failure mode (a single
             // anomalously low value tightening the threshold) is rare in
-            // practice and the floor wording on Trailing ("max(P10×2.0,
-            // P10+0.15)") already mitigates it.
+            // practice. Trailing is the exception: its P10 is 0 on most
+            // sessions, so since v45 its flag is additionally anchored on
+            // the pool median (see trailMedian below).
             let fwhmP10 = fwhms[max(0, fwhms.count / 10)]                         // Best 10% FWHM
             let starsMedian = stars.isEmpty ? 0 : stars[stars.count / 2]
             let snrMedian = snrs.isEmpty ? 0 : snrs[snrs.count / 2]
@@ -149,6 +151,11 @@ extension QualityEstimator {
             let starsP90 = starsMedian > 0 ? min(starsP90Raw, starsMedian * 2.5) : starsP90Raw
             let eccP10 = eccs.isEmpty ? 0 : eccs[max(0, eccs.count / 10)]         // Best 10% Ecc
             let trailP10 = trails.isEmpty ? 0 : trails[max(0, trails.count / 10)] // Best 10% trailing
+            // Typical trailing of the pool (algo v45). The best decile alone is not a norm for
+            // this metric: trailingScore is 0 whenever the direction consensus is not reached,
+            // so on most sessions P10 = 0 and "P10 + 0.15" flagged every frame above 0.15 —
+            // on a 753-frame RC12 session that was the pool's MEDIAN frame (0.25).
+            let trailMedian = trails.isEmpty ? 0 : trails[trails.count / 2]
 
             // Target-type-aware FWHM threshold scaling.
             // Emission nebulae and IFN are diffuse — FWHM differences matter less.
@@ -215,7 +222,11 @@ extension QualityEstimator {
                 }
                 // Trailing: frame significantly above session's best-decile → tracking error
                 if let trail = entry.trailingScore, trailP10 >= 0 {
-                    if trail > max(trailP10 * 2.0, trailP10 + 0.15) {
+                    // Must clear the best-decile margin AND sit clearly above the typical
+                    // frame of the pool — otherwise "far above session norm" is not true.
+                    let trailThreshold = max(trailP10 * 2.0, trailP10 + 0.15,
+                                             trailMedian + config.sessionTrailingMedianMargin)
+                    if trail > trailThreshold {
                         flags.append("trailing far above session norm")
                     }
                 }

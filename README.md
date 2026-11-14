@@ -14,6 +14,18 @@ Nice side effect: Finally you have a native XISF and FITS Quicklook for macOS. (
 
 ---
 
+## What's New in v6.12.1 (Build 124)
+
+**Compare shows the circles on the stars again, and "far above session norm" means it.** When Auto
+Rotate turned a frame by 180° after a meridian flip, the Compare window rotated the image but not
+the star circles — every circle sat on empty sky. Fixed. Behind the same screenshot: the session
+check "trailing far above session norm" compared against the best tenth of the session only, which
+is almost always 0.00, so two thirds of a 753-frame session carried the flag and slightly soft
+frames were trashed next to near-identical neighbours. The flag now also has to clear the session's
+median by a margin (algorithm v45): 16 frames of that session come back from trash, no defect
+verdict changed. A frame clearly softer than its group can no longer be "Excellent", and Compare
+picks its "Best" by tier first.
+
 ## What's New in v6.12.0 (Build 123)
 
 **Plate solving now really names the object — and can rename the files.** "Also name the object

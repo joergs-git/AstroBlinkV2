@@ -56,6 +56,16 @@ struct ScoringConfig: Codable, Equatable {
     // cluster count alone could pass the density floor.
     var pedestalSkyMaxFitResidual: Double
 
+    // Session sanity (algo v45): "trailing far above session norm" requires the frame to exceed
+    // the pool's MEDIAN trailing score by this margin (in addition to the best-decile margin).
+    // The best decile alone is no norm: on a session whose best frames measure trailing 0.00 the
+    // threshold was 0.15 and the pool's median frame (0.25) already carried the flag.
+    var sessionTrailingMedianMargin: Double
+    // Excellent guard (algo v45): a frame whose sharpness z-score (FWHM, HFR as fallback) is more
+    // than this many robust sigmas WORSE than its group cannot be Excellent, whatever star count
+    // and trailing contribute. It stays Good — the guard never moves a frame below Good.
+    var excellentMaxSharpnessZ: Double
+
     /// The canonical defaults — MUST equal the `static let` values in QualityEstimator.swift.
     /// Using this config yields byte-identical scoring to the pre-externalization build.
     static let `default` = ScoringConfig(
@@ -69,7 +79,9 @@ struct ScoringConfig: Codable, Equatable {
         minPlausibleSeeingArcsec: 1.0,
         minPlausibleFWHMPixels: 1.2,
         pedestalSkyStarsPerMegapixel: 20,
-        pedestalSkyMaxFitResidual: 0.17
+        pedestalSkyMaxFitResidual: 0.17,
+        sessionTrailingMedianMargin: 0.15,
+        excellentMaxSharpnessZ: 1.0
     )
 
     // MARK: - Partial-override JSON decoding
@@ -88,7 +100,9 @@ struct ScoringConfig: Codable, Equatable {
          minPlausibleSeeingArcsec: Double,
          minPlausibleFWHMPixels: Double,
          pedestalSkyStarsPerMegapixel: Double,
-         pedestalSkyMaxFitResidual: Double) {
+         pedestalSkyMaxFitResidual: Double,
+         sessionTrailingMedianMargin: Double,
+         excellentMaxSharpnessZ: Double) {
         self.thresholdExcellent = thresholdExcellent
         self.thresholdGood = thresholdGood
         self.thresholdBorderline = thresholdBorderline
@@ -100,6 +114,8 @@ struct ScoringConfig: Codable, Equatable {
         self.minPlausibleFWHMPixels = minPlausibleFWHMPixels
         self.pedestalSkyStarsPerMegapixel = pedestalSkyStarsPerMegapixel
         self.pedestalSkyMaxFitResidual = pedestalSkyMaxFitResidual
+        self.sessionTrailingMedianMargin = sessionTrailingMedianMargin
+        self.excellentMaxSharpnessZ = excellentMaxSharpnessZ
     }
 
     init(from decoder: Decoder) throws {
@@ -116,6 +132,8 @@ struct ScoringConfig: Codable, Equatable {
         minPlausibleFWHMPixels = try c.decodeIfPresent(Double.self, forKey: .minPlausibleFWHMPixels) ?? d.minPlausibleFWHMPixels
         pedestalSkyStarsPerMegapixel = try c.decodeIfPresent(Double.self, forKey: .pedestalSkyStarsPerMegapixel) ?? d.pedestalSkyStarsPerMegapixel
         pedestalSkyMaxFitResidual = try c.decodeIfPresent(Double.self, forKey: .pedestalSkyMaxFitResidual) ?? d.pedestalSkyMaxFitResidual
+        sessionTrailingMedianMargin = try c.decodeIfPresent(Double.self, forKey: .sessionTrailingMedianMargin) ?? d.sessionTrailingMedianMargin
+        excellentMaxSharpnessZ = try c.decodeIfPresent(Double.self, forKey: .excellentMaxSharpnessZ) ?? d.excellentMaxSharpnessZ
     }
 
     // MARK: - Load / dump

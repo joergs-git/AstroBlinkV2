@@ -876,7 +876,7 @@ class TriageViewModel: ObservableObject {
         // When the group's best is also garbage, widen the search to find a genuinely good reference.
         var best: ImageEntry? = groupImages
             .filter { $0.url != entry.url }
-            .max(by: { ($0.qualityZScore ?? -100) < ($1.qualityZScore ?? -100) })
+            .max(by: ImageEntry.isWorseCompareReference)
 
         // Cross-filter fallback: SAME FILTER with different exposure first,
         // then same filter class as absolute last resort.

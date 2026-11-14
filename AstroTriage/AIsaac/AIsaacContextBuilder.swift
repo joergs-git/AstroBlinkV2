@@ -653,6 +653,12 @@ struct AIsaacContextBuilder {
           session differs by optics and filter, not by a bad night. Stage 1 garbage frames are excluded from \
           the P10/P90 benchmarks. The "best" benchmarks for stars and SNR are clamped to 2.5× the pool \
           median (v30), so one freak frame cannot set an unreachable bar.
+          * The trailing flag (v45) needs the frame to exceed BOTH the best-decile margin (P10 + 0.15, \
+          2 × P10) AND the pool's MEDIAN trailing score + 0.15. Before v45 only the best decile counted; \
+          trailingScore is 0 whenever the direction consensus is not reached, so P10 was usually 0, the \
+          threshold 0.15, and on a typical session the MEDIAN frame carried "trailing far above session \
+          norm" (66% of a 753-frame RC12 session). Records scored before v45 may show that flag on \
+          frames with an ordinary trailing score.
           * The sanity flags are kept in the 'sanity' column of PER-FRAME DATA even when a later rescue \
           changed the tier — the recommendation label then reads "REVIEW — <reason>".
           * v23 (2026-04-18): the single-flag "severe FWHM outlier" demote path was removed after \
@@ -696,6 +702,10 @@ struct AIsaacContextBuilder {
           are excluded from quality scoring entirely. Short-exposure lucky imaging uses fundamentally \
           different metrics — these frames appear as "unscored", which is correct behavior.
           * Tiers: Excellent (z > 0.5), Good (z > -0.5), Borderline (z > -2.0), Trash (z ≤ -2.0)
+          * EXCELLENT GUARD (v45): a frame whose sharpness z-score (zFWHM, zHFR as fallback) is more than \
+          1.0 robust sigma WORSE than its group is capped at Good, even when z > 0.5 — star count, noise \
+          and a trailing score of 0 cannot make a clearly softer frame "Excellent". The guard never moves \
+          a frame below Good and does not change z. So a Good frame with z > 0.5 and zFWHM > 1 is this guard.
           * IMPORTANT DISTINCTION: a tier of Trash from a DEFECT (Stage 1, verdict column non-empty) and a \
           tier of Trash from RANKING (z ≤ -2.0 inside its group, verdict/sanity/hist all empty) look the \
           same in the Q column but mean different things. The second one only says "weakest of its group" — \
@@ -784,6 +794,14 @@ struct AIsaacContextBuilder {
         - Frames meeting learned baseline locked as KEEP (blue lock icon) — z-scores can't override.
 
         ALGORITHM VERSION HISTORY (recent — kAlgorithmVersion is stored on every Frame History record):
+        - v45 (v6.12.1, 2026-11-14): two ranking corrections, no measurement change. (1) Session sanity: \
+        "trailing far above session norm" must also exceed the pool MEDIAN + 0.15 (was: best decile only, \
+        which is 0 on most sessions → the median frame was flagged). (2) Excellent guard: zFWHM > 1.0 caps \
+        the tier at Good. Measured on the reporting session (RC12, Pleiades, 753 frames L/R/G/B): frames \
+        carrying the trailing flag 442 → 108 of 667, session-sanity demotions 70 → 36, trash 127 → 111 \
+        (the 16 released frames: trailing 0.26 median, i.e. the session's typical value); 3 soft frames \
+        Excellent → Good; no Stage 1 defect verdict changed. Compare's "Best" is now chosen by tier first, \
+        z second, so a demoted frame with a high z is no longer offered as the reference.
         - v44 (v6.11.3, 2026-11-06): the point-source test of the shape measurement uses an aperture of 1.25 × the frame's \
         own median FWHM (never below 5 px) for frames with FWHM < 8 px, instead of a fixed 5 px. With the fixed \
         radius every real star broader than 6.6 px FWHM failed the test ("nebulosity") while the rescue for bloated \
@@ -835,7 +853,7 @@ struct AIsaacContextBuilder {
         2. Wait for caching to complete (progress bar in status bar). Quality scores appear only after \
         all frames in each group are analyzed — this is normal, not a bug.
         3. Sort by quality column (click header). Review red/orange frames — hover for per-metric breakdown.
-        4. Compare suspicious frames: select + press C for side-by-side with best frame. Star overlay shows elongation.
+        4. Compare suspicious frames: select + press C for side-by-side with best frame (best = highest tier, then highest z, of the same group). Star overlay shows elongation; since 6.12.1 the circles follow a frame shown rotated by 180° (Auto Rotate) — before, they landed on empty sky.
         5. Mark bad frames: Space key (single or multi-selection). Shift-click/Cmd-click for range/individual selection.
         6. Optional: use Culling Autopilot (click quality pill in status bar) for one-click auto-marking.
         7. Pre-delete: Cmd+Backspace — or, since 6.9.2, the Pre-Delete toolbar button, Edit → Move Marked to PRE-DELETE…, or the file-list context menu — moves marked files to the PRE-DELETE/ staging folder (older builds: _predel/). Never permanent. Full Cmd+Z undo. Since 6.9.2 only frames that physically moved leave the list; frames whose move failed stay marked and a dialog names the reason.

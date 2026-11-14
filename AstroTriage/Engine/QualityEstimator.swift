@@ -1290,6 +1290,16 @@ struct QualityEstimator {
                     tier = .trash
                 }
 
+                // Excellent guard (algo v45): Excellent means "clearly above the group", and a
+                // frame whose stars are clearly SOFTER than the group is not — even when star
+                // count and a trailing score of 0 lift the combined z above the cutoff (a B
+                // frame at the 84th FWHM percentile of its session was rated Excellent and
+                // offered as "Best" in Compare). Only Excellent → Good; never below Good.
+                let sharpnessZ = fwhmZscores[localIdx] ?? hfrZscores[localIdx]
+                if tier == .excellent, let sz = sharpnessZ, sz > config.excellentMaxSharpnessZ {
+                    tier = .good
+                }
+
                 // ── Stage 3: Pattern-based rescue rules ──
                 // Rescue borderline/z-score-trash frames that have compensating qualities.
                 // Only promotes, never demotes. Only for Stage 2 classified frames.
@@ -1411,7 +1421,7 @@ struct QualityEstimator {
         // session norm. Catches uniformly-bad groups where z-scores normalize away.
         // Groups by object+exposure (ignoring filter and night) to create session pools.
         // Only demotes — never promotes. isLockedKeep/community frames are immune.
-        sessionSanityCheck(entries: entries, result: &result)
+        sessionSanityCheck(entries: entries, result: &result, config: config)
 
         // ── Stage 1.5b: Historical baseline check ──
         // Uses FrameHistoryDatabase/CalibrationDatabase learned baselines to detect frames
