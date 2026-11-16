@@ -4,6 +4,30 @@ All notable changes to AstroBlink & AIsaac will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/).
 
+## [6.13.0] — 2026-11-16
+
+### Added
+
+- **Quick Scan: a session's numbers in seconds, without loading it.** File → Quick Scan Folder…
+  (⌥⌘O) opens one or several folders and reads only the file headers — straight from where the
+  files are, also on a NAS. Nothing is downloaded, no image is decoded, nothing is rated. The file
+  list shows every metadata column and the Session panel shows objects, filters, frame counts,
+  nights and hours as usual. Measured on a Synology over SMB: about 30 ms per file on first access
+  (330 frames / 39 GB in 11 s, 376 frames / 20 GB in 13 s), under a second when repeated. The
+  viewer stays empty and says "No images in Quick Scan mode"; **Load Fully** opens the same
+  selection the normal way. Commands that need pixels or ratings (Compare, stacking, Color
+  Combine, blinking, video export, plate solving, VLM Check, SSWEIGHT export) say so and offer the
+  full load. A Quick Scan writes nothing to the Frame History and teaches the calibration nothing.
+- **AstroBin CSV block in the Session panel.** Below the fact sheet there is a second
+  copy-and-paste block: the loaded light frames as AstroBin acquisition CSV, one line per night ×
+  filter × sub length, ready for AstroBin's "Import from CSV". Columns: `date`, `filter`,
+  `number`, `duration`, and — when the files carry them — `binning`, `gain`, `sensorCooling`,
+  `bortle`, `meanFwhm` (arcseconds, only from measured star sizes) and `temperature`. AstroBin
+  wants the filter as the numeric ID from its equipment database (the number in the URL of the
+  filter's page): enter it once per filter name under **Filter IDs**, it is remembered. Without an
+  ID the filter cell stays empty. A session with several objects gets a picker, because an
+  AstroBin image is one object. Works in a Quick Scan too.
+
 ## [6.12.3] — 2026-11-14
 
 ### Changed

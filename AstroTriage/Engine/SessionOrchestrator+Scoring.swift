@@ -102,6 +102,9 @@ extension SessionOrchestrator {
     /// Also call this after adding a new folder to the session (new images may change group stats).
     func recomputeQualityScores() {
         guard let host = host else { return }
+        // Quick Scan has no measurements; scoring from filename tokens alone would put
+        // tiers on frames nobody looked at (and write them to the Frame History).
+        guard !host.isQuickScan else { return }
         // Recompute trailing scores with current focal length info (may have been populated
         // by header enrichment since initial star metrics were computed)
         for index in host.images.indices {

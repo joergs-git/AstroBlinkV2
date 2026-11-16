@@ -119,10 +119,12 @@
 		6FFB9414152881DE7955A2CC /* Shaders.metal in Sources */ = {isa = PBXBuildFile; fileRef = ADBD75B471EEBE3262306C84 /* Shaders.metal */; };
 		7025BB820EB0394F1BD3F5B8 /* TrailingAnalyzer.swift in Sources */ = {isa = PBXBuildFile; fileRef = B8942CE397AE911C7346F9D1 /* TrailingAnalyzer.swift */; };
 		747E0E722B7CB8F7635FD2E9 /* QualityEstimator+Helpers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9CF236D46347EA81A3D5F17B /* QualityEstimator+Helpers.swift */; };
+		775AA1DB4D4C4B4BC0DC73B0 /* QuickScanTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D857F8DCB9D6D8268C328CC /* QuickScanTests.swift */; };
 		777AC090953D11459D00BCC3 /* ScoringRegressionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F05D0AADC47ABFB523CD5B5 /* ScoringRegressionTests.swift */; };
 		785DA5B582B5E5DD03CF89AE /* QualityEstimator.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC2B51C4B8F25806E968FDB4 /* QualityEstimator.swift */; };
 		79AED7AE09605E14691E6B91 /* TrailingConsensusTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6146B3BBEE034599602FB7F8 /* TrailingConsensusTests.swift */; };
 		7A69119E8C46AEEEC3903EDA /* TexturePool.swift in Sources */ = {isa = PBXBuildFile; fileRef = ABAF1B6D447B16F3447CF29C /* TexturePool.swift */; };
+		7A912E1963DC3EC0BBACA72F /* AstroBinCSVTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C586C7FFCB2D3A263E58DA2 /* AstroBinCSVTests.swift */; };
 		7B1D9FF8DB1944D136F0F370 /* NIOCore in Frameworks */ = {isa = PBXBuildFile; productRef = D711DA2B67C4940FBDCFC8DB /* NIOCore */; };
 		7E187CD20A1C9AC1C616BCEB /* SessionOrchestrator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3E0874C66A110F635EE92265 /* SessionOrchestrator.swift */; };
 		7E8C4EF0CF4108B17C2096A8 /* ColumnDefinition.swift in Sources */ = {isa = PBXBuildFile; fileRef = F25FB10B9861BFEE190684C8 /* ColumnDefinition.swift */; };
@@ -225,6 +227,7 @@
 		E498D92F8CC917E16B7FA39F /* DecodedImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C97DD4541DE740AC52CBFEC /* DecodedImage.swift */; };
 		E54F7D793DBBAA3ADA082451 /* SessionScannerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A05ABE70A121689E1D00FB32 /* SessionScannerTests.swift */; };
 		E56D72CDE056EB4C345B1AE1 /* MCPHTTPServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 902BCBDCAFC1512717C38357 /* MCPHTTPServer.swift */; };
+		E6B7A94FDC2F54CB1AE34040 /* AstroBinCSV.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77B9A5B8032F93DD3B200C67 /* AstroBinCSV.swift */; };
 		E77373CD828E054440F44593 /* ScoringRunner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3923A3D2A9D0D2C76B69D6B5 /* ScoringRunner.swift */; };
 		E7B11296D22A64F4E5DE0F60 /* BatchQualityAnalysisTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2EFA8337CE7A626EABADBED /* BatchQualityAnalysisTests.swift */; };
 		E85D3B8048F5775EF0C70BB9 /* DecoderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE83C9556D164ED7CC41C0FC /* DecoderTests.swift */; };
@@ -346,6 +349,7 @@
 		2AC23856D906A14A0CCC6C03 /* AboutWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AboutWindow.swift; sourceTree = "<group>"; };
 		2C90F68D49B2362943B4E1EF /* CurationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CurationService.swift; sourceTree = "<group>"; };
 		2D64FE258D73B46F58D3B5CE /* PlateSolveResultTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlateSolveResultTests.swift; sourceTree = "<group>"; };
+		2D857F8DCB9D6D8268C328CC /* QuickScanTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickScanTests.swift; sourceTree = "<group>"; };
 		32608B6B9596DA5E7F7C9F1D /* ThresholdLearnerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThresholdLearnerTests.swift; sourceTree = "<group>"; };
 		32B55DBDF2FD18BEF1399C8D /* ArchiveScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArchiveScanner.swift; sourceTree = "<group>"; };
 		340E4F50F68B830073674E41 /* TriageState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TriageState.swift; sourceTree = "<group>"; };
@@ -400,6 +404,7 @@
 		6954B15FF694B136EB210FB0 /* PlateSolveCacheTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlateSolveCacheTests.swift; sourceTree = "<group>"; };
 		6A3C4F920C008F3B9EEA4CED /* BenchmarkSharing.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BenchmarkSharing.swift; sourceTree = "<group>"; };
 		6B1DF8104819C65DE1BF3EE5 /* StackResultView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StackResultView.swift; sourceTree = "<group>"; };
+		6C586C7FFCB2D3A263E58DA2 /* AstroBinCSVTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AstroBinCSVTests.swift; sourceTree = "<group>"; };
 		6E25E535A2CFCECDD16EF936 /* MoonCalculator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoonCalculator.swift; sourceTree = "<group>"; };
 		6F15B76878AB89E64790D0D4 /* AIsaacWeather.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIsaacWeather.swift; sourceTree = "<group>"; };
 		7196FBBA0783630389EA7125 /* FileListView+Coordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "FileListView+Coordinator.swift"; sourceTree = "<group>"; };
@@ -410,6 +415,7 @@
 		75ABC51AC72472A52C55DC6B /* PlateSolveWindowTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlateSolveWindowTests.swift; sourceTree = "<group>"; };
 		763931350538CED5EA81290D /* KeyboardHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardHandler.swift; sourceTree = "<group>"; };
 		76A68D583C36500C4A7BD068 /* AIsaacService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIsaacService.swift; sourceTree = "<group>"; };
+		77B9A5B8032F93DD3B200C67 /* AstroBinCSV.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AstroBinCSV.swift; sourceTree = "<group>"; };
 		78ACE8F6350A2EEF52848118 /* AppMessageModalView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppMessageModalView.swift; sourceTree = "<group>"; };
 		78F34710ED7DC2766AE2501F /* CommunityBaseline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommunityBaseline.swift; sourceTree = "<group>"; };
 		7962C9A309A42A2B3FB51B26 /* ASTAPSolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ASTAPSolver.swift; sourceTree = "<group>"; };
@@ -597,6 +603,7 @@
 				977D1208D10ED6C156B236C7 /* AIsaacKnowledgeTests.swift */,
 				B4BEF11CE96016A273076069 /* AppMessageMediaTests.swift */,
 				51D3B585C0F761A7DDA1867C /* ASTAPFrameExporterTests.swift */,
+				6C586C7FFCB2D3A263E58DA2 /* AstroBinCSVTests.swift */,
 				E2EFA8337CE7A626EABADBED /* BatchQualityAnalysisTests.swift */,
 				8B1B8C7785F451D0AB30D571 /* CalibrationDatabaseTests.swift */,
 				E46927C78C5F676909307325 /* ColumnDefinitionTests.swift */,
@@ -628,6 +635,7 @@
 				94E76B57D43FBBCE79D651BD /* PreDeleteMoveTests.swift */,
 				CB580ECFDB8A53ACBBA80662 /* QualityBarScaleTests.swift */,
 				7F143D9906FBF9F56814DB68 /* QualityEstimatorTests.swift */,
+				2D857F8DCB9D6D8268C328CC /* QuickScanTests.swift */,
 				0F05D0AADC47ABFB523CD5B5 /* ScoringRegressionTests.swift */,
 				349FE588694CBEF50831E753 /* ScoringValidationTests.swift */,
 				8589E6978470263300B1D9AB /* SessionScannerBackupTests.swift */,
@@ -721,6 +729,7 @@
 				34808CAB209A201DDAD40A01 /* ASTAPFrameExporter.swift */,
 				82CCA266935E7C178B9B0C26 /* ASTAPLocator.swift */,
 				7962C9A309A42A2B3FB51B26 /* ASTAPSolver.swift */,
+				77B9A5B8032F93DD3B200C67 /* AstroBinCSV.swift */,
 				2125212AD5D8D0E4EF487436 /* AstroRoot.swift */,
 				F6CA403E08B94D8B54CCF812 /* AstroRootStore.swift */,
 				EC91195CA425D12B99F20516 /* BatchOperations.swift */,
@@ -1202,6 +1211,7 @@
 				8E60ECF523C4BA722AC43548 /* AIsaacKnowledgeTests.swift in Sources */,
 				93097526653BE0C38141948B /* ASTAPFrameExporterTests.swift in Sources */,
 				5B1BD2DBF6199111A931B64C /* AppMessageMediaTests.swift in Sources */,
+				7A912E1963DC3EC0BBACA72F /* AstroBinCSVTests.swift in Sources */,
 				E7B11296D22A64F4E5DE0F60 /* BatchQualityAnalysisTests.swift in Sources */,
 				6293E36CA5F5A530DFE8F0B9 /* CalibrationDatabaseTests.swift in Sources */,
 				5FAD6705D12685E27FBBE43A /* ColumnDefinitionTests.swift in Sources */,
@@ -1233,6 +1243,7 @@
 				5DB6CFCB61C8665F7C7B2D4E /* PreDeleteMoveTests.swift in Sources */,
 				4B4FAF90EB858F34C71DC45A /* QualityBarScaleTests.swift in Sources */,
 				FC90856759FCA3D20B44ABED /* QualityEstimatorTests.swift in Sources */,
+				775AA1DB4D4C4B4BC0DC73B0 /* QuickScanTests.swift in Sources */,
 				777AC090953D11459D00BCC3 /* ScoringRegressionTests.swift in Sources */,
 				6FA733CDA65AB773F874383C /* ScoringValidationTests.swift in Sources */,
 				6C1FC917469E66A51A4DE06A /* SessionScannerBackupTests.swift in Sources */,
@@ -1283,6 +1294,7 @@
 				69A68510D3DC87E254921021 /* AppMessageService.swift in Sources */,
 				B2444CC3BD5AB4C5BC49A87E /* AppSettings.swift in Sources */,
 				9FE0865A0F4D4378F7A43D7A /* ArchiveScanner.swift in Sources */,
+				E6B7A94FDC2F54CB1AE34040 /* AstroBinCSV.swift in Sources */,
 				0362CF6EA59E48266CFE960F /* AstroRoot.swift in Sources */,
 				458EC62EC43F48825111DDEB /* AstroRootStore.swift in Sources */,
 				02713CE5906EC86751C969FE /* AstroRootsSettingsWindow.swift in Sources */,
@@ -1503,7 +1515,7 @@
 				CODE_SIGN_ENTITLEMENTS = QuickLookExtension/QuickLookExtension.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 126;
+				CURRENT_PROJECT_VERSION = 127;
 				DEVELOPMENT_TEAM = FDSVBU33S8;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -1515,7 +1527,7 @@
 					"@executable_path/../../../../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 6.12.3;
+				MARKETING_VERSION = 6.13.0;
 				OTHER_LDFLAGS = (
 					"-lz",
 				);
@@ -1534,7 +1546,7 @@
 				CODE_SIGN_ENTITLEMENTS = QuickLookPreview/QuickLookPreview.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 126;
+				CURRENT_PROJECT_VERSION = 127;
 				DEVELOPMENT_TEAM = FDSVBU33S8;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -1546,7 +1558,7 @@
 					"@executable_path/../../../../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 6.12.3;
+				MARKETING_VERSION = 6.13.0;
 				OTHER_LDFLAGS = (
 					"-lz",
 				);
@@ -1565,7 +1577,7 @@
 				CODE_SIGN_ENTITLEMENTS = QuickLookExtension/QuickLookExtension.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 126;
+				CURRENT_PROJECT_VERSION = 127;
 				DEVELOPMENT_TEAM = FDSVBU33S8;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -1577,7 +1589,7 @@
 					"@executable_path/../../../../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 6.12.3;
+				MARKETING_VERSION = 6.13.0;
 				OTHER_LDFLAGS = (
 					"-lz",
 				);
@@ -1614,7 +1626,7 @@
 				CODE_SIGN_ENTITLEMENTS = AstroTriage/AstroTriage.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 126;
+				CURRENT_PROJECT_VERSION = 127;
 				DEVELOPMENT_TEAM = FDSVBU33S8;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -1624,7 +1636,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 6.12.3;
+				MARKETING_VERSION = 6.13.0;
 				METAL_COMPILER_FLAGS = "";
 				OTHER_LDFLAGS = (
 					"-lz",
@@ -1747,7 +1759,7 @@
 				CODE_SIGN_ENTITLEMENTS = AstroTriage/AstroTriage.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 126;
+				CURRENT_PROJECT_VERSION = 127;
 				DEVELOPMENT_TEAM = FDSVBU33S8;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -1757,7 +1769,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 6.12.3;
+				MARKETING_VERSION = 6.13.0;
 				METAL_COMPILER_FLAGS = "";
 				OTHER_LDFLAGS = (
 					"-lz",
@@ -1891,7 +1903,7 @@
 				CODE_SIGN_ENTITLEMENTS = QuickLookPreview/QuickLookPreview.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 126;
+				CURRENT_PROJECT_VERSION = 127;
 				DEVELOPMENT_TEAM = FDSVBU33S8;
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -1903,7 +1915,7 @@
 					"@executable_path/../../../../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
-				MARKETING_VERSION = 6.12.3;
+				MARKETING_VERSION = 6.13.0;
 				OTHER_LDFLAGS = (
 					"-lz",
 				);

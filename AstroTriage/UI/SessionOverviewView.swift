@@ -222,6 +222,8 @@ class SessionOverviewModel: ObservableObject {
     @Published var rows: [FilterRow] = []
     @Published var totalExposure: Double = 0
     @Published var totalShots: Int = 0
+    /// Light frames grouped per object / night / filter / sub length for the AstroBin CSV block (6.13.0).
+    @Published var acquisitionGroups: [AstroBinCSV.Group] = []
 
     @Published var sessionObjects: String?
     // Callback: navigate to first image of tapped object in file list
@@ -324,6 +326,9 @@ class SessionOverviewModel: ObservableObject {
         sessionGain = gain
         sessionOffset = offset
         sessionBinning = binning
+        // updateStats runs many times during a load — publish only a real change.
+        let newGroups = AstroBinCSV.groups(from: images)
+        if newGroups != acquisitionGroups { acquisitionGroups = newGroups }
 
         // Update quality stats (noise/SNR) from images that have been measured
         updateQualityStats(from: images)
@@ -787,6 +792,11 @@ struct SessionOverviewContentView: View {
                 .padding(.horizontal, 8)
                 .padding(.vertical, 3)
                 .background(Color(NSColor.controlBackgroundColor))
+
+                Divider()
+
+                // ── ASTROBIN CSV (6.13.0): paste into AstroBin's "Import from CSV" ──
+                AstroBinCSVBlock(groups: model.acquisitionGroups, fontScale: fontScale)
             }
         }
     }
@@ -1147,5 +1157,123 @@ extension NSAttributedString {
         addDim("Tip: Use the search filter in the main file list (e.g. \"snr:<10\") to quickly find and mark your worst subs for deletion.")
 
         return result
+    }
+}
+
+// MARK: - AstroBin CSV block (6.13.0)
+
+/// Copy-and-paste block under the fact sheet: the session's light frames as AstroBin
+/// acquisition CSV. AstroBin wants the filter as the numeric ID from its equipment
+/// database, so the IDs are entered once per filter name (funnel button) and remembered.
+/// A session with several objects gets a picker — an AstroBin image is one object.
+struct AstroBinCSVBlock: View {
+    let groups: [AstroBinCSV.Group]
+    let fontScale: CGFloat
+
+    @State private var copied = false
+    @State private var selectedObject: String = ""
+    @State private var filterIDs: [String: String] = AstroBinCSV.loadFilterIDs()
+    @State private var showFilterIDs = false
+
+    private func fs(_ base: CGFloat) -> CGFloat { round(base * fontScale) }
+
+    private var objects: [String] {
+        var seen = Set<String>()
+        return groups.map(\.object).filter { seen.insert($0).inserted }
+    }
+    /// The object the block shows: the picked one while it still exists, else the first.
+    private var object: String? { objects.contains(selectedObject) ? selectedObject : objects.first }
+    private var filterNames: [String] { AstroBinCSV.filterNames(in: groups, object: object) }
+    private var missingIDs: Int { filterNames.filter { filterIDs[AstroBinCSV.filterKey($0)] == nil }.count }
+    private var csv: String { AstroBinCSV.csv(groups: groups, object: object, filterIDs: filterIDs) }
+
+    var body: some View {
+        let csv = self.csv   // built once per pass
+        return VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 6) {
+                Text("AstroBin CSV")
+                    .font(.system(size: fs(10), weight: .semibold))
+                    .foregroundColor(.secondary)
+                if objects.count > 1 {
+                    Picker("", selection: Binding(get: { object ?? "" }, set: { selectedObject = $0 })) {
+                        ForEach(objects, id: \.self) { Text($0).tag($0) }
+                    }
+                    .labelsHidden()
+                    .controlSize(.mini)
+                    .frame(maxWidth: 140)
+                }
+                Spacer()
+                Button(action: { showFilterIDs.toggle() }) {
+                    HStack(spacing: 2) {
+                        Image(systemName: "line.3.horizontal.decrease.circle")
+                        Text(missingIDs > 0 ? "Filter IDs (\(missingIDs) missing)" : "Filter IDs")
+                    }
+                    .font(.system(size: fs(10)))
+                    .foregroundColor(missingIDs > 0 ? .orange : .accentColor)
+                }
+                .buttonStyle(.plain)
+                .disabled(filterNames.isEmpty)
+                .help("AstroBin identifies a filter by the number in the URL of its equipment page. Enter it once per filter name.")
+                .popover(isPresented: $showFilterIDs, arrowEdge: .top) { filterIDEditor }
+            }
+            HStack(alignment: .top, spacing: 6) {
+                ScrollView {
+                    Text(csv.isEmpty ? "No light frames with an exposure time" : csv)
+                        .font(.system(size: fs(10), design: .monospaced))
+                        .foregroundColor(.secondary)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .frame(maxHeight: 90)
+                Button(action: { copy(csv) }) {
+                    Image(systemName: copied ? "checkmark.circle.fill" : "doc.on.doc")
+                        .font(.system(size: fs(13)))
+                        .foregroundColor(copied ? .green : .accentColor)
+                }
+                .buttonStyle(.plain)
+                .disabled(csv.isEmpty)
+                .help(copied ? "Copied!" : "Copy AstroBin CSV")
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 3)
+        .background(Color(NSColor.controlBackgroundColor))
+    }
+
+    private var filterIDEditor: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("AstroBin filter IDs")
+                .font(.system(size: 12, weight: .semibold))
+            Text("The number at the end of the filter's page URL in AstroBin's equipment database. Without an ID the filter cell stays empty.")
+                .font(.system(size: 10))
+                .foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            ForEach(filterNames, id: \.self) { name in
+                HStack {
+                    Text(name)
+                        .font(.system(size: 11, design: .monospaced))
+                        .frame(width: 90, alignment: .leading)
+                    TextField("ID", text: Binding(
+                        get: { filterIDs[AstroBinCSV.filterKey(name)] ?? "" },
+                        set: { newValue in
+                            let digits = newValue.filter(\.isNumber)
+                            filterIDs[AstroBinCSV.filterKey(name)] = digits.isEmpty ? nil : digits
+                            AstroBinCSV.saveFilterIDs(filterIDs)
+                        }))
+                        .textFieldStyle(.roundedBorder)
+                        .controlSize(.small)
+                        .frame(width: 90)
+                }
+            }
+        }
+        .padding(12)
+        .frame(width: 260)
+    }
+
+    private func copy(_ csv: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(csv, forType: .string)
+        copied = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { copied = false }
     }
 }

@@ -23,6 +23,11 @@ struct ChangeFilterModifier: ViewModifier {
             .onReceive(NotificationCenter.default.publisher(for: .moveMarkedToPreDeleteRequest)) { _ in
                 viewModel.moveMarkedToPreDelete()
             }
+            // File → Quick Scan Folder… (6.13.0). Lives here, not in ContentView's own
+            // modifier chain, for the same type-checker reason as the two above.
+            .onReceive(NotificationCenter.default.publisher(for: .quickScanFolderRequest)) { _ in
+                viewModel.quickScanFolder()
+            }
     }
 }
 

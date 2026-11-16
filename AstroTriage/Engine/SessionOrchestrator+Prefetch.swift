@@ -90,6 +90,9 @@ extension SessionOrchestrator {
     /// Start pre-decoding + stretching ALL images (skips already-cached).
     func startFullPrefetch() {
         guard let host = host else { return }
+        // Quick Scan never decodes pixels — every caller (Apply All, debayer toggle,
+        // Continue) funnels through here.
+        guard !host.isQuickScan else { return }
         guard let prefetchCache = prefetchCache else { return }
 
         benchmarkStats.markCachingStart()
@@ -288,6 +291,7 @@ extension SessionOrchestrator {
     /// Pre-caching starts after the first 4 files are downloaded.
     func cacheNetworkFiles() async {
         guard let host = host else { return }
+        guard !host.isQuickScan else { return }
         guard let rootURL = host.sessionRootURL else { return }
         sessionCache.prepareSession(rootURL: rootURL)
 
@@ -408,6 +412,7 @@ extension SessionOrchestrator {
     /// cache file even if it was downloaded after the operation was created.
     func startFullPrefetchInterleaved() {
         guard let host = host else { return }
+        guard !host.isQuickScan else { return }
         guard let prefetchCache = prefetchCache else { return }
 
         // Update applied settings so cacheMatchesCurrentSettings returns true
