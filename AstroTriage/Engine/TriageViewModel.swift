@@ -853,6 +853,7 @@ class TriageViewModel: ObservableObject {
     // MARK: - Compare with Best
 
     func compareWithBest() {
+        if blockedByQuickScan("Compare") { return }
         guard let entry = selectedImage,
               let tier = entry.qualityTier, tier != .excellent,
               let device = renderer?.device else { return }
@@ -1004,7 +1005,12 @@ class TriageViewModel: ObservableObject {
         let urls = panel.urls
         guard !urls.isEmpty else { return }
 
-        // Separate directories and files
+        let (files, directories) = Self.splitSelection(urls)
+        loadSelection(files: files, directories: directories)
+    }
+
+    /// Split an open-panel selection into loose files and directories.
+    private static func splitSelection(_ urls: [URL]) -> (files: [URL], directories: [URL]) {
         var directories: [URL] = []
         var files: [URL] = []
         for url in urls {
@@ -1015,7 +1021,12 @@ class TriageViewModel: ObservableObject {
                 files.append(url)
             }
         }
+        return (files, directories)
+    }
 
+    /// Route a selection to the matching full-load entry point. Shared by Open Folder
+    /// and by "Load Fully" after a Quick Scan.
+    private func loadSelection(files: [URL], directories: [URL]) {
         // Each orchestrator entry point internally re-wires the session overview
         // tap callbacks, so no separate wireSessionOverviewCallbacks() call is
         // needed here.
@@ -1034,6 +1045,82 @@ class TriageViewModel: ObservableObject {
             // Now we route through a dedicated mixed path that scans every picked
             // directory and merges each picked file as its own ImageEntry.
             orchestrator.loadMixedSelection(files: files, directories: directories)
+        }
+    }
+
+    // MARK: - Quick Scan (6.13.0)
+
+    /// True while the loaded session is a Quick Scan: metadata + Session Overview only.
+    /// No pixel is decoded, nothing is downloaded from a NAS, nothing is scored.
+    @Published var isQuickScan: Bool = false
+
+    /// What the running Quick Scan was opened with, so "Load Fully" can open exactly
+    /// the same selection through the normal load path.
+    private var quickScanSelection: (files: [URL], directories: [URL])?
+
+    /// File → Quick Scan Folder…: pick folders (or files) and read only their headers.
+    /// Answers "how many hours, which filters, how many frames" for one or several
+    /// sessions in seconds, without the full load.
+    func quickScanFolder() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = true
+        panel.allowsMultipleSelection = true
+        panel.allowedContentTypes = [
+            .init(filenameExtension: "xisf")!,
+            .init(filenameExtension: "fits")!,
+            .init(filenameExtension: "fit")!,
+            .init(filenameExtension: "fts")!
+        ]
+        panel.message = "Quick Scan: select one or more folders — only the file headers are read"
+        panel.prompt = "Quick Scan"
+
+        guard panel.runModal() == .OK, !panel.urls.isEmpty else { return }
+
+        let selection = Self.splitSelection(panel.urls)
+        // Same condition the orchestrator refuses on — checked here so a selection without
+        // any image leaves the loaded session and its viewer untouched.
+        guard !selection.directories.isEmpty || selection.files.contains(where: {
+            SessionScanner.supportedExtensions.contains($0.pathExtension.lowercased())
+        }) else {
+            statusMessage = "No FITS/XISF files or folders in selection"
+            return
+        }
+        quickScanSelection = selection
+        // Empty the viewer before the list fills: the previous session's frame must not
+        // stay on screen under the new file list.
+        clearViewerForQuickScan()
+        orchestrator.loadMixedSelection(files: selection.files, directories: selection.directories,
+                                        quickScan: true)
+    }
+
+    /// Load the Quick Scan's selection through the normal path (download, decode, scoring).
+    func loadQuickScanFully() {
+        guard isQuickScan, let selection = quickScanSelection else { return }
+        quickScanSelection = nil
+        loadSelection(files: selection.files, directories: selection.directories)
+    }
+
+    /// Commands that need pixels or scores call this first. In a Quick Scan it explains
+    /// why the command is unavailable, offers the full load, and returns true.
+    func blockedByQuickScan(_ feature: String) -> Bool {
+        guard isQuickScan else { return false }
+        let alert = NSAlert()
+        alert.messageText = "\(feature) Needs the Fully Loaded Session"
+        alert.informativeText = "Quick Scan read only the file headers. No images are loaded and nothing is rated yet."
+        alert.addButton(withTitle: "Load Fully")
+        alert.addButton(withTitle: "Cancel")
+        if alert.runModal() == .alertFirstButtonReturn { loadQuickScanFully() }
+        return true
+    }
+
+    /// Remove whatever frame the viewer shows and everything derived from it.
+    private func clearViewerForQuickScan() {
+        currentDecodeTask?.cancel()
+        currentDecodedImage = nil
+        histogramBins = []
+        if let mtkView = findMTKView(), let renderer = renderer {
+            renderer.clearImage(in: mtkView)
         }
     }
 
@@ -1088,6 +1175,7 @@ class TriageViewModel: ObservableObject {
 
     /// Generate mosaic wallpapers and present the visual validation window.
     func startVisualValidation() {
+        if blockedByQuickScan("VLM Check") { return }
         orchestrator.startVisualValidation()
     }
 
@@ -1102,6 +1190,7 @@ class TriageViewModel: ObservableObject {
     /// Operates on highlighted files if any are selected, otherwise all scored files.
     /// Weight formula: clamp(0, 100, 50 + qualityZScore * 20) * (1 - trailingScore * 0.5 * filterTrailingMult)
     func exportSSWEIGHT() {
+        if blockedByQuickScan("SSWEIGHT Export") { return }
         // Use selected files if highlighted, otherwise all scored images
         let selected = selectedEntries.filter { $0.qualityBreakdown != nil }
         let scoredImages = selected.isEmpty
@@ -1239,6 +1328,8 @@ class TriageViewModel: ObservableObject {
         }
 
         // If showing a cached preview, decode raw data so the slider change is visible
+        // (never in a Quick Scan — the viewer stays empty there).
+        guard !isQuickScan else { return }
         guard let entry = selectedImage, let device = device else { return }
         let targetURL = entry.url
         let decodeURL = entry.decodingURL
@@ -2179,6 +2270,7 @@ class TriageViewModel: ObservableObject {
     // Validates that all selected images target the same object (by name or RA/DEC proximity).
     // Quick Stack V2 (LightspeedStacker): GPU warp, hash-based matching, parallel star detection
     func startQuickStackV2() {
+        if blockedByQuickScan("Stacking") { return }
         let indices = selectedTableIndices
 
         // No selection or too few images
@@ -2246,6 +2338,7 @@ class TriageViewModel: ObservableObject {
 
     // Color Combine: groups all visible images by filter, stacks each group, combines to RGB
     func startColorCombine() {
+        if blockedByQuickScan("Color Combine") { return }
         let entries = visibleImages
         guard !entries.isEmpty else {
             let alert = NSAlert()
@@ -2517,6 +2610,7 @@ class TriageViewModel: ObservableObject {
     /// Start blinking through images. Uses highlighted rows if multi-selected,
     /// otherwise all currently visible (unhidden/filtered) images.
     func startPlayback(highlightedRows: IndexSet?) {
+        if blockedByQuickScan("Blinking") { return }
         guard !images.isEmpty else { return }
 
         // Build list of indices to cycle through — always respect visibility
@@ -2563,6 +2657,7 @@ class TriageViewModel: ObservableObject {
                           maxSizeMB: Double, highlightedRows: IndexSet?, fps: Double,
                           cropToZoom: Bool = false) {
         guard !images.isEmpty else { return }
+        if blockedByQuickScan("Video Export") { return }
 
         // Build frame indices (same logic as startPlayback)
         var frameIndices: [Int] = []
@@ -3069,7 +3164,7 @@ class TriageViewModel: ObservableObject {
             }
 
             // Record to CalibrationDatabase for learning
-            if let fp = currentSetupFingerprint {
+            if !isQuickScan, let fp = currentSetupFingerprint {
                 CalibrationDatabase.shared.recordFeedback(
                     entry: images[idx], feedback: next, fingerprint: fp)
             }
@@ -3110,7 +3205,7 @@ class TriageViewModel: ObservableObject {
                         fileHash: hash, feedback: fb)
                 }
             }
-            if let fp = currentSetupFingerprint {
+            if !isQuickScan, let fp = currentSetupFingerprint {
                 CalibrationDatabase.shared.recordFeedback(
                     entry: images[idx], feedback: newVal, fingerprint: fp)
             }
@@ -3206,8 +3301,8 @@ class TriageViewModel: ObservableObject {
         needsTableRefresh = true
         recomputeSNRRetention()
 
-        // Record action for calibration learning
-        if let fp = currentSetupFingerprint {
+        // Record action for calibration learning (not in a Quick Scan: nothing was measured)
+        if !isQuickScan, let fp = currentSetupFingerprint {
             CalibrationDatabase.shared.recordAction(
                 entry: images[index], wasMarked: marked, fingerprint: fp
             )
@@ -3927,6 +4022,7 @@ class TriageViewModel: ObservableObject {
 
     func toggleLockSTF() {
         guard let renderer = renderer else { return }
+        guard !isQuickScan else { return }
         isSTFLocked.toggle()
         if isSTFLocked {
             // If showing a cached preview, currentSTFParams may be stale.
@@ -4236,6 +4332,13 @@ class TriageViewModel: ObservableObject {
 
         // Update meridian rotation for this image (zero-cost UV flip)
         updateMeridianRotation()
+
+        // Quick Scan: the Inspector shows the selected file's header, the viewer stays
+        // empty (ContentView shows the "No images in Quick Scan mode" notice).
+        if isQuickScan {
+            clearViewerForQuickScan()
+            return
+        }
 
         // Fast path: use pre-stretched cached preview (instant, zero compute)
         // Works when current slider settings match what's baked into the cache.

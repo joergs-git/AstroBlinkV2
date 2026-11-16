@@ -51,6 +51,7 @@
 | Key | Action |
 |-----|--------|
 | Cmd+O | Open folder |
+| Opt+Cmd+O | Quick Scan — headers only (metadata + Session Overview, no images) |
 | Cmd+M | Move marked files to a chosen folder |
 | Cmd+Shift+R | Batch rename & header edit |
 | Cmd+Shift+P | Plate solve frames with ASTAP (selection, or whole session) |

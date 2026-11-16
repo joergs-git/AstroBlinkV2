@@ -1055,6 +1055,15 @@ struct AIsaacContextBuilder {
         - A: cycle quality feedback (agree/disagree/partly/clear). Trains the scoring model.
         - Cmd+Shift+B: toggle Blind Curation mode (rate frames without seeing algo scores).
         - Cmd+O: open folder (Cmd-click for multi-folder). Cmd+W: close window.
+        - Opt+Cmd+O: Quick Scan Folder (6.13.0) — reads ONLY the headers of one or several folders (about 30 ms per file \
+        from a NAS, nothing downloaded, decoded or rated). File list metadata + Session Overview are filled, the viewer \
+        stays empty ("No images in Quick Scan mode"), frames have NO quality tier and NO measured metrics. "Load Fully" \
+        in the viewer opens the same selection normally. Compare, stacking, Color Combine, blinking, video export, plate \
+        solving, VLM Check and SSWEIGHT export are unavailable until then; nothing goes to the Frame History.
+        - AstroBin CSV (6.13.0): Session Overview, below the fact sheet — light frames as AstroBin acquisition CSV (one \
+        line per night x filter x sub length; date, filter, number, duration, plus binning, gain, sensorCooling, bortle, \
+        meanFwhm, temperature when known) for AstroBin's "Import from CSV". The filter column needs AstroBin's numeric \
+        filter ID (number in the filter page URL), entered once per filter name under "Filter IDs".
         - Cmd+/Cmd-: 25% step zoom. Cmd+0: fit to view. Cmd+1: 100%. Cmd+2: 200%.
 
         BLIND CURATION MODE (Cmd+Shift+B):

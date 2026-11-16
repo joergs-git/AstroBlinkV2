@@ -18,6 +18,7 @@ enum PlateSolveCommand {
     ///   passes its own resolution of clicked-row-vs-selection.
     @MainActor
     static func runInteractive(viewModel: TriageViewModel, entries: [ImageEntry]? = nil) {
+        if viewModel.blockedByQuickScan("Plate Solving") { return }
         // --- Is there anything to solve? ---
         let explicit = entries
         let selection = viewModel.selectedEntries

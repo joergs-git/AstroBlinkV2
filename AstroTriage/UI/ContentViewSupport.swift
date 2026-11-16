@@ -880,3 +880,39 @@ struct AIsaacStateObserver: ViewModifier {
             }
     }
 }
+
+// MARK: - Quick Scan notice (6.13.0)
+
+/// Shown in the empty viewer while a Quick Scan is loaded: the session's metadata and the
+/// Session Overview are filled, no image is. "Load Fully" opens the same selection through
+/// the normal load path. A standalone view so ContentView's body stays within the SwiftUI
+/// type-checker limit.
+struct QuickScanNotice: View {
+    let nightMode: Bool
+    let frameCount: Int
+    let isReadingHeaders: Bool
+    let onLoadFully: () -> Void
+
+    var body: some View {
+        let tint: Color = nightMode ? .red : .white
+        VStack(spacing: 10) {
+            Text("No images in Quick Scan mode")
+                .font(.system(size: 16, weight: .medium, design: .monospaced))
+                .foregroundColor(tint.opacity(0.8))
+            Text(isReadingHeaders
+                 ? "Reading the headers of \(frameCount) frames…"
+                 : "\(frameCount) frames — metadata and Session Overview only, nothing downloaded or rated.")
+                .font(.system(size: 11))
+                .foregroundColor(tint.opacity(0.55))
+            Button("Load Fully", action: onLoadFully)
+                .buttonStyle(.borderedProminent)
+                .controlSize(.regular)
+                .tint(nightMode ? .red : .accentColor)
+                .disabled(isReadingHeaders)
+                .padding(.top, 4)
+        }
+        .padding(.horizontal, 24)
+        .padding(.vertical, 16)
+        .background(RoundedRectangle(cornerRadius: 8).fill(Color.black.opacity(0.6)))
+    }
+}

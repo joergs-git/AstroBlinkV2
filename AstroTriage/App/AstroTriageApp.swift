@@ -68,6 +68,13 @@ struct AstroBlinkV2App: App {
                 }
                 .keyboardShortcut("o", modifiers: .command)
 
+                // Quick Scan (6.13.0): headers only — frame counts, filters and hours for one
+                // or several sessions without downloading or rating anything.
+                Button("Quick Scan Folder...") {
+                    NotificationCenter.default.post(name: .quickScanFolderRequest, object: nil)
+                }
+                .keyboardShortcut("o", modifiers: [.command, .option])
+
                 Divider()
 
                 Button("Open Database Directory") {
@@ -593,6 +600,7 @@ class AstroBlinkV2AppDelegate: NSObject, NSApplicationDelegate {
 // Notifications for menu bar actions
 extension Notification.Name {
     static let openFolderRequest = Notification.Name("openFolderRequest")
+    static let quickScanFolderRequest = Notification.Name("quickScanFolderRequest")  // File → Quick Scan Folder… (6.13.0)
     static let resetSettingsRequest = Notification.Name("resetSettingsRequest")
     static let showBenchmarkStats = Notification.Name("showBenchmarkStats")
     static let showBatchRename = Notification.Name("showBatchRename")

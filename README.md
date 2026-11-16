@@ -14,6 +14,16 @@ Nice side effect: Finally you have a native XISF and FITS Quicklook for macOS. (
 
 ---
 
+## What's New in v6.13.0 (Build 127)
+
+**Quick Scan and an AstroBin CSV block.** File → Quick Scan Folder… (⌥⌘O) reads only the headers
+of one or several session folders — about 30 ms per file from a NAS, nothing downloaded, nothing
+rated — and fills the file list and the Session panel: objects, filters, frame counts, nights,
+hours. The viewer stays empty until you press **Load Fully**. And below the fact sheet the Session
+panel now offers the light frames as AstroBin acquisition CSV (one line per night × filter × sub
+length) to paste into AstroBin's "Import from CSV"; the numeric AstroBin filter IDs are entered
+once per filter and remembered.
+
 ## What's New in v6.12.3 (Build 126)
 
 **The Quality Overview reads at a glance.** Two wide bars per filter and night — noise and sky
@@ -775,6 +785,7 @@ After a night of imaging you might have 200-600 sub-exposures. Some have clouds,
 | `Cmd+` `Cmd-` | Increase / decrease font size |
 | `Cmd+0` | Reset font size |
 | `Cmd+O` | Open folder or select files |
+| `Opt+Cmd+O` | Quick Scan — headers only: metadata and Session Overview without loading images |
 | `Cmd+Shift+R` | Batch rename & header edit (highlighted files) |
 | `Cmd+Shift+F` | Change Filter — set `FILTER` + rename filter token (highlighted files) |
 | `ESC` | Stop blink playback |

@@ -90,8 +90,14 @@ extension SessionOrchestrator {
             // Freeze before crossing into MainActor.run (strict concurrency).
             let headersByURLFrozen = headersByURL
 
+            // A newer load cancelled this pass while it was still reading: its headers
+            // belong to a session that is gone, and its tail would run under the new
+            // session's mode (full scoring on a Quick Scan's frames or the reverse).
+            if Task.isCancelled { return }
+
             await MainActor.run { [weak self] in
                 guard let self, let host = self.host else { return }
+                if Task.isCancelled { return }
                 var foundOSC = false
 
                 for index in host.images.indices {
@@ -301,6 +307,21 @@ extension SessionOrchestrator {
                 host.hasOSCImages = foundOSC
                 // Compute moon illumination + target distance (needs date + coordinates from headers)
                 self.computeMoonData()
+                // Quick Scan (6.13.0) ends here with everything the headers alone can tell:
+                // overview, moon, fields, column layout. No scoring, no alignment, no solve,
+                // no pre-cache — none of them has pixels to work on.
+                if host.isQuickScan {
+                    host.recomputeFieldGroups()
+                    let targets = Set(host.images.compactMap { $0.target?.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty })
+                    let filters = Set(host.images.compactMap { $0.filter?.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty })
+                    host.pendingColumnOrder = ColumnDefinition.recommendedColumnOrder(
+                        isMultiObject: targets.count > 1, isMultiFilter: filters.count > 1
+                    )
+                    let hours = host.images.reduce(0.0) { $0 + ($1.exposure ?? 0) } / 3600
+                    host.statusMessage = String(format: "Quick Scan: %d frames, %.1f h — Load Fully to view and rate",
+                                                host.images.count, hours)
+                    return
+                }
                 // Refine Bortle online (one call per unique coordinate, fire-and-forget)
                 self.refineBortleOnline()
                 // Compute relative quality scores now that all header metadata is available

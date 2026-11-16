@@ -140,6 +140,13 @@ struct ContentView: View {
         ZStack(alignment: .center) {
             ImageViewerView(viewModel: viewModel, renderer: $renderer)
 
+            if viewModel.isQuickScan {
+                QuickScanNotice(nightMode: viewModel.nightMode,
+                                frameCount: viewModel.images.count,
+                                isReadingHeaders: viewModel.loadingPhase != .none,
+                                onLoadFully: { viewModel.loadQuickScanFully() })
+            }
+
             if viewModel.isCaching,
                let image = viewModel.selectedImage,
                !viewModel.isImageCached(image.url),

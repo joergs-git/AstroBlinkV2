@@ -107,6 +107,7 @@ struct HelpContentView: View {
                 shortcutRow("Page Down / End", "Jump to last image")
                 shortcutRow("Space", "Toggle pre-delete mark (single or multi-selection)")
                 shortcutRow("Cmd + ⌫", "Move marked files to PRE-DELETE folder")
+                shortcutRow("Opt + Cmd + O", "Quick Scan: read only the headers (metadata + Session Overview, no images)")
                 shortcutRow("Cmd + M", "Move marked files to a chosen folder")
                 shortcutRow("Cmd + Z", "Undo last pre-delete operation")
                 shortcutRow("K", "Toggle skip-marked: arrow keys skip over marked images")
@@ -278,6 +279,8 @@ struct HelpContentView: View {
                 featureRow("K — Skip marked", "Arrow keys skip over marked images during blinking")
                 featureRow("H — Cycle view", "All files → hide marked → show only marked → all")
                 featureRow("Session Overview", "Floating window with per-filter statistics + forum copy")
+                featureRow("AstroBin CSV", "Session Overview, below the fact sheet: acquisitions per night / filter / sub length to paste into AstroBin's CSV import")
+                featureRow("Quick Scan", "File → Quick Scan Folder…: frame counts, filters and hours of one or several sessions in seconds — nothing is downloaded or rated; Load Fully opens the session normally")
 
                 Text("Files are never permanently deleted. All move operations support full undo.")
                     .font(.system(size: 11))

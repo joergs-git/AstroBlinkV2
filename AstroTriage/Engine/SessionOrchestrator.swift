@@ -133,6 +133,9 @@ protocol SessionHost: AnyObject, Sendable {
     var accessedURLs: [URL] { get set }
     var multiSourceSession: Bool { get set }
     var multiSourcePreDeleteConfirmed: Bool { get set }
+    /// True while the loaded session is a Quick Scan (6.13.0): headers only, no pixel
+    /// decode, no NAS download, no scoring. Every load entry point sets it.
+    var isQuickScan: Bool { get set }
     func stopAllAccessedURLs()
     func beginSecurityScopes(for urls: [URL])
 
@@ -243,6 +246,8 @@ final class SessionOrchestrator {
     /// that session, which is the signal both subsystems learn from.
     func commitSession() {
         guard let host = host else { return }
+        // A Quick Scan carries no measurements — nothing to learn from, nothing to upload.
+        guard !host.isQuickScan else { return }
         guard let fp = host.currentSetupFingerprint else { return }
         CalibrationDatabase.shared.commitSession(entries: host.images, fingerprint: fp)
         // Upload anonymous session summary to community (if opted in)
@@ -270,6 +275,10 @@ final class SessionOrchestrator {
     /// later via the host bridge methods.
     func loadSession(url: URL) {
         guard let host = host else { return }
+        host.isQuickScan = false
+        // A header pass of the previous session (e.g. a Quick Scan still reading from the
+        // NAS) must not land on this one — it would run under the new mode.
+        headerEnrichmentTask?.cancel()
         host.currentSessionId = UUID().uuidString
         wireSessionOverviewCallbacks()
         benchmarkStats.markSessionStart()
@@ -415,6 +424,8 @@ final class SessionOrchestrator {
             return
         }
 
+        host.isQuickScan = false
+        headerEnrichmentTask?.cancel()   // see loadSession
         wireSessionOverviewCallbacks()
         benchmarkStats.markSessionStart()
         prefetchCache?.resetFirstPreviewTracking()
@@ -532,6 +543,8 @@ final class SessionOrchestrator {
         guard let host = host else { return }
         guard !urls.isEmpty else { return }
 
+        host.isQuickScan = false
+        headerEnrichmentTask?.cancel()   // see loadSession
         wireSessionOverviewCallbacks()
         benchmarkStats.markSessionStart()
         prefetchCache?.resetFirstPreviewTracking()
@@ -610,7 +623,13 @@ final class SessionOrchestrator {
     /// Each directory is scanned via SessionScanner; each standalone file produces
     /// its own ImageEntry. Results are deduped by standardizedFileURL so a file
     /// listed both inside a picked folder and as a top-level pick appears once.
-    func loadMixedSelection(files: [URL], directories: [URL]) {
+    ///
+    /// `quickScan: true` (6.13.0) is the Quick Scan entry point for ANY selection (one
+    /// folder, several folders, loose files): same scan, same header enrichment — read
+    /// straight from the original location, ~30 ms per file on a NAS — but no download,
+    /// no pixel decode, no pre-cache and no scoring. The frames show their metadata and
+    /// fill the Session Overview; "Load Fully" re-opens the same selection normally.
+    func loadMixedSelection(files: [URL], directories: [URL], quickScan: Bool = false) {
         guard let host = host else { return }
         let fileEntries = files.filter {
             SessionScanner.supportedExtensions.contains($0.pathExtension.lowercased())
@@ -620,6 +639,13 @@ final class SessionOrchestrator {
             return
         }
 
+        host.isQuickScan = quickScan
+        headerEnrichmentTask?.cancel()   // see loadSession
+        if quickScan {
+            // A fresh session identity so nothing of the old session is attributed to the scan.
+            host.currentSessionId = UUID().uuidString
+            displayAligner.reset()
+        }
         wireSessionOverviewCallbacks()
         benchmarkStats.markSessionStart()
         prefetchCache?.resetFirstPreviewTracking()
@@ -727,11 +753,14 @@ final class SessionOrchestrator {
                 // Respect user-persisted Session Overview visibility.
                 host.showInspector = true
                 host.applyAllEnabled = true
-                host.triggerApplyAll()
+                // Quick Scan: headers only — triggerApplyAll would start the pixel pre-cache.
+                if !quickScan { host.triggerApplyAll() }
                 self.enrichWithHeaders()
                 host.focusTableAfterDelay()
 
-                host.statusMessage = "\(sorted.count) frames loaded from \(summary)"
+                host.statusMessage = quickScan
+                    ? "Quick Scan: reading headers of \(sorted.count) frames…"
+                    : "\(sorted.count) frames loaded from \(summary)"
             }
         }
     }
